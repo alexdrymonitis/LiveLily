@@ -5,4 +5,11 @@ LiveLily is a live sequencing and live scoring system through live coding with a
 
 LiveLily does not produce any sound. It sends messages either with OSC or MIDI, to control other software and hardware. It can be combined with the LiveLily-Score, to display one part of the full score, that can be sight-read by an instrumentalist. The possible setups that LiveLily supports are pure electronic, electroacoustic, or acoustic only.
 
+LiveLily is entirely written in [openFrameworks], using the ofxOsc and ofxMidi addons. You will need to use the nightly builds to compile this because of [this issue], and as a neat-pick, because of [this].
+
+
 ![LiveLily screenshow](images/livelily_screenshot.png?raw=true)
+
+[openFrameworks]: https://openframeworks.cc/
+[this issue]: https://forum.openframeworks.cc/t/are-monospace-fonts-really-monospace/40358
+[this]: https://forum.openframeworks.cc/t/how-to-set-a-custom-icon-for-an-app/41613
