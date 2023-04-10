@@ -1,30 +1,5 @@
-# About emptyExample
+# LiveLily
 
-![Screenshot of emptyExample](emptyExample.png)
+This is the main LiveLily program. It contains the editor, the parser, the sequencer, and the interactive/animated full score. This program can be used combined with audio-generating software that support either the OSC or the MIDI protocol. It can also be used combined with the LiveLily-Score program, that displays one part of the full score, to be sight-read by an instrumentalist, in case of live scoring an acoustic instrument or ensemble.
 
-### Learning Objectives
-
-This example is the simplest possible openFrameworks app! It does nothing. 
-
-...Well, *almost* nothing. Although it may not be apparent, the emptyExample activates all of the default system states. (For example, it sets the default fill color to white; it just doesn't happen to draw anything with it.)
-
-The emptyExample is great for making sure that your openFrameworks development environment is compiling properly. It can also be useful as a "starter template" for making simple programs. 
-
-The emptyExample will help you understand what are the bare necessities of an openFrameworks program. In this regard, you can think of it as a "Hello World" for OF. 
-
-
-### Expected Behavior
-
-When launching this app, you should see a light-gray screen. 
-
-* There's no interaction. 
-* There's nothing to see. 
-* That's it. 
-
-Instructions for using the app:
-
-* There's nothing to do. Move along.
-
-### Other classes used in this file
-
-This example uses no other classes.
+These two scenarios can be user either separately, or combined, to control an electroacoustic live coding session.
