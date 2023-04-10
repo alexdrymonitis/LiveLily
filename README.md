@@ -8,6 +8,7 @@ LiveLily does not produce any sound. It sends messages either with OSC or MIDI, 
 LiveLily is entirely written in [openFrameworks], using the ofxOsc and ofxMidi addons. You will need to use the nightly builds to compile this because of [this issue], and as a neat-pick, because of [this].
 
 
+
 ![LiveLily screenshow](images/livelily_screenshot.png?raw=true)
 
 [openFrameworks]: https://openframeworks.cc/
