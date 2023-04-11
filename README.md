@@ -15,6 +15,7 @@ TODO:
 - fix crashes on wrong timing bars
 - fix positioning of stems and beams on certain rhythms
 - write the documentation of the program
+- make the livelily-score app
 
 [openFrameworks]: https://openframeworks.cc/
 [this issue]: https://forum.openframeworks.cc/t/are-monospace-fonts-really-monospace/40358
