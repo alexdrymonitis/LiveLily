@@ -7,9 +7,14 @@ LiveLily does not produce any sound. It sends messages either with OSC or MIDI, 
 
 LiveLily is entirely written in [openFrameworks], using the ofxOsc and ofxMidi addons. You will need to use the nightly builds to compile this because of [this issue], and as a neat-pick, because of [this].
 
-The directories livelily/ and livelily-score/ must be placed in the OF_ROOT/apps/myapps/ directory, so they can compile properly.
+The directories livelily/ (which is the main program) and livelily-score/ must be placed in the OF_ROOT/apps/myapps/ directory, so they can compile properly.
    
 ![LiveLily screenshow](images/livelily_screenshot.png?raw=true)
+  
+TODO:
+- fix crashes on wrong timing bars
+- fix positioning of stems and beams on certain rhythms
+- write the documentation of the program
 
 [openFrameworks]: https://openframeworks.cc/
 [this issue]: https://forum.openframeworks.cc/t/are-monospace-fonts-really-monospace/40358
