@@ -11,9 +11,8 @@ The directories livelily/ (which is the main program) and livelily-score/ must b
    
 ![LiveLily screenshow](images/livelily_screenshot.png?raw=true)
   
-Demo video (including earlier syntax with some quotation symbols that are now removed):
-<iframe src="https://player.vimeo.com/video/781559305?h=f0051a7ce3" width="640" height="360" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
-<p><a href="https://vimeo.com/781559305">livelily_demo.mp4</a> from <a href="https://vimeo.com/user104584258">Alexandros Drymonitis</a> on <a href="https://vimeo.com">Vimeo</a>.</p>
+[Demo video] (including earlier syntax with some quotation symbols that are now removed):
+
   
 TODO:
 - fix crashes on wrong timing bars
@@ -24,3 +23,4 @@ TODO:
 [openFrameworks]: https://openframeworks.cc/
 [this issue]: https://forum.openframeworks.cc/t/are-monospace-fonts-really-monospace/40358
 [this]: https://forum.openframeworks.cc/t/how-to-set-a-custom-icon-for-an-app/41613
+[Demo video]: https://vimeo.com/781559305
