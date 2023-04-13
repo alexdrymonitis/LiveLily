@@ -1,6 +1,8 @@
 # LiveLily
 ![LiveLily logo](images/livelily_logo_scaled.png?raw=true)
    
+version-beta0.1
+
 LiveLily is a live sequencing and live scoring system through live coding with a [Lilypond]-like language. The system includes a text editor, a parser, a sequencer, and an interactive/animated score. The commands are inspired by the Lilypond language, with certain commands that accommodate fast typing and fast coding sequences being added.
 
 LiveLily does not produce any sound. It sends OSC messages to control other software and hardware. It can be combined with the LiveLily-Score, to display parts of the full score separately, that can be sight-read by instrumentalists. The possible setups that LiveLily supports are pure electronic, electroacoustic, or acoustic only.
