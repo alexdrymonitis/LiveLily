@@ -14,6 +14,27 @@ The directories livelily/ (which is the main program) and livelily-score-part/ m
   
 [Demo video] (including earlier syntax with some quotation symbols that are now removed):
 
+If you use this software in an academic context, please cite it as follows:
+```
+ @article{nime2023_37,
+ abstract = {LiveLily is an open-source system for live sequencing and live scoring through live coding in a subset of the Lilypond language. It is written in openFrameworks and consists of four distinct parts, the text editor, the language parser, the sequencer, and the music score. It supports the MIDI and OSC protocols to communicate the sequencer with other software or hardware, as LiveLily does not produce any sound. It can be combined with audio synthesis software that supports OSC, like Pure Data, SuperCollider, and others, or hardware synthesizers that support MIDI. This way, the users can create their sounds in another, audio-complete framework or device, and use LiveLily to control their music.
+LiveLily can also be used as a live scoring system to write music scores for acoustic instruments live. This feature can be combined with its live sequencing capabilities, so acoustic instruments can be combined with live electronics. Both live scoring and live sequencing in LiveLily provide expressiveness to a great extent, as many musical gestures can be included either in the score or the sequencer. Such gestures include dynamics, articulation, and arbitrary text that can be interpreted in any desired way, much like the way Western-music notation scores are written.},
+ address = {Mexico City, Mexico},
+ articleno = {37},
+ author = {Alexandros Drymonitis},
+ booktitle = {Proceedings of the International Conference on New Interfaces for Musical Expression},
+ editor = {Miguel Ortiz and Adnan Marquez-Borbon},
+ issn = {2220-4806},
+ month = {May},
+ numpages = {6},
+ pages = {256--261},
+ title = {LiveLily: An Expressive Live Sequencing and Live Scoring System Through Live Coding With the Lilypond Language},
+ track = {Papers},
+ url = {http://nime.org/proceedings/2023/nime2023_37.pdf},
+ year = {2023}
+}
+```
+
   
 TODO:
 - fix positioning of stems and beams on certain rhythms
