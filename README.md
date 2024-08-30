@@ -37,10 +37,7 @@ LiveLily can also be used as a live scoring system to write music scores for aco
 
   
 TODO:
-- fix positioning of stems and beams on certain rhythms
 - write the documentation of the program
-- work on the livelily-score app to display the pulsating rectangle and to display more than one bar
-
 [openFrameworks]: https://openframeworks.cc/
 [Demo video]: https://vimeo.com/781559305
 [Lilypond]: https://lilypond.org/
