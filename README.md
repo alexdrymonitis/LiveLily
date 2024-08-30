@@ -38,6 +38,7 @@ LiveLily can also be used as a live scoring system to write music scores for aco
   
 TODO:
 - write the documentation of the program
+
 [openFrameworks]: https://openframeworks.cc/
 [Demo video]: https://vimeo.com/781559305
 [Lilypond]: https://lilypond.org/
