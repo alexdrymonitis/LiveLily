@@ -1,12 +1,15 @@
 #include <iostream>
 #include <fstream>
+#include <iterator> // to be able to use find() with a reverse iterator, see findBraceBackward()
+#include <algorithm>
 #include "editor.h"
 #include "ofApp.h"
 
 //--------------------------------------------------------------
-Editor::Editor(){
-	executionRampStart = EXECUTIONRAMPSTART;
-	lineCount = 0;
+Editor::Editor()
+{
+	thisLang = 0; // 0 is livelily, 1 is python, and 2 is lua
+	lineCount = 1;
 	lineCountOffset = 0;
 	cursorLineIndex = 0;
 	cursorPos = 0;
@@ -18,7 +21,7 @@ Editor::Editor(){
 	highlightManyChars = false;
 	highlightManyCharsStart = 0;
 
-	ctlPressed = false;
+	ctrlPressed = false;
 	shiftPressed = false;
 
 	highlightBracket = false;
@@ -31,164 +34,238 @@ Editor::Editor(){
 	quoteCounter = 0;
 	curlyBracketCounter = 0;
 	squareBracketCounter = 0;
+	roundBracketCounter = 0;
 
 	fileLoaded = false;
 
-	allStrings.push_back("");
-	allStringStartPos.push_back(0);
-	tracebackStr.push_back("");
+	allStrings[0] = "";
+	allStringStartPos[0] = 0;
+	tracebackStr[0] = "";
+	tracebackColor[0] = 0;
+	tracebackNumLines[0] = 1;
 	tabStr = "";
 	for (int i = 0; i < TABSIZE; i++) {
 		tabStr += " ";
 	}
+
+	couldNotLoadFile = false;
+	couldNotSaveFile = false;
+	fileEdited = false;
+
+	fromOscStr = "";
+
+	xmlDurs[0] = "whole";
+	xmlDurs[1] = "half";
+	xmlDurs[2] = "quarter";
+	xmlDurs[3] = "eighth";
+	xmlDurs[4] = "16th";
+	xmlDurs[5] = "32nd";
+	xmlDurs[6] = "64th";
 }
 
 //--------------------------------------------------------------
-void Editor::setID(int id){
+void Editor::setID(int id)
+{
 	objID = id;
 }
 
 //--------------------------------------------------------------
-void Editor::scanStrings(){
-	allStringTabs.clear();
-	bracketIndexes.clear();
+void Editor::setLanguage(int langNdx)
+{
+	thisLang = langNdx;
+}
 
-	vector<vector<int>> bracketsIndexesLocal;
-	vector<int> bracketsIndexesOneLine;
-	for (unsigned i = 0; i < allStrings.size(); i++) {
-		allStringTabs.push_back(findIndexesOfCharInStr(allStrings[i], tabStr));
-		//bracketsIndexesLocal.push_back(findIndexesOfCharInStr(allStrings[i], "{"));
-		bracketsIndexesOneLine = findIndexesOfCharInStr(allStrings[i], "{");
-		vector<int> squareBracketsLocal = findIndexesOfCharInStr(allStrings[i], "[");
-		for (unsigned j = 0; j < squareBracketsLocal.size(); j++) {
-			//bracketsIndexesLocal[i].push_back(squareBracketsLocal[j]);
-			bracketsIndexesOneLine.push_back(squareBracketsLocal[j]);
-		}
-		vector<int> closeCurlyIndexes = findIndexesOfCharInStr(allStrings[i], "}");
-		vector<int> closeSquareIndexes = findIndexesOfCharInStr(allStrings[i], "]");
-		for (unsigned j = 0; j < closeCurlyIndexes.size(); j++) {
-			//bracketsIndexesLocal[i].push_back(closeCurlyIndexes[j]);
-			bracketsIndexesOneLine.push_back(closeCurlyIndexes[j]);
-		}
-		for (unsigned j = 0; j < closeSquareIndexes.size(); j++) {
-			//bracketsIndexesLocal[i].push_back(closeSquareIndexes[j]);
-			bracketsIndexesOneLine.push_back(closeSquareIndexes[j]);
-		}
-		bracketsIndexesLocal.push_back(sortVec(bracketsIndexesOneLine));
+//--------------------------------------------------------------
+int Editor::getLanguage()
+{
+	return thisLang;
+}
+
+//--------------------------------------------------------------
+void Editor::setPaneRow(int row)
+{
+	paneRow = row;
+}
+
+//--------------------------------------------------------------
+void Editor::setPaneCol(int col)
+{
+	paneCol = col;
+}
+
+//--------------------------------------------------------------
+int Editor::getPaneRow()
+{
+	return paneRow;
+}
+
+//--------------------------------------------------------------
+int Editor::getPaneCol()
+{
+	return paneCol;
+}
+
+//--------------------------------------------------------------
+string Editor::getLine(int lineNdx)
+{
+	map<int, string>::iterator it = allStrings.find(lineNdx);
+	if (it == allStrings.end()) return "";
+	else return it->second;
+}
+
+//--------------------------------------------------------------
+int Editor::getCursorLineIndex()
+{
+	return cursorLineIndex;
+}
+
+//--------------------------------------------------------------
+void Editor::setActivity(bool activity)
+{
+	Editor::activity = activity;
+}
+
+//--------------------------------------------------------------
+bool Editor::isActive()
+{
+	return activity;
+}
+
+//--------------------------------------------------------------
+int Editor::getNumTabsInStr(string str)
+{
+	size_t pos = 0;
+	int numTabs = 0;
+	while (str.substr(pos, TABSIZE).compare(tabStr) == 0) {
+		pos += TABSIZE;
+		numTabs++;
 	}
+	return numTabs;
+}
 
-	vector<int> stackIdx;
-	vector<int> stackLine;
-	for (unsigned i = 0; i < bracketsIndexesLocal.size(); i++) {
-		for (unsigned j = 0; j < bracketsIndexesLocal[i].size(); j++) {
-			// safety test
-			if ((int)allStrings[i].size() > bracketsIndexesLocal[i][j]) {
-				// stack all opening brackets with line index and index in string
-				if (allStrings[i].substr(bracketsIndexesLocal[i][j], 1).compare("{") == 0 || \
-					allStrings[i].substr(bracketsIndexesLocal[i][j], 1).compare("[") == 0) {
-					stackLine.push_back(i);
-					stackIdx.push_back(bracketsIndexesLocal[i][j]);
+//--------------------------------------------------------------
+vector<int> Editor::getNestDepth()
+{
+	map<int, string>::iterator it;
+	vector<int> v(2, 0); // bottom line, nest depth
+	for (it = allStrings.find(cursorLineIndex); it != allStrings.end(); ++it) {
+		if (it->second.substr(0, TABSIZE).compare(tabStr) == 0) {
+			v[0] = it->first;
+			v[1] = max(v[1], getNumTabsInStr(it->second));
+		}
+		else {
+			if (it->first == cursorLineIndex && it->second.find("{") != string::npos) continue;
+			else if (it->second.find("}") != string::npos) {
+				v[0] = it->first;
+				if (it->first == cursorLineIndex) {
+					--it;
+					while (it->second.substr(0, TABSIZE).compare(tabStr) == 0) {
+						v[1] = max(v[1], getNumTabsInStr(it->second));
+						--it;
+					}
 				}
-				// then if we get a closing bracket, check if the last stored element
-				// is an opening bracket, in which case we store the line index and
-				// string index of opening bracket, and the same pair for closing bracket
-				// and then we remove the pair of the opening bracket from the stack
-				else if (allStrings[i].substr(bracketsIndexesLocal[i][j], 1).compare("}") == 0 || \
-						 allStrings[i].substr(bracketsIndexesLocal[i][j], 1).compare("]") == 0) {
-					// safety test
-					if (stackLine.size() > 0) {
-						// another safety test
-						if ((int)allStrings.size() > stackLine.back()) {
-							// a third safety test
-							if ((int)allStrings[stackLine.back()].size() > stackIdx.back()) {
-								if (allStrings[stackLine.back()].substr(stackIdx.back(), 1).compare("{") == 0 || \
-									allStrings[stackLine.back()].substr(stackIdx.back(), 1).compare("[") == 0) {
-									vector<int> v {stackLine.back(), stackIdx.back(), (int)i, bracketsIndexesLocal[i][j]};
-									bracketIndexes.push_back(v);
-									stackLine.pop_back();
-									stackIdx.pop_back();
-								}
-							}
-						}
+				return v;
+			}
+			else return v;
+		}
+	}
+	return v;
+}
+
+//--------------------------------------------------------------
+int Editor::findTopLine(int startLine)
+{
+	map<int, string>::iterator it;
+	for (it = allStrings.find(startLine); it != allStrings.begin(); --it) {
+		if (it->second.substr(0, TABSIZE).compare(tabStr) != 0) {
+			if (it->second.find("}") != string::npos) continue;
+			else return it->first;
+		}
+	}
+	return 0;
+}
+
+//--------------------------------------------------------------
+vector<int> Editor::findBraceForward(map<int, string>::iterator start, map<int, string>::iterator finish)
+{
+	vector<int> v(2, -1);
+	if (start == allStrings.end() || finish == allStrings.end()) {
+		return v;
+	}
+	unsigned i, lineStart;
+	map<int, string>::iterator it;
+	// Declare a stack to hold the previous brackets.
+	stack<char> temp;
+	for (it = start; it != finish; ++it) {
+		lineStart = cursorPos;
+		if (it->first > cursorLineIndex) lineStart = 0;
+		for (i = lineStart; i < it->second.length(); i++) {
+			if (it->second[i] == '{' || it->second[i] == '[' || it->second[i] == '(') {
+				temp.push(it->second[i]);
+			}
+			else if (it->second[i] == '}' || it->second[i] == ']' || it->second[i] == ')') {
+				if (temp.empty()) return v;
+				if ((temp.top() == '{' && it->second[i] == '}')
+					|| (temp.top() == '[' && it->second[i] == ']')
+					|| (temp.top() == '(' && it->second[i] == ')')) {
+					temp.pop();
+					if (temp.empty()) {
+						v[0] = i;
+						v[1] = it->first;
+						return v;
 					}
 				}
 			}
 		}
 	}
-	didWeLandOnBracket();
-}
-
-//-------------------------------------------------------------
-void Editor::didWeLandOnBracket(){
-	// check if the cursor is on top of a curly bracket
-	// so that we can highlight its pairing bracket
-	bool landedOnBracket = false;
-	for (unsigned i = 0; i < bracketIndexes.size(); i++) {
-		int cursorPosLocal = cursorPos + allStringStartPos[i];
-		if (cursorLineIndex == bracketIndexes[i][0]) {
-			if (cursorPosLocal == bracketIndexes[i][1]) {
-				landedOnBracket = true;
-				bracketHighlightRectX = bracketIndexes[i][3] - allStringStartPos[i];
-				bracketHighlightRectY = bracketIndexes[i][2]; // - lineCountOffset;
-				highlightedBracketStr = "}";
-			}
-		}
-		if (landedOnBracket) {
-			break;
-		}
-		if (cursorLineIndex == bracketIndexes[i][2]) {
-			if (cursorPosLocal == bracketIndexes[i][3]) {
-				landedOnBracket = true;
-				bracketHighlightRectX = bracketIndexes[i][1] - allStringStartPos[i];
-				bracketHighlightRectY = bracketIndexes[i][0]; // - lineCountOffset;
-				highlightedBracketStr = "{";
-			}
-		}
-		if (landedOnBracket) {
-			break;
-		}
-	}
-	if (landedOnBracket) {
-		highlightBracket = true;
-	}
-	else {
-		highlightBracket = false;
-	}
+	return v;
 }
 
 //--------------------------------------------------------------
-int Editor::areWeInBetweenBrackets(bool returnNestDepth){
-	int nestDepth = 0;
-	int closingBracketIndex = -1;
-	for (unsigned i = 0; i < bracketIndexes.size(); i++) {
-		// bracketIndexes contains the line of the opening curly brackets in element 0
-		// and the line of closing brackets in element 2
-		// elements 1 and 3 contain the cursor position of these brackets
-		if (cursorLineIndex >= bracketIndexes[i][0]) {
-			nestDepth++;
-			closingBracketIndex = i;
-		}
-		if (cursorLineIndex >= bracketIndexes[i][2]) {
-			nestDepth--;
-			closingBracketIndex = -1;
-		}
-		if (cursorLineIndex < bracketIndexes[i][0]) {
-			break;
-		}
+vector<int> Editor::findBraceBackward()
+{
+	vector<int> v(2, -1);
+	if (allStrings.find(cursorLineIndex) == allStrings.end()) {
+		return v;
 	}
-	if (nestDepth < 0) {
-		nestDepth = 0;
-		closingBracketIndex = -1;
+	unsigned i, start;
+	map<int, string>::reverse_iterator it = allStrings.rbegin();
+	size_t step = allStrings.size() - (size_t)(cursorLineIndex + 1);
+	if (step > 0) std::advance(it, step);
+	// Declare a stack to hold the previous brackets.
+	stack<char> temp;
+	while (it != allStrings.rend()) {
+		start = (unsigned)min((int)it->second.length()-1, cursorPos);
+		if (it->first < cursorLineIndex) start = it->second.length() - 1;
+		for (i = start; i >= 0; i--) {
+			if (it->second[i] == '}' || it->second[i] == ']' || it->second[i] == ')') {
+				temp.push(it->second[i]);
+			}
+			else if (it->second[i] == '{' || it->second[i] == '[' || it->second[i] == '(') {
+				if (temp.empty()) return v;
+				if ((it->second[i] == '{' && temp.top() == '}')
+					|| (it->second[i] == '[' && temp.top() == ']')
+					|| (it->second[i] == '(' && temp.top() == ')')) {
+					temp.pop();
+					if (temp.empty()) {
+						v[0] = i;
+						v[1] = it->first;
+						return v;
+					}
+				}
+			}
+		 }
+		++it;
 	}
-	if (returnNestDepth) return nestDepth;
-	else return closingBracketIndex;
+	return v;
 }
 
 //--------------------------------------------------------------
-int Editor::getNumDigitsOfLineCount(){
+int Editor::getNumDigitsOfLineCount()
+{
 	int numDigits = 0;
 	int timesTen = 1;
-	while (timesTen <= lineCount + 1) {
+	while (timesTen <= lineCount) {
 		timesTen *= 10;
 		numDigits++;
 	}
@@ -196,101 +273,282 @@ int Editor::getNumDigitsOfLineCount(){
 }
 
 //--------------------------------------------------------------
-void Editor::drawText(){
+void Editor::drawText()
+{
+	/*******************************************************************/
+	// get the offset of the line count
+	int loopIter;
+	if (lineCount < maxNumLines) loopIter = lineCount;
+	else loopIter = maxNumLines + lineCountOffset; // + 1;
+	// and the width of the rectangle for highlighting a line
+	int rectWidth = frameWidth - (lineNumberWidth + oneAndHalfCharacterWidth);
+
 	/*******************************************************************/
 	// get the number of digits of the line count
 	int numDigits = getNumDigitsOfLineCount();
 	lineNumberWidth = numDigits * oneCharacterWidth;
-	int lineNumberHeight;
-	if (lineCount < maxNumLines) {
-		lineNumberHeight = (lineCount + 1 - lineCountOffset) * cursorHeight;
-	}
-	else {
-		lineNumberHeight = (maxNumLines + 1) * cursorHeight;
-	}
-	// the variable below is for the rectangle that encloses the line numbers
-	int lineNumRectWidth = lineNumberWidth + oneCharacterWidth;
 
 	/*******************************************************************/
-	// then draw the red traceback rectangles
+	// then draw the red/orange traceback rectangles
 	int count = 0; // separate counter to start from 0 because i starts from lineCountOffset
-	int loopIter;
-	int rectWidth = frameWidth - (lineNumberWidth + oneCharacterWidth);
-	if (lineCount < maxNumLines) loopIter = lineCount + 1;
-	else loopIter = maxNumLines + lineCountOffset + 1;
-	ofSetColor(255, 0, 0, 150);
 	for (int i = lineCountOffset; i < loopIter; i++) {
-		if (tracebackStr[i].size() > 0) {
+		if (tracebackStr[i].size() > 0 && tracebackColor[i] > 0) {
+			if (tracebackColor[i] == 1) {
+				ofSetColor(ofColor::orange.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+						ofColor::orange.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+						ofColor::orange.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+			}
+			else if (tracebackColor[i] == 2) {
+				ofSetColor(ofColor::red.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+						ofColor::red.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+						ofColor::red.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+			}
 			int xOffset = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset;
-			int yOffset = count * cursorHeight + letterHeightDiff + frameYOffset;
+			int yOffset = count * cursorHeight + frameYOffset; 
 			ofDrawRectangle(xOffset, yOffset, rectWidth, cursorHeight);
 		}
 		count++;
 	}
-	ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
 
 	/*******************************************************************/
 	// then check if we're executing any lines and draw the execution rectangle
 	// needs to be first otherwise the alpha blending won't work as expected
-	if (executeLine.size() > 0) {
-		int allLinesExecuted = 0;
-		for (unsigned i = 0; i < executeLine.size(); i++) {
-			ofSetColor(0, 180, 255, executionDegrade[i]);
+	for (int i = lineCountOffset; i < loopIter; i++) {
+		if (executingLines[i]) {
+			ofSetColor(ofColor::cyan.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+					ofColor::cyan.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+					ofColor::cyan.b*((ofApp*)ofGetAppPtr())->brightnessCoeff, executionDegrade[i]);
 			int xOffset = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset;
-			int yOffset;
-			int rectHeight;
-			if (executingMultiple) {
-				yOffset = topLine * cursorHeight + letterHeightDiff - (lineCountOffset * cursorHeight);
-				rectHeight = cursorHeight * (bottomLine - topLine + 1);
-			}
-			else {
-				rectHeight = cursorHeight;
-				yOffset = (executionLineIndex[i]-lineCountOffset) * cursorHeight + letterHeightDiff;
-			}
+			int yOffset = (i-lineCountOffset) * cursorHeight;
 			yOffset += frameYOffset;
 			// rectWidth has been calculated above, before the loop that draw traceback rectangles
-			ofDrawRectangle(xOffset, yOffset, rectWidth, rectHeight);
+			ofDrawRectangle(xOffset, yOffset, rectWidth, cursorHeight);
 			if ((ofGetElapsedTimeMillis() - executionTimeStamp[i]) >= EXECUTIONRAMPSTART) {
 				// calculate how many steps the brightness has to dim, depending on the elapsed time
 				// and the step per millisecond
-				int brightnessDegrade = (int)((ofGetElapsedTimeMillis() - \
-										(executionTimeStamp[i]+EXECUTIONRAMPSTART)) * \
-										executionStepPerMs);
+				int brightnessDegrade = (int)((ofGetElapsedTimeMillis() - (executionTimeStamp[i]+EXECUTIONRAMPSTART)) * executionStepPerMs);
 				executionDegrade[i] = EXECUTIONBRIGHTNESS - brightnessDegrade;
 				if (executionDegrade[i] < 0) {
 					executionDegrade[i] = 0;
-					allLinesExecuted++;
+					executingLines[i] = false;
 				}
 			}
 		}
-		if (allLinesExecuted == (int)executeLine.size()) {
-			executeLine.clear();
-			executionDegrade.clear();
-			executionTimeStamp.clear();
-			executionLineIndex.clear();
-		}
-		if (executeLine.size() == 0) {
-			// we're setting executingMultiple to false even if
-			// we're executing one line only, just to avoid any test
-			// as this operation is seemless
-			executingMultiple = false;
+	}
+
+	/******************************************************************/
+	// then draw the rectangle that highlights a bracket
+	highlightBracket = false;
+	if (activity) {
+		if (cursorPos < (int)allStrings[cursorLineIndex].size() && cursorPos <= maxCursorPos()) {
+			// if matching brace is found, this vector will be the X and Y coordinates
+			// and nest depth (only from findBraceForward() but findBraceBackward() returns a 3 element vector
+			// for code integrity), which is used elsewhere
+			vector<int> pos (3, -1);
+			char bracketChars[7] = {'{', '}', '[', ']', '(', ')'}; // extra array item for null char
+			//int direction = 0; // initialized to 0 to avoid warning messages during compilation
+			char charOnTopOfCursor = allStrings[cursorLineIndex][cursorPos+allStringStartPos[cursorLineIndex]];
+			for (int i = 0; i < 6; i++) {
+				if (bracketChars[i] == charOnTopOfCursor) {
+					//direction = i % 2;
+					highlightBracket = true;
+					break;
+				}
+			}
+			//if (highlightBracket) {
+			//	if (direction) pos = findBraceBackward();
+			//	else pos = findBraceForward(allStrings.find(cursorLineIndex), allStrings.end(), true);
+			//}
+			// if the matching pair has been found, we'll get positions that are greater than -1 for both X and Y
+			if (pos[0] > -1){
+				ofSetColor(ofColor::magenta.r * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+						ofColor::magenta.g * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+						ofColor::magenta.b * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
+				int strWidth = font.stringWidth(allStrings[pos[1]].substr(0, pos[0] - allStringStartPos[pos[1]]));
+				bracketHighlightRectX = lineNumberWidth + strWidth + oneAndHalfCharacterWidth + frameXOffset;
+				bracketHighlightRectY = ((pos[1]-lineCountOffset) * cursorHeight) + frameYOffset; 
+				ofDrawRectangle(bracketHighlightRectX, bracketHighlightRectY, oneCharacterWidth, cursorHeight);	
+				ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
+			}
 		}
 	}
-	ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
 
 	/*******************************************************************/
-	// then the rectangle to include the line numbering
-	ofSetColor(((ofApp*)ofGetAppPtr())->backGround*3);
-	int rectHeight = lineNumberHeight + letterHeightDiff;
-	if (lineCount > (maxNumLines-1)) {
-		rectHeight = ((ofApp*)ofGetAppPtr())->seqVec.tracebackYCoord - (((ofApp*)ofGetAppPtr())->lineWidth/2);
+	// then the actual text
+	string strOnCursorLine;
+	int strOnCursorLineYOffset = frameYOffset;
+	int strXOffset = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset;
+	// the extra counter below starts from 0, whereas i starts from lineCountOffset
+	count = 0;
+	// we'll get the color of the text where the cursor is
+	// for this reason, we need to calculate the X position of the cursor here, and not below
+	// where we draw the cursor
+	ofColor cursorColor;
+	int cursorX = lineNumberWidth + font.stringWidth(allStrings[cursorLineIndex].substr(0, cursorPos)) + \
+				  oneAndHalfCharacterWidth + frameXOffset;
+	for (int i = lineCountOffset; i < loopIter; i++) {
+		int strYOffset = ((count+1)*cursorHeight) + frameYOffset - characterOffset;
+		if (i == cursorLineIndex) {
+			strOnCursorLine = allStrings[i];
+			strOnCursorLineYOffset = strYOffset;
+		}
+		// then draw it as long as it's not empty
+		if (allStrings[i].size() > 0) {
+			// iterate through each word to check for keywords
+			vector<string> tokens = tokenizeString(allStrings[i], " ");
+			int xOffset = strXOffset;
+			if (cursorLineIndex == i) xOffset -= (allStringStartPos[i] * oneCharacterWidth);
+			bool isComment = false;
+			bool isCursorInsideKeyword = false;
+			int charAccum = 0;
+			if (tokens.size() == 0) {
+				cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
+				isComment = false;
+			}
+			for (string token : tokens) {
+				if (i == cursorLineIndex && cursorX >= xOffset && cursorX <= xOffset + font.stringWidth(token)) {
+					isCursorInsideKeyword = true;
+				}
+				if (tracebackStr[i].size() > 0 && tracebackColor[i] > 0) {
+					ofSetColor(((ofApp*)ofGetAppPtr())->backgroundColor);
+					if (cursorLineIndex == i) cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
+				}
+				else if (startsWith(token, "%")) {
+					ofSetColor(ofColor::gray.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+							ofColor::gray.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+							ofColor::gray.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+					isComment = true;
+					if (isCursorInsideKeyword) {
+						cursorColor = ofColor::gray;
+					}
+				}
+				else {
+					if (startsWith(token, "\\") && !isComment) {
+						if (((ofApp*)ofGetAppPtr())->commands_map[thisLang].find(token) != ((ofApp*)ofGetAppPtr())->commands_map[thisLang].end()) {
+							ofColor color = ((ofApp*)ofGetAppPtr())->commands_map[thisLang][token];
+							ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+									color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+									color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+							if (isCursorInsideKeyword) {
+								cursorColor = color;
+							}
+						}
+						else {
+							ofColor color = ((ofApp*)ofGetAppPtr())->brightness;
+							ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+									color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+									color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+							if (isCursorInsideKeyword) {
+								cursorColor = color;
+							}
+						}
+					}
+					else if (((ofApp*)ofGetAppPtr())->commands_map_second[thisLang].find(token) != ((ofApp*)ofGetAppPtr())->commands_map_second[thisLang].end() \
+							&& !isComment) {
+						ofColor color = ((ofApp*)ofGetAppPtr())->commands_map_second[thisLang][token];
+						ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+								color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+								color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						if (isCursorInsideKeyword) {
+							cursorColor = color;
+						}
+					}
+					else if (token.size() == 0 && !isComment) {
+						ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
+						if (isCursorInsideKeyword) {
+							cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
+						}
+					}
+					else if (isNumber(token) && !isComment) {
+						ofSetColor(ofColor::gold.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+								ofColor::gold.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+								ofColor::gold.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						if (isCursorInsideKeyword) {
+							cursorColor = ofColor::gold;
+						}
+					}
+					else if (!isComment) {
+						ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
+						if (isCursorInsideKeyword) {
+							cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
+						}
+					}
+					else if (isComment) cursorColor = ofColor::gray;
+				}
+				size_t numCharsToRemove = 0;
+				size_t firstCharToDisplay = 0;
+				int xOffsetModified = xOffset;
+				int startPos = 0;
+				if (i == cursorLineIndex) startPos = allStringStartPos[i];
+				if (charAccum < startPos) {
+					firstCharToDisplay = (size_t)(startPos - charAccum);
+					xOffsetModified += (firstCharToDisplay * oneCharacterWidth);
+				}
+				if ((charAccum + (int)token.size() - startPos) > maxCharactersPerString) {
+					numCharsToRemove = ((size_t)charAccum + token.size()) - (size_t)startPos - (size_t)maxCharactersPerString - 1;
+				}
+				if (firstCharToDisplay < token.size() && numCharsToRemove < token.size()) {
+					font.drawString(token.substr(firstCharToDisplay, token.size()-numCharsToRemove), xOffsetModified, strYOffset);
+				}
+				xOffset += ((token.size() + 1) * oneCharacterWidth); // + 1 for the white space
+				charAccum += ((int)token.size() + 1);
+			}
+		}
+		
+		// then check if we have selected this string so we must highlight it
+		if (highlightManyChars && ((i>=topLine) && (i<=bottomLine))) {
+			vector<int> posAndSize = setSelectedStrStartPosAndSize(i);
+			int boxXOffset = lineNumberWidth + oneAndHalfCharacterWidth + \
+							 (posAndSize[0]*oneCharacterWidth) + frameXOffset;
+			int boxYOffset = (count * cursorHeight) + frameYOffset;
+			// the bounding box coordinates of the highlighted string don't need the offset
+			// which is greater than 0 if the string is too long
+			// but the substring that is drawn on top of this box does need it
+			posAndSize[0] += allStringStartPos[i];
+			string strInBlack = allStrings[i].substr(posAndSize[0], posAndSize[1]);
+			int widthLocal = font.stringWidth(strInBlack);
+			// draw the selecting rectangle
+			ofSetColor(ofColor::goldenRod.r * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+					ofColor::goldenRod.g * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+					ofColor::goldenRod.b * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
+			ofDrawRectangle(boxXOffset, boxYOffset, widthLocal, cursorHeight);
+			ofSetColor(0);
+			// and then the selected string in black
+			font.drawString(strInBlack, boxXOffset, strYOffset);
+		}
+		count++;
 	}
-	ofDrawRectangle(frameXOffset, frameYOffset, lineNumRectWidth, rectHeight);
-	ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
+
+	/*******************************************************************/
+	// then draw the cursor
+	if (!activity) {
+		ofNoFill();
+	}
+	// we have calculated the X position of the cursor before we drew the text
+	int cursorY = ((cursorLineIndex-lineCountOffset) * cursorHeight) + frameYOffset; //+ characterOffset
+	ofSetColor(cursorColor.r * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+			cursorColor.g * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+			cursorColor.b * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
+	ofDrawRectangle(cursorX, cursorY, oneCharacterWidth, cursorHeight);
+	if (!activity) {
+		ofFill();
+	}
+
+	/*******************************************************************/
+	// then draw the character the cursor is drawn on top of (if this is the case)
+	if (activity) {
+		if (cursorPos < (int)strOnCursorLine.size() && cursorPos <= maxCursorPos()) {
+			string onTopOfCursorStr = strOnCursorLine.substr(cursorPos+allStringStartPos[cursorLineIndex], 1);
+			ofSetColor(0);
+			font.drawString(onTopOfCursorStr, cursorX, strOnCursorLineYOffset);
+			ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
+		}
+	}
 
 	/*******************************************************************/
 	// then draw the line numbers
 	count = 0;
+	ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
 	for (int i = lineCountOffset; i < loopIter; i++) {
 		int xOffset = halfCharacterWidth;
 		int timesTen = 1;
@@ -307,139 +565,50 @@ void Editor::drawText(){
 			// tens after tens, hundreds under hundreds etc.
 			xOffset += (oneCharacterWidth * (numDigits - numDigitsLess));
 		}
-    	xOffset += frameXOffset;
-		font.drawString(to_string(i+1), xOffset, ((count+1)*cursorHeight)+frameYOffset);
+		xOffset += frameXOffset;
+		font.drawString(to_string(i+1), xOffset, ((count+1)*cursorHeight)+frameYOffset-characterOffset);
 		count++;
 	}
 
 	/*******************************************************************/
-	// then draw the rectangle that highlights a bracket
-	if (highlightBracket) {
-		ofSetColor(((ofApp*)ofGetAppPtr())->brightness/1.5, ((ofApp*)ofGetAppPtr())->brightness/3, ((ofApp*)ofGetAppPtr())->brightness/1.5);
-		// X position is copied from the cursor's X position with cursorLineIndex and cursorPos
-		// being replaced by bracketHighlightRectY and bracketHighlightRectX respectively
-		int bracketX = lineNumberWidth + \
-					   font.stringWidth(allStrings[bracketHighlightRectY].substr(0, bracketHighlightRectX)) + \
-					   oneAndHalfCharacterWidth;
-		int bracketY = ((bracketHighlightRectY-lineCountOffset) * cursorHeight) + letterHeightDiff;
-    	//int bracketY = (bracketHighlightRectY * cursorHeight) + letterHeightDiff +(lineCountOffset * cursorHeight);
-    	bracketX += frameXOffset;
-    	bracketY += frameYOffset;
-		ofDrawRectangle(bracketX, bracketY, oneCharacterWidth, cursorHeight);
-	}
-
-	/*******************************************************************/
-	// then the actual text
-	string strOnCursorLine;
-	int strOnCursorLineXOffset = 0;
-	int strOnCursorLineYOffset = frameYOffset;
-	int strXOffset = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset;
-	count = 0; // this extra counter starts from 0, whereas i starts from lineCountOffset
-	for (int i = lineCountOffset; i < loopIter; i++) {
-		int strYOffset = ((count+1)*cursorHeight) + frameYOffset;
-		// first determine whether the string fits in the screen
-		string strToDraw;
-		if (i == cursorLineIndex) {
-			if ((int)allStrings[i].size() > maxCharactersPerString) {
-				// if the last part of the string is displayed don't display the ">" character
-				// this is determined by testing whether the startPos equals the length of the string
-				// minus the maxCharactersPerString, or whether startPos is one less, and the cursor
-				// is at the end position. This last case occurs when inserting double characters
-				// like brackets and quotes
-				if ((int)allStrings[i].size()-maxCharactersPerString == allStringStartPos[i] || \
-					(((int)allStrings[i].size()-maxCharactersPerString)-1 == allStringStartPos[i] && \
-					 cursorPos == maxCharactersPerString)) {
-					strToDraw = "<" + allStrings[i].substr(allStringStartPos[i]+1, maxCharactersPerString);
-				}
-				// if there's string that doesn't fit on either side, display both "<" and ">"
-				else if (allStringStartPos[i] > 0) {
-					strToDraw = "<" + allStrings[i].substr(allStringStartPos[i]+1, maxCharactersPerString-2) + ">";
-				}
-				// otherwise display only ">"
-				else {
-					strToDraw = allStrings[i].substr(allStringStartPos[i], maxCharactersPerString-1) + ">";
-				}
-			}
-			else {
-				strToDraw = allStrings[i];
-			}
-			strOnCursorLine = strToDraw;
-			strOnCursorLineXOffset = strXOffset;
-			strOnCursorLineYOffset = strYOffset;
+	// finally draw the rectangle with the pane index, the name of the file, and other info
+	ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
+	float yCoord = maxNumLines * cursorHeight + frameYOffset;
+	float strYCoord = ((maxNumLines+1)*cursorHeight) + frameYOffset - characterOffset;
+	int fileNameXOffset = oneCharacterWidth + oneAndHalfCharacterWidth + frameXOffset;
+	string fileName;
+	// test if any error occured during loading a file
+	if (couldNotLoadFile || couldNotSaveFile) {
+		if ((ofGetElapsedTimeMillis() - fileLoadErrorTimeStamp) < FILE_LOAD_ERROR_DUR) {
+			if (couldNotLoadFile) fileName = "could not load file";
+			else fileName = "could not save file";
 		}
 		else {
-			if ((int)allStrings[i].size() > maxCharactersPerString) {
-				strToDraw = allStrings[i].substr(0, maxCharactersPerString-1) + ">";
-			}
-			else {
-				strToDraw = allStrings[i];
-			}
+			couldNotLoadFile = couldNotSaveFile = false;
 		}
-		// then check if we have selected this string so we must highlight it
-		if (highlightManyChars && ((i>=topLine) && (i<=bottomLine))) {
-			int maxWidth = 0;
-			vector<int> posAndSize = setSelectedStrStartPosAndSize(i);
-			int boxXOffset = lineNumberWidth + oneAndHalfCharacterWidth + \
-                    		 (posAndSize[0]*oneCharacterWidth) + frameXOffset;
-			int boxYOffset = ((count * cursorHeight) + letterHeightDiff) + frameYOffset;
-			string strInBlack = strToDraw.substr(posAndSize[0], posAndSize[1]);
-			int widthLocal = rectWidth;
-			if (i == bottomLine) {
-				widthLocal = font.stringWidth(strInBlack);
-				if (widthLocal > maxWidth) maxWidth = widthLocal;
-			}
-			ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
-			// first draw the whole string in white in case we haven't selected the whole of it
-			font.drawString(strToDraw, strXOffset, strYOffset);
-			// then the selecting rectangle
-			ofSetColor(((ofApp*)ofGetAppPtr())->brightness,
-                	   (((ofApp*)ofGetAppPtr())->brightness/3)*2,
-                	   ((ofApp*)ofGetAppPtr())->brightness/3);
-			ofDrawRectangle(boxXOffset, boxYOffset, widthLocal, cursorHeight);
-			ofSetColor(0);
-			// and finally the selected string in black
-			font.drawString(strInBlack, boxXOffset, strYOffset);
-		}
-		// then draw all other strings as long as they're not empty
-		else if (strToDraw.size() > 0) {
-			ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
-			font.drawString(strToDraw, strXOffset, strYOffset);
-		}
-		count++;
 	}
-	// reset color so the traceback line and text are visible
-	// even when the last part of the text is highlighted
+	else {
+		if (fileLoaded) fileName = loadedFileStr;
+		else fileName = defaultFileNames[thisLang];
+	}
+	ofDrawRectangle(frameXOffset, yCoord, frameWidth, cursorHeight);
+	if (couldNotLoadFile || couldNotSaveFile) {
+		ofSetColor(ofColor::red.r*((ofApp*)ofGetAppPtr())->brightness,
+				   ofColor::red.g*((ofApp*)ofGetAppPtr())->brightness,
+				   ofColor::red.b*((ofApp*)ofGetAppPtr())->brightness);
+	}
+	else {
+		ofSetColor(((ofApp*)ofGetAppPtr())->backgroundColor);
+		if (fileEdited) fileName += "*";
+	}
+	font.drawString(ofToString(objID+1), halfCharacterWidth+frameXOffset, strYCoord);
+	font.drawString(fileName, fileNameXOffset, strYCoord);
 	ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
-
-	/*******************************************************************/
-	// then draw the cursor
-	if (!isActive) {
-		ofNoFill();
-	}
-	int cursorX = lineNumberWidth + \
-				  font.stringWidth(allStrings[cursorLineIndex].substr(0, cursorPos)) + \
-				  oneAndHalfCharacterWidth + frameXOffset;
-	int cursorY = ((cursorLineIndex-lineCountOffset) * cursorHeight) + letterHeightDiff + frameYOffset;
-	ofDrawRectangle(cursorX, cursorY, oneCharacterWidth, cursorHeight);
-	if (!isActive) {
-		ofFill();
-	}
-
-	/*******************************************************************/
-	// then draw the character the cursor is drawn on top of (if this is the case)
-	if (isActive) {
-		if (cursorPos < (int)strOnCursorLine.size()) {
-			string onTopOfCursorStr = strOnCursorLine.substr(cursorPos, 1);
-			ofSetColor(0);
-			int maskedStrXOffset = font.stringWidth(strOnCursorLine.substr(0, cursorPos)) + strOnCursorLineXOffset;
-			font.drawString(onTopOfCursorStr, maskedStrXOffset, strOnCursorLineYOffset);
-			ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
-		}
-	}
 }
 
 //--------------------------------------------------------------
-void Editor::setStringsStartPos(){
+void Editor::setStringsStartPos()
+{
 	for (unsigned i = 0; i < allStrings.size(); i++) {
 		if (cursorLineIndex == (int)i) {
 			allStringStartPos[i] = (int)allStrings[i].size() - maxCharactersPerString;
@@ -452,29 +621,56 @@ void Editor::setStringsStartPos(){
 }
 
 //--------------------------------------------------------------
-void Editor::setMaxCharactersPerString(){
+void Editor::setFrameWidth(int frameWidth)
+{
+	Editor::frameWidth = frameWidth;
+}
+
+//--------------------------------------------------------------
+void Editor::setFrameHeight(int frameHeight)
+{
+	Editor::frameHeight = frameHeight;
+}
+
+//--------------------------------------------------------------
+void Editor::setFrameXOffset(int xOffset)
+{
+	frameXOffset = xOffset;
+}
+
+//--------------------------------------------------------------
+void Editor::setFrameYOffset(int yOffset)
+{
+	frameYOffset = yOffset;
+}
+
+//--------------------------------------------------------------
+void Editor::setMaxCharactersPerString()
+{
 	lineNumberWidth = getNumDigitsOfLineCount() * oneCharacterWidth;
-  	int width = frameWidth;
-	if (((ofApp*)ofGetAppPtr())->seqVec.showScore) {
-    	if (frameWidth > ((ofApp*)ofGetAppPtr())->seqVec.middleOfScreenX) {
-      		width = ((ofApp*)ofGetAppPtr())->seqVec.middleOfScreenX;
-    	}
+	int width = frameWidth;
+	if (((ofApp*)ofGetAppPtr())->sharedData.showScore) {
+		if (frameWidth > ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX) {
+			width = ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX;
+		}
 	}
-  	maxCharactersPerString = (width-lineNumberWidth-oneAndHalfCharacterWidth) / oneCharacterWidth;
+	maxCharactersPerString = (width-lineNumberWidth-oneAndHalfCharacterWidth) / oneCharacterWidth;
 	maxCharactersPerString -= 1;
 	//setStringsStartPos();
 }
 
 //--------------------------------------------------------------
-void Editor::setGlobalFontSize(int fontSize){
-  ((ofApp*)ofGetAppPtr())->fontSize = fontSize;
-  ((ofApp*)ofGetAppPtr())->changeFontSizeForAllEditors();
+void Editor::setGlobalFontSize(int fontSize)
+{
+	((ofApp*)ofGetAppPtr())->fontSize = fontSize;
+	((ofApp*)ofGetAppPtr())->changeFontSizeForAllPanes();
 }
 
 //--------------------------------------------------------------
-void Editor::resetCursorPos(int oldMaxCharactersPerString){
+void Editor::resetCursorPos(int oldMaxCharactersPerString)
+{
 	if ((int)allStrings[cursorLineIndex].size() > 0 && \
-		(int)allStrings[cursorLineIndex].size() > maxCharactersPerString) {
+			(int)allStrings[cursorLineIndex].size() > maxCharactersPerString) {
 		if (cursorPos == oldMaxCharactersPerString) {
 			cursorPos = maxCharactersPerString;
 			highlightedCharIndex = (int)allStrings[cursorLineIndex].size();
@@ -505,29 +701,36 @@ void Editor::resetCursorPos(int oldMaxCharactersPerString){
 }
 
 //--------------------------------------------------------------
-void Editor::setFontSize(int fontSize){
+void Editor::setFontSize(int fontSize, float cursorHeight)
+{
 	// store the previous the maximum characters per string
 	int oldMaxCharactersPerString = maxCharactersPerString;
 	Editor::fontSize = fontSize;
 	font.load("DroidSansMono.ttf", fontSize);
 	// we're using a monospace font, so we get the width of any character
 	oneCharacterWidth = font.stringWidth("a");
-	cursorHeight = font.stringHeight("q");
+	Editor::cursorHeight = cursorHeight; // font.stringHeight("q");
 	halfCharacterWidth = oneCharacterWidth / 2;
 	oneAndHalfCharacterWidth = oneCharacterWidth + halfCharacterWidth;
 	// the variable below helps center the cursor at the Y axis with respect to the letters
-	letterHeightDiff = font.stringHeight("j") - font.stringHeight("l");
-	letterHeightDiff /= 2;
+	characterOffset = font.stringHeight("j") - font.stringHeight("l");
+	characterOffset /= 2;
 	setMaxCharactersPerString();
-	setMaxNumLines();
 	resetCursorPos(oldMaxCharactersPerString);
 }
 
 //--------------------------------------------------------------
-void Editor::setMaxNumLines(){
-	maxNumLines = (frameHeight-(letterHeightDiff*2)) / cursorHeight;
-	maxNumLines -= 1; // leave some space for traceback
-	lineCountOffset = cursorLineIndex - maxNumLines;
+int Editor::getHalfCharacterWidth()
+{
+	return halfCharacterWidth;
+}
+
+//--------------------------------------------------------------
+void Editor::setMaxNumLines(int numLines)
+{
+	maxNumLines = numLines - 1; // - 1 for the thick line with the name of file and other info
+	maxNumLinesReset = maxNumLines + 1;
+	lineCountOffset = cursorLineIndex - maxNumLines + 1;
 	if (lineCountOffset < 0) lineCountOffset = 0;
 	else if ((lineCountOffset + maxNumLines) > lineCount) {
 		lineCountOffset = lineCount = maxNumLines;
@@ -535,93 +738,168 @@ void Editor::setMaxNumLines(){
 }
 
 //--------------------------------------------------------------
-void Editor::postIncrementOnNewLine(){
+int Editor::getMaxNumLines()
+{
+	return maxNumLines;
+}
+
+//--------------------------------------------------------------
+void Editor::offsetMaxNumLines(int offset)
+{
+	int maxNumLinesTemp = maxNumLinesReset;
+	setMaxNumLines(maxNumLinesTemp + offset);
+	// reset the variables used to reset the max number of lines
+	maxNumLinesReset = maxNumLinesTemp;
+}
+
+//--------------------------------------------------------------
+void Editor::resetMaxNumLines()
+{
+	setMaxNumLines(maxNumLinesReset);
+}
+
+//--------------------------------------------------------------
+void Editor::postIncrementOnNewLine()
+{
 	lineCount++;
 	cursorLineIndex++;
 	cursorPos = arrowCursorPos = 0;
-	if ((lineCount + lineCountOffset) > maxNumLines) {
+	if ((lineCount + lineCountOffset) > maxNumLines && cursorLineIndex == lineCount - 1) {
 		lineCountOffset++;
 	}
 }
 
 //--------------------------------------------------------------
-void Editor::allocateNewLineMem(string str){
+void Editor::createNewLine(string str, int increment)
+{
+	allStrings[cursorLineIndex+increment] = str;
+	allStringStartPos[cursorLineIndex+increment] = 0;
+	tracebackStr[cursorLineIndex+increment] = "";
+	tracebackColor[cursorLineIndex+increment] = 0;
+	tracebackNumLines[cursorLineIndex+increment] = 1;
+	tracebackTimeStamps[cursorLineIndex+increment] = 0;
+	executingLines[cursorLineIndex+increment] = false;
+	executionDegrade[cursorLineIndex+increment] = 0;
+	executionTimeStamp[cursorLineIndex+increment] = 0;
+}
+
+//--------------------------------------------------------------
+void Editor::moveLineNumbers()
+{
+	// move all strings below the line where the cursor is, one line below
+	map<int, string>::reverse_iterator it = allStrings.rbegin();
+	while (it->first > cursorLineIndex) {
+		int key = it->first;
+		changeMapKeys(key, 1);
+		++it;
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::moveDataToNextLine()
+{
+	allStrings[cursorLineIndex+1] = allStrings[cursorLineIndex];
+	allStringStartPos[cursorLineIndex+1] = allStringStartPos[cursorLineIndex];
+	tracebackStr[cursorLineIndex+1] = tracebackStr[cursorLineIndex];
+	tracebackColor[cursorLineIndex+1] = tracebackColor[cursorLineIndex];
+	tracebackNumLines[cursorLineIndex+1] = tracebackNumLines[cursorLineIndex];
+	tracebackTimeStamps[cursorLineIndex+1] = tracebackTimeStamps[cursorLineIndex];
+	executingLines[cursorLineIndex+1] = executingLines[cursorLineIndex];
+	executionDegrade[cursorLineIndex+1] = executionDegrade[cursorLineIndex];
+	executionTimeStamp[cursorLineIndex+1] = executionTimeStamp[cursorLineIndex];
+
+	allStrings[cursorLineIndex] = "";
 	allStringStartPos[cursorLineIndex] = 0;
-	allStrings.push_back(str);
-	allStringStartPos.push_back(0);
-	tracebackStr.push_back("");
+	tracebackStr[cursorLineIndex] = "";
+	tracebackColor[cursorLineIndex] = 0;
+	tracebackNumLines[cursorLineIndex] = 1;
+	tracebackTimeStamps[cursorLineIndex] = 0;
+	executingLines[cursorLineIndex] = false;
+	executionDegrade[cursorLineIndex] = 0;
+	executionTimeStamp[cursorLineIndex] = 0;
 }
 
 //--------------------------------------------------------------
-void Editor::insertNewLineMem(){
-	allStrings.insert(allStrings.begin()+cursorLineIndex+1,
-					  allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]));
-	allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]);
-	allStringStartPos.insert(allStringStartPos.begin()+cursorLineIndex+1, 0);
-	tracebackStr.insert(tracebackStr.begin()+cursorLineIndex, "");
+void Editor::copyOnLineDelete()
+{
+	// in case of backspace the cursorLineIndex variable has been updated before this function call
+	// in case of delete, the variable doesn't change
+	// in any case, it already points to the right key of the map below
+	map<int, string>::iterator it1 = allStrings.find(cursorLineIndex);
+	map<int, string>::iterator it2 = allStrings.find(cursorLineIndex+1);
+	// first concatenate the two strings
+	if (it2 != allStrings.end()) {
+		it1->second += it2->second;
+		// before moving the keys of the maps we must erase the keys of the line below the cursor
+		eraseMapKeys(cursorLineIndex+1);
+	}
+	// since cursorLineIndex is updated, if we are deleting line 10
+	// cursorLineIndex is 9 before we enter this function
+	// but we want to change the keys of lines 11 onward
+	// advance though moves the iterator to the next element
+	// and since we have already erased the next line, we advance one element only
+	int thisKey = it1->first;
+	std::advance(it1, 1);
+	// the keys of the iterator and its previous positions should be two numbers apart
+	// which is true only if there is at least one more line after the line we have erased
+	if (it1->first == thisKey + 2) {
+		while (it1 != allStrings.end()) {
+			int key = it1->first;
+			changeMapKeys(key, -1);
+			++it1;
+		}
+	}
 }
 
 //--------------------------------------------------------------
-void Editor::clearLineVectors(int lineIndex, int start, int length){
-	allStrings[lineIndex].erase(start, length);
-	allStringStartPos[lineIndex] = 0;
-	tracebackStr[lineIndex] = "";
-}
-
-//--------------------------------------------------------------
-void Editor::releaseMemOnBackspace(int lineIndex){
-	allStrings.erase(allStrings.begin()+lineIndex);
-	allStringStartPos.erase(allStringStartPos.begin()+lineIndex);
-	tracebackStr.erase(tracebackStr.begin()+lineIndex);
-}
-
-//--------------------------------------------------------------
-void Editor::copyMemOnBackspace(){
-	allStrings[cursorLineIndex] += allStrings[cursorLineIndex+1];
-	allStringStartPos[cursorLineIndex] = allStringStartPos[cursorLineIndex+1];
-	tracebackStr[cursorLineIndex] += tracebackStr[cursorLineIndex+1];
-}
-
-//--------------------------------------------------------------
-void Editor::newLine(){
+void Editor::newLine()
+{
 	bool stringBreaks = false;
-
-	if (cursorPos < ((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex])) {
+	// a string breaks only if we're at some mid point in the line
+	// and not if we're either at the end or the beginning of it
+	if (cursorPos < ((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex]) &&
+		!(cursorPos == 0 && allStringStartPos[cursorLineIndex] == 0)) {
 		stringBreaks = true;
 	}
-	if (cursorLineIndex == lineCount) {
-		if (stringBreaks) {
-			allocateNewLineMem(allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]));
-			//allStrings.push_back(allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]));
-			allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]);
-		}
-		else {
-			allocateNewLineMem("");
-		}
+	if (cursorLineIndex != (lineCount-1)) {
+		moveLineNumbers();
 	}
-	// if the cursor is not at the end, we have to insert
-	// an empty string at the Y position of the cursor
+	if (stringBreaks) {
+		// create a new line with the remainder of the string
+		createNewLine(allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]), 1);
+		// and change the string where the cursor is (the cursorLineIndex hasn't been updated yet)
+		allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]);
+	}
 	else {
-		insertNewLineMem();
+		createNewLine("", 1);
+	}
+	// check if we hit enter at the beginning of a line, which means we have to move all the line data
+	if (cursorPos == 0 && allStringStartPos[cursorLineIndex] == 0) {
+		moveDataToNextLine();
 	}
 	postIncrementOnNewLine();
 }
 
 //--------------------------------------------------------------
-void Editor::moveCursorOnShiftReturn(){
-	int tempIndex; // = cursorLineIndex + 1;
-	if (highlightManyChars) tempIndex = bottomLine;
-	else tempIndex = cursorLineIndex;
-	if (tempIndex == lineCount) {
-		allocateNewLineMem("");
+void Editor::moveCursorOnShiftReturn()
+{
+	int tempIndex;
+	if (highlightManyChars) {
+		tempIndex = bottomLine;
+	}
+	else {
+		tempIndex = cursorLineIndex;
+	}
+	if (tempIndex == (lineCount-1)) {
+		cursorLineIndex = lineCount - 1;
+		createNewLine("", 1);
 		postIncrementOnNewLine();
-		cursorLineIndex = lineCount;
 	}
 	else {
 		tempIndex++;
-		for (int i = tempIndex; i <= lineCount; i++) {
-			if (allStrings[i].size() > 0) {
-				tempIndex = i;
+		for (map<int, string>::iterator it = allStrings.find(tempIndex); it != allStrings.end(); ++it) {
+			if (it->second.size() > 0) {
+				tempIndex = it->first;
 				break;
 			}
 		}
@@ -631,38 +909,137 @@ void Editor::moveCursorOnShiftReturn(){
 }
 
 //--------------------------------------------------------------
-// check if the current position is a tab and return its index within allStringTabs
-int Editor::isThisATab(int pos){
-	// first check if a tab character exists in this string
-	if (find(allStringTabs[cursorLineIndex].begin(), allStringTabs[cursorLineIndex].end(),
-					 pos) != allStringTabs[cursorLineIndex].end()) {
-		// then find its index
-		auto it = find(allStringTabs[cursorLineIndex].begin(), allStringTabs[cursorLineIndex].end(), pos);
-		int index = it - allStringTabs[cursorLineIndex].begin();
-		return index;
-	}
-	else {
-		return -1;
-	}
-}
-
-//--------------------------------------------------------------
-bool Editor::deletingTab(int pos){
-	int index = isThisATab(pos);
-	if (index >= 0) {
+bool Editor::changeMapKey(map<int, string> *m, int key, int increment, bool createNonExisting)
+{
+	if (m->find(key) != m->end()) {
+		auto nodeHolder = m->extract(key);
+		nodeHolder.key() = key + increment;
+		m->insert(std::move(nodeHolder));
 		return true;
 	}
 	else {
+		if (createNonExisting) (*m)[key+increment] = "";
 		return false;
 	}
 }
 
 //--------------------------------------------------------------
-int Editor::didWeLandOnATab(){
+void Editor::changeMapKey(map<int, int> *m, int key, int increment, bool createNonExisting)
+{
+	if (m->find(key) != m->end()) {
+		auto nodeHolder = m->extract(key);
+		nodeHolder.key() = key + increment;
+		m->insert(std::move(nodeHolder));
+	}
+	else {
+		if (createNonExisting) (*m)[key+increment] = 0;
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::changeMapKey(map<int, uint64_t> *m, int key, int increment, bool createNonExisting)
+{
+	if (m->find(key) != m->end()) {
+		auto nodeHolder = m->extract(key);
+		nodeHolder.key() = key + increment;
+		m->insert(std::move(nodeHolder));
+	}
+	else {
+		if (createNonExisting) (*m)[key+increment] = 0;
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::changeMapKey(map<int, bool> *m, int key, int increment, bool createNonExisting)
+{
+	if (m->find(key) != m->end()) {
+		auto nodeHolder = m->extract(key);
+		nodeHolder.key() = key + increment;
+		m->insert(std::move(nodeHolder));
+	}
+	else {
+		if (createNonExisting) (*m)[key+increment] = false;
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::changeMapKeys(int key, int increment)
+{
+	// since all maps below are created with every new line
+	// we can safely make all the calls below inside the same loop
+	// and need to create a separate loop for each
+	bool createNonExisting = changeMapKey(&allStrings, key, increment, false);
+	// if the string map key exists, then create entries for all other maps
+	// in case any of them doesn't have the current key (which should not be the case)
+	changeMapKey(&allStringStartPos, key, increment, createNonExisting);
+	changeMapKey(&tracebackStr, key, increment, createNonExisting);
+	changeMapKey(&tracebackColor, key, increment, createNonExisting);
+	changeMapKey(&tracebackNumLines, key, increment, createNonExisting);
+	changeMapKey(&tracebackTimeStamps, key, increment, createNonExisting);
+	changeMapKey(&executingLines, key, increment, createNonExisting);
+	changeMapKey(&executionDegrade, key, increment, createNonExisting);
+	changeMapKey(&executionTimeStamp, key, increment, createNonExisting);
+}
+
+//--------------------------------------------------------------
+void Editor::eraseMapKey(map<int, string> *m, int key)
+{
+	m->erase(key);
+}
+
+//--------------------------------------------------------------
+void Editor::eraseMapKey(map<int, int> *m, int key)
+{
+	m->erase(key);
+}
+
+//--------------------------------------------------------------
+void Editor::eraseMapKey(map<int, uint64_t> *m, int key)
+{
+	m->erase(key);
+}
+
+void Editor::eraseMapKey(map<int, bool> *m, int key)
+{
+	m->erase(key);
+}
+
+//--------------------------------------------------------------
+void Editor::eraseMapKeys(int key)
+{
+	// since all maps below are created with every new line
+	// we can safely make all the calls below inside the same loop
+	// and need to create a separate loop for each
+	eraseMapKey(&allStrings, key);
+	eraseMapKey(&allStringStartPos, key);
+	eraseMapKey(&tracebackStr, key);
+	eraseMapKey(&tracebackColor, key);
+	eraseMapKey(&tracebackNumLines, key);
+	eraseMapKey(&tracebackTimeStamps, key);
+	eraseMapKey(&executingLines, key);
+	eraseMapKey(&executionDegrade, key);
+	eraseMapKey(&executionTimeStamp, key);
+}
+
+//--------------------------------------------------------------
+// check if the current position is a tab and return its index within allStringTabs
+bool Editor::isThisATab(int pos)
+{
+	if (pos < 0) return false;
+	if (pos + TABSIZE > (int)allStrings[cursorLineIndex].length()) return false;
+	if (allStrings[cursorLineIndex].substr(pos, TABSIZE).compare(tabStr) == 0) {
+		return true;
+	}
+	else return false;
+}
+
+//--------------------------------------------------------------
+int Editor::didWeLandOnATab()
+{
 	int tabIndex = -1;
 	for (int i = 0; i < TABSIZE; i++) {
 		int posLocal = max((cursorPos-i), 0);
-		if(isThisATab(posLocal) >= 0) {
+		if(isThisATab(posLocal)) {
 			tabIndex = cursorPos - i;
 			break;
 		}
@@ -671,12 +1048,36 @@ int Editor::didWeLandOnATab(){
 }
 
 //---------------------------------------------------------------
-int Editor::maxCursorPos(){
+int Editor::getTabSize()
+{
+	return TABSIZE;
+}
+
+//---------------------------------------------------------------
+int Editor::maxCursorPos()
+{
 	return min((int)allStrings[cursorLineIndex].size(), maxCharactersPerString);
 }
 
+//--------------------------------------------------------------
+bool Editor::startsWith(string a, string b)
+{
+	if (a.size() < b.size()) return false;
+	if (a.substr(0, b.size()).compare(b) == 0) return true;
+	return false;
+}
+
+//--------------------------------------------------------------
+bool Editor::endsWith(string a, string b)
+{
+	if (a.size() < b.size()) return false;
+	if (a.substr(a.size()-b.size()).compare(b) == 0) return true;
+	return false;
+}
+
 //----------------------------------------------------------------
-void Editor::assembleString(int key, bool executing, bool lineBreaking){
+void Editor::assembleString(int key, bool executing, bool lineBreaking)
+{
 	// keep track of quotation marks so two can be insterted automatically
 	// but when typing the second it gets omitted since it has already been inserted
 	// static int quoteCounter = 0;
@@ -684,7 +1085,6 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking){
 	// first check if we're receiving any of the special characters
 	// 8 is backspace
 	if (key == 8) {
-		bool deleteTab = false;
 		string deletedChar;
 		if (highlightManyChars) {
 			deleteString();
@@ -694,14 +1094,12 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking){
 			int numCharsToDelete = 1;
 			// check if the cursor is at the end of the string
 			if (cursorPos == (int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex]) {
-				deleteTab = deletingTab(cursorPos-TABSIZE);
-				if (deleteTab) numCharsToDelete = TABSIZE;
+				if (isThisATab(cursorPos-TABSIZE)) numCharsToDelete = TABSIZE;
 				deletedChar = allStrings[cursorLineIndex].substr(allStrings[cursorLineIndex].size()-numCharsToDelete, numCharsToDelete);
 				allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, allStrings[cursorLineIndex].size()-numCharsToDelete);
 			}
 			else {
-				deleteTab = deletingTab(cursorPos-TABSIZE);
-				if (deleteTab) numCharsToDelete = TABSIZE;
+				if (isThisATab(cursorPos-TABSIZE)) numCharsToDelete = TABSIZE;
 				string first = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]-numCharsToDelete);
 				string second = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
 				deletedChar = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]-numCharsToDelete, numCharsToDelete);
@@ -730,10 +1128,14 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking){
 		}
 		else if (cursorPos == 0) {
 			if (cursorLineIndex > 0) {
+				int thisLineStrLength = allStrings[cursorLineIndex].size();
 				setLineIndexesUpward(cursorLineIndex-1);
-				cursorPos = arrowCursorPos = maxCursorPos();
-				copyMemOnBackspace();
-				releaseMemOnBackspace(cursorLineIndex+1);
+				copyOnLineDelete();
+				// when we press backspace and the cursor is that the beginning of a line
+				// if there is text in the line, it will be concatenated to the text
+				// of the line above, but the cursor should not be placed at the end
+				// of this concatenated string
+				cursorPos = arrowCursorPos = max(maxCursorPos() - thisLineStrLength, 0);
 				lineCount--;
 				lineCountOffset--;
 				if (lineCountOffset < 0) {
@@ -741,22 +1143,18 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking){
 				}
 			}
 		}
+		fileEdited = true;
 	}
 
 	// 13 is return
 	else if (key == 13) {
 		quoteCounter = 0; // reset on newline
 		curlyBracketCounter = 0;
+		squareBracketCounter = 0;
+		roundBracketCounter = 0;
 		if (executing) {
 			int executingLineLocal = executingLine;
 			int numExecutingLines = 1;
-			if (highlightBracket) {
-				// we set the executingLine variable as the second line to enclose
-				// the highlighted lines that will be executed, because in case of
-				// shift+return, the cursor will have moved down before we set
-				// the highlighted lines and characters
-				setHighlightManyChars(0, 0, bracketHighlightRectY, executingLine);
-			}
 			if (highlightManyChars) {
 				executingLineLocal = topLine;
 				numExecutingLines = bottomLine - topLine + 1;
@@ -764,47 +1162,47 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking){
 				highlightManyChars = false;
 			}
 			((ofApp*)ofGetAppPtr())->parseStrings(executingLineLocal, numExecutingLines);
+			if (highlightManyChars) highlightManyChars = false;
 		}
 		else {
-			if (highlightBracket) {
+			if (highlightBracket && cursorPos > 0) {
 				// if we hit return while in between two curly brackets
-				if ((highlightedBracketStr.compare("{") == 0) &&
-					(allStrings[cursorLineIndex].substr(cursorPos, 1).compare("}") == 0) &&
-					((cursorPos-bracketHighlightRectX) == 1)) {
+				if ((allStrings[cursorLineIndex].substr(cursorPos-1, 1).compare("{") == 0) &&
+						(allStrings[cursorLineIndex].substr(cursorPos, 1).compare("}") == 0)) {
 					// we insert two new lines and add a horizontal tab in the middle
 					newLine();
-					newLine();
 					lineBreaking = false;
-					scanStrings();
-					int curlyNestDepth = areWeInBetweenBrackets(true);
-					for (int i = 0; i < curlyNestDepth; i++) {
+					// getNestDepth() returns a vector with the bottom line of the code chunk
+					// within the nest of curly brackets and the depth of the nest
+					// the bottom line is used in allOtherKeys()
+					vector<int> nestDepth = getNestDepth();
+					// if it's the first nest depth, it will be 0 as no tab has been inserted yet
+					// so we test against nestDepth[1]+1
+					int numTabsToWrite = nestDepth[1] + 1;
+					for (int i = 0; i < numTabsToWrite; i++) {
 						assembleString(9); // write a horizontal tab
+					}
+					newLine();
+					if (numTabsToWrite > 1) {
+						cursorPos = 0;
+						for (int i = 1; i < numTabsToWrite; i++) {
+							assembleString(9); // write a horizontal tab in the line of the closing bracket
+						}
 					}
 					cursorLineIndex--;
-					// if we add at least one tab to the line of the closing bracket
-					// the cursor will be at least in position TABSIZE which will be
-					// greater than the length of the string in the middle (this will be 0)
-					// and the program will crash when checking if we're at the end of the string
-					// see overloaded assembleString() where cursorPos is compared to maxCursorPos
-					cursorPos = arrowCursorPos = 0;
-					scanStrings();
-					curlyNestDepth = areWeInBetweenBrackets(true);
-					for (int i = 0; i < curlyNestDepth; i++) {
-						assembleString(9); // write a horizontal tab
-					}
+					cursorPos = arrowCursorPos = numTabsToWrite * TABSIZE;
 				}
 			}
 			// if we are inside a curly bracket chunk
 			else {
-				int curlyNestDepth = areWeInBetweenBrackets(true);
-				if (curlyNestDepth > 0) {
-					newLine();
-					lineBreaking = false;
-					for (int i = 0; i < curlyNestDepth; i++) {
-						assembleString(9);
-					}
+				newLine();
+				lineBreaking = false;
+				int numTabs = getNumTabsInStr(allStrings[cursorLineIndex-1]);
+				for (int i = 0; i < numTabs; i++) {
+					assembleString(9);
 				}
 			}
+			fileEdited = true;
 		}
 		if (lineBreaking) {
 			newLine();
@@ -820,7 +1218,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking){
 		else if (cursorPos < (int)allStrings[cursorLineIndex].size()) {
 			int numCharsToDelete = 1;
 			string deletedChar;
-			if (deletingTab(cursorPos)) numCharsToDelete = TABSIZE;
+			if (isThisATab(cursorPos)) numCharsToDelete = TABSIZE;
 			string first = allStrings[cursorLineIndex].substr(0, cursorPos);
 			string second = allStrings[cursorLineIndex].substr(cursorPos+numCharsToDelete);
 			deletedChar = allStrings[cursorLineIndex].substr(cursorPos, numCharsToDelete);
@@ -840,9 +1238,8 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking){
 		}
 		else {
 			// if we're not at the last line
-			if (cursorLineIndex < lineCount) {
-				copyMemOnBackspace();
-				releaseMemOnBackspace(cursorLineIndex+1);
+			if (cursorLineIndex < (lineCount-1)) {
+				copyOnLineDelete();
 				lineCount--;
 				lineCountOffset--;
 				if (lineCountOffset < 0) {
@@ -850,17 +1247,19 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking){
 				}
 			}
 		}
+		fileEdited = true;
 	}
 
 	// all other characters
 	else {
 		assembleString(key);
+		fileEdited = true;
 	}
-	scanStrings();
 }
 
 //--------------------------------------------------------------
-void Editor::assembleString(int key){
+void Editor::assembleString(int key)
+{
 	string charToInsert;
 	int cursorPosIncrement = 1;
 	bool doubleChar = false;
@@ -893,7 +1292,7 @@ void Editor::assembleString(int key){
 		else {
 			charToInsert = "{";
 			curlyBracketCounter--;
-			if (curlyBracketCounter == 0) curlyBracketCounter = 0;
+			if (curlyBracketCounter <= 0) curlyBracketCounter = 0;
 		}
 	}
 	else if (key == 125) { // }
@@ -927,6 +1326,28 @@ void Editor::assembleString(int key){
 			charToInsert = "]";
 		}
 	}
+	else if (key == 40) { // (
+		if (roundBracketCounter == 0) {
+			// insert opeining and closing round brackets, but move the cursor only one position
+			charToInsert = "()";
+			roundBracketCounter++;
+			doubleChar = true;
+		}
+		else {
+			charToInsert = "(";
+			roundBracketCounter--;
+			if (roundBracketCounter == 0) roundBracketCounter = 0;
+		}
+	}
+	else if (key == 41) { // )
+		if (roundBracketCounter > 0) {
+			charToInsert = "";
+			roundBracketCounter = 0;
+		}
+		else {
+			charToInsert = ")";
+		}
+	}
 	else {
 		charToInsert = char(key);
 	}
@@ -953,7 +1374,7 @@ void Editor::assembleString(int key){
 	}
 	if (cursorPos == maxCharactersPerString) {
 		allStringStartPos[cursorLineIndex] = (int)allStrings[cursorLineIndex].size() - maxCharactersPerString;
-		// if we're placing a double char ({} or [] or "") at the end of a long string
+		// if we're placing a double char ({} or [] or "" or ()) at the end of a long string
 		if (doubleChar && allStringStartPos[cursorLineIndex] == ((int)allStrings[cursorLineIndex].size()-maxCharactersPerString)) {
 			allStringStartPos[cursorLineIndex] -= cursorPosIncrement;
 		}
@@ -966,19 +1387,25 @@ void Editor::assembleString(int key){
 }
 
 //--------------------------------------------------------------
-void Editor::allocateExecutionMem(){
-	// even if we execute many lines at once
-	// we allocate memory for one line only, as the rectangle
-	// that marks the execution copies its dimensions from
-	// the rectangle that highlights multiple chosen lines
-	executeLine.push_back(1);
-	executionTimeStamp.push_back(ofGetElapsedTimeMillis());
-	executionLineIndex.push_back(executingLine);
-	executionDegrade.push_back(EXECUTIONBRIGHTNESS);
+void Editor::setExecutionVars()
+{
+	if (highlightManyChars) {
+		for (int i = topLine; i <= bottomLine; i++) {
+			executingLines[i] = true;
+			executionTimeStamp[i] = ofGetElapsedTimeMillis();
+			executionDegrade[i] = EXECUTIONBRIGHTNESS;
+		}
+	}
+	else {
+		executingLines[cursorLineIndex] = true;
+		executionTimeStamp[cursorLineIndex] = ofGetElapsedTimeMillis();
+		executionDegrade[cursorLineIndex] = EXECUTIONBRIGHTNESS;
+	}
 }
 
 //--------------------------------------------------------------
-void Editor::setHighlightManyChars(int charPos1, int charPos2, int charLine1, int charLine2){
+void Editor::setHighlightManyChars(int charPos1, int charPos2, int charLine1, int charLine2)
+{
 	firstChar = min(charPos1, charPos2);
 	lastChar = max(charPos1, charPos2);
 	topLine = min(charLine1, charLine2);
@@ -991,44 +1418,64 @@ void Editor::setHighlightManyChars(int charPos1, int charPos2, int charLine1, in
 	}
 }
 
+//--------------------------------------------------------------
+bool Editor::isNumber(string str)
+{
+	// first check if there is a hyphen in the beginning
+	int loopStart = 0;
+	if (str[0] == '-') loopStart = 1;
+	for (int i = loopStart; i < (int)str.length(); i++) {
+		if (!isdigit(str[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
 //---------------------------------------------------------------
-string Editor::replaceCharInStr(string str, string a, string b){
+string Editor::replaceCharInStr(string str, string a, string b)
+{
 	auto it = str.find(a);
-  while (it != string::npos) {
+	while (it != string::npos) {
 		str.replace(it, a.size(), b);
-    it = str.find(a);
-  }
+		it = str.find(a);
+	}
 	return str;
 }
 
 //---------------------------------------------------------------
-vector<string> Editor::tokenizeString(string str, string delimiter){
-	size_t pos = 0;
-	string token;
+vector<string> Editor::tokenizeString(string str, string delimiter)
+{
+	size_t start = 0;
+	size_t end = str.find(delimiter);
 	vector<string> tokens;
-	while ((pos = str.find(delimiter)) != string::npos) {
-    token = str.substr(0, pos);
-		tokens.push_back(token);
-    str.erase(0, pos + delimiter.length());
+	while (end != string::npos) {
+		tokens.push_back(str.substr(start, end));
+		start += end + 1;
+		end = str.substr(start).find(delimiter);
 	}
-	tokens.push_back(str);
+	// the last token is not extracted in the loop above because end has reached string::npos
+	// so we extract it here by simply passing a substring from the last start point to the end
+	tokens.push_back(str.substr(start));
 	return tokens;
 }
 
 //---------------------------------------------------------------
-vector<int> Editor::findIndexesOfCharInStr(string str, string charToFind){
-	vector<int> tokensIndexes;
+vector<int> Editor::findIndexesOfCharInStr(string str, string charToFind)
+{
 	size_t pos = str.find(charToFind, 0);
+	vector<int> tokensIndexes;
 	while (pos != string::npos) {
-    tokensIndexes.push_back((int)pos);
-    pos = str.find(charToFind, pos+1);
+		tokensIndexes.push_back((int)pos);
+		pos = str.find(charToFind, pos+1);
 	}
 	return tokensIndexes;
 }
 
 /************* separate functions for certain keys *************/
 //---------------------------------------------------------------
-bool Editor::setLineIndexesUpward(int lineIndex){
+bool Editor::setLineIndexesUpward(int lineIndex)
+{
 	int diff;
 	if (lineIndex >= 0) {
 		diff = cursorLineIndex - lineIndex;
@@ -1053,7 +1500,8 @@ bool Editor::setLineIndexesUpward(int lineIndex){
 }
 
 //---------------------------------------------------------------
-void Editor::upArrow(int lineIndex){
+void Editor::upArrow(int lineIndex)
+{
 	int prevCursorPos = cursorPos;
 	int prevCursorLineIndex = cursorLineIndex;
 	//if (lineIndex > 0) lineIndex = -(maxNumLines+1);
@@ -1076,18 +1524,18 @@ void Editor::upArrow(int lineIndex){
 			highlightManyCharsLineIndex = prevCursorLineIndex;
 		}
 		setHighlightManyChars(highlightManyCharsStart, cursorPos,
-						  	  highlightManyCharsLineIndex, cursorLineIndex);
+				highlightManyCharsLineIndex, cursorLineIndex);
 	}
 	else if (highlightManyChars) {
 		highlightManyChars = false;
 		upArrow(min(cursorLineIndex, highlightManyCharsLineIndex));
 	}
-	didWeLandOnBracket();
-	
+
 }
 
 //--------------------------------------------------------------
-bool Editor::setLineIndexesDownward(int lineIndex){
+bool Editor::setLineIndexesDownward(int lineIndex)
+{
 	int diff;
 	if (lineIndex >= 0) {
 		diff = lineIndex - cursorLineIndex;
@@ -1098,20 +1546,21 @@ bool Editor::setLineIndexesDownward(int lineIndex){
 		cursorLineIndex++;
 	}
 	if (lineCount > maxNumLines) {
-		int limit = lineCount-(lineCount-maxNumLines)+lineCountOffset;
+		int limit = lineCount-(lineCount-maxNumLines)+lineCountOffset - 1;
 		if (cursorLineIndex > limit) {
 			if (lineCountOffset < (lineCount-maxNumLines)) {
 				lineCountOffset += diff;
+				lineCountOffset = min(lineCountOffset, (lineCount-maxNumLines));
 			}
 			else {
-				cursorLineIndex = lineCount;
-				cursorPos = maxCursorPos();
+				cursorLineIndex = lineCount - 1;
+				cursorPos = arrowCursorPos = maxCursorPos();
 			}
 		}
 		return true;
 	}
-	else if (cursorLineIndex > lineCount) {
-    	cursorLineIndex = lineCount;
+	else if (cursorLineIndex > (lineCount-1)) {
+		cursorLineIndex = lineCount - 1;
 		cursorPos = maxCursorPos();
 		return false;
 	}
@@ -1121,7 +1570,8 @@ bool Editor::setLineIndexesDownward(int lineIndex){
 }
 
 //--------------------------------------------------------------
-void Editor::downArrow(int lineIndex){
+void Editor::downArrow(int lineIndex)
+{
 	int prevCursorPos = cursorPos;
 	int prevCursorLineIndex = cursorLineIndex;
 	//if (lineIndex > 0) lineIndex = maxNumLines+1;
@@ -1144,23 +1594,22 @@ void Editor::downArrow(int lineIndex){
 			highlightManyCharsLineIndex = prevCursorLineIndex;
 		}
 		setHighlightManyChars(highlightManyCharsStart, cursorPos,
-						  	  highlightManyCharsLineIndex, cursorLineIndex);
+				highlightManyCharsLineIndex, cursorLineIndex);
 	}
 	else if (highlightManyChars) {
 		highlightManyChars = false;
 		downArrow(max(cursorLineIndex, highlightManyCharsLineIndex));
 	}
-	didWeLandOnBracket();
 }
 
 //--------------------------------------------------------------
-void Editor::rightArrow(){
+void Editor::rightArrow()
+{
 	int numPosToMove = 1;
-	int maxChar = min((int)allStrings[cursorLineIndex].size(), maxCharactersPerString);
-	if (isThisATab(cursorPos) >= 0) {
+	if (isThisATab(cursorPos)) {
 		numPosToMove = TABSIZE;
 	}
-	else if (ctlPressed) {
+	else if (ctrlPressed) {
 		// find the next white space from the position of the cursor
 		int whiteSpaceIndex = 0;
 		while (whiteSpaceIndex <= cursorPos) {
@@ -1176,27 +1625,27 @@ void Editor::rightArrow(){
 	cursorPos += numPosToMove;
 	arrowCursorPos = cursorPos;
 	// if we're one position before the end of the string or the edge of the window
-	if (cursorPos >= maxChar-1) {
+	if (cursorPos > maxCursorPos()) {
 		// if the string is still too long to display
 		if (((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex]) > maxCharactersPerString) {
 			allStringStartPos[cursorLineIndex] += numPosToMove;
-			// place the cursor back so that it doesn't fall on the ">" character
+			// place the cursor back so that it stays at the last position 
 			cursorPos -= numPosToMove;
 			arrowCursorPos = cursorPos;
 		}
-	}
-	// if we're at the end of the string
-	if (cursorPos > maxChar) {
-		if (cursorLineIndex < lineCount) {
-			allStringStartPos[cursorLineIndex] = 0;
-			setLineIndexesDownward(cursorLineIndex+1);
-			cursorPos = arrowCursorPos = 0;
-		}
-		// if we're at the last line, don't move the cursor
+		// if we're at the end of the string
 		else {
-			cursorPos -= numPosToMove;
-			arrowCursorPos = cursorPos;
-			numPosToMove = 0;
+			if (cursorLineIndex < (lineCount-1)) {
+				allStringStartPos[cursorLineIndex] = 0;
+				setLineIndexesDownward(cursorLineIndex+1);
+				cursorPos = arrowCursorPos = 0;
+			}
+			// if we're at the last line, don't move the cursor
+			else {
+				cursorPos -= numPosToMove;
+				arrowCursorPos = cursorPos;
+				numPosToMove = 0;
+			}
 		}
 	}
 	if (shiftPressed) {
@@ -1204,8 +1653,7 @@ void Editor::rightArrow(){
 			highlightManyCharsStart = cursorPos - numPosToMove;
 			highlightManyCharsLineIndex = cursorLineIndex;
 		}
-		setHighlightManyChars(highlightManyCharsStart, cursorPos,
-													highlightManyCharsLineIndex, cursorLineIndex);
+		setHighlightManyChars(highlightManyCharsStart, cursorPos, highlightManyCharsLineIndex, cursorLineIndex);
 	}
 	else if (highlightManyChars) {
 		highlightManyChars = false;
@@ -1216,16 +1664,16 @@ void Editor::rightArrow(){
 		}
 	}
 	arrowCursorPos = cursorPos;
-	didWeLandOnBracket();
 }
 
 //--------------------------------------------------------------
-void Editor::leftArrow(){
+void Editor::leftArrow()
+{
 	int numPosToMove = 1;
-	if (isThisATab(cursorPos-TABSIZE) >= 0) {
+	if (isThisATab(cursorPos-TABSIZE)) {
 		numPosToMove = TABSIZE;
 	}
-	if (ctlPressed) {
+	if (ctrlPressed) {
 		// find the next white space from the position of the cursor
 		int whiteSpaceIndex = allStrings[cursorLineIndex].size();
 		while (whiteSpaceIndex >= cursorPos) {
@@ -1241,21 +1689,20 @@ void Editor::leftArrow(){
 	cursorPos -= numPosToMove;
 	arrowCursorPos = cursorPos;
 	if (cursorPos < 0) {
-		if (cursorLineIndex > 0) {
-			cursorLineIndex--;
-			cursorPos = arrowCursorPos = min((int)allStrings[cursorLineIndex].size(), maxCharactersPerString);
-			allStringStartPos[cursorLineIndex] = (int)allStrings[cursorLineIndex].size() - maxCharactersPerString;
+		if ((int)allStrings[cursorLineIndex].size() > maxCharactersPerString && allStringStartPos[cursorLineIndex] > 0) {
+			cursorPos += numPosToMove;
+			arrowCursorPos = cursorPos;
+			allStringStartPos[cursorLineIndex] -= numPosToMove;
 		}
-		else {
-			cursorPos = arrowCursorPos = 0;
-		}
-	}
-	else {
-		if ((int)allStrings[cursorLineIndex].size() > maxCharactersPerString) {
-			if (cursorPos <= 0 && allStringStartPos[cursorLineIndex] > 0) {
-				cursorPos += numPosToMove;
-				arrowCursorPos = cursorPos;
-				allStringStartPos[cursorLineIndex] -= numPosToMove;
+		if (allStringStartPos[cursorLineIndex] <= 0) {
+			allStringStartPos[cursorLineIndex] = 0;
+			if (cursorLineIndex > 0) {
+				cursorLineIndex--;
+				cursorPos = arrowCursorPos = min((int)allStrings[cursorLineIndex].size(), maxCharactersPerString);
+				allStringStartPos[cursorLineIndex] = (int)allStrings[cursorLineIndex].size() - maxCharactersPerString;
+			}
+			else {
+				cursorPos = arrowCursorPos = 0;
 			}
 		}
 	}
@@ -1266,10 +1713,9 @@ void Editor::leftArrow(){
 		if (!highlightManyChars) {
 			highlightManyCharsStart = cursorPos + numPosToMove;
 			highlightManyCharsLineIndex = cursorLineIndex;
-			if (ctlPressed) highlightManyCharsStart += numPosToMove;
+			if (ctrlPressed) highlightManyCharsStart += numPosToMove;
 		}
-		setHighlightManyChars(highlightManyCharsStart, cursorPos,
-													highlightManyCharsLineIndex, cursorLineIndex);
+		setHighlightManyChars(highlightManyCharsStart, cursorPos, highlightManyCharsLineIndex, cursorLineIndex);
 	}
 	else if (highlightManyChars) {
 		highlightManyChars = false;
@@ -1280,11 +1726,11 @@ void Editor::leftArrow(){
 		}
 	}
 	arrowCursorPos = cursorPos;
-	didWeLandOnBracket();
 }
 
 //--------------------------------------------------------------
-void Editor::pageUp(){
+void Editor::pageUp()
+{
 	int prevCursorPos = cursorPos;
 	int prevCursorLineIndex = cursorLineIndex;
 	if (cursorLineIndex == 0) {
@@ -1292,8 +1738,8 @@ void Editor::pageUp(){
 		if (highlightManyChars) highlightManyChars = false;
 		return;
 	}
-	cursorLineIndex -= (maxNumLines+1);
-	lineCountOffset -= (maxNumLines+1);
+	cursorLineIndex -= (maxNumLines-1);
+	lineCountOffset -= (maxNumLines-1);
 	if (cursorLineIndex < 0) cursorLineIndex = 0;
 	if (lineCountOffset < 0) lineCountOffset = 0;
 	cursorPos = arrowCursorPos;
@@ -1310,26 +1756,26 @@ void Editor::pageUp(){
 			highlightManyCharsLineIndex = prevCursorLineIndex;
 		}
 		setHighlightManyChars(highlightManyCharsStart, cursorPos,
-							  highlightManyCharsLineIndex, cursorLineIndex);
+				highlightManyCharsLineIndex, cursorLineIndex);
 	}
 	else if (highlightManyChars) {
 		highlightManyChars = false;
 	}
-	didWeLandOnBracket();
 }
 
 //--------------------------------------------------------------
-void Editor::pageDown(){
+void Editor::pageDown()
+{
 	int prevCursorPos = cursorPos;
 	int prevCursorLineIndex = cursorLineIndex;
-	if (cursorLineIndex == lineCount) {
+	if (cursorLineIndex == (lineCount-1)) {
 		cursorPos = maxCursorPos();
 		if (highlightManyChars) highlightManyChars = false;
 		return;
 	}
-	cursorLineIndex += (maxNumLines+1);
-	lineCountOffset += (maxNumLines+1);
-	if (cursorLineIndex > lineCount) cursorLineIndex = lineCount;
+	cursorLineIndex += (maxNumLines-1);
+	lineCountOffset += (maxNumLines-1);
+	if (cursorLineIndex > (lineCount-1)) cursorLineIndex = lineCount - 1;
 	if (lineCountOffset > (lineCount - maxNumLines)) {
 		lineCountOffset = lineCount - maxNumLines;
 		if (lineCountOffset < 0) {
@@ -1350,37 +1796,57 @@ void Editor::pageDown(){
 			highlightManyCharsLineIndex = prevCursorLineIndex;
 		}
 		setHighlightManyChars(highlightManyCharsStart, cursorPos,
-							  highlightManyCharsLineIndex, cursorLineIndex);
+				highlightManyCharsLineIndex, cursorLineIndex);
 	}
 	else if (highlightManyChars) {
 		highlightManyChars = false;
 	}
-	didWeLandOnBracket();
 }
 
 //--------------------------------------------------------------
-void Editor::allOtherKeys(int key){
+void Editor::setShiftPressed(bool state)
+{
+	shiftPressed = state;
+}
+
+//--------------------------------------------------------------
+void Editor::setCtrlPressed(bool state)
+{
+	ctrlPressed = state;
+}
+
+//--------------------------------------------------------------
+void Editor::setAltPressed(bool state)
+{
+	altPressed = state;
+}
+
+//--------------------------------------------------------------
+void Editor::allOtherKeys(int key)
+{
 	bool executing = false;
 	bool lineBreaking = true;
 	bool callAssemble = true;
-	if (ctlPressed) {
+	if (ctrlPressed) {
 		if (key == 13) {
 			// check if we're inside curly brackets so we can execute without using arrow keys
-			int closingBracketIndex = areWeInBetweenBrackets(false);
-			if (closingBracketIndex >= 0) {
+			vector<int> nestDepth = getNestDepth();
+			if (nestDepth[1] > 0) {
 				// set the number of lines to execute
-				setHighlightManyChars(bracketIndexes[closingBracketIndex][1], bracketIndexes[closingBracketIndex][3],
-									  bracketIndexes[closingBracketIndex][0], bracketIndexes[closingBracketIndex][2]);
+				topLine = findTopLine(nestDepth[0]);
+				bottomLine = nestDepth[0];
+				highlightManyChars = true;
 			}
 			setExecutingLine();
-			allocateExecutionMem();
+			setExecutionVars();
 			lineBreaking = false;
 			executing = true;
 		}
 		else if(key == 61) { // + (actually =)
 			if (altPressed) {
-				((ofApp*)ofGetAppPtr())->brightness++;
-				if (((ofApp*)ofGetAppPtr())->brightness > 255) ((ofApp*)ofGetAppPtr())->brightness = 255;
+				((ofApp*)ofGetAppPtr())->brightnessCoeff += 0.01;
+				if (((ofApp*)ofGetAppPtr())->brightnessCoeff > 1.0) ((ofApp*)ofGetAppPtr())->brightnessCoeff = 1.0;
+				((ofApp*)ofGetAppPtr())->brightness = (int)(255 * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
 			}
 			else {
 				fontSize += 2;
@@ -1390,8 +1856,9 @@ void Editor::allOtherKeys(int key){
 		}
 		else if (key == 45) { // -
 			if (altPressed) {
-				((ofApp*)ofGetAppPtr())->brightness--;
-				if (((ofApp*)ofGetAppPtr())->brightness < 0) ((ofApp*)ofGetAppPtr())->brightness = 0;
+				((ofApp*)ofGetAppPtr())->brightnessCoeff -= 0.01;
+				if (((ofApp*)ofGetAppPtr())->brightnessCoeff < 0.0) ((ofApp*)ofGetAppPtr())->brightnessCoeff = 0.0;
+				((ofApp*)ofGetAppPtr())->brightness = (int)(255 * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
 			}
 			else {
 				fontSize -= 2;
@@ -1413,38 +1880,37 @@ void Editor::allOtherKeys(int key){
 			deleteString();
 			callAssemble = false;
 		}
-    	else if (key == 115) { // s for save
-      		if (fileLoaded) {
-        		saveExistingFile();
-      		}
-      		else {
-        		saveFile();
-      		}
-      		callAssemble = false;
-    	}
-    	else if (key == 83 && shiftPressed) { // S with shift pressed
-      		saveFile();
-      		callAssemble = false;
-    	}
-    	else if (key == 111) { // o for open
-      		loadFile();
-      		callAssemble = false;
-    	}
+		else if (key == 115) { // s for save
+			if (fileLoaded) {
+				saveExistingFile();
+			}
+			else {
+				saveFile();
+			}
+			callAssemble = false;
+		}
+		else if (key == 83 && shiftPressed) { // S with shift pressed
+			saveFile();
+			callAssemble = false;
+		}
+		else if (key == 111) { // o for open
+			loadFile();
+			callAssemble = false;
+		}
 	}
 	else if (shiftPressed) {
 		if (key == 13) {
 			// as with holding the Ctl key, do the same here
 			// but position the cursor at the closing bracket
-			int closingBracketIndex = areWeInBetweenBrackets(false);
-			if (closingBracketIndex >= 0) {
-				cursorLineIndex = bracketIndexes[closingBracketIndex][2];
-				cursorPos = bracketIndexes[closingBracketIndex][3];
+			vector<int> nestDepth = getNestDepth();
+			if (nestDepth[1] > 0) {
 				// set the number of lines to execute
-				setHighlightManyChars(bracketIndexes[closingBracketIndex][1], cursorPos,
-									  bracketIndexes[closingBracketIndex][0], cursorLineIndex);
+				topLine = findTopLine(nestDepth[0]);
+				bottomLine = nestDepth[0];
+				highlightManyChars = true;
 			}
 			setExecutingLine();
-			allocateExecutionMem();
+			setExecutionVars();
 			lineBreaking = false;
 			executing = true;
 			moveCursorOnShiftReturn();
@@ -1456,50 +1922,55 @@ void Editor::allOtherKeys(int key){
 }
 
 //--------------------------------------------------------------
-void Editor::setExecutingLine(){
+void Editor::setExecutingLine()
+{
 	executingLine = cursorLineIndex;
 }
 
 //--------------------------------------------------------------
-vector<int> Editor::setSelectedStrStartPosAndSize(int i){
-	vector<int> v;
+vector<int> Editor::setSelectedStrStartPosAndSize(int i)
+{
+	vector<int> v(2);
 	if (i == topLine) {
 		if (i == bottomLine) {
-			v.push_back(firstChar);
-			v.push_back(lastChar - firstChar);
+			v[0] = firstChar;
+			v[1] = lastChar - firstChar;
 		}
 		else {
 			if (highlightManyCharsLineIndex < cursorLineIndex) {
-				v.push_back(highlightManyCharsStart);
+				v[0] = highlightManyCharsStart;
 			}
 			else {
-				v.push_back(cursorPos);
+				v[0] = cursorPos;
 			}
-			v.push_back(allStrings[i].size());
+			v[1] = allStrings[i].size();
 		}
 	}
 	else if (i == bottomLine) {
-		v.push_back(0);
+		v[0] = 0;
 		if (highlightManyCharsLineIndex < cursorLineIndex) {
-			v.push_back(cursorPos);
+			v[1] = cursorPos;
 		}
 		else {
-			v.push_back(highlightManyCharsStart);
+			v[1] = highlightManyCharsStart;
 		}
 	}
 	else {
-		v.push_back(0);
-		v.push_back(allStrings[i].size());
+		v[0] = 0;
+		v[1] = allStrings[i].size();
 	}
 	return v;
 }
 
 //--------------------------------------------------------------
-void Editor::copyString(){
+void Editor::copyString()
+{
 	strForClipBoard = "";
 	if (highlightManyChars) {
 		for (int i = topLine; i <= bottomLine; i++) {
 			vector<int> posAndSize = setSelectedStrStartPosAndSize(i);
+			// apply the offset of the string, in case it's too long to fit in a pane
+			posAndSize[0] += allStringStartPos[i];
 			strForClipBoard += allStrings[i].substr(posAndSize[0], posAndSize[1]);
 			if (i < bottomLine) strForClipBoard += "\n";
 		}
@@ -1512,62 +1983,62 @@ void Editor::copyString(){
 }
 
 //--------------------------------------------------------------
-void Editor::pasteString(){
+void Editor::pasteString()
+{
 	strFromClipBoard = ofGetWindowPtr()->getClipboardString();
 	vector<string> tokens = tokenizeString(strFromClipBoard, "\n");
 	// if we paste in the middle of a string
 	// the last line must concatenate the pasted string with the remainding string
 	// of the line we broke in the middle
-	string remaindingStr = "";
-	// we must also keep track of the remainng tabs
-	vector<int> remainingTabs;
-	for (unsigned i = 0; i < tokens.size(); i++) {
-		vector<int> tabsOnToken = findIndexesOfCharInStr(tokens[i], "\t");
-		tokens[i] = replaceCharInStr(tokens[i], "\t", tabStr);
+	string remainingStr = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
+	unsigned i = 0;
+	for (string originalToken : tokens) {
+		string token = replaceCharInStr(originalToken, "\t", tabStr);
 		if (i == 0) {
-			remaindingStr = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
 			allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]);
-			allStrings[cursorLineIndex] += tokens[i];
+			allStrings[cursorLineIndex] += token;
 		}
 		if (i == (tokens.size()-1)) {
 			// if we're pasting one line only just append the remaining string
 			if (i == 0) {
-				allStrings[cursorLineIndex] += remaindingStr;
+				allStrings[cursorLineIndex] += remainingStr;
 			}
 			// otherwise concatenate the token with the remaining
 			else {
-				allStrings[cursorLineIndex] = tokens[i]+remaindingStr;
+				createNewLine(token+remainingStr, 1);
+				postIncrementOnNewLine();
 			}
 		}
 		if ((i > 0) && (i < (tokens.size()-1))) {
-			allStrings[cursorLineIndex] = tokens[i];
-		}
-		if (i < (tokens.size()-1)) {
-			allocateNewLineMem("");
+			createNewLine(token, 1);
 			postIncrementOnNewLine();
 		}
+		i++;
 	}
 	cursorPos += tokens[tokens.size()-1].size();
-	scanStrings();
+	fileEdited = true;
 }
 
 //--------------------------------------------------------------
-void Editor::deleteString(){
+void Editor::deleteString()
+{
 	lineCount -= (bottomLine - topLine);
 	for (int i = topLine; i <= bottomLine; i++) {
 		if ((i > topLine) && (i < bottomLine)) {
-			releaseMemOnBackspace(i);
+			eraseMapKeys(i);
 		}
 		else {
 			vector<int> posAndSize = setSelectedStrStartPosAndSize(i);
-			//allStrings[i].erase(posAndSize[0], posAndSize[1]);
 			if (i == topLine) {
-				clearLineVectors(i, posAndSize[0], posAndSize[1]);
+				allStrings[i].erase(posAndSize[0], posAndSize[1]);
+				if (allStrings[i].size() == 0) {
+					releaseTraceback(i);
+				}
 			}
 			else if (i == bottomLine) {
 				allStrings[i].erase(posAndSize[0], posAndSize[1]);
 				if (allStrings[i].size() == 0) {
-					releaseMemOnBackspace(i);
+					eraseMapKeys(i);
 				}
 				else {
 					// if the string is not entirely deleted
@@ -1582,134 +2053,461 @@ void Editor::deleteString(){
 		cursorLineIndex = highlightManyCharsLineIndex;
 		cursorPos = highlightManyCharsStart;
 	}
+	fileEdited = true;
 }
 
 //--------------------------------------------------------------
-vector<int> Editor::sortVec(vector<int> v){
+vector<int> Editor::sortVec(vector<int> v)
+{
 	sort(v.begin(), v.end());
 	return v;
 }
 
 //--------------------------------------------------------------
-void Editor::setTraceback(string str, int lineNum){
-	tracebackStr[lineNum] = str;
-	tracebackTimeStamp.push_back(ofGetElapsedTimeMillis());
-	tracebackTempIndex.push_back(lineNum);
+void Editor::setTraceback(std::pair<int, string> error, int lineNum)
+{
+	// error codes are: 0 - nothing, 1 - note, 2 - warning, 3 - error
+	if (error.first == 0 || error.first == 1) tracebackColor[lineNum] = 0; 
+	else if (error.first == 2) tracebackColor[lineNum] = 1;
+	else if (error.first == 3) tracebackColor[lineNum] = 2;
+	else tracebackColor[lineNum] = 0;
+	// find number of newlines in traceback string
+	int numLines = count(begin(error.second), end(error.second), '\n') + 1;
+	tracebackStr[lineNum] = error.second;
+	tracebackTimeStamps[lineNum] = ofGetElapsedTimeMillis();
+	tracebackNumLines[lineNum] = numLines;
 }
 
 //--------------------------------------------------------------
-void Editor::releaseTraceback(int lineNum){
-	if (tracebackStr[lineNum].size() > 0) {
+void Editor::releaseTraceback(int lineNum)
+{
+	map<int, string>::iterator it = tracebackStr.find(lineNum);
+	if (it != tracebackStr.end()) {
 		tracebackStr[lineNum] = "";
+		tracebackColor[lineNum] = 0;
+		tracebackNumLines[lineNum] = 1;
 	}
 }
 
 //--------------------------------------------------------------
-void Editor::fromOscPress(int ascii){
-  if (!isActive) {
-    // int tempCursorLineIndex = cursorLineIndex;
-    // int tempCursorPos = cursorPos;
-    // cursorLineIndex = lineCount;
-    // cursorPos = maxCursorPos();
-    // allOtherKeys(ascii);
-    // cursorLineIndex = tempCursorLineIndex;
-    // cursorPos = tempCursorPos;
-
-	// call overloaded keyPressed function to set a temporary whichEditor in ofApp.cpp
-	((ofApp*)ofGetAppPtr())->keyPressed(ascii, objID);
-  }
-  else {
-	((ofApp*)ofGetAppPtr())->keyPressed(ascii);
-  }
+string Editor::getTracebackStr(int lineNum)
+{
+	return tracebackStr[lineNum];
 }
 
 //--------------------------------------------------------------
-void Editor::fromOscRelease(int ascii){
-  if (!isActive) {
-    // int tempCursorLineIndex = cursorLineIndex;
-    // int tempCursorPos = cursorPos;
-    // cursorLineIndex = lineCount;
-    // cursorPos = maxCursorPos();
-    // allOtherKeys(ascii);
-    // cursorLineIndex = tempCursorLineIndex;
-    // cursorPos = tempCursorPos;
-
-	// the same applies to releasing a key
-	((ofApp*)ofGetAppPtr())->keyReleased(ascii, objID);
-  }
-  else {
-	((ofApp*)ofGetAppPtr())->keyReleased(ascii);
-  }
+int Editor::getTracebackColor(int lineNum)
+{
+	return tracebackColor[lineNum];
 }
 
 //--------------------------------------------------------------
-void Editor::saveFile(){
-  ofFileDialogResult saveFileResult = ofSystemSaveDialog("LiveLily_session.lyv", "Save file");
-  if (saveFileResult.bSuccess){
-	string fileName = saveFileResult.filePath + ".lyv";
-    ofstream file(fileName.c_str());
-    if (!file.is_open()) {
-      cout << "Cannot open file\n";
-      return;
-    }
-    for (unsigned i = 0; i < allStrings.size(); i++) {
-      file << allStrings[i] << "\n";
-    }
-    file.close();
-    cout << "File saved\n";
-  }
+uint64_t Editor::getTracebackTimeStamp(int lineNum)
+{
+	return tracebackTimeStamps[lineNum];
 }
 
 //--------------------------------------------------------------
-void Editor::saveExistingFile(){
-  ofstream file(loadedFileStr);
-  if (!file.is_open()) {
-    cout << "Cannot open file\n";
-    return;
-  }
-  for (unsigned i = 0; i < allStrings.size(); i++) {
-    file << allStrings[i] << "\n";
-  }
-  file.close();
-  cout << "File saved\n";
+int Editor::getTracebackNumLines(int lineNum)
+{
+	return tracebackNumLines[lineNum];
 }
 
 //--------------------------------------------------------------
-void Editor::loadFile(){
-  //Open the Open File Dialog
-  ofFileDialogResult openFileResult = ofSystemLoadDialog("Select a .lyv file");
-  //Check if the user opened a file
-  if (openFileResult.bSuccess){
-    lineCount = 0;
-    cursorPos = 0;
-    ifstream file(openFileResult.filePath.c_str());
-    if (!file.is_open()) {
-      cout << "Cannot open file\n";
-      return;
-    }
-    string line;
-	allStrings.clear();
-	allStringStartPos.clear();
-	tracebackStr.clear();
-    while (getline(file, line)) {
+uint64_t Editor::getTracebackDur()
+{
+	return TRACEBACKDUR;
+}
+
+//--------------------------------------------------------------
+map<int, uint64_t>::iterator Editor::getTracebackTimeStampsBegin()
+{
+	return tracebackTimeStamps.begin();
+}
+
+//--------------------------------------------------------------
+map<int, uint64_t>::iterator Editor::getTracebackTimeStampsEnd()
+{
+	return tracebackTimeStamps.end();
+}
+
+//--------------------------------------------------------------
+// single characters received over OSC for press and release
+void Editor::fromOscPress(int ascii)
+{
+	if (!activity) {
+		// call overloaded keyPressed function to set a temporary whichEditor in ofApp.cpp
+		((ofApp*)ofGetAppPtr())->keyPressed(ascii, objID);
+	}
+	else {
+		((ofApp*)ofGetAppPtr())->keyPressed(ascii);
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::fromOscRelease(int ascii)
+{
+	if (!activity) {
+		// the same applies to releasing a key
+		((ofApp*)ofGetAppPtr())->keyReleased(ascii, objID);
+	}
+	else {
+		((ofApp*)ofGetAppPtr())->keyReleased(ascii);
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::saveFile()
+{
+	ofFileDialogResult saveFileResult = ofSystemSaveDialog("LiveLily_session.lyv", "Save file");
+	if (saveFileResult.bSuccess) {
+		string fileName = saveFileResult.filePath + ".lyv";
+		ofstream file(fileName.c_str());
+		if (!file.is_open()) {
+			// if for some reason the file can't be opened
+			// instead of the file name, the string "could not open file"
+			// will be displayed for 2 seconds and then it will return to untitled.lyv
+			couldNotSaveFile = true;
+			fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+			return;
+		}
+		for (unsigned i = 0; i < allStrings.size(); i++) {
+			file << allStrings[i] << "\n";
+		}
+		file.close();
+		fileLoaded = true;
+		string fullPath = fileName.c_str();
+		size_t lastBackSlash = fullPath.find_last_of("/");
+		loadedFileStr = fullPath.substr(lastBackSlash+1);
+		if (endsWith(loadedFileStr, ".lyv")) thisLang = 0;
+		else if (endsWith(loadedFileStr, ".py")) thisLang = 1;
+		else if (endsWith(loadedFileStr, ".lua")) thisLang = 2;
+		else thisLang = 0;
+		fileEdited = false;
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::saveExistingFile()
+{
+	fstream file(loadedFileStr);
+	if (!file.is_open()) {
+		// if for some reason the file can't be opened
+		// instead of the file name, the string "could not open file"
+		// will be displayed for 2 seconds and then it will return to untitled.lyv
+		couldNotSaveFile = true;
+		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+		return;
+	}
+	file.seekp(0, std::ios_base::beg);
+	string allStrConcat = "";
+	for (unsigned i = 0; i < allStrings.size(); i++) {
+		//file << allStrings[i] << "\n";
+		allStrConcat += allStrings[i] + "\n";
+	}
+	file.write(allStrConcat.c_str(), allStrConcat.size());
+	file.close();
+	fileEdited = false;
+}
+
+//--------------------------------------------------------------
+void Editor::loadXMLFile(string filePath)
+{
+	ifstream file(filePath.c_str());
+	string line;
+	createNewLine("\\score show", 0);
+	cursorLineIndex++;
+	createNewLine("\\score animate", 0);
+	cursorLineIndex++;
+	createNewLine("", 0);
+	cursorLineIndex++;
+	bool clefFollows = false;
+	int partID = 0;
+	int partIDOffset = 0;
+	int numStaves, partIDinc;
+	size_t bracketNdx;
+	map<int, std::pair<int, std::pair<string, string>>> insts;
+	while (getline(file, line)) {
+		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
+		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
+		if (startsWith(lineWithoutSpaces, "<score-partid")) {
+			partID = stoi(lineWithoutSpaces.substr(16, lineWithoutSpaces.substr(16).find_last_of("\"")));
+		}
+		if (startsWith(lineWithoutSpaces, "<part-name")) {
+			size_t ndx1 = lineWithoutSpaces.find(">");
+			size_t ndx2 = lineWithoutSpaces.find_last_of("<");
+			// the key is an incrementing index
+			// and the pair is a pair of pairs, where the first item is the number of staves of the instrument
+			// and the second part is a pair with the part ID and the actual instrument name
+			// the default number of staves is 1, hence the 1 below
+			insts[partID-1+partIDOffset] = std::make_pair(1, std::make_pair("P"+to_string(partID), lineWithoutSpaces.substr(ndx1+1, ndx2-ndx1-1)));
+		}
+		if (startsWith(lineWithoutSpaces, "<instrument-name>")) {
+			// if there is an opening round bracket in the string, it means that we are notified of the number of staves
+			subString = lineWithoutSpaces.substr(17, lineWithoutSpaces.substr(17).find("<"));
+			if (subString.find("(") != string::npos) {
+				bracketNdx = subString.find("(") + 1;
+				numStaves = stoi(subString.substr(bracketNdx, subString.substr(bracketNdx).find(")")));
+				insts[partID-1+partIDOffset].first = insts[partID-1+partIDOffset].first;
+				partIDInc = 1;
+				// if this instrument has more than one staff,
+				// we create as many instruments in LiveLily as the number of staves
+				while (numStaves > 1) {
+					insts[partID-1+partIDInc++] = std::make_pair(1, std::make_pair("P"+to_string(partID), lineWithoutSpaces.substr(ndx1+1, ndx2-ndx1-1)));
+					numStaves--;
+				}
+				partIDOffset += (numStaves - 1);
+			}
+		}
+		// if below used to be else if
+		if (lineWithoutSpaces.find("</part-list>") != string::npos) {
+			break;
+		}
+	}
+	int grouppedInstsIndex = 1;
+	string instLine = "\\insts";
+	for (auto it = insts.begin(); it != insts.end(); ++it) {
+		grouppedInstsInc = 1;
+		instLine += " ";
+		instList += it->second.second.second;
+		if (it->second.first > 1) {
+			instList += to_string(grouppedInstsIndex);
+			grouppedInstsInc++;
+			if (grouppedInstsIndex == it->second.first) grouppedInstsIndex = 1;
+		}
+	}
+	createNewLine(instLine, 0);
+	cursorLineIndex++;
+	// we have read the instruments, we now read the clefs
+	file.clear();
+	file.seekg(0, file.beg);
+	vector<string> clefs;
+	while (getline(file, line)) {
+		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
+		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
+		// compare against "<clef" and not "<clef>" because instruments with more than one staves
+		// use "<clef number=1>" etc.
+		if (startsWith(lineWithoutSpaces, "<clef")) {
+			clefFollows = true;
+		}
+		else if (startsWith(lineWithoutSpaces, "<sign>") && clefFollows) {
+			string clef = lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6);
+			clefs.push_back(clef);
+			clefFollows = false;
+		}
+	}
+	for (unsigned i = 0; i < clefs.size(); i++) {
+		if (clefs[i].compare("G") != 0) {
+			string clefStr;
+			if (clefs[i].compare("F") == 0) {
+				clefStr = "\\" + insts[i].second + " clef bass";
+			}
+			else if (clefs[i].compare("C") == 0) {
+				clefStr = "\\" + insts[i].second + " clef alto";
+			}
+			createNewLine(clefStr, 0);
+			cursorLineIndex++;
+		}
+	}
+	// we have read the clefs, we now read the notes
+	file.clear();
+	file.seekg(0, file.beg);
+	int instNdx = 0;
+	int octave, barNum;
+	int i;
+	bool isGroupped = false;
+	bool foundStaffIndex = false;
+	bool foundTie = false;
+	int measureLineNum, lineNum = 0;
+	size_t barNumNdx = 1;
+	grouppedInstsIndex = 1;
+	// map with instrument index as key and another map as value
+	// value map has the bar number as key, and the Lilypond string as value
+	map<int, map<int, string>> notes;
+	while (getline(file, line)) {
+		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
+		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
+		if (startsWith(lineWithoutSpaces, "<partid")) {
+			for (auto it = insts.begin(); it != insts.end(); ++it) {
+				if (it->second.second.first.compare(lineWithoutSpaces.substr(9, lineWithoutSpaces.substr(9).find_last_of("\""))) == 0) {
+					// if this insturment is groupped, this is the index of the first instrument of the group
+					// the incrementing indexes are found further down when we get a "<staff>" line
+					instNdx = it->first;
+					if (it->second.first > 1) isGroupped = true;
+					else isGroupped = false;
+					foundStaffIndex = false;
+					break;
+				}
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<staff>") && (isGroupped && !foundStaffIndex)) {
+			grouppedInstsIndex = stoi(lineWithoutSpaces.substr(7), lineWithoutSpaces.substr(7).find("<"));
+			instNdx += (grouppedInstIndex - 1);
+			foundStaffIndex = true;
+			// go back to measure line to store the data to the correct map key
+			file.seekg(measureLineNum, file.beg);
+		}
+		else if (startsWith(lineWithoutSpaces, "<measure")) {
+			measureLineNum = lineNum;
+			if ((isGroupped && foundStaffIndex) || !isGroupped) {
+				barNumNdx = lineWithoutSpaces.substr(16).find("\""); // after "<measurenumber=""
+				barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
+				if (notes.find(instNdx) == notes.end()) {
+					//map<int, string> m;
+					notes[instNdx] = map<int, string>;
+				}
+				if (notes[instNdx].find(barNum) == notes[instNdx].end()) {
+					notes[instNdx][barNum] = "";
+				}
+				foundTie = false;
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<step>") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			notes[instNdx][barNum] += " ";
+			notes[instNdx][barNum] += std::tolower(lineWithoutSpaces.substr(6, 1)[0]);
+		}
+		else if (startsWith(lineWithoutSpaces, "<octave>") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			octave = stoi(lineWithoutSpaces.substr(8, lineWithoutSpaces.find_last_of("<")-8));
+			if (octave > 3) {
+				for (i = 0; i < octave-3; i++) {
+					notes[instNdx][barNum] += "'";
+				}
+			}
+			else if (octave < 3) {
+				for (i = 3; i > 3-octave; i--) {
+					notes[instNdx][barNum] += ",";
+				}
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<rest") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			notes[instNdx][barNum] += " r";
+		}
+		else if (startsWith(lineWithoutSpaces, "<type>") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			for (i = 0; i < 7; i++) {
+				if (lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6).compare(xmlDurs[i]) == 0) {
+					notes[instNdx][barNum] += to_string((int)pow(2, i));
+					break;
+				}
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<dot") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			notes[instNdx][barNum] += ".";
+		}
+		else if (startsWith(lineWithoutSpaces, "<tiedtype") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			if (lineWithoutSpaces.find("start") != string::npos) {
+				notes[instNdx][barNum] += "~";
+				foundTie = true;
+			}
+		}
+		lineNum++;
+	}
+	file.close();
+	// now write the notes in LiveLily notation
+	createNewLine("", 0);
+	cursorLineIndex++;
+	// all parts have the same number of bars, so we query the first one
+	// to determine how many bars we have to write
+	for (auto it = notes[0].begin(); it != notes[0].end(); ++it) {
+		string barOpening = "\\bar " + to_string(it->first) + " {";
+		createNewLine(barOpening, 0);
+		cursorLineIndex++;
+		for (auto it2 = insts.begin(); it2 != insts.end(); ++it2) {
+			string instLine = tabStr + "\\" + it2->second.second.second;
+			if (it2->second.first > 1) instLine += to_string(grouppedInstsIndex);
+			instLine += notes[it2->first][it->first];
+			createNewLine(instLine, 0);
+			cursorLineIndex++;
+		}
+		createNewLine("}", 0);
+		cursorLineIndex++;
+		createNewLine("", 0);
+		cursorLineIndex++;
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::loadLyvFile(string filePath)
+{
+	ifstream file(filePath.c_str());
+	string line;
+	while (getline(file, line)) {
 		string lineWithoutTabs = replaceCharInStr(line, "\t", tabStr);
-    	allStrings.push_back(lineWithoutTabs);
-		allStringStartPos.push_back(0);
-		tracebackStr.push_back("");
-    }
-	lineCount = (int)allStrings.size();
-	cursorLineIndex = 0;
-	cursorPos = arrowCursorPos = 0;
-	scanStrings();
-    cout << "Opened file\n";
-    file.close();
-    fileLoaded = true;
-    loadedFileStr = openFileResult.filePath.c_str();
-  }
+		createNewLine(lineWithoutTabs, 0);
+		cursorLineIndex++;
+	}
+	file.close();
 }
 
 //--------------------------------------------------------------
-void Editor::printVector(vector<int> v){
+void Editor::loadFile()
+{
+	//Open the Open File Dialog
+	ofFileDialogResult openFileResult = ofSystemLoadDialog("Select a .lyv or .xml file");
+	//Check if the user opened a file
+	if (openFileResult.bSuccess){
+		lineCount = 1;
+		cursorPos = 0;
+		ifstream file(openFileResult.filePath.c_str());
+		if (!file.is_open()) {
+			// if for some reason the file can't be opened
+			// instead of the file name, the string "could not open file"
+			// will be displayed for 2 seconds and then it will return to untitled.lyv
+			couldNotLoadFile = true;
+			fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+			return;
+		}
+		file.close();
+		allStrings.clear();
+		allStringStartPos.clear();
+		tracebackStr.clear();
+		tracebackColor.clear();
+		tracebackNumLines.clear();
+		cursorLineIndex = cursorPos = 0;
+		// determine what type of file we're opeining
+		string fullPath = openFileResult.filePath.c_str();
+		size_t lastBackSlash = fullPath.find_last_of("/");
+		loadedFileStr = fullPath.substr(lastBackSlash+1);
+		bool openingXML = false;
+		if (endsWith(loadedFileStr, ".mxl") || endsWith(loadedFileStr, ".xml") || endsWith(loadedFileStr, ".musicxml")) {
+			thisLang = 0;
+			openingXML = true;
+		}
+		if (endsWith(loadedFileStr, ".lyv")) {
+			thisLang = 0;
+		}
+		else if (endsWith(loadedFileStr, ".py")) {
+			thisLang = 1;
+		}
+		else if (endsWith(loadedFileStr, ".lua")) {
+			thisLang = 2;
+		}
+		else {
+			thisLang = 0;
+		}
+		file.close();
+		if (openingXML) {
+			loadXMLFile(openFileResult.filePath);
+		}
+		else {
+			loadLyvFile(openFileResult.filePath);
+		}
+		lineCount = (int)allStrings.size();
+		cursorLineIndex = 0;
+		cursorPos = arrowCursorPos = 0;
+		fileLoaded = true;
+		fileEdited = false;
+	}
+}
+
+//--------------------------------------------------------------
+float Editor::getCursorHeight()
+{
+	return cursorHeight;
+}
+
+//--------------------------------------------------------------
+void Editor::printVector(vector<int> v)
+{
 	for (unsigned i = 0; i < v.size(); i++) {
 		cout << v[i] << " ";
 	}
@@ -1717,7 +2515,8 @@ void Editor::printVector(vector<int> v){
 }
 
 //--------------------------------------------------------------
-void Editor::printVector(vector<string> v){
+void Editor::printVector(vector<string> v)
+{
 	for (unsigned i = 0; i < v.size(); i++) {
 		cout << v[i] << " ";
 	}
@@ -1725,7 +2524,8 @@ void Editor::printVector(vector<string> v){
 }
 
 //--------------------------------------------------------------
-void Editor::printVector(vector<float> v){
+void Editor::printVector(vector<float> v)
+{
 	for (unsigned i = 0; i < v.size(); i++) {
 		cout << v[i] << " ";
 	}
