@@ -2223,27 +2223,53 @@ void Editor::loadXMLFile(string filePath)
 	cursorLineIndex++;
 	bool clefFollows = false;
 	int partID = 0;
-	map<int, std::pair<string, string>> insts;
+	int partIDOffset = -1;
+	int numStaves, loopIter, i;
+	size_t ndx1, ndx2;
+	map<int, std::pair<int, std::pair<string, string>>> insts;
 	while (getline(file, line)) {
 		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
 		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
 		if (startsWith(lineWithoutSpaces, "<score-partid")) {
 			partID = stoi(lineWithoutSpaces.substr(16, lineWithoutSpaces.substr(16).find_last_of("\"")));
 		}
-		if (startsWith(lineWithoutSpaces, "<part-name")) {
-			size_t ndx1 = lineWithoutSpaces.find(">");
-			size_t ndx2 = lineWithoutSpaces.find_last_of("<");
-			// the key is an incrementing index and the pair is the part ID and the actual instrument name
-			insts[partID-1] = std::make_pair("P"+to_string(partID), lineWithoutSpaces.substr(ndx1+1, ndx2-ndx1-1));
+		else if (startsWith(lineWithoutSpaces, "<part-name")) {
+			ndx1 = lineWithoutSpaces.find(">");
+			ndx2 = lineWithoutSpaces.find_last_of("<");
+			// the key is an incrementing index
+			// and the pair is a pair of pairs, where the first item is the number of staves of the instrument
+			// and the second part is a pair with the part ID and the actual instrument name
+			// the default number of staves is 1, hence the 1 below
+			insts[partID-1] = std::make_pair(1, std::make_pair("P"+to_string(partID), lineWithoutSpaces.substr(ndx1+1, ndx2-ndx1-1)));
 		}
-		else if (lineWithoutSpaces.find("</part-list>") != string::npos) {
-			break;
+		if (startsWith(lineWithoutSpaces, "<partid")) {
+			partID = stoi(lineWithoutSpaces.substr(9, lineWithoutSpaces.substr(9).find_last_of("\"")));
+			partID += partIDOffset;
+		}
+		else if (startsWith(lineWithoutSpaces, "<staves>")) {
+			numStaves = stoi(lineWithoutSpaces.substr(7, lineWithoutSpaces.substr(7).find("<")));
+			if (numStaves > 1) {
+				// if an instrument has more than one staff, change the keys of the following items in the map
+				loopIter = (int)insts.size() - 1;
+				while (loopIter > partID) {
+					auto nodeHolder = insts.extract(loopIter);
+					nodeHolder.key() = loopIter + numStaves - 1;
+					insts.insert(std::move(nodeHolder));
+					loopIter--;
+				}
+				insts[partID].first = numStaves;
+				insts[partID].second.second += "1";
+				for (i = 1; i < numStaves; i++) {
+					insts[partID+i] = std::make_pair(numStaves, std::make_pair(insts[partID].second.first, insts[partID].second.second.substr(0, insts[partID].second.second.size()-1)+to_string(i+1)));
+				}
+				partIDOffset += (numStaves - 1);
+			}
 		}
 	}
 	string instLine = "\\insts";
 	for (auto it = insts.begin(); it != insts.end(); ++it) {
 		instLine += " ";
-		instLine += it->second.second;
+		instLine += it->second.second.second;
 	}
 	createNewLine(instLine, 0);
 	cursorLineIndex++;
@@ -2254,7 +2280,9 @@ void Editor::loadXMLFile(string filePath)
 	while (getline(file, line)) {
 		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
 		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
-		if (startsWith(lineWithoutSpaces, "<clef>")) {
+		// compare against "<clef" and not "<clef>" because instruments with more than one staves
+		// use "<clef number=1>" etc.
+		if (startsWith(lineWithoutSpaces, "<clef")) {
 			clefFollows = true;
 		}
 		else if (startsWith(lineWithoutSpaces, "<sign>") && clefFollows) {
@@ -2267,10 +2295,10 @@ void Editor::loadXMLFile(string filePath)
 		if (clefs[i].compare("G") != 0) {
 			string clefStr;
 			if (clefs[i].compare("F") == 0) {
-				clefStr = "\\" + insts[i].second + " clef bass";
+				clefStr = "\\" + insts[i].second.second + " clef bass";
 			}
 			else if (clefs[i].compare("C") == 0) {
-				clefStr = "\\" + insts[i].second + " clef alto";
+				clefStr = "\\" + insts[i].second.second + " clef alto";
 			}
 			createNewLine(clefStr, 0);
 			cursorLineIndex++;
@@ -2281,61 +2309,169 @@ void Editor::loadXMLFile(string filePath)
 	file.seekg(0, file.beg);
 	int instNdx = 0;
 	int octave, barNum;
-	int i;
-	map<int, map<int, string>> notes;
+	bool isGroupped = false;
+	bool isChord = false;
+	bool foundStaffIndex = false;
+	bool foundDynamic = false;
+	bool foundArticulation = false;
+	int measureLineNum = 0, lineNum = 0;
+	size_t whiteSpaceNdx, wedgeNdx, lastOctaveSymbolNdx = 0, barNumNdx = 1;
+	map<string, string> articulations{{"marcato", "^"}, {"trill", "+"}, {"tenuto", "-"}, {"staccatissimo", "!"},
+		{"accent", ">"}, {"staccato", "."}, {"portando", "_"}};
+	// map with instrument index as key and another map as value
+	// value map has the bar number as key, and the Lilypond string as value
+	map<int, map<int, std::pair<bool, string>>> notes;
 	while (getline(file, line)) {
 		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
 		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
 		if (startsWith(lineWithoutSpaces, "<partid")) {
 			for (auto it = insts.begin(); it != insts.end(); ++it) {
-				if (it->second.first.compare(lineWithoutSpaces.substr(9, lineWithoutSpaces.substr(9).find_last_of("\""))) == 0) {
+				if (it->second.second.first.compare(lineWithoutSpaces.substr(9, lineWithoutSpaces.substr(9).find_last_of("\""))) == 0) {
+					// if this insturment is groupped, this is the index of the first instrument of the group
+					// the incrementing indexes are found further down when we get a "<staff>" line
 					instNdx = it->first;
+					// we determine if this instrument is groupped by querying the first value of its pair
+					// which is the value to the instrument map
+					// this value is the number of staves of this instrument
+					if (it->second.first > 1) isGroupped = true;
+					else isGroupped = false;
+					foundStaffIndex = false;
 					break;
 				}
 			}
 		}
 		else if (startsWith(lineWithoutSpaces, "<measure")) {
-			size_t barNumNdx = lineWithoutSpaces.substr(16).find("\""); // after "<measurenumber=""
-			barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
-			if (notes.find(instNdx) == notes.end()) {
-				map<int, string> m;
-				notes[instNdx] = m;
-			}
-			if (notes[instNdx].find(barNum) == notes[instNdx].end()) {
-				notes[instNdx][barNum] = "";
+			measureLineNum = lineNum;
+			if ((isGroupped && foundStaffIndex) || !isGroupped) {
+				barNumNdx = lineWithoutSpaces.substr(16).find("\""); // after "<measurenumber=""
+				barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
+				if (notes.find(instNdx) == notes.end()) {
+					map<int, std::pair<bool, string>> m;
+					notes[instNdx] = m;
+				}
+				if (notes[instNdx].find(barNum) == notes[instNdx].end()) {
+					notes[instNdx][barNum] = std::make_pair(false, "");
+				}
 			}
 		}
-		else if (startsWith(lineWithoutSpaces, "<step>")) {
-			notes[instNdx][barNum] += " ";
-			notes[instNdx][barNum] += std::tolower(lineWithoutSpaces.substr(6, 1)[0]);
+		else if (startsWith(lineWithoutSpaces, "<staff>") && (isGroupped && !foundStaffIndex)) {
+			instNdx += (stoi(lineWithoutSpaces.substr(7, lineWithoutSpaces.substr(7).find("<"))) - 1);
+			foundStaffIndex = true;
+			// go back to measure line to store the data to the correct map key
+			file.seekg(measureLineNum, file.beg);
 		}
-		else if (startsWith(lineWithoutSpaces, "<octave>")) {
+		else if (startsWith(lineWithoutSpaces, "<chord") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			isChord = true;
+			// first the last white space, and insert an opening angle bracket after it
+			whiteSpaceNdx = notes[instNdx][barNum].second.find_last_of(" ");
+			notes[instNdx][barNum].second.insert(whiteSpaceNdx+1, "<");
+			// then find the index of the last octave symbol
+			lastOctaveSymbolNdx = notes[instNdx][barNum].second.find_last_of("'");
+			if (lastOctaveSymbolNdx == string::npos) {
+				lastOctaveSymbolNdx = notes[instNdx][barNum].second.find_last_of(",");
+				// if there are no octave symbols, then the closing angle bracket goes right after the note character
+				if (lastOctaveSymbolNdx == string::npos) {
+					lastOctaveSymbolNdx = whiteSpaceNdx + 2;
+				}
+			}
+			if (lastOctaveSymbolNdx+1 < notes[instNdx][barNum].second.size()-1) {
+				notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx+1, ">");
+			}
+			else {
+				notes[instNdx][barNum].second += ">";
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<step>") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			const char c = (const char)std::tolower(lineWithoutSpaces.substr(6, 1)[0]);
+			if (!isChord) {
+				notes[instNdx][barNum].second += " ";
+				notes[instNdx][barNum].second += c;
+			}
+			else {
+				notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx++, " ");
+				notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx++, &c);
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<octave>") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
 			octave = stoi(lineWithoutSpaces.substr(8, lineWithoutSpaces.find_last_of("<")-8));
 			if (octave > 3) {
 				for (i = 0; i < octave-3; i++) {
-					notes[instNdx][barNum] += "'";
+					if (!isChord) notes[instNdx][barNum].second += "'";
+					else notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx++, "'");
 				}
 			}
 			else if (octave < 3) {
 				for (i = 3; i > 3-octave; i--) {
-					notes[instNdx][barNum] += ",";
+					if (!isChord) notes[instNdx][barNum].second += ",";
+					else notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx++, ",");
 				}
 			}
 		}
-		else if (startsWith(lineWithoutSpaces, "<rest")) {
-			notes[instNdx][barNum] += " r";
+		else if (startsWith(lineWithoutSpaces, "<rest") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			notes[instNdx][barNum].second += " r";
 		}
-		else if (startsWith(lineWithoutSpaces, "<type>")) {
+		else if (startsWith(lineWithoutSpaces, "<type>") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
 			for (i = 0; i < 7; i++) {
 				if (lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6).compare(xmlDurs[i]) == 0) {
-					notes[instNdx][barNum] += to_string((int)pow(2, i));
+					if (!isChord) notes[instNdx][barNum].second += to_string((int)pow(2, i));
 					break;
 				}
 			}
 		}
-		else if (startsWith(lineWithoutSpaces, "<dot")) {
-			notes[instNdx][barNum] += ".";
+		else if (startsWith(lineWithoutSpaces, "<dot") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			if (!isChord) notes[instNdx][barNum].second += ".";
 		}
+		else if (startsWith(lineWithoutSpaces, "<tiedtype") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			if (lineWithoutSpaces.find("start") != string::npos) {
+				if (!isChord) notes[instNdx][barNum].second += "~";
+				notes[instNdx][barNum].first = true;
+			}
+		}
+		else if (foundDynamic && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			if (!isChord) notes[instNdx][barNum].second += lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"));
+			else notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx, lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/")));
+			lastOctaveSymbolNdx += lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/")).size();
+			foundDynamic = false;
+		}
+		// <dymanics come before the actual dynamic which is parsed in the else if above
+		// by assigning true to foundDynamic after the parsing chunk, we ensure that this will work properly
+		else if (startsWith(lineWithoutSpaces, "<dynamics") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			foundDynamic = true;
+		}
+		else if (startsWith(lineWithoutSpaces, "<wedge") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			wedgeNdx = lineWithoutSpaces.find("type");
+			string wedgeType;
+			if (lineWithoutSpaces.substr(wedgeNdx+6, lineWithoutSpaces.substr(wedgeNdx+6).find("\"")).compare("crescendo") == 0) {
+				if (!isChord) notes[instNdx][barNum].second += "\\<";
+			}
+			else if (lineWithoutSpaces.substr(wedgeNdx+6, lineWithoutSpaces.substr(wedgeNdx+6).find("\"")).compare("diminuendo") == 0) {
+				if (!isChord) notes[instNdx][barNum].second += "\\>";
+			}
+			else if (lineWithoutSpaces.substr(wedgeNdx+6, lineWithoutSpaces.substr(wedgeNdx+6).find("\"")).compare("stop") == 0) {
+				if (!isChord) {
+					notes[instNdx][barNum].second += "\\!";
+						notes[instNdx][barNum].first = true; // this is a linked bar
+				}
+			}
+		}
+		else if (foundArticulation && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			if (articulations.find(lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"))) != articulations.end()) {
+				if (!isChord) {
+					notes[instNdx][barNum].second += "-";
+					notes[instNdx][barNum].second += articulations[lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"))];
+				}
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<articulations") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			foundArticulation = true;
+		}
+		else if (startsWith(lineWithoutSpaces, "</articulations") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			foundArticulation = false;
+		}
+		else if (startsWith(lineWithoutSpaces, "<backup") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+			isChord = false;
+		}
+		lineNum++;
 	}
 	file.close();
 	// now write the notes in LiveLily notation
@@ -2348,7 +2484,8 @@ void Editor::loadXMLFile(string filePath)
 		createNewLine(barOpening, 0);
 		cursorLineIndex++;
 		for (auto it2 = insts.begin(); it2 != insts.end(); ++it2) {
-			string instLine = tabStr + "\\" + it2->second.second + notes[it2->first][it->first];
+			string instLine = tabStr + "\\" + it2->second.second.second;
+			instLine += notes[it2->first][it->first].second;
 			createNewLine(instLine, 0);
 			cursorLineIndex++;
 		}
