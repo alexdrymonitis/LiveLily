@@ -129,6 +129,8 @@ class Editor
 		// save and load files
 		void saveFile();
 		void saveExistingFile();
+		size_t findChordEnd(string str);
+		size_t findChordStart(string str);
 		void loadXMLFile(string filePath);
 		void loadLyvFile(string filePath);
 		void loadFile();
@@ -238,8 +240,6 @@ class Editor
 		int objID;
 		bool fileEdited;
 		string fromOscStr;
-
-		string xmlDurs[7];
 };
 
 #endif
