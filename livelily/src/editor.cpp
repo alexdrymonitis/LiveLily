@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iterator> // to be able to use find() with a reverse iterator, see findBraceBackward()
 #include <algorithm>
+#include <limits>
 #include "editor.h"
 #include "ofApp.h"
 
@@ -53,14 +54,6 @@ Editor::Editor()
 	fileEdited = false;
 
 	fromOscStr = "";
-
-	xmlDurs[0] = "whole";
-	xmlDurs[1] = "half";
-	xmlDurs[2] = "quarter";
-	xmlDurs[3] = "eighth";
-	xmlDurs[4] = "16th";
-	xmlDurs[5] = "32nd";
-	xmlDurs[6] = "64th";
 }
 
 //--------------------------------------------------------------
@@ -2211,6 +2204,45 @@ void Editor::saveExistingFile()
 }
 
 //--------------------------------------------------------------
+size_t Editor::findChordEnd(string str)
+{
+	size_t ndx = str.find_last_of(">");
+	if (ndx + 1 < str.size()) {
+		if (str[ndx+1] == '}') {
+			ndx = str.substr(0, ndx).find_last_of(" ");
+		}
+	}
+	if (ndx > 0) {
+		// if the previous character is a hyphen
+		// it means that this ">" symbol is an articulation symbol
+		// or if the previous character is a backslash
+		// it means that this ">" symbol is a diminuendo
+		// not a chord end symbol
+		if (str[ndx-1] == '-' || str[ndx-1] == '\\') {
+			ndx = str.substr(0, ndx).find_last_of(">");
+		}
+	}
+	return ndx;
+}
+
+//--------------------------------------------------------------
+size_t Editor::findChordStart(string str)
+{
+	size_t ndx = str.find_last_of("<");
+	if (ndx > 0) {
+		// if the previous character is a hyphen
+		// it means that this ">" symbol is an articulation symbol
+		// or if the previous character is a backslash
+		// it means that this ">" symbol is a diminuendo
+		// not a chord end symbol
+		if (str[ndx-1] == '-' || str[ndx-1] == '\\') {
+			ndx = str.substr(0, ndx).find_last_of("<");
+		}
+	}
+	return ndx;
+}
+
+//--------------------------------------------------------------
 void Editor::loadXMLFile(string filePath)
 {
 	ifstream file(filePath.c_str());
@@ -2221,10 +2253,10 @@ void Editor::loadXMLFile(string filePath)
 	cursorLineIndex++;
 	createNewLine("", 0);
 	cursorLineIndex++;
-	bool clefFollows = false;
-	int partID = 0;
+	int partID = 0, prevPartID = 0;
+	bool mustMoveKeys = false;
 	int partIDOffset = -1;
-	int numStaves, loopIter, i;
+	int numStaves = 1, loopIter, i;
 	size_t ndx1, ndx2;
 	map<int, std::pair<int, std::pair<string, string>>> insts;
 	while (getline(file, line)) {
@@ -2232,8 +2264,13 @@ void Editor::loadXMLFile(string filePath)
 		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
 		if (startsWith(lineWithoutSpaces, "<score-partid")) {
 			partID = stoi(lineWithoutSpaces.substr(16, lineWithoutSpaces.substr(16).find_last_of("\"")));
+			// some software that export MusicXML add sequential indexes to parts, even if a part has more than one staff
+			// to remedy this, we make the test below and use the mustMoveKeys boolean for certain actions further down
+			if (partID - prevPartID == 1) mustMoveKeys = true;
+			else mustMoveKeys = false;
+			prevPartID = partID;
 		}
-		else if (startsWith(lineWithoutSpaces, "<part-name")) {
+		else if (startsWith(lineWithoutSpaces, "<part-name>")) {
 			ndx1 = lineWithoutSpaces.find(">");
 			ndx2 = lineWithoutSpaces.find_last_of("<");
 			// the key is an incrementing index
@@ -2243,26 +2280,32 @@ void Editor::loadXMLFile(string filePath)
 			insts[partID-1] = std::make_pair(1, std::make_pair("P"+to_string(partID), lineWithoutSpaces.substr(ndx1+1, ndx2-ndx1-1)));
 		}
 		if (startsWith(lineWithoutSpaces, "<partid")) {
-			partID = stoi(lineWithoutSpaces.substr(9, lineWithoutSpaces.substr(9).find_last_of("\"")));
+			partID = stoi(lineWithoutSpaces.substr(10, lineWithoutSpaces.substr(10).find_last_of("\"")));
 			partID += partIDOffset;
 		}
 		else if (startsWith(lineWithoutSpaces, "<staves>")) {
-			numStaves = stoi(lineWithoutSpaces.substr(7, lineWithoutSpaces.substr(7).find("<")));
+			numStaves = stoi(lineWithoutSpaces.substr(8, lineWithoutSpaces.substr(8).find("<")));
 			if (numStaves > 1) {
-				// if an instrument has more than one staff, change the keys of the following items in the map
-				loopIter = (int)insts.size() - 1;
-				while (loopIter > partID) {
-					auto nodeHolder = insts.extract(loopIter);
-					nodeHolder.key() = loopIter + numStaves - 1;
-					insts.insert(std::move(nodeHolder));
-					loopIter--;
+				if (mustMoveKeys) {
+					// if an instrument has more than one staff
+					// and the part IDs for different instruments are sequential,
+					// change the keys of the following items in the map
+					loopIter = (int)insts.size() - 1;
+					while (loopIter > partID) {
+						if (insts.find(loopIter) != insts.end()) {
+							auto nodeHolder = insts.extract(loopIter);
+							nodeHolder.key() = loopIter + numStaves - 1;
+							insts.insert(std::move(nodeHolder));
+						}
+						loopIter--;
+					}
 				}
 				insts[partID].first = numStaves;
 				insts[partID].second.second += "1";
 				for (i = 1; i < numStaves; i++) {
 					insts[partID+i] = std::make_pair(numStaves, std::make_pair(insts[partID].second.first, insts[partID].second.second.substr(0, insts[partID].second.second.size()-1)+to_string(i+1)));
 				}
-				partIDOffset += (numStaves - 1);
+				if (mustMoveKeys) partIDOffset += (numStaves - 1);
 			}
 		}
 	}
@@ -2271,56 +2314,19 @@ void Editor::loadXMLFile(string filePath)
 		instLine += " ";
 		instLine += it->second.second.second;
 	}
+	int instNdx = 0;
+	int barNum = 0;
+	int clefOffset = 0;
+	size_t barNumNdx = 0;
+	bool isGroupped = false;
+	bool clefFollows = false;
+	map<string, int> clefNdxs {{"G", 0}, {"F", 1}, {"C", 2}};
+	map<int, map<int, int>> instClefs;
 	createNewLine(instLine, 0);
 	cursorLineIndex++;
-	// we have read the instruments, we now read the clefs
+	// we have read the instruments, we now read the rest of the score to store clef changes
 	file.clear();
 	file.seekg(0, file.beg);
-	vector<string> clefs;
-	while (getline(file, line)) {
-		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
-		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
-		// compare against "<clef" and not "<clef>" because instruments with more than one staves
-		// use "<clef number=1>" etc.
-		if (startsWith(lineWithoutSpaces, "<clef")) {
-			clefFollows = true;
-		}
-		else if (startsWith(lineWithoutSpaces, "<sign>") && clefFollows) {
-			string clef = lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6);
-			clefs.push_back(clef);
-			clefFollows = false;
-		}
-	}
-	for (unsigned i = 0; i < clefs.size(); i++) {
-		if (clefs[i].compare("G") != 0) {
-			string clefStr;
-			if (clefs[i].compare("F") == 0) {
-				clefStr = "\\" + insts[i].second.second + " clef bass";
-			}
-			else if (clefs[i].compare("C") == 0) {
-				clefStr = "\\" + insts[i].second.second + " clef alto";
-			}
-			createNewLine(clefStr, 0);
-			cursorLineIndex++;
-		}
-	}
-	// we have read the clefs, we now read the notes
-	file.clear();
-	file.seekg(0, file.beg);
-	int instNdx = 0;
-	int octave, barNum;
-	bool isGroupped = false;
-	bool isChord = false;
-	bool foundStaffIndex = false;
-	bool foundDynamic = false;
-	bool foundArticulation = false;
-	int measureLineNum = 0, lineNum = 0;
-	size_t whiteSpaceNdx, wedgeNdx, lastOctaveSymbolNdx = 0, barNumNdx = 1;
-	map<string, string> articulations{{"marcato", "^"}, {"trill", "+"}, {"tenuto", "-"}, {"staccatissimo", "!"},
-		{"accent", ">"}, {"staccato", "."}, {"portando", "_"}};
-	// map with instrument index as key and another map as value
-	// value map has the bar number as key, and the Lilypond string as value
-	map<int, map<int, std::pair<bool, string>>> notes;
 	while (getline(file, line)) {
 		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
 		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
@@ -2335,143 +2341,430 @@ void Editor::loadXMLFile(string filePath)
 					// this value is the number of staves of this instrument
 					if (it->second.first > 1) isGroupped = true;
 					else isGroupped = false;
-					foundStaffIndex = false;
 					break;
 				}
 			}
 		}
 		else if (startsWith(lineWithoutSpaces, "<measure")) {
-			measureLineNum = lineNum;
-			if ((isGroupped && foundStaffIndex) || !isGroupped) {
-				barNumNdx = lineWithoutSpaces.substr(16).find("\""); // after "<measurenumber=""
-				barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
-				if (notes.find(instNdx) == notes.end()) {
-					map<int, std::pair<bool, string>> m;
-					notes[instNdx] = m;
-				}
-				if (notes[instNdx].find(barNum) == notes[instNdx].end()) {
-					notes[instNdx][barNum] = std::make_pair(false, "");
-				}
+			barNumNdx = lineWithoutSpaces.substr(16).find("\""); // after "<measurenumber=""
+			barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
+			if (instClefs.find(instNdx) == instClefs.end()) {
+				map<int, int> m;
+				instClefs[instNdx] = m;
 			}
-		}
-		else if (startsWith(lineWithoutSpaces, "<staff>") && (isGroupped && !foundStaffIndex)) {
-			instNdx += (stoi(lineWithoutSpaces.substr(7, lineWithoutSpaces.substr(7).find("<"))) - 1);
-			foundStaffIndex = true;
-			// go back to measure line to store the data to the correct map key
-			file.seekg(measureLineNum, file.beg);
-		}
-		else if (startsWith(lineWithoutSpaces, "<chord") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			isChord = true;
-			// first the last white space, and insert an opening angle bracket after it
-			whiteSpaceNdx = notes[instNdx][barNum].second.find_last_of(" ");
-			notes[instNdx][barNum].second.insert(whiteSpaceNdx+1, "<");
-			// then find the index of the last octave symbol
-			lastOctaveSymbolNdx = notes[instNdx][barNum].second.find_last_of("'");
-			if (lastOctaveSymbolNdx == string::npos) {
-				lastOctaveSymbolNdx = notes[instNdx][barNum].second.find_last_of(",");
-				// if there are no octave symbols, then the closing angle bracket goes right after the note character
-				if (lastOctaveSymbolNdx == string::npos) {
-					lastOctaveSymbolNdx = whiteSpaceNdx + 2;
-				}
-			}
-			if (lastOctaveSymbolNdx+1 < notes[instNdx][barNum].second.size()-1) {
-				notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx+1, ">");
-			}
-			else {
-				notes[instNdx][barNum].second += ">";
-			}
-		}
-		else if (startsWith(lineWithoutSpaces, "<step>") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			const char c = (const char)std::tolower(lineWithoutSpaces.substr(6, 1)[0]);
-			if (!isChord) {
-				notes[instNdx][barNum].second += " ";
-				notes[instNdx][barNum].second += c;
-			}
-			else {
-				notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx++, " ");
-				notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx++, &c);
-			}
-		}
-		else if (startsWith(lineWithoutSpaces, "<octave>") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			octave = stoi(lineWithoutSpaces.substr(8, lineWithoutSpaces.find_last_of("<")-8));
-			if (octave > 3) {
-				for (i = 0; i < octave-3; i++) {
-					if (!isChord) notes[instNdx][barNum].second += "'";
-					else notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx++, "'");
-				}
-			}
-			else if (octave < 3) {
-				for (i = 3; i > 3-octave; i--) {
-					if (!isChord) notes[instNdx][barNum].second += ",";
-					else notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx++, ",");
+			instClefs[instNdx][barNum] = 0;
+			if (isGroupped) {
+				for (i = 1; i < insts[instNdx].first; i++) {
+					instClefs[instNdx+i][barNum] = 0;
 				}
 			}
 		}
-		else if (startsWith(lineWithoutSpaces, "<rest") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			notes[instNdx][barNum].second += " r";
+		// compare against "<clef" and not "<clef>" because instruments with more than one staves
+		// use "<clef number=1>" etc.
+		else if (startsWith(lineWithoutSpaces, "<clef")) {
+			clefFollows = true;
+			if (lineWithoutSpaces.find("number") != string::npos) {
+				clefOffset = stoi(lineWithoutSpaces.substr(13, lineWithoutSpaces.substr(13).find("\""))) - 1;
+			}
 		}
-		else if (startsWith(lineWithoutSpaces, "<type>") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			for (i = 0; i < 7; i++) {
-				if (lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6).compare(xmlDurs[i]) == 0) {
-					if (!isChord) notes[instNdx][barNum].second += to_string((int)pow(2, i));
+		else if (startsWith(lineWithoutSpaces, "<sign>") && clefFollows) {
+			instClefs[instNdx+clefOffset][barNum] = clefNdxs[lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6)];
+			clefFollows = false;
+		}
+	}
+	int prevClef;
+	for (auto it = instClefs.begin(); it != instClefs.end(); ++it) {
+		prevClef = 0;
+		for (auto it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
+			if (it2->second != prevClef) {
+				prevClef = it2->second;
+			}
+		}
+	}
+	file.clear();
+	file.seekg(0, file.beg);
+	// and now we store the rest of the score data
+	bool foundNote = false;
+	bool foundChordSym = false;
+	bool isChord = false;
+	bool isRest = false;
+	bool firstChordNote = false;
+	bool foundDynamic = false;
+	bool foundArticulation = false;
+	bool tupletStops = false;
+	bool areWeInsideTuplet = false;
+	bool timeModificationFollows = false;
+	bool mustAddDynamicToNextNote = false;
+	int instNdxOffset = 0;
+	unsigned int lineNum = 1;
+	int beatNumerator = 4, beatDenominator = 4;
+	int tupletNumerator = 3, tupletDenominator = 2;
+	int direction = 1;
+	int dynamicNdx = 0;
+	int alter = 0;
+	int thisDur, prevDur = 0;
+	int octave;
+	size_t wedgeNdx, tupletNdx;
+	size_t closingAngleBracketNdx;
+	size_t chordInsertNdx = 0;
+	map<string, string> articulations{{"marcato", "^"}, {"trill", "+"}, {"tenuto", "-"}, {"staccatissimo", "!"},
+		{"accent", ">"}, {"staccato", "."}, {"portando", "_"}};
+	string xmlDurs[7] = {"whole", "half", "quarter", "eighth", "16th", "32nd", "64th"};
+	map<string, int> dynamicSymMap {{"ppp", 0}, {"pp", 1}, {"p", 2}, {"mp", 3}, {"mf", 4},
+		{"f", 5}, {"ff", 6}, {"fff", 7}, {"crescendo", 8}, {"diminuendo", 9}, {"stop", 10}};
+	map<int, string> dynamicNdxMap {{0, "\\ppp"}, {1, "\\pp"}, {2, "\\p"}, {3, "\\mp"}, {4, "\\mf"},
+		{5, "\\f"}, {6, "\\ff"}, {7, "\\fff"}, {8, "\\<"}, {9, "\\>"}, {10, "\\!"}};
+	// map with instrument index as key and another map as value
+	// value map has the bar number as key, and the Lilypond string as value
+	map<int, map<int, std::pair<bool, string>>> notes;
+	while (getline(file, line)) {
+		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
+		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
+		//cout << lineNum << endl;
+		if (startsWith(lineWithoutSpaces, "<partid")) {
+			for (auto it = insts.begin(); it != insts.end(); ++it) {
+				if (it->second.second.first.compare(lineWithoutSpaces.substr(9, lineWithoutSpaces.substr(9).find_last_of("\""))) == 0) {
+					// if this insturment is groupped, this is the index of the first instrument of the group
+					// the incrementing indexes are found further down when we get a "<staff>" line
+					instNdx = it->first;
+					// we determine if this instrument is groupped by querying the first value of its pair
+					// which is the value to the instrument map
+					// this value is the number of staves of this instrument
+					if (it->second.first > 1) isGroupped = true;
+					else isGroupped = false;
 					break;
 				}
 			}
 		}
-		else if (startsWith(lineWithoutSpaces, "<dot") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			if (!isChord) notes[instNdx][barNum].second += ".";
+		else if (startsWith(lineWithoutSpaces, "<measure")) {
+			instNdxOffset = 0;
+			barNumNdx = lineWithoutSpaces.substr(16).find("\""); // after "<measurenumber=""
+			barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
+			if (notes.find(instNdx) == notes.end()) {
+				map<int, std::pair<bool, string>> m;
+				notes[instNdx] = m;
+			}
+			if (notes[instNdx].find(barNum) == notes[instNdx].end()) {
+				notes[instNdx][barNum] = std::make_pair(false, "");
+			}
+			// falsify isChord here because a dynamics symbol might be present before the first note
+			// and if isChord is true from the previous bar, the character will be inserted instead of appended, causing a crash
+			isChord = false;
+			foundNote = false;
 		}
-		else if (startsWith(lineWithoutSpaces, "<tiedtype") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			if (lineWithoutSpaces.find("start") != string::npos) {
-				if (!isChord) notes[instNdx][barNum].second += "~";
-				notes[instNdx][barNum].first = true;
+		else if (startsWith(lineWithoutSpaces, "</measure>")) {
+			if (tupletStops) {
+				notes[instNdx+instNdxOffset][barNum].second += " }";
+				tupletStops = false;
+				areWeInsideTuplet = false;
+			}
+			prevDur = 0;
+		}
+		else if (startsWith(lineWithoutSpaces, "</backup>")) {
+			// <backup> appears when a staff of a group is done, and we move on to the next staff
+			if (tupletStops) {
+				notes[instNdx+instNdxOffset][barNum].second += " }";
+				tupletStops = false;
+				areWeInsideTuplet = false;
+			}
+			instNdxOffset++;
+			if (notes.find(instNdx+instNdxOffset) == notes.end()) {
+				map<int, std::pair<bool, string>> m;
+				notes[instNdx+instNdxOffset] = m;
+			}
+			if (notes[instNdx+instNdxOffset].find(barNum) == notes[instNdx+instNdxOffset].end()) {
+				notes[instNdx+instNdxOffset][barNum] = std::make_pair(false, "");
+			}
+			isChord = false;
+			foundNote = false;
+			prevDur = 0;
+		}
+		else if (startsWith(lineWithoutSpaces, "<beats>")) {
+			beatNumerator = stoi(lineWithoutSpaces.substr(7, lineWithoutSpaces.substr(7).find("<")));
+		}
+		else if (startsWith(lineWithoutSpaces, "<beat-type>")) {
+			beatDenominator = stoi(lineWithoutSpaces.substr(11, lineWithoutSpaces.substr(11).find("<")));
+		}
+		else if (startsWith(lineWithoutSpaces, "<note")) {
+			foundNote = true;
+			isRest = false;
+		}
+		else if (startsWith(lineWithoutSpaces, "<chord")) {
+			foundChordSym = true;
+		}
+		else if (startsWith(lineWithoutSpaces, "<pitch>")) {
+			if (foundChordSym) {
+				if (!isChord) firstChordNote = true;
+				else firstChordNote = false;
+				isChord = true;
+				foundChordSym = false;
+			}
+			else {
+				isChord = false;
+			}
+			if (isChord && firstChordNote) {
+				// first the last white space, and insert an opening angle bracket after it
+				chordInsertNdx = notes[instNdx+instNdxOffset][barNum].second.find_last_of(" ");
+				//if (areWeInsideTuplet) chordInsertNdx = notes[instNdx+instNdxOffset][barNum].second.substr(0, chordInsertNdx-1).find_last_of(" ");
+				// if we are inside a tuplet, there's an extra white space, before the closing curly bracket
+				//if (areWeInsideTuplet) chordInsertNdx = notes[instNdx+instNdxOffset][barNum].second.substr(0, chordInsertNdx).find_last_of(" ");
+				notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx+1, "<");
+				// then find the index of the last octave symbol
+				chordInsertNdx = notes[instNdx+instNdxOffset][barNum].second.find_last_of("'");
+				if (chordInsertNdx == string::npos || chordInsertNdx < findChordStart(notes[instNdx+instNdxOffset][barNum].second)) {
+					chordInsertNdx = notes[instNdx+instNdxOffset][barNum].second.find_last_of(",");
+					// if there are no octave symbols, then the closing angle bracket goes right after the note character
+					if (chordInsertNdx == string::npos || chordInsertNdx < findChordStart(notes[instNdx+instNdxOffset][barNum].second)) {
+						// we search for the last white space and add 3, one for the white space, one for the opening angle bracket
+						// and one for the note character
+						chordInsertNdx = notes[instNdx+instNdxOffset][barNum].second.find_last_of(" ") + 3;
+						if (notes[instNdx+instNdxOffset][barNum].second.size() >= chordInsertNdx + 2) {
+							// if there is an accidental concatenated to the note
+							if (notes[instNdx+instNdxOffset][barNum].second.substr(chordInsertNdx, 2) == "es" || \
+									notes[instNdx+instNdxOffset][barNum].second.substr(chordInsertNdx, 2) == "is" || \
+									notes[instNdx+instNdxOffset][barNum].second.substr(chordInsertNdx, 2) == "eh" || \
+									notes[instNdx+instNdxOffset][barNum].second.substr(chordInsertNdx, 2) == "ih") {
+								chordInsertNdx += 2;
+								if (notes[instNdx+instNdxOffset][barNum].second.size() >= chordInsertNdx + 2) {
+									// if there is an additional accidental concatenated to the note
+									if (notes[instNdx+instNdxOffset][barNum].second.substr(chordInsertNdx, 2) == "es" || \
+											notes[instNdx+instNdxOffset][barNum].second.substr(chordInsertNdx, 2) == "is" || \
+											notes[instNdx+instNdxOffset][barNum].second.substr(chordInsertNdx, 2) == "eh" || \
+											notes[instNdx+instNdxOffset][barNum].second.substr(chordInsertNdx, 2) == "ih") {
+										chordInsertNdx += 2;		
+									}
+								}
+							}
+						}
+					}
+					else {
+						chordInsertNdx += 1;
+					}
+				}
+				else {
+					chordInsertNdx += 1;
+				}
+				notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, ">");
 			}
 		}
-		else if (foundDynamic && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			if (!isChord) notes[instNdx][barNum].second += lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"));
-			else notes[instNdx][barNum].second.insert(lastOctaveSymbolNdx, lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/")));
-			lastOctaveSymbolNdx += lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/")).size();
+		else if (startsWith(lineWithoutSpaces, "</note>")) {
+			if (mustAddDynamicToNextNote) {
+				if (!isChord) notes[instNdx+instNdxOffset][barNum].second += dynamicNdxMap[dynamicNdx];
+				mustAddDynamicToNextNote = false;
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<step>")) {
+			// got idea for converting the case from upper to lower from
+			// https://www.geeksforgeeks.org/case-conversion-lower-upper-vice-versa-string-using-bitwise-operators-cc/
+			const char c = (lineWithoutSpaces.substr(6, 1)[0] | 32);
+			if (!isChord) {
+				if (tupletStops) {
+					notes[instNdx+instNdxOffset][barNum].second += " }";
+					tupletStops = false;
+					areWeInsideTuplet = false;
+				}
+				notes[instNdx+instNdxOffset][barNum].second += " ";
+				notes[instNdx+instNdxOffset][barNum].second += c;
+			}
+			else {
+				chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+				notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, " ");
+				chordInsertNdx++;
+				notes[instNdx+instNdxOffset][barNum].second = notes[instNdx+instNdxOffset][barNum].second.substr(0, chordInsertNdx) + c + notes[instNdx+instNdxOffset][barNum].second.substr(chordInsertNdx);
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<alter>")) {
+			alter = stoi(lineWithoutSpaces.substr(7, lineWithoutSpaces.substr(7).find("<")));
+			switch (alter) {
+				case -1:
+					if (!isChord) {
+						notes[instNdx+instNdxOffset][barNum].second += "es";
+					}
+					else {
+						chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+						notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, "es");
+						chordInsertNdx += 2;
+					}
+					break;
+				case 1:
+					if (!isChord) {
+						notes[instNdx+instNdxOffset][barNum].second += "is";
+					}
+					else {
+						chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+						notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, "is");
+						chordInsertNdx += 2;
+					}
+					break;
+				default:
+					break;
+			}
+			// reset alter for safety
+			alter = 0;
+		}
+		// time modification concerns tuplets
+		else if (startsWith(lineWithoutSpaces, "<time-modification>")) {
+			timeModificationFollows = true;
+		}
+		else if (startsWith(lineWithoutSpaces, "</time-modification>")) {
+			timeModificationFollows = false;
+		}
+		else if (startsWith(lineWithoutSpaces, "<actual-notes>") && timeModificationFollows && !areWeInsideTuplet) {
+			tupletNumerator = stoi(lineWithoutSpaces.substr(14, lineWithoutSpaces.substr(14).find("<")));
+		}
+		else if (startsWith(lineWithoutSpaces, "<normal-notes>") && timeModificationFollows && !areWeInsideTuplet) {
+			tupletDenominator = stoi(lineWithoutSpaces.substr(14, lineWithoutSpaces.substr(14).find("<")));
+		}
+		else if (startsWith(lineWithoutSpaces, "<tuplet")) {
+			tupletNdx = lineWithoutSpaces.find("type");
+			if (lineWithoutSpaces.substr(tupletNdx+6, lineWithoutSpaces.substr(tupletNdx+6).find("\"")).compare("start") == 0 && !areWeInsideTuplet) {
+				// first the last white space, and insert an opening angle bracket after it
+				tupletNdx = notes[instNdx+instNdxOffset][barNum].second.find_last_of(" ");
+				notes[instNdx+instNdxOffset][barNum].second.insert(tupletNdx+1, "\\tuplet "+to_string(tupletNumerator)+(string)"/"+to_string(tupletDenominator)+(string)" { ");
+				areWeInsideTuplet = true;
+			}
+			else if (lineWithoutSpaces.substr(tupletNdx+6, lineWithoutSpaces.substr(tupletNdx+6).find("\"")).compare("stop") == 0) {
+				tupletStops = true;
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<octave>")) {
+			octave = stoi(lineWithoutSpaces.substr(8, lineWithoutSpaces.find_last_of("<")-8));
+			if (octave > 3) {
+				for (i = 3; i < octave; i++) {
+					if (!isChord) {
+						notes[instNdx+instNdxOffset][barNum].second += "'";
+					}
+					else {
+						chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+						notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, "'");
+						chordInsertNdx++;
+					}
+				}
+			}
+			else if (octave < 3) {
+				for (i = 3; i > octave; i--) {
+					if (!isChord) {
+						notes[instNdx+instNdxOffset][barNum].second += ",";
+					}
+					else {
+						chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+						notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, ",");
+						chordInsertNdx++;
+					}
+				}
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<rest")) {
+			if (tupletStops) {
+				notes[instNdx+instNdxOffset][barNum].second += " }";
+				tupletStops = false;
+				areWeInsideTuplet = false;
+			}
+			notes[instNdx+instNdxOffset][barNum].second += " r";
+			isRest = true;
+			if (isChord) isChord = false;
+		}
+		else if (startsWith(lineWithoutSpaces, "<type>")) {
+			for (i = 0; i < 7; i++) {
+				if (lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6).compare(xmlDurs[i]) == 0) {
+					thisDur = (int)pow(2, i);
+					if (thisDur != prevDur && !isChord) {
+						notes[instNdx+instNdxOffset][barNum].second += to_string(thisDur);
+					}
+					prevDur = thisDur;
+					break;
+				}
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<directionplacement")) {
+			if (lineWithoutSpaces.substr(20, lineWithoutSpaces.substr(20).find("\"")).compare("below") == 0) {
+				direction = -1;
+			}
+			else {
+				direction = 1;
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<words")) {
+			// we don't care to check if it's a chord or note, because the text comes right after the first chord note
+			// and when we find a chord, we insert the necessary characters to the correct positions
+			if (direction > 0) notes[instNdx+instNdxOffset][barNum].second += "^";
+			else notes[instNdx+instNdxOffset][barNum].second += "_";
+			notes[instNdx+instNdxOffset][barNum].second += "\"";
+			closingAngleBracketNdx = lineWithoutSpaces.find(">");
+			notes[instNdx+instNdxOffset][barNum].second += lineWithoutSpaces.substr(closingAngleBracketNdx+1, lineWithoutSpaces.substr(closingAngleBracketNdx).find("<"));
+			notes[instNdx+instNdxOffset][barNum].second += "\"";
+		}
+		else if (startsWith(lineWithoutSpaces, "<dot")) {
+			if (!isChord) notes[instNdx+instNdxOffset][barNum].second += ".";
+		}
+		else if (startsWith(lineWithoutSpaces, "<tiedtype")) {
+			if (lineWithoutSpaces.find("start") != string::npos) {
+				if (!isChord) notes[instNdx+instNdxOffset][barNum].second += "~";
+				notes[instNdx+instNdxOffset][barNum].first = true;
+			}
+		}
+		else if (foundDynamic) {
+			if (!foundNote) {
+				dynamicNdx = dynamicSymMap[lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"))];
+				mustAddDynamicToNextNote = true;
+			}
+			else {
+				if (!isChord) {
+					notes[instNdx+instNdxOffset][barNum].second += ("\\" + lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/")));
+				}
+				else  {
+					chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+					notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, ("\\" + lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"))));
+					chordInsertNdx += lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/")).size() + 1;
+				}
+			}
 			foundDynamic = false;
 		}
 		// <dymanics come before the actual dynamic which is parsed in the else if above
 		// by assigning true to foundDynamic after the parsing chunk, we ensure that this will work properly
-		else if (startsWith(lineWithoutSpaces, "<dynamics") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+		else if (startsWith(lineWithoutSpaces, "<dynamics")) {
 			foundDynamic = true;
 		}
-		else if (startsWith(lineWithoutSpaces, "<wedge") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+		else if (startsWith(lineWithoutSpaces, "<wedge")) {
 			wedgeNdx = lineWithoutSpaces.find("type");
-			string wedgeType;
-			if (lineWithoutSpaces.substr(wedgeNdx+6, lineWithoutSpaces.substr(wedgeNdx+6).find("\"")).compare("crescendo") == 0) {
-				if (!isChord) notes[instNdx][barNum].second += "\\<";
+			if (!foundNote) {
+				dynamicNdx = dynamicSymMap[lineWithoutSpaces.substr(wedgeNdx+6, lineWithoutSpaces.substr(wedgeNdx+6).find("\""))];
+				mustAddDynamicToNextNote = true;
 			}
-			else if (lineWithoutSpaces.substr(wedgeNdx+6, lineWithoutSpaces.substr(wedgeNdx+6).find("\"")).compare("diminuendo") == 0) {
-				if (!isChord) notes[instNdx][barNum].second += "\\>";
-			}
-			else if (lineWithoutSpaces.substr(wedgeNdx+6, lineWithoutSpaces.substr(wedgeNdx+6).find("\"")).compare("stop") == 0) {
-				if (!isChord) {
-					notes[instNdx][barNum].second += "\\!";
-						notes[instNdx][barNum].first = true; // this is a linked bar
+			else {
+				if (lineWithoutSpaces.substr(wedgeNdx+6, lineWithoutSpaces.substr(wedgeNdx+6).find("\"")).compare("crescendo") == 0) {
+					if (!isChord) notes[instNdx+instNdxOffset][barNum].second += "\\<";
+				}
+				else if (lineWithoutSpaces.substr(wedgeNdx+6, lineWithoutSpaces.substr(wedgeNdx+6).find("\"")).compare("diminuendo") == 0) {
+					if (!isChord) notes[instNdx+instNdxOffset][barNum].second += "\\>";
+				}
+				else if (lineWithoutSpaces.substr(wedgeNdx+6, lineWithoutSpaces.substr(wedgeNdx+6).find("\"")).compare("stop") == 0) {
+					if (!isChord) {
+						notes[instNdx+instNdxOffset][barNum].second += "\\!";
+							notes[instNdx+instNdxOffset][barNum].first = true; // this is a linked bar
+					}
 				}
 			}
 		}
-		else if (foundArticulation && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			if (articulations.find(lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"))) != articulations.end()) {
-				if (!isChord) {
-					notes[instNdx][barNum].second += "-";
-					notes[instNdx][barNum].second += articulations[lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"))];
-				}
-			}
-		}
-		else if (startsWith(lineWithoutSpaces, "<articulations") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			foundArticulation = true;
-		}
-		else if (startsWith(lineWithoutSpaces, "</articulations") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
+		else if (startsWith(lineWithoutSpaces, "</articulations")) {
 			foundArticulation = false;
 		}
-		else if (startsWith(lineWithoutSpaces, "<backup") && ((isGroupped && foundStaffIndex) || !isGroupped)) {
-			isChord = false;
+		else if (foundArticulation) {
+			if (articulations.find(lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"))) != articulations.end()) {
+				if (!isChord) {
+					notes[instNdx+instNdxOffset][barNum].second += "-";
+					notes[instNdx+instNdxOffset][barNum].second += articulations[lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"))];
+				}
+			}
+		}
+		else if (startsWith(lineWithoutSpaces, "<articulations")) {
+			if (!isRest) foundArticulation = true;
 		}
 		lineNum++;
+	}
+	// in case we have a tuplet at the very end of the score
+	if (tupletStops) {
+		notes[instNdx+instNdxOffset][barNum].second += " }";
 	}
 	file.close();
 	// now write the notes in LiveLily notation
