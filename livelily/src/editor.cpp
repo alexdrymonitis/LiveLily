@@ -417,8 +417,8 @@ void Editor::drawText()
 				}
 				else {
 					if (startsWith(token, "\\") && !isComment) {
-						if (((ofApp*)ofGetAppPtr())->commands_map[thisLang].find(token) != ((ofApp*)ofGetAppPtr())->commands_map[thisLang].end()) {
-							ofColor color = ((ofApp*)ofGetAppPtr())->commands_map[thisLang][token];
+						if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang].find(token) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang].end()) {
+							ofColor color = ((ofApp*)ofGetAppPtr())->commandsMap[thisLang][token];
 							ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 									color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 									color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
@@ -436,9 +436,9 @@ void Editor::drawText()
 							}
 						}
 					}
-					else if (((ofApp*)ofGetAppPtr())->commands_map_second[thisLang].find(token) != ((ofApp*)ofGetAppPtr())->commands_map_second[thisLang].end() \
+					else if (((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang].find(token) != ((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang].end() \
 							&& !isComment) {
-						ofColor color = ((ofApp*)ofGetAppPtr())->commands_map_second[thisLang][token];
+						ofColor color = ((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang][token];
 						ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 								color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 								color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
@@ -2258,6 +2258,7 @@ void Editor::loadXMLFile(string filePath)
 	int partIDOffset = -1;
 	int numStaves = 1, loopIter, i;
 	size_t ndx1, ndx2;
+	unsigned int lineNum = 1;
 	map<int, std::pair<int, std::pair<string, string>>> insts;
 	while (getline(file, line)) {
 		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
@@ -2345,8 +2346,8 @@ void Editor::loadXMLFile(string filePath)
 				}
 			}
 		}
-		else if (startsWith(lineWithoutSpaces, "<measure")) {
-			barNumNdx = lineWithoutSpaces.substr(16).find("\""); // after "<measurenumber=""
+		else if (startsWith(lineWithoutSpaces, "<measurenumber=")) {
+			barNumNdx = lineWithoutSpaces.substr(16).find("\"");
 			barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
 			if (instClefs.find(instNdx) == instClefs.end()) {
 				map<int, int> m;
@@ -2395,18 +2396,18 @@ void Editor::loadXMLFile(string filePath)
 	bool areWeInsideTuplet = false;
 	bool timeModificationFollows = false;
 	bool mustAddDynamicToNextNote = false;
+	bool foundWords = false;
+	bool addedText = false;
 	int instNdxOffset = 0;
-	unsigned int lineNum = 1;
+	lineNum = 1;
 	int beatNumerator = 4, beatDenominator = 4;
 	int tupletNumerator = 3, tupletDenominator = 2;
 	int direction = 1;
 	int dynamicNdx = 0;
 	int alter = 0;
-	int thisDur, prevDur = 0;
 	int octave;
-	size_t wedgeNdx, tupletNdx;
-	size_t closingAngleBracketNdx;
-	size_t chordInsertNdx = 0;
+	size_t wedgeNdx, tupletNdx, lastDurNdx = 0;
+	size_t openingAngleBracketNdx, closingAngleBracketNdx;
 	map<string, string> articulations{{"marcato", "^"}, {"trill", "+"}, {"tenuto", "-"}, {"staccatissimo", "!"},
 		{"accent", ">"}, {"staccato", "."}, {"portando", "_"}};
 	string xmlDurs[7] = {"whole", "half", "quarter", "eighth", "16th", "32nd", "64th"};
@@ -2414,6 +2415,7 @@ void Editor::loadXMLFile(string filePath)
 		{"f", 5}, {"ff", 6}, {"fff", 7}, {"crescendo", 8}, {"diminuendo", 9}, {"stop", 10}};
 	map<int, string> dynamicNdxMap {{0, "\\ppp"}, {1, "\\pp"}, {2, "\\p"}, {3, "\\mp"}, {4, "\\mf"},
 		{5, "\\f"}, {6, "\\ff"}, {7, "\\fff"}, {8, "\\<"}, {9, "\\>"}, {10, "\\!"}};
+	string words = "";
 	// map with instrument index as key and another map as value
 	// value map has the bar number as key, and the Lilypond string as value
 	map<int, map<int, std::pair<bool, string>>> notes;
@@ -2436,9 +2438,9 @@ void Editor::loadXMLFile(string filePath)
 				}
 			}
 		}
-		else if (startsWith(lineWithoutSpaces, "<measure")) {
+		else if (startsWith(lineWithoutSpaces, "<measurenumber")) {
 			instNdxOffset = 0;
-			barNumNdx = lineWithoutSpaces.substr(16).find("\""); // after "<measurenumber=""
+			barNumNdx = lineWithoutSpaces.substr(16).find("\"");
 			barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
 			if (notes.find(instNdx) == notes.end()) {
 				map<int, std::pair<bool, string>> m;
@@ -2458,7 +2460,6 @@ void Editor::loadXMLFile(string filePath)
 				tupletStops = false;
 				areWeInsideTuplet = false;
 			}
-			prevDur = 0;
 		}
 		else if (startsWith(lineWithoutSpaces, "</backup>")) {
 			// <backup> appears when a staff of a group is done, and we move on to the next staff
@@ -2477,7 +2478,6 @@ void Editor::loadXMLFile(string filePath)
 			}
 			isChord = false;
 			foundNote = false;
-			prevDur = 0;
 		}
 		else if (startsWith(lineWithoutSpaces, "<beats>")) {
 			beatNumerator = stoi(lineWithoutSpaces.substr(7, lineWithoutSpaces.substr(7).find("<")));
@@ -2504,7 +2504,7 @@ void Editor::loadXMLFile(string filePath)
 			}
 			if (isChord && firstChordNote) {
 				// first the last white space, and insert an opening angle bracket after it
-				chordInsertNdx = notes[instNdx+instNdxOffset][barNum].second.find_last_of(" ");
+				size_t chordInsertNdx = notes[instNdx+instNdxOffset][barNum].second.find_last_of(" ");
 				//if (areWeInsideTuplet) chordInsertNdx = notes[instNdx+instNdxOffset][barNum].second.substr(0, chordInsertNdx-1).find_last_of(" ");
 				// if we are inside a tuplet, there's an extra white space, before the closing curly bracket
 				//if (areWeInsideTuplet) chordInsertNdx = notes[instNdx+instNdxOffset][barNum].second.substr(0, chordInsertNdx).find_last_of(" ");
@@ -2552,6 +2552,7 @@ void Editor::loadXMLFile(string filePath)
 				if (!isChord) notes[instNdx+instNdxOffset][barNum].second += dynamicNdxMap[dynamicNdx];
 				mustAddDynamicToNextNote = false;
 			}
+			if (addedText) addedText = false;
 		}
 		else if (startsWith(lineWithoutSpaces, "<step>")) {
 			// got idea for converting the case from upper to lower from
@@ -2567,23 +2568,23 @@ void Editor::loadXMLFile(string filePath)
 				notes[instNdx+instNdxOffset][barNum].second += c;
 			}
 			else {
-				chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
-				notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, " ");
-				chordInsertNdx++;
-				notes[instNdx+instNdxOffset][barNum].second = notes[instNdx+instNdxOffset][barNum].second.substr(0, chordInsertNdx) + c + notes[instNdx+instNdxOffset][barNum].second.substr(chordInsertNdx);
+				size_t noteInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+				notes[instNdx+instNdxOffset][barNum].second.insert(noteInsertNdx, " ");
+				noteInsertNdx++;
+				notes[instNdx+instNdxOffset][barNum].second = notes[instNdx+instNdxOffset][barNum].second.substr(0, noteInsertNdx) + c + notes[instNdx+instNdxOffset][barNum].second.substr(noteInsertNdx);
 			}
 		}
 		else if (startsWith(lineWithoutSpaces, "<alter>")) {
 			alter = stoi(lineWithoutSpaces.substr(7, lineWithoutSpaces.substr(7).find("<")));
+			size_t alterInsertNdx;
 			switch (alter) {
 				case -1:
 					if (!isChord) {
 						notes[instNdx+instNdxOffset][barNum].second += "es";
 					}
 					else {
-						chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
-						notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, "es");
-						chordInsertNdx += 2;
+						alterInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+						notes[instNdx+instNdxOffset][barNum].second.insert(alterInsertNdx, "es");
 					}
 					break;
 				case 1:
@@ -2591,9 +2592,8 @@ void Editor::loadXMLFile(string filePath)
 						notes[instNdx+instNdxOffset][barNum].second += "is";
 					}
 					else {
-						chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
-						notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, "is");
-						chordInsertNdx += 2;
+						alterInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+						notes[instNdx+instNdxOffset][barNum].second.insert(alterInsertNdx, "is");
 					}
 					break;
 				default:
@@ -2635,9 +2635,8 @@ void Editor::loadXMLFile(string filePath)
 						notes[instNdx+instNdxOffset][barNum].second += "'";
 					}
 					else {
-						chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
-						notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, "'");
-						chordInsertNdx++;
+						size_t octaveInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+						notes[instNdx+instNdxOffset][barNum].second.insert(octaveInsertNdx, "'");
 					}
 				}
 			}
@@ -2647,9 +2646,8 @@ void Editor::loadXMLFile(string filePath)
 						notes[instNdx+instNdxOffset][barNum].second += ",";
 					}
 					else {
-						chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
-						notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, ",");
-						chordInsertNdx++;
+						size_t octaveInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+						notes[instNdx+instNdxOffset][barNum].second.insert(octaveInsertNdx, ",");
 					}
 				}
 			}
@@ -2667,17 +2665,22 @@ void Editor::loadXMLFile(string filePath)
 		else if (startsWith(lineWithoutSpaces, "<type>")) {
 			for (i = 0; i < 7; i++) {
 				if (lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6).compare(xmlDurs[i]) == 0) {
-					thisDur = (int)pow(2, i);
-					if (thisDur != prevDur && !isChord) {
-						notes[instNdx+instNdxOffset][barNum].second += to_string(thisDur);
+					if (!isChord) {
+						notes[instNdx+instNdxOffset][barNum].second += to_string((int)pow(2, i));
+						lastDurNdx = notes[instNdx+instNdxOffset][barNum].second.size();
 					}
-					prevDur = thisDur;
 					break;
 				}
 			}
+			if (foundWords) {
+				notes[instNdx+instNdxOffset][barNum].second += words;
+				words = "";
+				foundWords = false;
+				addedText = true;
+			}
 		}
 		else if (startsWith(lineWithoutSpaces, "<directionplacement")) {
-			if (lineWithoutSpaces.substr(20, lineWithoutSpaces.substr(20).find("\"")).compare("below") == 0) {
+			if (lineWithoutSpaces.substr(21, lineWithoutSpaces.substr(21).find("\"")).compare("below") == 0) {
 				direction = -1;
 			}
 			else {
@@ -2687,15 +2690,35 @@ void Editor::loadXMLFile(string filePath)
 		else if (startsWith(lineWithoutSpaces, "<words")) {
 			// we don't care to check if it's a chord or note, because the text comes right after the first chord note
 			// and when we find a chord, we insert the necessary characters to the correct positions
-			if (direction > 0) notes[instNdx+instNdxOffset][barNum].second += "^";
-			else notes[instNdx+instNdxOffset][barNum].second += "_";
-			notes[instNdx+instNdxOffset][barNum].second += "\"";
-			closingAngleBracketNdx = lineWithoutSpaces.find(">");
-			notes[instNdx+instNdxOffset][barNum].second += lineWithoutSpaces.substr(closingAngleBracketNdx+1, lineWithoutSpaces.substr(closingAngleBracketNdx).find("<"));
-			notes[instNdx+instNdxOffset][barNum].second += "\"";
+			if (direction > 0) words += "^";
+			else words += "_";
+			words += "\"";
+			// here we use line and not lineWithoutSpaces, because we want the spaces to be included in the text
+			closingAngleBracketNdx = line.find(">");
+			openingAngleBracketNdx = line.substr(closingAngleBracketNdx).find("<");
+			if (openingAngleBracketNdx == string::npos) openingAngleBracketNdx = line.size() - closingAngleBracketNdx;
+			else openingAngleBracketNdx--;
+			words += line.substr(closingAngleBracketNdx+1, openingAngleBracketNdx);
+			words += "\"";
+			foundWords = true;
 		}
 		else if (startsWith(lineWithoutSpaces, "<dot")) {
-			if (!isChord) notes[instNdx+instNdxOffset][barNum].second += ".";
+			if (!isChord) {
+				// if there is text in the current note, the dot will go after the text if we just concatenate
+				// so, for safety, we insert the dot right after the duration
+				if (addedText) {
+					size_t dotInsertNdx = lastDurNdx;
+					if (dotInsertNdx == notes[instNdx+instNdxOffset][barNum].second.size()-1) {
+						notes[instNdx+instNdxOffset][barNum].second += ".";
+					}
+					else {
+						notes[instNdx+instNdxOffset][barNum].second.insert(dotInsertNdx, ".");
+					}
+				}
+				else {
+					notes[instNdx+instNdxOffset][barNum].second += ".";
+				}
+			}
 		}
 		else if (startsWith(lineWithoutSpaces, "<tiedtype")) {
 			if (lineWithoutSpaces.find("start") != string::npos) {
@@ -2713,9 +2736,8 @@ void Editor::loadXMLFile(string filePath)
 					notes[instNdx+instNdxOffset][barNum].second += ("\\" + lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/")));
 				}
 				else  {
-					chordInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
-					notes[instNdx+instNdxOffset][barNum].second.insert(chordInsertNdx, ("\\" + lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"))));
-					chordInsertNdx += lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/")).size() + 1;
+					size_t dynInsertNdx = findChordEnd(notes[instNdx+instNdxOffset][barNum].second);
+					notes[instNdx+instNdxOffset][barNum].second.insert(dynInsertNdx, ("\\" + lineWithoutSpaces.substr(1, lineWithoutSpaces.substr(1).find("/"))));
 				}
 			}
 			foundDynamic = false;

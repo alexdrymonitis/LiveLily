@@ -25,6 +25,7 @@ void Sequencer::setup(SharedData *sData)
 	onNextStartMidiByte = 0xFA; // Start MIDI byte
 	tickCounter = 0;
 	beatCounter = 0;
+	sendBeatVizInfoCounter = 0;
 	thisLoopIndex = 0;
 	countdown = false;
 	countdownCounter = 0;
@@ -111,12 +112,6 @@ void Sequencer::setSequencerRunning(bool seqRun)
 }
 
 //--------------------------------------------------------------
-void Sequencer::tempoUpdate()
-{
-	updateTempo = true;
-}
-
-//--------------------------------------------------------------
 void Sequencer::setFinish(bool finishState)
 {
 	finish = finishState;
@@ -137,13 +132,13 @@ void Sequencer::setMidiTune(int tuneVal)
 }
 
 //--------------------------------------------------------------
-void Sequencer::sendBeatVizInfo()
+void Sequencer::sendBeatVizInfo(int bar)
 {
 	// calculate the time stamp regardless of whether we're showing the beat
 	// or not in the editor, in case we have connected score parts
 	sharedData->beatVizTimeStamp = ofGetElapsedTimeMillis();
-	sharedData->beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs / 4.0);
-	sharedData->beatVizRampStart = sharedData->tempoMs / 4;
+	sharedData->beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs[bar] / 4.0);
+	sharedData->beatVizRampStart = sharedData->tempoMs[bar] / 4;
 	if (sharedData->beatAnimate) {
 		sharedData->beatViz = true;
 	}
@@ -174,9 +169,8 @@ void Sequencer::threadedFunction()
 		if (runSequencer && !sequencerRunning) {
 			sharedData->mutex.lock();
 			int bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisLoopIndex];
-			sharedData->tempo = sharedData->newTempo;
 			// in here we calculate the number of beats on a microsecond basis
-			numBeats = sharedData->numBeats[bar] * sharedData->tempo;
+			numBeats = sharedData->numBeats[bar] * sharedData->tempo[bar];
 			if (sharedData->showScore) {
 				if (sharedData->setAnimation) {
 					for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
@@ -192,8 +186,8 @@ void Sequencer::threadedFunction()
 				}
 			}
 			// calculate the following two in case we connect to a score part
-			sharedData->beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs / 4.0);
-			sharedData->beatVizRampStart = sharedData->tempoMs / 4;
+			sharedData->beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs[bar] / 4.0);
+			sharedData->beatVizRampStart = sharedData->tempoMs[bar] / 4;
 			((ofApp*)ofGetAppPtr())->sendFinishToParts(false);
 			ofxOscMessage m;
 			m.setAddress("/beatinfo");
@@ -206,6 +200,7 @@ void Sequencer::threadedFunction()
 			if (sendMidiClock) midiOut.sendMidiByte(onNextStartMidiByte);
 			firstIter = true;
 			endOfBar = false;
+			sendBeatVizInfoCounter = 0;
 			for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
 				instMapIt->second.initSeqToggle();
 				instMapIt->second.setFirstIter(true);
@@ -275,7 +270,7 @@ void Sequencer::threadedFunction()
 			}
 			// get the start of each beat
 			int diff = (int)(timeStamp - tickCounter);
-			int compareVal = sharedData->tempoMs * 1000; // in microseconds
+			int compareVal = sharedData->tempoMs[bar] * 1000; // in microseconds
 			if (diff >= compareVal || firstIter) {
 				if (finished) {
 					for (auto func = sharedData->functions.begin(); func != sharedData->functions.end(); ++func) {
@@ -348,7 +343,7 @@ void Sequencer::threadedFunction()
 							((ofApp*)ofGetAppPtr())->parseCommand(func->second.getName(), 1, 1);
 						}
 					}
-					if (!(sharedData->beatCounter == 0 && mustStop)) sendBeatVizInfo();
+					if (!(sharedData->beatCounter == 0 && mustStop)) sendBeatVizInfo(bar);
 					endOfBar = true;
 					if (countdownCounter == 0) {
 						countdown = false;
@@ -358,8 +353,17 @@ void Sequencer::threadedFunction()
 				else {
 					sharedData->beatCounter = beatCounter;
 					beatCounter++;
-					if (beatCounter >= sharedData->numerator[bar]) beatCounter = 0;
-					sendBeatVizInfo();
+					if (beatCounter >= sharedData->numerator[bar]) {
+						beatCounter = 0;
+					}
+					if (sendBeatVizInfoCounter == 0) {
+						sendBeatVizInfo(bar);
+					}
+					if (sharedData->beatAtDifferentThanDivisor[bar]) {
+						sendBeatVizInfoCounter++;
+						int modulo = (sharedData->beatAtValues[bar] > 0 ? sharedData->beatAtValues[bar] : 1);
+						sendBeatVizInfoCounter %= modulo;
+					}
 					for (auto func = sharedData->functions.begin(); func != sharedData->functions.end(); ++func) {
 						// binding a function to the number of instruments + 1, binds to the start of each bar
 						if (func->second.getBoundInst() == (int)sharedData->instruments.size() + 1 && sharedData->beatCounter == 0) {
@@ -389,6 +393,8 @@ void Sequencer::threadedFunction()
 						mustStop = false;
 						mustStopCalled = true;
 						stopNow();
+						sharedData->mutex.unlock();
+						return;
 					}
 				}
 			}
@@ -397,7 +403,7 @@ void Sequencer::threadedFunction()
 				// need to calculate the number of steps
 				uint64_t midiClockTimeStamp = ofGetElapsedTimeMicros();
 				if (sendMidiClock && \
-						(midiClockTimeStamp - sharedData->PPQNTimeStamp) >= sharedData->PPQNPerUs && \
+						(midiClockTimeStamp - sharedData->PPQNTimeStamp) >= sharedData->PPQNPerUs[bar] && \
 						sharedData->PPQNCounter < sharedData->PPQN) {
 					midiOut.sendMidiByte(0xF8);
 					sharedData->PPQNCounter++;
@@ -410,7 +416,7 @@ void Sequencer::threadedFunction()
 						}
 					}
 					if (instMapIt->second.hasNotesInBar(bar)) {
-						if (instMapIt->second.mustFireStep(timeStamp, bar, sharedData->tempo)) {
+						if (instMapIt->second.mustFireStep(timeStamp, bar, sharedData->tempo[bar])) {
 							// if we have a note, not a rest, and the current instrument is not muted
 							if (instMapIt->second.hasNotesInStep(bar) && !instMapIt->second.isMuted()) {
 								if (!instMapIt->second.isMidi()) { // send OSC message
@@ -425,7 +431,9 @@ void Sequencer::threadedFunction()
 									else {
 										ofxOscMessage m;
 										m.setAddress("/" + instMapIt->second.getName() + "/articulation");
-										m.addStringArg(sharedData->articulSyms[instMapIt->second.getArticulationIndex(bar)]);
+										for (auto it = instMapIt->second.articulations[bar][instMapIt->second.getBarDataCounter()].begin(); it != instMapIt->second.articulations[bar][instMapIt->second.getBarDataCounter()].end(); ++it) {
+											m.addStringArg(sharedData->articulSyms[*it]);
+										}
 										oscSender.sendMessage(m, false);
 										m.clear();
 
@@ -458,7 +466,9 @@ void Sequencer::threadedFunction()
 									}
 									else {
 										midiOut.sendPitchBend(instMapIt->second.getMidiChan(), instMapIt->second.getPitchBendVal(bar));
-										midiOut.sendProgramChange(instMapIt->second.getMidiChan(), instMapIt->second.getProgramChangeVal(bar));
+										for (auto it = instMapIt->second.midiArticulationVals[bar][instMapIt->second.barDataCounter].begin(); it != instMapIt->second.midiArticulationVals[bar][instMapIt->second.barDataCounter].end(); ++it) {
+											midiOut.sendProgramChange(instMapIt->second.getMidiChan(), *it);
+										}
 										for (auto it = instMapIt->second.midiNotes[bar][instMapIt->second.barDataCounter].begin(); it != instMapIt->second.midiNotes[bar][instMapIt->second.barDataCounter].end(); ++it) {
 											midiOut.sendNoteOn(instMapIt->second.getMidiChan(), *it, instMapIt->second.getMidiVel(bar));
 										}
@@ -527,20 +537,6 @@ void Sequencer::threadedFunction()
 					//sharedData->beatAnimate = false;
 					//sharedData->animate = false;
 					//sharedData->setAnimation = true;
-				}
-				else {
-					//for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-					//	instMapIt->second.resetBarDataCounter();
-					//}
-					if (updateTempo) {
-						sharedData->tempo = sharedData->newTempo;
-						numBeats = sharedData->numBeats[bar] * sharedData->tempo;
-						for (auto it = sharedData->instruments.begin(); it != sharedData->instruments.end(); ++it) {
-							// we set it to true here so they are updated at the first beat of the next bar
-							it->second.setUpdateTempo(true);
-						}
-						updateTempo = false;
-					}
 				}
 			}
 			sharedData->mutex.unlock();
@@ -628,11 +624,12 @@ void ofApp::setup()
 	changeFontSizeForAllPanes();
 	screenSplitHorizontal = sharedData.screenWidth;
 	
-	sharedData.tempoMs = 500;
+	sharedData.tempoMs[0] = 500;
+	sharedData.BPMMultiplier[0] = 1;
+	sharedData.beatAtDifferentThanDivisor[0] = false;
 	sharedData.numerator[0] = 4;
 	sharedData.denominator[0] = 4;
 	sharedData.numBeats[0] = 4;
-	sharedData.tempNumBeats = 4;
 	
 	barError = false;
 	inserting = false;
@@ -643,6 +640,7 @@ void ofApp::setup()
 	sharedData.beatCounter = 0; // this is controlled by the sequencer
 	sharedData.barCounter = 0; // also controlled by the sequencer
 	showBarCount = false;
+	showTempo = false;
 	
 	sharedData.showScore = false;
 	sharedData.longestInstNameWidth = 0;
@@ -661,8 +659,8 @@ void ofApp::setup()
 	sharedData.beatVizType = 1;
 	sharedData.beatVizDegrade = BEATVIZBRIGHTNESS;
 	sharedData.beatVizTimeStamp = 0;
-	sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData.tempoMs / 4.0);
-	sharedData.beatVizRampStart = sharedData.tempoMs / 4;
+	sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData.tempoMs[0] / 4.0);
+	sharedData.beatVizRampStart = sharedData.tempoMs[0] / 4;
 	sharedData.noteWidth = 0;
 	sharedData.noteHeight = 0;
 	sharedData.allStaffDiffs = 0;
@@ -685,7 +683,7 @@ void ofApp::setup()
 	sharedData.PPQN = 24;
 	sharedData.PPQNCounter = 0;
 	// get the ms duration of the PPQM
-	sharedData.PPQNPerUs = (uint64_t)(sharedData.tempoMs / (float)sharedData.PPQN) * 1000;
+	sharedData.PPQNPerUs[0] = (uint64_t)(sharedData.tempoMs[0] / (float)sharedData.PPQN) * 1000;
 	
 	// set the notes chars
 	for (int i = 2; i < 9; i++) {
@@ -698,6 +696,11 @@ void ofApp::setup()
 								  "staccatissimo", "accent", "staccato", "portando"};
 	for (int i = 0; i < 8; i++) {
 		sharedData.articulSyms[i] = articulSymsLocal[i];
+	}
+
+	// create the beat rectangle transparency cosine table
+	for (int i = 0; i <= BEATVIZBRIGHTNESS; i++) {
+		sharedData.beatVizCosTab[i] = (int)(((cos(((float)i/(float)(BEATVIZBRIGHTNESS+1))*M_PI) * -0.5) + 0.5) * 255);
 	}
 
 	/* Colors used for syntax highlighting
@@ -716,89 +719,91 @@ void ofApp::setup()
 	   text highlight box - goldenRod
 	   -- paleGreen is used for the pulse of the beat
 	*/
-	commands_map[livelily]["\\bar"] = ofColor::fuchsia;
-	commands_map[livelily]["\\loop"] = ofColor::fuchsia;
-	commands_map[livelily]["\\bars"] = ofColor::fuchsia;
-	commands_map[livelily]["\\function"] = ofColor::fuchsia;
-	commands_map[livelily]["\\play"] = ofColor::fuchsia;
-	commands_map[livelily]["\\stop"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\tempo"] = ofColor::fuchsia;
-	commands_map[livelily]["\\solo"] = ofColor::fuchsia;
-	commands_map[livelily]["\\solonow"] = ofColor::fuchsia;
-	commands_map[livelily]["\\mute"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\unmute"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\mutenow"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\unmutenow"] = ofColor::fuchsia;
-	commands_map[livelily]["\\change"] = ofColor::fuchsia;
-	commands_map[livelily]["\\rest"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\cursor"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\score"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\insts"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\finish"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\reset"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\fromosc"] =  ofColor::fuchsia;
-	commands_map[livelily]["\\listmidiports"] = ofColor::fuchsia;
-	commands_map[livelily]["\\openmidiport"] = ofColor::fuchsia;
-	commands_map[livelily]["\\mididur"] = ofColor::fuchsia;
-	commands_map[livelily]["\\midistaccato"] = ofColor::fuchsia;
-	commands_map[livelily]["\\midistaccatissimo"] = ofColor::fuchsia;
-	commands_map[livelily]["\\miditenuto"] = ofColor::fuchsia;
-	commands_map[livelily]["\\midiclock"] = ofColor::fuchsia;
-	commands_map[livelily]["\\dur"] = ofColor::fuchsia;
-	commands_map[livelily]["\\staccato"] = ofColor::fuchsia;
-	commands_map[livelily]["\\staccatissimo"] = ofColor::fuchsia;
-	commands_map[livelily]["\\tenuto"] = ofColor::fuchsia;
-	commands_map[livelily]["\\listserialports"] = ofColor::fuchsia;
-	commands_map[livelily]["\\openserialport"] = ofColor::fuchsia;
-	commands_map[livelily]["\\time"] = ofColor::fuchsia;
-	commands_map[livelily]["\\print"] = ofColor::fuchsia;
-	commands_map[livelily]["\\osc"] = ofColor::fuchsia;
-	commands_map[livelily]["\\oscsend"] = ofColor::fuchsia;
-	commands_map[livelily]["\\beatcount"] = ofColor::fuchsia;
-	commands_map[livelily]["\\rand"] = ofColor::fuchsia;
-	commands_map[livelily]["\\barnum"] = ofColor::fuchsia;
-	commands_map[livelily]["\\list"] = ofColor::fuchsia;
-	commands_map[livelily]["\\ottava"] = ofColor::fuchsia;
-	commands_map[livelily]["\\ott"] = ofColor::fuchsia;
-	commands_map[livelily]["\\barcount"] = ofColor::fuchsia;
-	commands_map[livelily]["\\beatsin"] = ofColor::fuchsia;
-	commands_map[livelily]["\\instorder"] = ofColor::fuchsia;
-	commands_map[livelily]["\\miditune"] = ofColor::fuchsia;
-	commands_map[livelily]["\\tuplet"] = ofColor::fuchsia;
-	commands_map[livelily]["\\tup"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\bar"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\loop"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\bars"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\function"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\play"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\stop"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\tempo"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\solo"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\solonow"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\mute"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\unmute"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\mutenow"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\unmutenow"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\change"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\rest"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\cursor"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\score"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\insts"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\finish"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\reset"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\fromosc"] =  ofColor::fuchsia;
+	commandsMap[livelily]["\\listmidiports"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\openmidiport"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\mididur"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\midistaccato"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\midistaccatissimo"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\miditenuto"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\midiclock"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\dur"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\staccato"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\staccatissimo"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\tenuto"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\listserialports"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\openserialport"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\time"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\print"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\osc"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\oscsend"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\beatcount"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\rand"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\barnum"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\list"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\ottava"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\ott"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\barcount"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\beatsin"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\instorder"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\miditune"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\tuplet"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\tup"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\system"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\beatat"] = ofColor::fuchsia;
 	
-	commands_map_second[livelily]["clef"] = ofColor::pink;
-	commands_map_second[livelily]["rhythm"] = ofColor::pink;
-	commands_map_second[livelily]["bind"] = ofColor::pink;
-	commands_map_second[livelily]["unbind"] = ofColor::pink;
-	commands_map_second[livelily]["onrelease"] = ofColor::pink;
-	commands_map_second[livelily]["release"] = ofColor::pink;
-	commands_map_second[livelily]["beat"] = ofColor::pink;
-	commands_map_second[livelily]["barstart"] = ofColor::pink;
-	commands_map_second[livelily]["sendto"] = ofColor::pink;
-	commands_map_second[livelily]["midichan"] = ofColor::pink;
-	commands_map_second[livelily]["show"] = ofColor::pink;
-	commands_map_second[livelily]["hide"] = ofColor::pink;
-	commands_map_second[livelily]["animate"] = ofColor::pink;
-	commands_map_second[livelily]["inanimate"] = ofColor::pink;
-	commands_map_second[livelily]["showbeat"] = ofColor::pink;
-	commands_map_second[livelily]["hidebeat"] = ofColor::pink;
-	commands_map_second[livelily]["beattype"] = ofColor::pink;
-	commands_map_second[livelily]["recenter"] =  ofColor::pink;
-	commands_map_second[livelily]["numbars"] =  ofColor::pink;
-	commands_map_second[livelily]["all"] =  ofColor::pink;
-	commands_map_second[livelily]["framerate"] =  ofColor::pink;
-	commands_map_second[livelily]["fr"] =  ofColor::pink;
-	commands_map_second[livelily]["traverse"] =  ofColor::pink;
-	commands_map_second[livelily]["fullscreen"] =  ofColor::pink;
-	commands_map_second[livelily]["cursor"] =  ofColor::pink;
-	commands_map_second[livelily]["transpose"] =  ofColor::pink;
-	commands_map_second[livelily]["update"] =  ofColor::pink;
-	commands_map_second[livelily]["onlast"] =  ofColor::pink;
-	commands_map_second[livelily]["immediately"] =  ofColor::pink;
-	commands_map_second[livelily]["correct"] =  ofColor::pink;
-	commands_map_second[livelily]["onoctave"] =  ofColor::pink;
-	commands_map_second[livelily]["correct"] =  ofColor::pink;
+	commandsMapSecond[livelily]["clef"] = ofColor::pink;
+	commandsMapSecond[livelily]["rhythm"] = ofColor::pink;
+	commandsMapSecond[livelily]["bind"] = ofColor::pink;
+	commandsMapSecond[livelily]["unbind"] = ofColor::pink;
+	commandsMapSecond[livelily]["onrelease"] = ofColor::pink;
+	commandsMapSecond[livelily]["release"] = ofColor::pink;
+	commandsMapSecond[livelily]["beat"] = ofColor::pink;
+	commandsMapSecond[livelily]["barstart"] = ofColor::pink;
+	commandsMapSecond[livelily]["sendto"] = ofColor::pink;
+	commandsMapSecond[livelily]["midichan"] = ofColor::pink;
+	commandsMapSecond[livelily]["show"] = ofColor::pink;
+	commandsMapSecond[livelily]["hide"] = ofColor::pink;
+	commandsMapSecond[livelily]["animate"] = ofColor::pink;
+	commandsMapSecond[livelily]["inanimate"] = ofColor::pink;
+	commandsMapSecond[livelily]["showbeat"] = ofColor::pink;
+	commandsMapSecond[livelily]["hidebeat"] = ofColor::pink;
+	commandsMapSecond[livelily]["beattype"] = ofColor::pink;
+	commandsMapSecond[livelily]["recenter"] =  ofColor::pink;
+	commandsMapSecond[livelily]["numbars"] =  ofColor::pink;
+	commandsMapSecond[livelily]["all"] =  ofColor::pink;
+	commandsMapSecond[livelily]["framerate"] =  ofColor::pink;
+	commandsMapSecond[livelily]["fr"] =  ofColor::pink;
+	commandsMapSecond[livelily]["traverse"] =  ofColor::pink;
+	commandsMapSecond[livelily]["fullscreen"] =  ofColor::pink;
+	commandsMapSecond[livelily]["cursor"] =  ofColor::pink;
+	commandsMapSecond[livelily]["transpose"] =  ofColor::pink;
+	commandsMapSecond[livelily]["update"] =  ofColor::pink;
+	commandsMapSecond[livelily]["onlast"] =  ofColor::pink;
+	commandsMapSecond[livelily]["immediately"] =  ofColor::pink;
+	commandsMapSecond[livelily]["correct"] =  ofColor::pink;
+	commandsMapSecond[livelily]["onoctave"] =  ofColor::pink;
+	commandsMapSecond[livelily]["correct"] =  ofColor::pink;
 }
 
 //--------------------------------------------------------------
@@ -816,7 +821,7 @@ void ofApp::update()
 				sendCopyToPart(scorePartErrors[i].first, scorePartErrors[i].second, sharedData.instruments[scorePartErrors[i].first].getCopyNdx(scorePartErrors[i].second));
 			}
 			else {
-				sendNewBarToPart(scorePartErrors[i].first, sharedData.loopsUnordered[scorePartErrors[i].second], scorePartErrors[i].second);
+				sendNewBarToPart(scorePartErrors[i].first, sharedData.loopsOrdered[scorePartErrors[i].second], scorePartErrors[i].second);
 				sendBarDataToPart(scorePartErrors[i].first, scorePartErrors[i].second);
 			}
 			sendLoopDataToPart(scorePartErrors[i].first, scorePartErrors[i].second, sharedData.loopData[scorePartErrors[i].second]);
@@ -837,7 +842,7 @@ void ofApp::update()
 							sendCopyToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i], it->second.getCopyNdx(sharedData.loopData[sharedData.tempBarLoopIndex][i]));
 						}
 						else {
-							sendNewBarToPart(it->first, sharedData.loopsUnordered[sharedData.tempBarLoopIndex], sharedData.tempBarLoopIndex);
+							sendNewBarToPart(it->first, sharedData.loopsOrdered[sharedData.tempBarLoopIndex], sharedData.tempBarLoopIndex);
 							sendBarDataToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i]);
 						}
 						sendLoopDataToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i], sharedData.loopData[sharedData.tempBarLoopIndex]);
@@ -848,7 +853,7 @@ void ofApp::update()
 							sendCopyToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i], it->second.getCopyNdx(sharedData.loopData[sharedData.tempBarLoopIndex][i]));
 						}
 						else {
-							sendNewBarToPart(it->first, sharedData.loopsUnordered[sharedData.tempBarLoopIndex], sharedData.tempBarLoopIndex);
+							sendNewBarToPart(it->first, sharedData.loopsOrdered[sharedData.tempBarLoopIndex], sharedData.tempBarLoopIndex);
 							sendBarDataToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i]);
 						}
 						sendLoopDataToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i], sharedData.loopData[sharedData.tempBarLoopIndex]);
@@ -1152,6 +1157,9 @@ void ofApp::drawTraceback()
 //--------------------------------------------------------------
 void ofApp::drawScore()
 {
+	static int counter = 0;
+	counter++;
+	if (counter >= 60) counter = 0;
 	ofSetColor(brightness);
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
 	// safety test to avoid crashes when changing the window size before creating any bars
@@ -1171,7 +1179,7 @@ void ofApp::drawScore()
 		ndx = ((sharedData.thisLoopIndex - (sharedData.thisLoopIndex % numBars)) / numBars) * numBars;
 	}
 	//--------------- end of horizontal score view variables --------------
-	//------------------ variables for the beat visualization -------------
+	//---------------- variables for the beat visualization ---------------
 	float beatPulseStartX = 0, beatPulseEndX = 0, noteSize, beatPulseSizeX;
 	float beatPulsePosX = 0;
 	float beatPulseMaxPosY = 0;
@@ -1201,7 +1209,7 @@ void ofApp::drawScore()
 						ofSetColor(ofColor::paleGreen.r*brightnessCoeff,
 								   ofColor::paleGreen.g*brightnessCoeff,
 								   ofColor::paleGreen.b*brightnessCoeff,
-								   sharedData.beatVizDegrade);
+								   sharedData.beatVizCosTab[sharedData.beatVizDegrade] * BEATVIZCOEFF);
 						ofDrawRectangle(beatPulsePosX, beatPulseMinPosY, beatPulseSizeX, beatPulseSizeY);
 						ofSetColor(0);
 						break;
@@ -1222,10 +1230,10 @@ void ofApp::drawScore()
 			}
 		}
 		// write the names of the instruments without the backslash and get the longest name
-		for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-			float xPos = scoreXStartPnt + scoreXOffset - instNameWidths[it->second] - (sharedData.blankSpace/2);
-			float yPos = sharedData.instruments[it->second].getStaffYAnchor()+(sharedData.staffLinesDist*2.5) + scoreYOffset;
-			instFont.drawString(it->first.substr(1), xPos, yPos);
+		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			float xPos = scoreXOffset + (sharedData.blankSpace * 0.75) + (sharedData.longestInstNameWidth - instNameWidths[it->first]);
+			float yPos = it->second.getStaffYAnchor()+(sharedData.staffLinesDist*2.5) + scoreYOffset;
+			instFont.drawString(it->second.getName(), xPos, yPos);
 		}
 		// then draw one line at each side of the staffs to connect them
 		// we draw the first one here, and the rest inside the for loop below
@@ -1238,20 +1246,61 @@ void ofApp::drawScore()
 		// then we display the score
 		float staffOffsetX = scoreXStartPnt + scoreXOffset;
 		float notesOffsetX = staffOffsetX;
-		notesOffsetX += sharedData.instruments.begin()->second.getClefXOffset();
-		notesOffsetX += sharedData.instruments.begin()->second.getMeterXOffset();
-		notesOffsetX += (sharedData.staffLinesDist * 2);
-		float notesXCoef = (sharedData.instruments.begin()->second.getStaffXLength() + staffOffsetX - notesOffsetX) / notesXLength;
+		//notesOffsetX += sharedData.instruments.begin()->second.getClefXOffset();
+		//notesOffsetX += sharedData.instruments.begin()->second.getMeterXOffset();
+		notesOffsetX += (sharedData.staffLinesDist * NOTESXOFFSETCOEF);
+		//float notesXCoef = (sharedData.instruments.begin()->second.getStaffXLength() + staffOffsetX - notesOffsetX) / notesLength;
 		if (showBarCount) {
 			string barCountStr = "(" + to_string(sharedData.thisLoopIndex+1) + "/" + to_string(sharedData.loopData[sharedData.loopIndex].size()) + ") " + to_string(sharedData.barCounter);
 			font.drawString(barCountStr, scoreXOffset+scoreBackgroundWidth-font.stringWidth(barCountStr)-20, scoreYOffset+20);
 		}
+		std::pair prevMeter = std::make_pair(4, 4);
+		std::pair prevTempo = std::make_pair(0, 0);
+		vector<int> prevClefs (sharedData.instruments.size(), 0); 
+		bool prevDrawClef = false, prevDrawMeter = false;
 		for (int i = 0; i < numBars; i++) {
 			bool drawClef = false, drawMeter = false, animate = false;
+			bool drawTempo = false;
 			bool showBar = true;
-			if (i == 0) drawClef = drawMeter = true;
 			int barNdx = (ndx + i) % (int)sharedData.loopData[sharedData.loopIndex].size();
 			bar = sharedData.loopData[sharedData.loopIndex][barNdx];
+			if (i == 0) {
+				drawClef = true;
+				for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+					prevClefs[it->first] = it->second.getClef(bar);
+				}
+			}
+			else {
+				drawClef = false;
+				for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+					if (prevClefs[it->first] != it->second.getClef(bar)) {
+						drawClef = true;
+						break;
+					}
+				}
+				for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+					prevClefs[it->first] = it->second.getClef(bar);
+				}
+			}
+			// get the meter of this bar to determine if it has changed and thus it has be to written
+			std::pair<int, int> thisMeter = sharedData.instruments.begin()->second.getMeter(bar);
+			std::pair<int, int> thisTempo = std::make_pair(sharedData.tempoBaseForScore[bar], sharedData.BPMTempi[bar]);
+			if (i > 0 && scoreOrientation == 1) {
+				if (prevMeter.first != thisMeter.first || prevMeter.second != thisMeter.second) {
+					drawMeter = true;
+				}
+				else {
+					drawMeter = false;
+				}
+			}
+			else if (i == 0) {
+				drawMeter = true;
+			}
+			if (showTempo) {
+				if (prevTempo.first != thisTempo.first || prevTempo.second != thisTempo.second) {
+					drawTempo = true;
+				}
+			}
 			if (barNdx == (int)sharedData.thisLoopIndex) animate = true;
 			// the index below is used in insertNaturalSigns() in Notes() in score.cpp to deterimine if we must
 			// insert a natural sign at the beginning of a bar in case the same note appears
@@ -1287,10 +1336,6 @@ void ofApp::drawScore()
 			// draw the rest of the lines that connect the various staffs together horizontally
 			if (sharedData.instruments.size() > 1) {
 				connectingLineX += sharedData.instruments.begin()->second.getStaffXLength();
-				if (i > 0) {
-					if (!drawClef) connectingLineX -= sharedData.instruments.begin()->second.getClefXOffset();
-					if (!drawMeter) connectingLineX -= sharedData.instruments.begin()->second.getMeterXOffset();
-				}
 				ofDrawLine(connectingLineX, connectingLineY1, connectingLineX, connectingLineY2);
 			}
 			// like with the beat visualization, accumulate X offsets for all bars but the first
@@ -1299,20 +1344,29 @@ void ofApp::drawScore()
 				// so we use a separate value for the X coordinate
 				staffOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
 				notesOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
-				if (i > 1) {
-					if (!drawClef) staffOffsetX -= sharedData.instruments.begin()->second.getClefXOffset();
-					if (!drawMeter) staffOffsetX -= sharedData.instruments.begin()->second.getMeterXOffset();
-				}
-				if (!drawClef) notesOffsetX -= sharedData.instruments.begin()->second.getClefXOffset();
-				if (!drawMeter) notesOffsetX -= sharedData.instruments.begin()->second.getMeterXOffset();
 			}
+			if (prevDrawClef != drawClef) {
+				if (drawClef) notesOffsetX += sharedData.instruments.begin()->second.getClefXOffset();
+				else notesOffsetX -= sharedData.instruments.begin()->second.getClefXOffset();
+			}
+			if (prevDrawMeter != drawMeter) {
+				if (drawMeter) notesOffsetX += sharedData.instruments.begin()->second.getMeterXOffset();
+				else notesOffsetX -= sharedData.instruments.begin()->second.getMeterXOffset();
+			}
+			float notesXCoef = notesLength * sharedData.instruments.begin()->second.getXCoef(); // sharedData.instruments.begin()->second.getStaffXLength();
+			if (drawClef) notesXCoef -= sharedData.instruments.begin()->second.getClefXOffset();
+			if (drawMeter) notesXCoef -= sharedData.instruments.begin()->second.getMeterXOffset();
+			notesXCoef /= notesLength; // (notesLength * sharedData.instruments.begin()->second.getXCoef());
 			// if we're displaying the beat pulse on each beat instead of a rectangle that encloses the whole score
 			// we need to display it here, in case we display the score horizontally, where we need to give
 			// an offset to the pulse so it is displayed on top of the currently playing bar
 			if (sharedData.beatAnimate && sharedData.beatViz && sharedData.beatVizType == 2) {
 				// draw only for the currenlty playing bar, whichever that is in the horizontal line
 				if (barNdx == (int)sharedData.thisLoopIndex) {
-					beatPulseStartX = notesOffsetX + (((notesXLength / sharedData.numerator[getPlayingBarIndex()]) * sharedData.beatCounter) * notesXCoef);
+					//beatPulseStartX = notesOffsetX + (((notesLength  / sharedData.numerator[getPlayingBarIndex()]) * notesXCoef) * sharedData.beatCounter);
+					beatPulseStartX = ((notesLength * notesXCoef)  / sharedData.numerator[getPlayingBarIndex()]) * sharedData.beatCounter;
+					//beatPulseStartX *= notesXCoef;
+					beatPulseStartX += notesOffsetX;
 					if (sharedData.beatCounter == -1) beatPulseStartX = notesOffsetX - sharedData.instruments.begin()->second.getClefXOffset();
 					noteSize = sharedData.instruments.begin()->second.getNoteWidth();
 					beatPulsePosX = beatPulseStartX - noteSize;
@@ -1321,17 +1375,24 @@ void ofApp::drawScore()
 					ofSetColor(ofColor::paleGreen.r*brightnessCoeff,
 							   ofColor::paleGreen.g*brightnessCoeff,
 							   ofColor::paleGreen.b*brightnessCoeff,
-							   sharedData.beatVizDegrade);
+							   sharedData.beatVizCosTab[sharedData.beatVizDegrade] * BEATVIZCOEFF);
 					ofDrawRectangle(beatPulsePosX, beatPulseMinPosY, beatPulseSizeX, beatPulseSizeY);
 					ofSetColor(0);
 				}
 			}
 			if (showBar) {
 				for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-					it->second.drawStaff(bar, staffOffsetX, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd);
+					bool drawTempoLocal = (it->first == 0 && showTempo && drawTempo ? true : false);
+					it->second.drawStaff(bar, staffOffsetX, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempoLocal);
 					it->second.drawNotes(bar, i, &sharedData.loopData[insertNaturalsNdx], notesOffsetX, scoreYOffset, animate, notesXCoef);
 				}
 			}
+			prevMeter.first = thisMeter.first;
+			prevMeter.second = thisMeter.second;
+			prevTempo.first = thisTempo.first;
+			prevTempo.second = thisTempo.second;
+			prevDrawClef = drawClef;
+			prevDrawMeter = drawMeter;
 		}
 	}
 }
@@ -1395,22 +1456,24 @@ void ofApp::executeKeyPressed(int key)
 	    default:
 	    	if (key == 61 && ctrlPressed && !altPressed) { // +
 	    		fontSize += 2;
-				setPaneCoords();
+				changeFontSizeForAllPanes();
 	    	}
 	    	else if (key == 45 && ctrlPressed && !altPressed) { // -
 	    		fontSize -= 2;
 	    		if (fontSize == 0) fontSize = 2;
-				setPaneCoords();
+				changeFontSizeForAllPanes();
 	    	}
 	    	else if (key == 43 && ctrlPressed) { // + with shift pressed
-	    		sharedData.scoreFontSize += 5;
+				sharedData.staffLinesDist += 2;
+				sharedData.scoreFontSize = (int)(35.0 * sharedData.staffLinesDist / 10.0);
 	    		instFontSize = sharedData.scoreFontSize / 3.5;
 	    		instFont.load("Monaco.ttf", instFontSize);
 	    		setScoreSizes();
 	    	}
 	    	else if (key == 95 && ctrlPressed) { // - with shift pressed
-	    		sharedData.scoreFontSize -= 5;
-	    		if (sharedData.scoreFontSize < 5) sharedData.scoreFontSize = 5;
+				sharedData.staffLinesDist -= 2;
+	    		if (sharedData.staffLinesDist < 4) sharedData.staffLinesDist = 4;
+				sharedData.scoreFontSize = (int)(35.0 * sharedData.staffLinesDist / 10.0);
 	    		instFontSize = sharedData.scoreFontSize / 3.5;
 	    		instFont.load("Monaco.ttf", instFontSize);
 	    		setScoreSizes();
@@ -1749,11 +1812,26 @@ void ofApp::sendLoopDataToPart(int instNdx, int barIndex, vector<int> ndxs)
 }
 
 //--------------------------------------------------------------
+void ofApp::sendSizeToPart(int instNdx, int size)
+{
+	ofxOscMessage m;
+	m.setAddress("/size");
+	m.addIntArg(size);
+	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+}
+
+//--------------------------------------------------------------
 void ofApp::sendBarIndexBeatMeterToPart(int instNdx, int barIndex)
 {
 	ofxOscMessage m;
+	m.setAddress("/instndx");
+	m.addIntArg(instNdx);
+	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	m.clear();
 	m.setAddress("/bardata");
 	m.addIntArg(barIndex);
+	m.addIntArg(sharedData.BPMTempi[barIndex]);
+	m.addIntArg(sharedData.beatAtValues[barIndex]);
 	m.addIntArg(sharedData.numBeats[barIndex]);
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
@@ -1765,20 +1843,9 @@ void ofApp::sendBarIndexBeatMeterToPart(int instNdx, int barIndex)
 }
 
 //--------------------------------------------------------------
-void ofApp::sendInstNdxToPart(int instNdx)
-{
-	ofxOscMessage m;
-	m.setAddress("/instndx");
-	m.addIntArg(instNdx);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-}
-
-//--------------------------------------------------------------
 void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 {
 	sendBarIndexBeatMeterToPart(instNdx, barIndex);
-	sendInstNdxToPart(instNdx);
 	int size = 0;
 	ofxOscMessage m;
 	m.setAddress("/notes");
@@ -1872,11 +1939,18 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	}
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
+	size = 0;
 	m.setAddress("/artic");
-	size = (int)sharedData.instruments[instNdx].scoreArticulations[barIndex].size();
+	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreArticulations[barIndex].size(); i++) {
+		size += (int)sharedData.instruments[instNdx].scoreArticulations[barIndex][i].size();
+		size++; // we add a -2 to separate the vectors within a vector
+	}
 	m.addIntArg(size);
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreArticulations[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].scoreArticulations[barIndex][i]);
+		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreArticulations[barIndex][i].size(); j++) {
+			m.addIntArg(sharedData.instruments[instNdx].scoreArticulations[barIndex][i][j]);
+		}
+		m.addIntArg(-2);
 	}
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
@@ -1920,20 +1994,25 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	}
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
-	m.setAddress("/slurbegin");
-	size = (int)sharedData.instruments[instNdx].slurIndexes[barIndex].size();
+	m.setAddress("/slurndxs");
+	size = (int)sharedData.instruments[instNdx].slurIndexes[barIndex].size() * 2;
 	m.addIntArg(size);
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].slurIndexes[barIndex].size(); i++) {
 		m.addIntArg(sharedData.instruments[instNdx].slurIndexes[barIndex][i].first);
+		m.addIntArg(sharedData.instruments[instNdx].slurIndexes[barIndex][i].second);
 	}
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
-	m.setAddress("/slurend");
-	size = (int)sharedData.instruments[instNdx].slurIndexes[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].slurIndexes[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].slurIndexes[barIndex][i].second);
-	}
+	m.setAddress("/barslurred");
+	m.addBoolArg(sharedData.instruments[instNdx].isWholeBarSlurred[barIndex]);
+	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	m.clear();
+	m.setAddress("/beatatbool");
+	m.addBoolArg(sharedData.beatAtDifferentThanDivisor[barIndex]);
+	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	m.clear();
+	m.setAddress("/beatatval");
+	m.addIntArg(sharedData.beatAtValues[barIndex]);
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
 	m.setAddress("/texts");
@@ -1941,6 +2020,26 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	m.addIntArg(size);
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreTexts[barIndex].size(); i++) {
 		m.addStringArg(sharedData.instruments[instNdx].scoreTexts[barIndex][i]);
+	}
+	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	m.clear();
+	m.setAddress("/tupratio");
+	size = (int)sharedData.instruments[instNdx].scoreTupRatios[barIndex].size() * 2;
+	m.addIntArg(size);
+	for (auto it = sharedData.instruments[instNdx].scoreTupRatios[barIndex].begin(); it != sharedData.instruments[instNdx].scoreTupRatios[barIndex].end(); ++it) {
+		m.addIntArg(it->first);
+		m.addIntArg(it->second.first);
+		m.addIntArg(it->second.second);
+	}
+	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	m.clear();
+	m.setAddress("/tupstartstop");
+	size = (int)sharedData.instruments[instNdx].scoreTupStartStop[barIndex].size() * 2;
+	m.addIntArg(size);
+	for (auto it = sharedData.instruments[instNdx].scoreTupStartStop[barIndex].begin(); it != sharedData.instruments[instNdx].scoreTupStartStop[barIndex].end(); ++it) {
+		m.addIntArg(it->first);
+		m.addIntArg(it->second.first);
+		m.addIntArg(it->second.second);
 	}
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
@@ -1971,12 +2070,11 @@ void ofApp::sendBarDataToParts(int barIndex)
 {
 	for (auto it = sharedData.instrumentIndexesOrdered.begin(); it != sharedData.instrumentIndexesOrdered.end(); ++it) {
 		if (sharedData.instruments[it->second].sendToPart) {
-			cout << "sending to " << sharedData.instruments[it->second].getName() << endl;
 			if (sharedData.instruments[it->second].getCopied(barIndex)) {
 				sendCopyToPart(it->second, barIndex, sharedData.instruments[it->second].getCopyNdx(barIndex));
 			}
 			else {
-				sendNewBarToPart(it->second, sharedData.loopsUnordered[barIndex], barIndex);
+				sendNewBarToPart(it->second, sharedData.loopsOrdered[barIndex], barIndex);
 				sendBarDataToPart(it->second, barIndex);
 			}
 			sendLoopDataToPart(it->second, barIndex, sharedData.loopData[barIndex]);
@@ -2017,11 +2115,12 @@ void ofApp::sendNewBarToPart(int instNdx, string barName, int barIndex)
 }
 
 //--------------------------------------------------------------
-void ofApp::sendClefToPart(int instNdx, int clef)
+void ofApp::sendClefToPart(int instNdx, int bar, int clef)
 {
 	ofxOscMessage m;
 	m.setAddress("/clef");
 	m.addIntArg(instNdx);
+	m.addIntArg(bar);
 	m.addIntArg(clef);
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
@@ -2044,6 +2143,16 @@ void ofApp::sendScoreChangeToPart(int instNdx, bool scoreChange)
 	ofxOscMessage m;
 	m.setAddress("/scorechange");
 	m.addBoolArg(scoreChange);
+	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	m.clear();
+}
+
+//--------------------------------------------------------------
+void ofApp::sendChangeBeatColorToPart(int instNdx, bool changeBeatColor)
+{
+	ofxOscMessage m;
+	m.setAddress("/beatcolor");
+	m.addBoolArg(changeBeatColor);
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
 }
@@ -2161,7 +2270,7 @@ int ofApp::findNextStrCharIdx(string str, string compareStr, int index)
 }
 
 //--------------------------------------------------------------
-// the following function is inspired by
+// the following two functions are inspired by
 // https://www.geeksforgeeks.org/check-for-balanced-parentheses-in-an-expression/
 bool ofApp::areBracketsBalanced(string str)
 {
@@ -2176,6 +2285,30 @@ bool ofApp::areBracketsBalanced(string str)
 			if (temp.empty()) return false;
 			if ((temp.top() == '{' && str[i] == '}')
 				|| (temp.top() == '[' && str[i] == ']')) {
+				temp.pop();
+			}
+		}
+	}
+	if (temp.empty()) {     
+		// If stack is empty return true
+		return true;
+	}
+	return false;
+}
+
+//--------------------------------------------------------------
+bool ofApp::areParenthesesBalanced(string str)
+{
+	// Declare a stack to hold the previous brackets.
+	size_t i;
+	stack<char> temp;
+	for (i = 0; i < str.length(); i++) {
+		if (str[i] == '(') {
+			temp.push(str[i]);
+		}
+		else if (str[i] == ')') {
+			if (temp.empty()) return false;
+			if (temp.top() == '(') {
 				temp.pop();
 			}
 		}
@@ -2518,8 +2651,6 @@ void ofApp::parseStrings(int index, int numLines)
 				sendBarDataToPartsBool = false;
 			}
 			if (parsingLoop) {
-				// must clear loops
-				deleteLastLoop();
 				parsingLoop = false;
 			}
 			if (parsingBars) {
@@ -2539,7 +2670,6 @@ void ofApp::parseStrings(int index, int numLines)
 		if (!parsingLoop) {
 			fillInMissingInsts(barIndex);
 			// then store the number of beats for this bar
-			sharedData.numBeats[barIndex] = sharedData.tempNumBeats;
 			// if we create a bar, create a loop with this bar only
 			sharedData.loopData[barIndex] = {barIndex};
 			// check if no time has been specified and set the default 4/4
@@ -2548,6 +2678,10 @@ void ofApp::parseStrings(int index, int numLines)
 				sharedData.denominator[barIndex] = 4;
 			}
 			setScoreNotes(barIndex);
+			if (!parsingBars) {
+				setNotePositions(barIndex);
+				calculateStaffPositions(barIndex);
+			}
 			barError = false;
 			if (numScorePartSenders > 0) {
 				sendBarDataToPartsBool = true;
@@ -2589,6 +2723,12 @@ void ofApp::parseStrings(int index, int numLines)
 			parseStrings(index, numLines);
 		}
 		else {
+			int barIndex = sharedData.barsIndexes["\\"+multiBarsName+"-1"];
+			setNotePositions(barIndex, barsIterCounter);
+			for (int i = 0; i < barsIterCounter; i++) {
+				int barIndex = sharedData.barsIndexes["\\"+multiBarsName+"-"+to_string(i+1)];
+				calculateStaffPositions(barIndex);
+			}
 			parsingBars = false;
 			firstInstForBarsSet = false;
 			// once done, create a string to create a loop with all the separate bars
@@ -2640,9 +2780,6 @@ std::pair<int, string> ofApp::parseString(string str, int lineNum, int numLines)
 			str = str.substr(1);
 		}
 	}
-	else if (endsWith(str, "}")) {
-		str = str.substr(0, str.size()-1);
-	}
 	// check if the string starts with a closing bracket but has more stuff after it
 	if (startsWith(str, "}")) {
 		str = str.substr(1);
@@ -2663,7 +2800,7 @@ std::pair<int, string> ofApp::parseString(string str, int lineNum, int numLines)
 			std::pair<int, string> error = parseBarLoop(str, lineNum, numLines);
 			if (error.first > 0) {
 				editors[whichPane].setTraceback(error, lineNum);
-				popNewPattern();
+				deleteLastLoop();
 			}
 			else {
 				editors[whichPane].releaseTraceback(lineNum);
@@ -2773,9 +2910,40 @@ int ofApp::storeNewBar(string barName)
 	}
 	sharedData.barsIndexes[barName] = barIndex;
 	sharedData.loopsIndexes[barName] = barIndex;
-	sharedData.loopsUnordered[barIndex] = barName;
+	sharedData.loopsOrdered[barIndex] = barName;
 	sharedData.loopsVariants[barIndex] = 0;
 	sharedData.tempBarLoopIndex = barIndex;
+	int prevBarIndex = getPrevBarIndex();
+	if (prevBarIndex < 0) {
+		sharedData.numerator[barIndex] = 4;
+		sharedData.denominator[barIndex] = 4;
+		sharedData.numBeats[barIndex] = sharedData.numerator[barIndex] * (MINDUR / sharedData.denominator[barIndex]);
+		sharedData.tempoMs[barIndex] = 500;
+		sharedData.BPMMultiplier[barIndex] = 1;
+		sharedData.beatAtDifferentThanDivisor[barIndex] = false;
+		sharedData.beatAtValues[barIndex] = 1;
+		sharedData.tempoBaseForScore[barIndex] = 4;
+		sharedData.BPMDisplayHasDot[barIndex] = false;
+		sharedData.tempo[barIndex] = sharedData.tempoMs[barIndex] / (MINDUR / sharedData.denominator[barIndex]);
+		sharedData.PPQNPerUs[barIndex] = (uint64_t)(sharedData.tempoMs[barIndex] / (float)sharedData.PPQN) * 1000;
+	}
+	else {
+		sharedData.numerator[barIndex] = sharedData.numerator[prevBarIndex];
+		sharedData.denominator[barIndex] = sharedData.denominator[prevBarIndex];
+		sharedData.numBeats[barIndex] = sharedData.numBeats[prevBarIndex];
+		sharedData.tempoMs[barIndex] = sharedData.tempoMs[prevBarIndex];
+		sharedData.BPMMultiplier[barIndex] = sharedData.BPMMultiplier[prevBarIndex];
+		sharedData.beatAtDifferentThanDivisor[barIndex] = sharedData.beatAtDifferentThanDivisor[prevBarIndex];
+		sharedData.beatAtValues[barIndex] = sharedData.beatAtValues[prevBarIndex];
+		sharedData.tempoBaseForScore[barIndex] = sharedData.tempoBaseForScore[prevBarIndex];
+		sharedData.BPMDisplayHasDot[barIndex] = sharedData.BPMDisplayHasDot[prevBarIndex];
+		sharedData.tempo[barIndex] = sharedData.tempo[prevBarIndex];
+		sharedData.PPQNPerUs[barIndex] = sharedData.PPQNPerUs[prevBarIndex];
+	}
+	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		it->second.setMeter(barIndex, sharedData.numerator[barIndex],
+				sharedData.denominator[barIndex], sharedData.numBeats[barIndex]);
+	}
 	return barIndex;
 }
 
@@ -2784,30 +2952,62 @@ void ofApp::storeNewLoop(string loopName)
 {
 	int loopIndex = getLastLoopIndex() + 1;
 	sharedData.loopsIndexes[loopName] = loopIndex;
-	sharedData.loopsUnordered[loopIndex] = loopName;
+	sharedData.loopsOrdered[loopIndex] = loopName;
 	sharedData.loopsVariants[loopIndex] = 0;
 	sharedData.tempBarLoopIndex = loopIndex;
 	partsReceivedOKCounters[loopIndex] = 0;
 }
 
 //--------------------------------------------------------------
-void ofApp::popNewPattern()
+int ofApp::getBaseDurValue(string str, int denominator)
 {
-	map<string, int>::reverse_iterator it = sharedData.barsIndexes.rbegin();
-	sharedData.barsIndexes.erase(it->first);
-	it = sharedData.loopsIndexes.rbegin();
-	sharedData.loopsIndexes.erase(it->first);
-	//sendPushPopPattern();
+	int base = 0;
+	int val;
+	if (str.find(".") != string::npos) {
+		base = stoi(str.substr(0, str.find(".")));
+		val = denominator / base;
+		// get the number of dots, copied from
+		// https://stackoverflow.com/questions/3867890/count-character-occurrences-in-a-string-in-c#3871346
+		string::difference_type n = std::count(str.begin(), str.end(), '.');
+		int half = val / 2;
+		for (int i = 0; i < (int)n; i++) {
+			val += half;
+			half /= 2;
+		}
+	}
+	else {
+		base = stoi(str);
+		val = denominator / base;
+	}
+	return val;
+}
+
+//--------------------------------------------------------------
+std::pair<int, string> ofApp::getBaseDurError(string str)
+{
+	if (!isNumber(str)) {
+		if (str.find(".") == string::npos) {
+			return std::make_pair(3, str + " is not a number");
+		}
+		else {
+			if (!isNumber(str.substr(0, str.find(".")))) {
+				return std::make_pair(3, str + " is not a number");
+			}
+		}
+	}
+	return std::make_pair(0, "");
 }
 
 //--------------------------------------------------------------
 std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines)
 {
 	vector<string> commands = tokenizeString(str, " ");
-	int BPMTempo = 0;
 	std::pair<int, string> error = std::make_pair(0, "");
 
 	if (commands[0].compare("\\time") == 0) {
+		if (!parsingBar && !parsingBars) {
+			return std::make_pair(3, "\\time command must be placed inside a bar(s) definition");
+		}
 		if (commands.size() > 2) {
 			return std::make_pair(3, "\\time command takes one argument only");
 		}
@@ -2833,33 +3033,93 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		}
 		// a \time command must be placed inside a bar definition
 		// and the bar index has already been stored, so we can safely query the last bar index
-		int bar = sharedData.barsIndexes.rbegin()->second;
+		int bar = getLastBarIndex();
 		sharedData.numerator[bar] = numeratorLocal;
 		sharedData.denominator[bar] = denominatorLocal;
+		sharedData.numBeats[bar] = sharedData.numerator[bar] * (MINDUR / sharedData.denominator[bar]);
+		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			it->second.setMeter(bar, sharedData.numerator[bar],
+					sharedData.denominator[bar], sharedData.numBeats[bar]);
+			//if (it->second.sendToPart) {
+			//	sendBarIndexBeatMeterToPart(it->first, bar);
+			//}
+		}
 	}
 
 	else if (commands[0].compare("\\tempo") == 0) {
-		if (commands.size() > 2) {
-			return std::make_pair(3, "\\tempo command takes one argument only");
+		if (!parsingBar && !parsingBars) {
+			return std::make_pair(3, "\\tempo command must be placed inside a bar(s) definition");
+		}
+		if (commands.size() > 4) {
+			return std::make_pair(3, "\\tempo command takes maximum three argument");
 		}
 		if (commands.size() < 2) {
-			return std::make_pair(3, "\\tempo command needs one argument");
+			return std::make_pair(3, "\\tempo command needs at least one argument");
 		}
-		if (isNumber(commands[1])) {
-			BPMTempo = stoi(commands[1]);
-			// convert BPM to ms
-			sharedData.tempoMs = 1000.0 / ((float)BPMTempo / 60.0);
-			// get the tempo of the minimum duration
-			sharedData.newTempo = sharedData.tempoMs / (MINDUR / sharedData.denominator[getPlayingBarIndex()]);
-			// get the usec duration of the PPQM
-			sharedData.PPQNPerUs = (uint64_t)(sharedData.tempoMs / (float)sharedData.PPQN) * 1000;
+		// a \time command must be placed inside a bar definition
+		// and the bar index has already been stored, so we can safely query the last bar index
+		int bar = getLastBarIndex();
+		if (commands.size() == 4) {
+			if (commands[2].compare("=") != 0) {
+				return std::make_pair(3, "\\tempo command takes maximum three arguments");
+			}
+			else {
+				std::pair<int, string> err = getBaseDurError(commands[1]);
+				if (err.first > 0) return err;
+				if (!isNumber(commands[3])) {
+					return std::make_pair(3, commands[3] + " is not a number");
+				}
+				sharedData.BPMMultiplier[bar] = getBaseDurValue(commands[1], sharedData.denominator[bar]);
+				sharedData.BPMTempi[bar] = stoi(commands[3]);
+				// convert BPM to ms
+				sharedData.tempoMs[bar] = 1000.0 / ((float)(sharedData.BPMTempi[bar]  * sharedData.BPMMultiplier[bar]) / 60.0);
+				// get the tempo of the minimum duration
+				sharedData.tempo[bar] = sharedData.tempoMs[bar] / (MINDUR / sharedData.denominator[bar]);
+				// get the usec duration of the PPQM
+				sharedData.PPQNPerUs[bar] = (uint64_t)(sharedData.tempoMs[bar] / (float)sharedData.PPQN) * 1000;
+				if (commands[1].find(".") != string::npos) {
+					sharedData.tempoBaseForScore[bar] = stoi(commands[1].substr(0, str.find(".")));
+					sharedData.BPMDisplayHasDot[bar] = true;
+				}
+				else {
+					sharedData.tempoBaseForScore[bar] = stoi(commands[1]);
+					sharedData.BPMDisplayHasDot[bar] = false;
+				}
+			}
 		}
 		else {
-			return std::make_pair(3, "" + commands[1] + " is not an int");
+			if (isNumber(commands[1])) {
+				sharedData.BPMTempi[bar] = stoi(commands[1]);
+				// convert BPM to ms
+				sharedData.tempoMs[bar] = 1000.0 / ((float)sharedData.BPMTempi[bar] / 60.0);
+				// get the tempo of the minimum duration
+				sharedData.tempo[bar] = sharedData.tempoMs[bar] / (MINDUR / sharedData.denominator[bar]);
+				// get the usec duration of the PPQM
+				sharedData.PPQNPerUs[bar] = (uint64_t)(sharedData.tempoMs[bar] / (float)sharedData.PPQN) * 1000;
+				sharedData.tempoBaseForScore[bar] = 4;
+				sharedData.BPMDisplayHasDot[bar] = false;
+			}
+			else {
+				return std::make_pair(3, commands[1] + " is not a number");
+			}
 		}
-		if (sequencer.isThreadRunning()) {
-			sequencer.tempoUpdate();
+	}
+
+	else if (commands[0].compare("\\beatat") == 0) {
+		if (!parsingBar && !parsingBars) {
+			return std::make_pair(3, "\\beatat command must be placed inside a bar(s) definition");
 		}
+		if (commands.size() > 2) {
+			return std::make_pair(3, "\\beatat command takes one argument only");
+		}
+		if (commands.size() == 1) {
+			return std::make_pair(3, "\\beatat command takes one argument");
+		}
+		std::pair<int, string> err = getBaseDurError(commands[1]);
+		if (err.first > 0) return err;
+		int bar = getLastBarIndex();
+		sharedData.beatAtValues[bar] = getBaseDurValue(commands[1], sharedData.denominator[bar]);
+		sharedData.beatAtDifferentThanDivisor[bar] = true;
 	}
 
 	else if (commands[0].compare("\\ppqn") == 0) {
@@ -2877,7 +3137,6 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 			return std::make_pair(3, "PPQN value can be 24, 48, or 96");
 		}
 		sharedData.PPQN = PPQNLocal;
-		sharedData.PPQNPerUs = (uint64_t)(sharedData.tempoMs / (float)sharedData.PPQN) * 1000;
 	}
 
 	else if (commands[0].compare("\\midiclock") == 0) {
@@ -2999,7 +3258,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		}
 		string oscClientName = "\\" + commands[1];
 		oscClients[oscClientName] = ofxOscSender();
-		commands_map[livelily][oscClientName] = ofColor::lightSeaGreen;
+		commandsMap[livelily][oscClientName] = ofColor::lightSeaGreen;
 	}
 	
 	else if (commands[0].compare("\\barnum") == 0) {
@@ -3035,7 +3294,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 			}
 			if (!instrumentExists) {
 				initializeInstrument("\\" + commands[i]);
-				commands_map[livelily]["\\" + commands[i]] = ofColor::greenYellow;
+				commandsMap[livelily]["\\" + commands[i]] = ofColor::greenYellow;
 			}
 			lastInstrument = commands[i];
 		}
@@ -3095,12 +3354,15 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		parsingBar = true;
 		waitToSendBarDataToParts = false;
 		int barIndex = storeNewBar(barName);
+		cout << "will parse bar " << sharedData.loopsOrdered[barIndex] << endl;
 		// first set all instruments to not passed and not copied
 		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 			it->second.setPassed(false);
 			it->second.setCopied(barIndex, false);
+			// if this is not the first bar, set a default clef similar to the last one
+			if (barIndex > 0) it->second.setClef(barIndex, it->second.getClef(getPrevBarIndex()));
 		}
-		commands_map[livelily][barName] = ofColor::orchid;
+		commandsMap[livelily][barName] = ofColor::orchid;
 		// since bars include simple melodic lines in their definition
 		// we need to know this when we parse these lines
 		if (commands.size() > 2) {
@@ -3128,7 +3390,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		}
 		parsingLoop = true;
 		storeNewLoop(loopName);
-		commands_map[livelily][loopName] = ofColor::lightSeaGreen;
+		commandsMap[livelily][loopName] = ofColor::lightSeaGreen;
 		// loops are most likely defined in one-liners, so we parse the rest of the line here
 		if (commands.size() > 2) {
 			string restOfCommand = "";
@@ -3170,10 +3432,10 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 
 	else if (commands[0].compare("\\barcount") == 0) {
 		if (commands.size() < 2) {
-			return std::make_pair(3, "\\barcount command takes one argument, show or hide");
+			return std::make_pair(3, "\"\\barcount\" command takes one argument, \"show\" or \"hide\"");
 		}
 		if (commands.size() > 2) {
-			return std::make_pair(3, "\\barcount command takes one argument only, show or hide");
+			return std::make_pair(3, "\"\\barcount\" command takes one argument only, \"show\" or \"hide\"");
 		}
 		if (commands[1].compare("show") == 0) {
 			showBarCount = true;
@@ -3205,7 +3467,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		if (firstList) lastListIndex = 0;
 		else lastListIndex = listIndexes.rbegin()->second + 1;
 		listIndexes[listName] = lastListIndex;
-		commands_map[livelily][listName] = ofColor::lightSeaGreen;
+		commandsMap[livelily][listName] = ofColor::lightSeaGreen;
 		string restOfCommand = "";
 		for (unsigned i = 2; i < commands.size(); i++) {
 			if (i > 2) restOfCommand += " ";
@@ -3486,7 +3748,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 			if (sharedData.functions[functionNdx].getNameError()) {
 				return std::make_pair(3, "function name too long");
 			}
-			commands_map[livelily]["\\"+commands[1]] = ofColor::turquoise;
+			commandsMap[livelily]["\\"+commands[1]] = ofColor::turquoise;
 			storingFunction = true;
 			lastFunctionIndex = functionNdx;
 		}
@@ -3710,6 +3972,19 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		return std::make_pair(1, "opened " + commands[1] + " at baud " + commands[2]);
 	}
 
+	else if (commands[0].compare("\\system") == 0) {
+		if (commands.size() == 1) {
+			return std::make_pair(2, "no command added to \\system");
+		}
+		unsigned i;
+		string sysCommand = "";
+		for (i = 1; i < commands.size(); i++) {
+			if (i > 1) sysCommand += " ";
+			sysCommand += commands[i];
+		}
+		return std::make_pair(1, ofSystem(sysCommand));
+	}
+
 	else if (commands[0].compare("\\livelily") == 0) {
 		if (commands.size() > 1) {
 			return std::make_pair(3, "language command takes no arguments");
@@ -3755,6 +4030,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& commands, int lineNum, int numLines)
 {
 	bool instrumentExists = false;
+	unsigned commandNdxOffset = 1;
 	std::pair<int, string> error = std::make_pair(0, "");
 	if (sharedData.instruments.size() > 0) {
 		if (sharedData.instrumentIndexes.find(commands[0]) != sharedData.instrumentIndexes.end()) {
@@ -3768,24 +4044,24 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 						std::pair<int, string> p = std::make_pair(3, "clef command takes a clef name as an argument");
 						return std::make_pair(instrumentExists, p);
 					}
-					else if (commands.size() > 3) {
+					else if (commands.size() > 3 && !(parsingBar || parsingBars)) {
 						std::pair<int, string> p = std::make_pair(3, "clef command takes one argument only");
 						return std::make_pair(instrumentExists, p);
 					}
 					if (commands[2].compare("treble") == 0) {
-						sharedData.instruments[lastInstrumentIndex].setClef(0);
+						sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 0);
 						clef = 0;
 					}
 					else if (commands[2].compare("bass") == 0) {
-						sharedData.instruments[lastInstrumentIndex].setClef(1);
+						sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 1);
 						clef = 1;
 					}
 					else if (commands[2].compare("alto") == 0) {
-						sharedData.instruments[lastInstrumentIndex].setClef(2);
+						sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 2);
 						clef = 2;
 					}
 					else if (commands[2].compare("perc") == 0 || commands[2].compare("percussion") == 0) {
-						sharedData.instruments[lastInstrumentIndex].setClef(3);
+						sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 3);
 						clef = 3;
 					}
 					else {
@@ -3793,7 +4069,11 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 						return std::make_pair(instrumentExists, p);
 					}
 					if (sharedData.instruments[lastInstrumentIndex].sendToPart) {
-						sendClefToPart(lastInstrumentIndex, clef);
+						sendClefToPart(lastInstrumentIndex, getLastBarIndex(), clef);
+					}
+					if (commands.size() > 3) {
+						commandNdxOffset = 3;
+						goto parseMelody;
 					}
 					return std::make_pair(instrumentExists, error);
 				}
@@ -3954,7 +4234,7 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 				}
 				else if (commands[1].compare("update") == 0) {
 					if (commands.size() < 3) {
-						std::pair<int, string> p = std::make_pair(3, "\"update\" takes one argument, onlast or immediately");
+						std::pair<int, string> p = std::make_pair(3, "\"update\" takes one argument, \"onlast\" or \"immediately\"");
 						return std::make_pair(instrumentExists, p);
 					}
 					if (commands[2].compare("onlast") == 0) {
@@ -3964,7 +4244,23 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 						sendScoreChangeToPart(lastInstrumentIndex, false);
 					}
 					else {
-						std::pair<int, string> p = std::make_pair(3, commands[2] + (string)"unknown argument to \"update\", must be onlast or immediately");
+						std::pair<int, string> p = std::make_pair(3, commands[2] + (string)"unknown argument to \"update\", must be \"onlast\" or \"immediately\"");
+						return std::make_pair(instrumentExists, p );
+					}
+				}
+				else if (commands[1].compare("beatcolor") == 0) {
+					if (commands.size() < 3) {
+						std::pair<int, string> p = std::make_pair(3, "\"beatcolor\" takes one argument, \"change\" or \"keep\"");
+						return std::make_pair(instrumentExists, p);
+					}
+					if (commands[2].compare("change") == 0) {
+						sendChangeBeatColorToPart(lastInstrumentIndex, true);
+					}
+					else if (commands[2].compare("keep") == 0) {
+						sendChangeBeatColorToPart(lastInstrumentIndex, false);
+					}
+					else {
+						std::pair<int, string> p = std::make_pair(3, commands[2] + (string)"unknown argument to \"beatcolor\", must be \"change\" or \"keep\"");
 						return std::make_pair(instrumentExists, p );
 					}
 				}
@@ -3989,19 +4285,34 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					sharedData.instruments[lastInstrumentIndex].setMidiChan(midiChan);
 					sharedData.instruments[lastInstrumentIndex].setMidi(true);
 				}
+				else if (commands[1].compare("size") == 0) {
+					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
+						std::pair<int, string> p = std::make_pair(3, "instrument doesn't have OSC set");
+						return std::make_pair(instrumentExists, p);
+					}
+					if (commands.size() != 3) {
+						std::pair<int, string> p = std::make_pair(3, "\"size\" command takes one argument, the size value");
+						return std::make_pair(instrumentExists, p);
+					}
+					if (!isNumber(commands[2])) {
+						std::pair<int, string> p = std::make_pair(3, commands[2] + " is not a number");
+						return std::make_pair(instrumentExists, p);
+					}
+					sendSizeToPart(lastInstrumentIndex, stoi(commands[2]));
+				}
 				else {
+				parseMelody:
 					string restOfCommand = "";
-					for (unsigned i = 1; i < commands.size(); i++) {
+					for (unsigned i = commandNdxOffset; i < commands.size(); i++) {
 						// add a white space only after the first token has been added
-						if (i > 1) restOfCommand += " ";
+						if (i > commandNdxOffset) restOfCommand += " ";
 						restOfCommand += commands[i];
 					}
 					if (parsingBars && barsIterCounter == 1 && !firstInstForBarsSet) {
 						firstInstForBarsIndex = lastInstrumentIndex;
 						firstInstForBarsSet = true;
 					}
-					std::pair<int, string> p = parseMelodicLine(restOfCommand);
-					return std::make_pair(instrumentExists, p);
+					return std::make_pair(instrumentExists, parseMelodicLine(restOfCommand));
 				}
 			}
 		}
@@ -4399,15 +4710,15 @@ std::pair<int, string> ofApp::functionFuncs(vector<string>& commands)
 //--------------------------------------------------------------
 int ofApp::getLastLoopIndex()
 {
-	int barIndex = -1;
+	int loopIndex = -1;
 	// since every bar is copied to the loop maps, but loops are not copied to the bar map
 	// we query the loopsIndexes map instead of the barIndexes map
 	// so that the keys between bars and loops are the same
-	if (sharedData.loopsUnordered.size() > 0) {
-		map<int, string>::reverse_iterator it = sharedData.loopsUnordered.rbegin();
-		barIndex = it->first;
+	if (sharedData.loopsOrdered.size() > 0) {
+		map<int, string>::reverse_iterator it = sharedData.loopsOrdered.rbegin();
+		loopIndex = it->first;
 	}
-	return barIndex;
+	return loopIndex;
 }
 
 //--------------------------------------------------------------
@@ -4418,7 +4729,7 @@ int ofApp::getLastBarIndex()
 	// since loop indexes are not stored as bar indexes, once we get the last loop index
 	// we query whether this is also a bar index, and if not, we subtract one until we find a bar index
 	if (lastLoopIndex > 0) {
-		while (sharedData.barsIndexes.find(sharedData.loopsUnordered[lastLoopIndex]) == sharedData.barsIndexes.end()) {
+		while (sharedData.barsIndexes.find(sharedData.loopsOrdered[lastLoopIndex]) == sharedData.barsIndexes.end()) {
 			lastLoopIndex--;
 		}
 		barIndex = lastLoopIndex;
@@ -4432,7 +4743,7 @@ int ofApp::getPrevBarIndex()
 	int prevBarIndex = getLastBarIndex();
 	prevBarIndex--;
 	if (prevBarIndex > 0) {
-		while (sharedData.barsIndexes.find(sharedData.loopsUnordered[prevBarIndex]) == sharedData.barsIndexes.end()) {
+		while (sharedData.barsIndexes.find(sharedData.loopsOrdered[prevBarIndex]) == sharedData.barsIndexes.end()) {
 			prevBarIndex--;
 		}
 	}
@@ -4460,7 +4771,7 @@ std::pair<int, string> ofApp::stripLineFromBar(string str)
 		return std::make_pair(3, (string)"bar/loop " + str + (string)" doesn't exist");
 	}
 	barToCopy = barToCopyIt->second;
-	sharedData.tempNumBeats = sharedData.numBeats[barToCopy];
+	//sharedData.numBeats[barIndex] = sharedData.numBeats[barToCopy];
 	sharedData.instruments[lastInstrumentIndex].setPassed(true);
 	sharedData.instruments[lastInstrumentIndex].setCopied(barIndex, true);
 	sharedData.instruments[lastInstrumentIndex].setCopyNdx(barIndex, barToCopy);
@@ -4513,30 +4824,30 @@ void ofApp::deleteLastBar()
 			it->second.passed = false;
 		}
 	}
-	if (sharedData.barsIndexes.find(sharedData.loopsUnordered[bar]) != sharedData.barsIndexes.end()) {
-		sharedData.barsIndexes.erase(sharedData.loopsUnordered[bar]);
+	if (sharedData.barsIndexes.find(sharedData.loopsOrdered[bar]) != sharedData.barsIndexes.end()) {
+		sharedData.barsIndexes.erase(sharedData.loopsOrdered[bar]);
 	}
-	if (sharedData.loopsIndexes.find(sharedData.loopsUnordered[bar]) != sharedData.loopsIndexes.end()) {
-		sharedData.loopsIndexes.erase(sharedData.loopsUnordered[bar]);
+	if (sharedData.loopsIndexes.find(sharedData.loopsOrdered[bar]) != sharedData.loopsIndexes.end()) {
+		sharedData.loopsIndexes.erase(sharedData.loopsOrdered[bar]);
 	}
 	if (sharedData.numerator.find(bar) != sharedData.numerator.end()) {
 		sharedData.numerator.erase(bar);
 		sharedData.denominator.erase(bar);
 	}
-	sharedData.loopsUnordered.erase(bar);
+	commandsMap[livelily].erase(sharedData.loopsOrdered[bar]);
+	sharedData.loopsOrdered.erase(bar);
 	sharedData.loopsVariants.erase(bar);
 }
 
 //--------------------------------------------------------------
 void ofApp::deleteLastLoop()
 {
-	int bar = getLastLoopIndex();
-	if (sharedData.loopsIndexes.find(sharedData.loopsUnordered[bar]) != sharedData.loopsIndexes.end()) {
-		sharedData.loopsIndexes.erase(sharedData.loopsUnordered[bar]);
-	}
-	if (partsReceivedOKCounters.find(bar) != partsReceivedOKCounters.end()) {
-		partsReceivedOKCounters.erase(bar);
-	}
+	map<int, string>::reverse_iterator it = sharedData.loopsOrdered.rbegin();
+	commandsMap[livelily].erase(it->second);
+	sharedData.loopsIndexes.erase(it->second);
+	sharedData.loopsOrdered.erase(it->first);
+	sharedData.loopsVariants.erase(it->first);
+	//sendPushPopPattern();
 }
 
 //--------------------------------------------------------------
@@ -4553,16 +4864,65 @@ std::pair<int, string> ofApp::parseBarLoop(string str, int lineNum, int numLines
 		restOfCommand = str.substr(closingBracketIndex);
 		strLength = closingBracketIndex;
 	}
-	vector<string> names = tokenizeString(str.substr(0, strLength), " ");
+	string wildCardStr = (endsWith(str, "}") ? str.substr(0, str.size()-1) : str);
+	size_t multIndex = wildCardStr.find("*");
+	vector<string> names;
+	if (multIndex != string::npos) {
+		if (!isNumber(wildCardStr.substr(multIndex+1))) {
+			// look for file names that include the characters of the wild card
+			vector<int> multNdxs = findIndexesOfCharInStr(wildCardStr, "*");
+			vector<string> strParts(multNdxs.size(), "");
+			int prevMultNdx = 0;
+			for (unsigned i = 0; i < multNdxs.size(); i++) {
+				if (wildCardStr.substr(prevMultNdx, multNdxs[i]-prevMultNdx).size() > 0) {
+					strParts[i] = wildCardStr.substr(prevMultNdx, multNdxs[i]-prevMultNdx);
+				}
+				prevMultNdx = multNdxs[i]+1;
+			}
+			if (wildCardStr.substr(multNdxs.back()+1).size() > 0) {
+				strParts.back() = wildCardStr.substr(multNdxs.back()+1);
+			}
+			for (auto it = sharedData.loopsOrdered.begin(); it != sharedData.loopsOrdered.end(); ++it) {
+				if (sharedData.barsIndexes.find(it->second) == sharedData.barsIndexes.end()) {
+					// look for bars only, not for loops
+					continue;
+				}
+				bool matches = true;
+				for (auto it2 = strParts.begin(); it2 != strParts.end(); ++it2) {
+					// in case the pattern doesn't match
+					if (it->second.find(*it2) == string::npos) {
+						matches = false;
+						break;
+					}
+					// a wildcard might include a 1, which will result in including the default first bar
+					// so we make sure not to include it with the test below
+					if (it->second.compare("\\-1") == 0) {
+						matches = false;
+						break;
+					}
+				}
+				if (matches) {
+					names.push_back(it->second);
+				}
+			}
+		}
+		else {
+			names = tokenizeString(str.substr(0, strLength), " ");
+		}
+	}
+	else {
+		names = tokenizeString(str.substr(0, strLength), " ");
+	}
+	//vector<string> names = tokenizeString(str.substr(0, strLength), " ");
 	// initialize all variables used in the loop below, so we can initialize the growing vector
 	// after them, to ensure it is at the top of the stack
-	size_t multIndex;
+	//size_t multIndex;
 	size_t nameLength;
 	int howManyTimes;
 	map<string, int>::iterator thisBarLoopIndexIt;
 	map<int, vector<int>>::iterator thisBarLoopDataIt;
 	vector<int>::iterator barIndex;
-	int j;
+	int i;
 	vector<int> thisLoopIndexes;
 	for (string name : names) {
 		nameLength = name.size();
@@ -4583,19 +4943,55 @@ std::pair<int, string> ofApp::parseBarLoop(string str, int lineNum, int numLines
 			// the multiplication symbol must be followed by a number
 			return std::make_pair(3, "the multiplication symbol must be concatenated to a number");
 		}
-		// first check for barLoops because when we define a bar  with data
+		// first check for barLoops because when we define a bar with data
 		// and not with combinations of other bars, we create a barLoop with the same name
 		thisBarLoopIndexIt = sharedData.loopsIndexes.find(name.substr(0, nameLength));
 		if (thisBarLoopIndexIt == sharedData.loopsIndexes.end()) {
-			return std::make_pair(3, thisBarLoopIndexIt->first + (string)" doesn't exist");
+			return std::make_pair(3, name.substr(0, nameLength) + (string)" doesn't exist");
 		}
 		// find the map of the loop with the vector that contains indexes of bars
 		thisBarLoopDataIt = sharedData.loopData.find(thisBarLoopIndexIt->second);
 		// then iterate over the number of repetitions of this loop
-		for (j = 0; j < howManyTimes; j++) {
+		for (i = 0; i < howManyTimes; i++) {
 			// and push back every item in the vector that contains the indexes of bars
 			for (barIndex = thisBarLoopDataIt->second.begin(); barIndex != thisBarLoopDataIt->second.end(); ++barIndex) {
 				thisLoopIndexes.push_back(*barIndex);
+			}
+		}
+	}
+	// once all the bar indexes have been pushed, we check if any of the bars in this loop is linked
+	// to a bar that is not sequential within the loop we're trying to create
+	for (i = 0; i < (int)thisLoopIndexes.size(); i++) {
+		for (auto instIt = sharedData.instruments.begin(); instIt != sharedData.instruments.end(); ++instIt) {
+			std::pair<int, int> barLinks = instIt->second.isLinked(thisLoopIndexes[i]);
+			if (barLinks.first < 0 || barLinks.second > 0) {
+				// if we find a link, first determine whether the linked bar(s) is not present in the loop
+				if (abs(barLinks.first) > i) goto linkError;
+				if (barLinks.second > (int)thisLoopIndexes.size() - i - 1) goto linkError;
+				for (int j = i; j > i-abs(barLinks.first); j--) {
+					if (thisLoopIndexes[j-1] > thisLoopIndexes[j]) goto linkError;
+					if (thisLoopIndexes[j] - thisLoopIndexes[j-1] > 1) goto linkError;
+				}
+				if (i+barLinks.second > (int)thisLoopIndexes.size()) goto linkError;
+				for (int j = i; j < i + barLinks.second; j++) {
+					if (thisLoopIndexes[j] > thisLoopIndexes[j+1]) goto linkError;
+					if (thisLoopIndexes[j+1] - thisLoopIndexes[j] > 1) goto linkError;
+				}
+				continue; // in case goto is not invoked
+			linkError:
+				int linkLevel = max(abs(barLinks.first), barLinks.second);
+				string err = (string)"bar " + sharedData.loopsOrdered[thisLoopIndexes[i]] + " links ";
+				if (linkLevel > 1) {
+					err += "through ";
+				}
+				err += "to ";
+				if (abs(barLinks.first) > barLinks.second) {
+					err += sharedData.loopsOrdered[thisLoopIndexes[i]-linkLevel];
+				}
+				else {
+					err += sharedData.loopsOrdered[thisLoopIndexes[i]+linkLevel];
+				}
+				return std::make_pair(3, err);
 			}
 		}
 	}
@@ -4631,6 +5027,9 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	if (!areBracketsBalanced(str)) {
 		return std::make_pair(3, "brackets are not balanced");
 	}
+	if (!areParenthesesBalanced(str)) {
+		return std::make_pair(3, "parentheses are not balanced");
+	}
 	bool parsingBarsFromLoop = false;
 	int ndx;
 	string parsingBarsFromLoopName;
@@ -4653,7 +5052,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	if (parsingBars) {
 		if (parsingBarsFromLoop) {
 			if (lastInstrumentIndex == firstInstForBarsIndex) {
-				numBarsParsed = (int)sharedData.loopData[sharedData.loopsIndexes[parsingBarsFromLoopName]].size(); //barsIterCounter;
+				numBarsParsed = (int)sharedData.loopData[sharedData.loopsIndexes[parsingBarsFromLoopName]].size();
 			}
 			else {
 				// left operand of if below was barsIterCounter
@@ -4666,7 +5065,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 				sharedData.instruments[lastInstrumentIndex].setMultiBarsDone(true);
 			}
 			ndx = sharedData.loopData[sharedData.loopsIndexes[parsingBarsFromLoopName]][barsIterCounter-1];
-			strToProcess = sharedData.loopsUnordered[ndx];
+			strToProcess = sharedData.loopsOrdered[ndx];
 		}
 		else {
 			strBegin = sharedData.instruments[lastInstrumentIndex].getMultiBarsStrBegin();
@@ -4723,6 +5122,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// index variables for loop so that they are initialized before vectors with unkown size
 	unsigned i = 0, j = 0; //  initialize to avoid compiler warnings
 	// first detect if there are any quotes, which might include one or more white spaces
+	bool closedQuote = true;
 	for (i = 0; i < tokens.size(); i++) {
 		// first determine if we have both quotes in the same token
 		vector<int> quoteNdx = findIndexesOfCharInStr(tokens[i], "\"");
@@ -4732,21 +5132,29 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		// if we find a quote and we're not at the last token
 		if (tokens[i].find("\"") != string::npos && i < (tokens.size()-1)) {
 			unsigned ndx = i+1;
+			closedQuote = false;
 			while (ndx < tokens.size()) {
 				// if we find the pairing quote, concatenate the strings into one token
 				if (tokens[ndx].find("\"") != string::npos) {
 					tokens[i] += (" " + tokens[ndx]);
 					tokens.erase(tokens.begin()+ndx);
+					closedQuote = true;
 					break;
 				}
+				ndx++;
 			}
 		}
+	}
+	if (!closedQuote) {
+		return std::make_pair(3, "quote sign left open");
 	}
 	// then detect any chords, as the size of most vectors equals the number of notes vertically
 	// and not single notes within chords
 	unsigned numNotesVertical = tokens.size();
 	unsigned chordNotesCounter = 0;
 	unsigned numErasedOttTokens = 0;
+	unsigned chordOpeningNdx;
+	unsigned chordClosingNdx;
 	// characters that are not permitted inside a chord are
 	// open/close parenthesis, hyphen, dot, backslash, carret, underscore, open/close curly brackets
 	int forbiddenCharsInChord[9] = {40, 41, 45, 46, 92, 94, 95, 123, 125};
@@ -4764,7 +5172,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		}
 		if (tokens[i].compare("\\tuplet") == 0 || tokens[i].compare("\\tup") == 0) {
 			if (tokens.size() < i+3) {
-				return std::make_pair(3, "\\tuplet must be followed by ration and the actual tuplet");
+				return std::make_pair(3, "\\tuplet must be followed by ratio and the actual tuplet");
 			}
 			if (tokens[i+1].find("/") == string::npos) {
 				return std::make_pair(3, "\\tuplet ratio formatted wrong");
@@ -4781,7 +5189,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		if (chordStarted) {
 			bool chordEnded = false;
 			for (j = 0; j < 9; j++) {
-				if (tokens[i].find(char(forbiddenCharsInChord[j])) != string::npos) {
+				if (tokens[i].substr(0, tokens[i].find(">")).find(char(forbiddenCharsInChord[j])) != string::npos) {
 					return std::make_pair(3, char(forbiddenCharsInChord[j]) + (string)" can't be included within a chord, only outside of it");
 				}
 			}
@@ -4794,8 +5202,8 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			chordNotesCounter++;
 		}
 		// if we find a quote and we're not at the last token
-		unsigned chordOpeningNdx = tokens[i].find("<");
-		unsigned chordClosingNdx = tokens[i].find(">");
+		chordOpeningNdx = tokens[i].find("<");
+		chordClosingNdx = tokens[i].find(">");
 		// an opening angle brace is also used for crescendi, but when used to start a chord
 		// it must be at the beginning of the token, so we test if its index is 0
 		if (chordOpeningNdx != string::npos && chordOpeningNdx == 0 && i < tokens.size()) {
@@ -4808,7 +5216,9 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 						return std::make_pair(3, "chords can't be nested");
 					}
 				}
-				else return std::make_pair(3, "chords can't be nested");
+				else {
+					return std::make_pair(3, "chords can't be nested");
+				}
 			}
 			if (sharedData.instruments[lastInstrumentIndex].isRhythm()) {
 				return std::make_pair(3, "chords are not allowed in rhythm staffs");
@@ -4920,8 +5330,6 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	vector<int> midiDynamicsRampDurs(numNotesVertical, 0);
 	vector<int> glissandiIndexes(numNotesVertical, 0);
 	vector<int> midiGlissDurs(numNotesVertical, 0);
-	vector<int> articulationIndexes(numNotesVertical, 0);
-	vector<int> midiArticulationVals(numNotesVertical, 0);
 	vector<int> dynamicsRampStartForScore(numNotesVertical, -1);
 	vector<int> dynamicsRampEndForScore(numNotesVertical, -1);
 	vector<int> dynamicsRampDirForScore(numNotesVertical, -1);
@@ -4941,8 +5349,9 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	int transposedAccidentals[i-numErasedOttTokens] = {0};
 	// variable to determine which character we start looking at
 	// useful in case we start a bar with a chord
-	unsigned firstChar = 0; // initialize to 0 to avoid compiler warning
-	unsigned firstCharOffset = 1; // this is zeroed in case of a rhythm staff with durations only
+	unsigned firstChar[tokens.size()-numErasedOttTokens] = {0};
+	unsigned firstCharOffset[tokens.size()-numErasedOttTokens]; // this is zeroed in case of a rhythm staff with durations only
+	for (i = 0; i < tokens.size()-numErasedOttTokens; i++) firstCharOffset[i] = 1;
 	int midiNote, naturalScaleNote; // the second is for the score
 	int ottava = 0;
 	// boolean used to set the values to isSlurred vector
@@ -4951,12 +5360,13 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	chordNotesCounter = 0;
 	unsigned index1 = 0, index2 = 0; // variables to index various data
 	int erasedTokens = 0;
-	
+	bool reiterate = false;
 	// create an unpopullated vector of vector of pairs of the notes as MIDI and natural scale
 	// after all vectors with known size and all single variables have been created
 	vector<vector<std::pair<int, int>>> notePairs;
 	// then iterate over all the tokens and parse them to store the notes
 	for (i = 0; i < tokens.size(); i++) {
+		reiterate = false;
 		if (erasedTokens > 0) {
 			// go back as many indexes as we have erased in case we have an \ottava or \tuplet 
 			// the loop returned to its last field that incremented i, so we need to decrement it
@@ -5003,7 +5413,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			verticalNoteIndex++;
 		}
 		ottavas[verticalNoteIndex] = ottava;
-		firstChar = 0;
+		firstChar[i] = 0;
 		// first check if the token is a comment so we exit the loop
 		if (startsWith(tokens[i], "%")) continue;
 		foundNotes[i] = false;
@@ -5012,9 +5422,14 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		// the first element of each token is the note
 		// so we first check for it in a separate loop
 		// and then we check for the rest of the stuff
-	parseStart:
 		for (j = 0; j < 8; j++) {
-			if (tokens[i][firstChar] == noteChars[j]) {
+			if (tokens[i][firstChar[i]] == char(60)) { // <
+				chordStarted = true;
+				beginningOfChords[i] = 1;
+				firstChordNote = true;
+				firstChar[i] = 1;
+			}
+			if (tokens[i][firstChar[i]] == noteChars[j]) {
 				midiNote = -1;
 				if (j < 7) {
 					midiNote = midiNotes[j];
@@ -5062,8 +5477,6 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 					glissandiIndexes[index2] = 0;
 					midiGlissDurs[index2] = 0;
 					midiDynamicsRampDurs[index2] = 0;
-					articulationIndexes[index2] = 0;
-					midiArticulationVals[index2] = 1;
 					pitchBendVals[index2] = 0;
 					textIndexesLocal[index2] = 0;
 					index2++;
@@ -5115,19 +5528,12 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 					// we need to assign 0 to firstCharOffset which defaults to 1
 					// because further down it is added to firstChar
 					// but, in this case, we want to check the token from its beginning, index 0
-					firstCharOffset = 0;
+					firstCharOffset[i] = 0;
 					goto storeNote;
 				}
 				else {
 					return std::make_pair(3, to_string(dur) + ": wrong duration");
 				}
-			}
-			else if (tokens[i][firstChar] == char(60)) { // <
-				chordStarted = true;
-				beginningOfChords[i] = 1;
-				firstChordNote = true;
-				firstChar = 1;
-				goto parseStart; // reiterate if starting with a chord symbol
 			}
 			else {
 				return std::make_pair(3, (string)"first character must be a note or a chord opening symbol (<), not \"" + tokens[i][0] + (string)"\"");
@@ -5140,7 +5546,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 				endingOfChords[i] = 1;
 			}
 		}
-		index1++;
+		if (!reiterate) index1++;
 	}
 	
 	// reset the indexes
@@ -5201,7 +5607,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	}
 
 	// before we move on to the rest of the data, we need to store the texts
-	// because this is the last bit of dynamically allocated memory
+	// because this is dynamically allocated memory too
 	unsigned openQuote, closeQuote;
 	vector<string> texts;
 	for (i = 0; i < tokens.size(); i++) {
@@ -5266,8 +5672,85 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	}
 	// then copy the texts to textsForScore
 	vector<string> textsForScore;
-	for (i = 0; i < texts.size(); i++) {
+	for (i = 0; i < (int)texts.size(); i++) {
 		textsForScore.push_back(texts[i]);
+	}
+
+	// lastly, store articulation symbols, as these have to be allocated dynamically too
+	vector<vector<int>> articulationIndexes;
+	for (i = 0; i < tokens.size(); i++) {
+		unsigned firstArticulIndex = 0;
+		verticalNoteIndex = -1;
+		for (j = 0; j <= i; j++) {
+			// loop till we find a -1, which means that this token is a chord note, but not the first one
+			if (verticalNotesIndexes[j] < 0) continue;
+			verticalNoteIndex++;
+		}
+		if ((int)articulationIndexes.size() <= verticalNoteIndex) {
+			articulationIndexes.push_back({0});
+		}
+		for (j = 0; j < tokens[i].size(); j++) {
+			if (tokens[i][j] == char(45)) { // - for articulation symbols
+				if (j > (tokens[i].size()-1)) {
+					return std::make_pair(3, "a hyphen must be followed by an articulation symbol");
+				}
+				if (!foundArticulation) {
+					firstArticulIndex = j;
+				}
+				// since the hyphen is used both for indicating the command for articulation
+				// but also for the tenuto symbol, we have to iterate through these symbols
+				// every two, otherwise, if we write a tenuto, the else if (tokens[i][j] == char(45)) test
+				// will be successful not only for the articulation command, but also for the symbol
+				else if ((j - firstArticulIndex) < 2) {
+					continue;
+				}
+				foundArticulation = true;
+				int articulChar = char(tokens[i][j+1]);
+				int articulIndex = 0;
+				switch (articulChar) {
+					// articulation symbol indexes start from 1 because 0 is reserved for no articulation
+					case 94: // ^ for marcato
+						articulIndex = 1;
+						break;
+					case 43: // + for trill
+						articulIndex = 2;
+						break;
+					case 45: // - for tenuto
+						articulIndex = 3;
+						break;
+					case 33: // ! for staccatissimo
+						articulIndex = 4;
+						break;
+					case 62: // > for accent
+						articulIndex = 5;
+						break;
+					case 46: // . for staccato
+						articulIndex = 6;
+						break;
+					case 95: // _ for portando
+						articulIndex = 7;
+						break;
+					default:
+						return std::make_pair(3, "unknown articulation symbol");
+				}
+				if (articulationIndexes[verticalNoteIndex].size() == 1 && articulationIndexes[verticalNoteIndex][0] == 0) {
+					articulationIndexes[verticalNoteIndex][0] = articulIndex;
+				}
+				else {
+					articulationIndexes[verticalNoteIndex].push_back(articulIndex);
+				}
+				j++;
+				continue;
+			}
+		}
+	}
+	// copy the articulation indexes with an offset for MIDI
+	vector<vector<int>> midiArticulationVals;
+	for (i = 0; i < articulationIndexes.size(); i++) {
+		midiArticulationVals.push_back({(articulationIndexes[i][0] > 0 ? articulationIndexes[i][0]+9 : 1)});
+		for (j = 1; j < articulationIndexes[i].size(); j++) {
+			midiArticulationVals.back().push_back(articulationIndexes[i][j]+9);
+		}
 	}
 
 	// we are now done with dynamically allocating memory, so we can move on to the rest of the data
@@ -5288,7 +5771,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			verticalNoteIndex++;
 		}
 		// first check for accidentals, if any
-		accidentalIndexes[i] = firstChar + firstCharOffset;
+		accidentalIndexes[i] = firstChar[i] + firstCharOffset[i];
 		while (accidentalIndexes[i] < tokens[i].size()) {
 			if (tokens[i][accidentalIndexes[i]] == char(101)) { // 101 is "e"
 				if (accidentalIndexes[i] < tokens[i].size()-1) {
@@ -5391,8 +5874,6 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// now check for the rest of the characters of the token, so start with j = accIndex
 	for (i = 0; i < tokens.size(); i++) {
 		foundArticulation = false;
-		bool foundStaccato = false;
-		unsigned firstArticulIndex = 0;
 		verticalNoteIndex = -1;
 		for (j = 0; j <= i; j++) {
 			// loop till we find a -1, which means that this token is a chord note, but not the first one
@@ -5541,7 +6022,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 					}
 					else {
 						if (foundDynamicLocal) {
-							// sharedData.dynamics are stored like this:
+							// dynamics are stored like this:
 							// ppp = -9, pp = -6, p = -3, mp = -1, mf = 1, f = 3, ff = 6, fff = 9
 							// so to map this range to 60-100 (dB) we must first add 9 (subtract -9)
 							// multiply by 40 (100 - 60) / (9 - (-9)) = 40 / 18
@@ -5553,7 +6034,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 							// convert the range MINDB to 100 to indexes from 0 to 7
 							// subtract the minimum dB value from the dynamic, multipled by (7/dB-range)
 							// add 0.5 and get the int to round the float properly
-							int dynamicForScore = (int)((((float)dynamicsData[i]-(float)MINDB)*(7.0/(100.0-(float)MINDB)))+0.5);
+							int dynamicForScore = (int)((((float)dynamicsData[verticalNoteIndex]-(float)MINDB)*(7.0/(100.0-(float)MINDB)))+0.5);
 							if (dynamicForScore != prevScoreDynamic) {
 								dynamicsForScore[verticalNoteIndex] = dynamicForScore;
 								prevScoreDynamic = dynamicForScore;
@@ -5581,64 +6062,9 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 				}
 				j = index2;
 			}
-
-			else if (tokens[i][j] == char(45)) { // - for articulation symbols
-				if (j > (tokens[i].size()-1)) {
-					return std::make_pair(3, "a hyphen must be followed by an articulation symbol");
-				}
-				if (!foundArticulation) {
-					firstArticulIndex = j;
-				}
-				// since the hyphen is used both for indicating the command for articulation
-				// but also for the tenuto symbol, we have to iterate through these symbols
-				// every two, otherwise, if we write a tenuto, the else if (tokens[i][j] == char(45)) test
-				// will be successful not only for the articulation command, but also for the symbol
-				else if ((j - firstArticulIndex) < 2) {
-					continue;
-				}
-				foundArticulation = true;
-				int articulChar = char(tokens[i][j+1]);
-				switch (articulChar) {
-					// articulation symbol indexes start from 1 because 0 is reserved for no articulation
-					case 94: // ^ for marcato
-						articulationIndexes[verticalNoteIndex] = 1;
-						midiArticulationVals[verticalNoteIndex] = 10;
-						break;
-					case 43: // + for trill
-						articulationIndexes[verticalNoteIndex] = 2;
-						midiArticulationVals[verticalNoteIndex] = 11;
-						break;
-					case 45: // - for tenuto
-						articulationIndexes[verticalNoteIndex] = 3;
-						midiArticulationVals[verticalNoteIndex] = 12;
-						break;
-					case 33: // ! for staccatissimo
-						articulationIndexes[verticalNoteIndex] = 4;
-						midiArticulationVals[verticalNoteIndex] = 13;
-						break;
-					case 62: // > for accent
-						articulationIndexes[verticalNoteIndex] = 5;
-						midiArticulationVals[verticalNoteIndex] = 14;
-						break;
-					case 46: // . for staccato
-						articulationIndexes[verticalNoteIndex] = 6;
-						midiArticulationVals[verticalNoteIndex] = 15;
-						foundStaccato = true; // to avoid interpreting the dot as part of the duration
-						break;
-					case 95: // _ for portando
-						articulationIndexes[verticalNoteIndex] = 7;
-						midiArticulationVals[verticalNoteIndex] = 16;
-						break;
-					default:
-						return std::make_pair(3, "unknown articulation symbol");
-				}
-				j++;
-				continue;
-			}
 			
-			// . for dotted note, which is also used for staccato, so here we need a boolean as well
-			// this is why we test after we have checked for articulation symbols
-			else if (tokens[i][j] == char(46) && !foundStaccato) {
+			// . for dotted note, which is also used for staccato, hence the second test against 45 (hyphen)
+			else if (tokens[i][j] == char(46) && tokens[i][j-1] != char(45)) {
 				dotIndexes[verticalNoteIndex] = 1;
 				dotsCounter++;
 			}
@@ -5654,6 +6080,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 				slurStarted = false;
 				slurEndingsIndexes[verticalNoteIndex] = verticalNoteIndex;
 				//slurIndexes[verticalNoteIndex].second = verticalNoteIndex;
+			}
+
+			else if (tokens[i][j] == char(126)) { // ~ for tie
+				// need to implement this
 			}
 
 			// check for _ or ^ and make sure that the previous character is not -
@@ -5724,6 +6154,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		}
 	}
 
+	if (dynamicsRampStarted) {
+		dynamicsRampIndexes[dynamicsRampCounter-1].second = verticalNoteIndex;
+	}
+
 	// check if there are any unmatched quote signs
 	if (quotesCounter > 0) {
 		return std::make_pair(3, "unmatched quote sign");
@@ -5731,10 +6165,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 
 	// once all elements have been parsed we can determine whether we're fine to go on
 	for (i = 0; i < tokens.size(); i++) {
-		if (tokens[i].compare("\\ottava") == 0 || tokens[i].compare("\\ott") == 0) {
-			i += 1;
-			continue;
-		}
+		//if (tokens[i].compare("\\ottava") == 0 || tokens[i].compare("\\ott") == 0) {
+		//	i += 1;
+		//	continue;
+		//}
 		if (!foundNotes[i] && !foundDynamics[i] && !foundAccidentals[i] && !foundOctaves[i]) {
 			return std::make_pair(3, tokens[i][j] + (string)": unknown character");
 		}
@@ -5825,12 +6259,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		}
 	}
 	// get the tempo of the minimum duration
-	int barIndex = getLastLoopIndex();
+	int barIndex = getLastBarIndex();
 	if (sharedData.numerator.find(barIndex) == sharedData.numerator.end()) {
 		sharedData.numerator[barIndex] = sharedData.denominator[barIndex] = 4;
 	}
-	sharedData.newTempo = (float)sharedData.tempoMs / ((float)MINDUR / (float)sharedData.denominator[barIndex]);
-	sharedData.tempNumBeats = sharedData.numerator[barIndex] * (MINDUR / sharedData.denominator[barIndex]);
 	int dursAccum = 0;
 	int diff = 0; // this is the difference between the expected and the actual sum of tuplets
 	int scoreDur; // durations for score should not be affected by tuplet calculations
@@ -5866,11 +6298,14 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		dursForScore[i] = scoreDur;
 		dursDataWithoutSlurs[i] = dursData[i];
 	}
-	if (dursAccum < sharedData.tempNumBeats) {
-		return std::make_pair(3, "durations sum is less than bar duration");
-	}
-	if (dursAccum > sharedData.tempNumBeats) {
-		return std::make_pair(3, "durations sum is greater than bar duration");
+	// if all we have is "r1", then it's a tacet, otherwise, we need to check the durations sum
+	if (!(tokens.size() == 1 && tokens[0].compare("r1") == 0)) {
+		if (dursAccum < sharedData.numBeats[barIndex]) {
+			return std::make_pair(3, "durations sum is less than bar duration");
+		}
+		if (dursAccum > sharedData.numBeats[barIndex]) {
+			return std::make_pair(3, "durations sum is greater than bar duration");
+		}
 	}
 	// now we can create a vector of pairs with the indexes of the slurs
 	int numSlurStarts = 0, numSlurStops = 0;
@@ -5907,8 +6342,6 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	sharedData.instruments[thisInstIndex].isSlurred[barIndex] = isSlurred;
 	sharedData.instruments[thisInstIndex].text[barIndex] = texts;
 	sharedData.instruments[thisInstIndex].textIndexes[barIndex] = textIndexesLocal;
-	//sharedData.instruments[thisInstIndex].slurBeginnings[barIndex] = slurBeginningsIndexes;
-	//sharedData.instruments[thisInstIndex].slurEndings[barIndex] = slurEndingsIndexes;
 	sharedData.instruments[thisInstIndex].slurIndexes[barIndex] = slurIndexes;
 	sharedData.instruments[thisInstIndex].scoreNotes[barIndex] = notesForScore;
 	sharedData.instruments[thisInstIndex].scoreDurs[barIndex] = dursForScore;
@@ -5924,8 +6357,6 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	sharedData.instruments[thisInstIndex].scoreDynamicsRampStart[barIndex] = dynamicsRampStartForScore;
 	sharedData.instruments[thisInstIndex].scoreDynamicsRampEnd[barIndex] = dynamicsRampEndForScore;
 	sharedData.instruments[thisInstIndex].scoreDynamicsRampDir[barIndex] = dynamicsRampDirForScore;
-	//sharedData.instruments[thisInstIndex].scoreSlurBeginnings[barIndex] = slurBeginningsIndexes;
-	//sharedData.instruments[thisInstIndex].scoreSlurEndings[barIndex] = slurEndingsIndexes;
 	sharedData.instruments[thisInstIndex].scoreTupRatios[barIndex] = tupRatios;
 	sharedData.instruments[thisInstIndex].scoreTupStartStop[barIndex] = tupStartStop;
 	sharedData.instruments[thisInstIndex].scoreTexts[barIndex] = textsForScore;
@@ -5934,7 +6365,8 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// of if the whole previous bar is slurred
 	if (slurIndexes.size() == 1 && slurIndexes[0].first == -1 && slurIndexes[0].second == -1) {
 		int prevBar = getPrevBarIndex();
-		if (sharedData.instruments[thisInstIndex].slurIndexes[prevBar].back().second == -1 ||
+		if ((sharedData.instruments[thisInstIndex].slurIndexes[prevBar].back().first > -1 && \
+				sharedData.instruments[thisInstIndex].slurIndexes[prevBar].back().second == -1) ||
 				sharedData.instruments[thisInstIndex].isWholeBarSlurred[prevBar]) {
 			sharedData.instruments[thisInstIndex].isWholeBarSlurred[barIndex] = true;
 		}
@@ -6076,10 +6508,10 @@ std::pair<int, string> ofApp::scoreCommands(vector<string>& commands, int lineNu
 		}
 		else if (commands[i].compare("beattype") == 0) {
 			if (commands.size() < i + 2) {
-				return std::make_pair(3, "beattype takes a 1 or a 2 as an argument");
+				return std::make_pair(3, "\"beattype\" takes a 1 or a 2 as an argument");
 			}
 			if (!isNumber(commands[i+1])) {
-				return std::make_pair(3, "beattype takes a 1 or a 2 as an argument");
+				return std::make_pair(3, "\"beattype\" takes a 1 or a 2 as an argument");
 			}
 			int beattype;
 			unsigned iIncrement = 1;
@@ -6091,7 +6523,7 @@ std::pair<int, string> ofApp::scoreCommands(vector<string>& commands, int lineNu
 				}
 				std::pair<int, string> p = parseCommand(restOfCommands, lineNum, numLines);
 				if (p.first > 0) return p;
-				if (!isNumber(p.second)) return std::make_pair(3, "beattype takes a number as an argument");
+				if (!isNumber(p.second)) return std::make_pair(3, "\"beattype\" takes a number as an argument");
 				beattype = stoi(p.second);
 				iIncrement = commands.size();
 			}
@@ -6196,7 +6628,7 @@ std::pair<int, string> ofApp::scoreCommands(vector<string>& commands, int lineNu
 		}
 		else if (commands[i].compare("correct") == 0) {
 			if (commands.size() < i+2) {
-				return std::make_pair(3, "\"correct\" takes one argument, onoctave or all");
+				return std::make_pair(3, "\"correct\" takes one argument, \"onoctave\" or \"all\"");
 			}
 			if (commands[i+1].compare("onoctave") == 0) {
 				correctOnSameOctaveOnly = true;
@@ -6206,6 +6638,21 @@ std::pair<int, string> ofApp::scoreCommands(vector<string>& commands, int lineNu
 			}
 			else {
 				return std::make_pair(3, commands[i+1] + (string)": unknown argument to \"correct\"");
+			}
+			i += 2;
+		}
+		else if (commands[i].compare("tempo") == 0) {
+			if (commands.size() < i+2) {
+				return std::make_pair(3, "\"tempo\" takes one argument, \"show\" or \"hide\"");
+			}
+			if (commands[i+1].compare("show") == 0) {
+				showTempo = true;
+			}
+			else if (commands[i+1].compare("hide") == 0) {
+				showTempo = false;
+			}
+			else {
+				return std::make_pair(3, commands[i+1] + (string)": unknown argument to \"tempo\"");
 			}
 			i += 2;
 		}
@@ -6239,24 +6686,18 @@ void ofApp::initializeInstrument(string instName)
 	if (thisInstNameWidth > sharedData.longestInstNameWidth) {
 		sharedData.longestInstNameWidth = thisInstNameWidth;
 	}
-	sharedData.instruments[maxInstIndex].setStaffSize(sharedData.scoreFontSize);
-	sharedData.instruments[maxInstIndex].setNotesFontSize(sharedData.scoreFontSize);
+	sharedData.instruments[maxInstIndex].setNotesFontSize(sharedData.scoreFontSize, sharedData.staffLinesDist);
+	sharedData.instrumentIndexesOrdered[maxInstIndex] = maxInstIndex;
 	sharedData.numInstruments++;
 	setScoreCoords();
-}
-
-//--------------------------------------------------------------
-void ofApp::updateTempoBeatsInsts(int barIndex)
-{
-	sharedData.tempo = sharedData.newTempo;
-	sharedData.numBeats[barIndex] = sharedData.tempNumBeats;
 }
 
 //--------------------------------------------------------------
 void ofApp::setScoreCoords()
 {
 	scoreXStartPnt = sharedData.longestInstNameWidth + (sharedData.blankSpace * 1.5);
-	float staffXLength = (sharedData.screenWidth / 2) - sharedData.blankSpace - sharedData.staffLinesDist - scoreXStartPnt;
+	float staffLength = scoreBackgroundWidth - sharedData.blankSpace - scoreXStartPnt;
+	if (scoreOrientation == 1) staffLength /= min(2, numBarsToDisplay);
 	// place yPos at the center of the screen in the Y axis
 	float yPos1 = ((sharedData.tracebackBase - cursorHeight) / 2) - (sharedData.staffLinesDist * 2);
 	float yPos2 = ((sharedData.tracebackBase - cursorHeight) / 4) - (sharedData.staffLinesDist * 2);
@@ -6267,8 +6708,7 @@ void ofApp::setScoreCoords()
 		// hence staffLinesDist * 10, which yields ten times the distance between staff lines
 		yPos1 -= ((sharedData.instruments.size() / 2) * (sharedData.staffLinesDist * 10));
 		yPos2 -= ((sharedData.instruments.size() / 2) * (sharedData.staffLinesDist * 10));
-		// if the number of sharedData.staffs is even, we must subtract half the distance
-		// between each staff
+		// if the number of staffs is even, we must subtract half the distance between each staff
 		if ((sharedData.instruments.size() % 2) == 0) {
 			yPos1 += (sharedData.staffLinesDist * 5);
 			yPos2 += (sharedData.staffLinesDist * 5);
@@ -6279,15 +6719,9 @@ void ofApp::setScoreCoords()
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 		float yAnchor1 = yPos1 + (i * (sharedData.staffLinesDist * 10));
 		float yAnchor2 = yPos2 + (i * (sharedData.staffLinesDist * 10));
-		it->second.setStaffCoords(staffXLength, yAnchor1, yAnchor2, sharedData.staffLinesDist);
-		//float xStartPnt = it->second.getStaffXPos(); // this yields the X coord after the meter symbols
-		// get the maximum start point so all scores are alligned on the X axis
-		//if (xStartPnt > sharedData.notesXStartPnt) sharedData.notesXStartPnt = xStartPnt;
-		// give the appropriate offset so that notes are not too close to the loop symbols
-		//float xNotesStart = sharedData.notesXStartPnt + sharedData.staffLinesDist;
-		//float notesXLength = (sharedData.screenWidth / 2) - sharedData.blankSpace - (sharedData.staffLinesDist * 2);
-		notesXLength = staffXLength - it->second.getClefXOffset() - it->second.getMeterXOffset() - (sharedData.staffLinesDist * 2);
-		it->second.setNoteCoords(notesXLength, yAnchor1, yAnchor2, sharedData.staffLinesDist, sharedData.scoreFontSize);
+		it->second.setStaffCoords(staffLength, yAnchor1, yAnchor2, sharedData.staffLinesDist);
+		notesLength = staffLength - (sharedData.staffLinesDist * NOTESXOFFSETCOEF);
+		it->second.setNoteCoords(notesLength, yAnchor1, yAnchor2, sharedData.staffLinesDist, sharedData.scoreFontSize);
 		i++;
 	}
 	// get the note width from the first instrument, as they all have the same size
@@ -6300,9 +6734,26 @@ void ofApp::setScoreNotes(int barIndex)
 {
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 		it->second.setScoreNotes(barIndex, sharedData.numerator[barIndex],
-								 sharedData.denominator[barIndex], sharedData.numBeats[barIndex]);
+								 sharedData.denominator[barIndex], sharedData.numBeats[barIndex],
+								 sharedData.BPMTempi[barIndex], sharedData.tempoBaseForScore[barIndex],
+								 sharedData.BPMDisplayHasDot[barIndex]);
 	}
-	calculateStaffPositions(barIndex);
+}
+
+//--------------------------------------------------------------
+void ofApp::setNotePositions(int barIndex)
+{
+	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		it->second.setNotePositions(barIndex);
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::setNotePositions(int barIndex, int numBars)
+{
+	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		it->second.setNotePositions(barIndex, numBars);
+	}
 }
 
 //--------------------------------------------------------------
@@ -6387,6 +6838,7 @@ void ofApp::swapScorePosition(int orientation)
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 		it->second.setScoreOrientation(orientation);
 	}
+	bool setCoords = (scoreOrientation != orientation ? true : false);
 	scoreOrientation = orientation;
 	switch (orientation) {
 		case 0:
@@ -6415,33 +6867,37 @@ void ofApp::swapScorePosition(int orientation)
 		default:
 			break;
 	}
+	if (setCoords) setScoreCoords();
 }
 
 //--------------------------------------------------------------
 void ofApp::setScoreSizes()
 {
 	// for a 35 font size the staff lines distance is 10
-	sharedData.staffLinesDist = 10 * ((float)sharedData.scoreFontSize / 35.0);
 	sharedData.longestInstNameWidth = 0;
-	for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		it->second.setStaffSize(sharedData.scoreFontSize);
-		it->second.setNotesFontSize(sharedData.scoreFontSize);
-		if (instFont.stringWidth(it->second.getName()) > sharedData.longestInstNameWidth) {
-			sharedData.longestInstNameWidth = instFont.stringWidth(it->second.getName());
+	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		it->second.setNotesFontSize(sharedData.scoreFontSize, sharedData.staffLinesDist);
+		size_t nameWidth = instFont.stringWidth(it->second.getName());
+		instNameWidths[it->first] = nameWidth;
+		if ((int)nameWidth > sharedData.longestInstNameWidth) {
+			sharedData.longestInstNameWidth = nameWidth;
 		}
 	}
 	scoreXStartPnt = sharedData.longestInstNameWidth + (sharedData.blankSpace * 1.5);
+	setScoreCoords();
 	if (sharedData.barsIndexes.size() > 0) {
-		for (map<string, int>::iterator it = sharedData.barsIndexes.begin(); it != sharedData.barsIndexes.end(); ++it) {
-			setScoreCoords();
-			for (map<int, Instrument>::iterator it2 = sharedData.instruments.begin(); it2 != sharedData.instruments.end(); ++it2) {
+		for (auto it = sharedData.barsIndexes.begin(); it != sharedData.barsIndexes.end(); ++it) {
+			//setScoreCoords();
+			for (auto it2 = sharedData.instruments.begin(); it2 != sharedData.instruments.end(); ++it2) {
+				it2->second.setMeter(it->second, sharedData.numerator[it->second],
+						sharedData.denominator[it->second], sharedData.numBeats[it->second]);
 				it2->second.setNotePositions(it->second);
 			}
 		}
 	}
-	else {
-		setScoreCoords();
-	}
+	//else {
+	//	setScoreCoords();
+	//}
 }
 
 //--------------------------------------------------------------

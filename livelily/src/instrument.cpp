@@ -64,6 +64,7 @@ string Instrument::getName()
 void Instrument::setID(int id)
 {
 	objID = id;
+	staff.setID(id);
 	notesObj.setID(id);
 }
 
@@ -73,7 +74,7 @@ void Instrument::setRhythm(bool isRhythm)
 	isRhythmBool = isRhythm;
 	staff.setRhythm(isRhythm);
 	notesObj.setRhythm(isRhythm);
-	if (isRhythm) setClef(3);
+	if (isRhythm) setClef(0, 3);
 }
 
 //--------------------------------------------------------------
@@ -129,6 +130,12 @@ void Instrument::setNumBarsToDisplay(int numBars)
 }
 
 //--------------------------------------------------------------
+float Instrument::getXCoef()
+{
+	return staff.getXCoef();
+}
+
+//--------------------------------------------------------------
 void Instrument::setPassed(bool passedBool)
 {
 	passed = passedBool;
@@ -171,6 +178,12 @@ bool Instrument::hasNewStep()
 }
 
 //--------------------------------------------------------------
+std::pair<int, int> Instrument::isLinked(int bar)
+{
+	return notesObj.isBarLinked(bar);
+}
+
+//--------------------------------------------------------------
 void Instrument::setNewStep(bool stepState)
 {
 	hasNewStepBool = stepState;
@@ -201,10 +214,16 @@ void Instrument::setMultiBarsStrBegin(size_t pos)
 }
 
 //--------------------------------------------------------------
-void Instrument::setClef(int clefIdx)
+void Instrument::setClef(int bar, int clefIdx)
 {
-	staff.setClef(clefIdx);
-	notesObj.setClef(clefIdx);
+	staff.setClef(bar, clefIdx);
+	notesObj.setClef(bar, clefIdx);
+}
+
+//--------------------------------------------------------------
+int Instrument::getClef(int bar)
+{
+	return staff.getClef(bar);
 }
 
 //--------------------------------------------------------------
@@ -272,28 +291,29 @@ void Instrument::createEmptyMelody(int barIndex)
 	glissandi[barIndex] = vector<int>(1, 0);
 	midiGlissDurs[barIndex] = vector<int>(1, 0);
 	midiDynamicsRampDurs[barIndex] = vector<int>(1, 0);
-	articulations[barIndex] = vector<int>(1, 0);
-	midiArticulationVals[barIndex] = vector<int>(1, 0);
+	articulations[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
+	midiArticulationVals[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	text[barIndex] = vector<string>(1, "");
 	textIndexes[barIndex] = vector<int>(1, 0);
-	//slurBeginnings[barIndex] = vector<int>(1, -1);
-	//slurEndings[barIndex] = vector<int>(1, -1);
 	isWholeBarSlurred[barIndex] = false;
 	slurIndexes[barIndex] = vector<std::pair<int, int>>(1, std::make_pair(-1, -1));
 	scoreNotes[barIndex] = vector<vector<int>>(1, vector<int>(1, -1));
 	scoreDurs[barIndex] = vector<int>(1, MINDUR);
 	scoreDotIndexes[barIndex] = vector<int>(1, 0);
 	scoreAccidentals[barIndex] = vector<vector<int>>(1, vector<int>(1, 4));
+	scoreNaturalSignsNotWritten[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	scoreOctaves[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	scoreGlissandi[barIndex] = vector<int>(1, 0);
-	scoreArticulations[barIndex] = vector<int>(1, 0);
+	scoreArticulations[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	scoreDynamics[barIndex] = vector<int>(1, -1);
 	scoreDynamicsIndexes[barIndex] = vector<int>(1, -1);
 	scoreDynamicsRampStart[barIndex] = vector<int>(1, -1);
 	scoreDynamicsRampEnd[barIndex] = vector<int>(1, -1);
 	scoreDynamicsRampDir[barIndex] = vector<int>(1, -1);
-	//scoreSlurBeginnings[barIndex] = vector<int>(1, -1);
-	//scoreSlurEndings[barIndex] = vector<int>(1, -1);
+	map<int, std::pair<int, int>> m1;
+	scoreTupRatios[barIndex] = m1;
+	map<int, std::pair<unsigned, unsigned>> m2;
+	scoreTupStartStop[barIndex] = m2;
 	scoreTexts[barIndex] = vector<string>(1, "");
 }
 
@@ -305,9 +325,17 @@ void Instrument::setMeter(int bar, int numerator, int denominator, int numBeats)
 }
 
 //--------------------------------------------------------------
-void Instrument::setScoreNotes(int bar, int numerator, int denominator, int numBeats)
+std::pair<int, int> Instrument::getMeter(int bar)
 {
-	setMeter(bar, numerator, denominator, numBeats);
+	return staff.getMeter(bar);
+}
+
+//--------------------------------------------------------------
+void Instrument::setScoreNotes(int bar, int numerator, int denominator, int numBeats,
+		int BPMTempo, int beatAtValue, bool hasDot)
+{
+	//setMeter(bar, numerator, denominator, numBeats);
+	staff.setTempo(bar, BPMTempo, beatAtValue, hasDot);
 	notesObj.setNotes(bar,
 			scoreNotes[bar],
 			scoreAccidentals[bar],
@@ -332,15 +360,55 @@ void Instrument::setScoreNotes(int bar, int numerator, int denominator, int numB
 }
 
 //--------------------------------------------------------------
-void Instrument::setNoteCoords(float xLen, float yPos1, float yPos2, float staffLineDist, int fontSize)
-{
-	notesObj.setCoords(xLen, yPos1, yPos2, staffLineDist, fontSize);
-}
-
-//--------------------------------------------------------------
 void Instrument::setNotePositions(int bar)
 {
 	notesObj.setNotePositions(bar);
+	notesObj.storeArticulationsCoords(bar);
+	notesObj.storeTupletCoords(bar);
+	notesObj.storeSlurCoords(bar);
+	notesObj.storeOttavaCoords(bar);
+	notesObj.storeTextCoords(bar);
+	notesObj.storeDynamicsCoords(bar);
+	notesObj.storeMinMaxY(bar);
+}
+
+//--------------------------------------------------------------
+void Instrument::setNotePositions(int bar, int numBars)
+{
+	for (int i = 0; i < numBars; i++) {
+		notesObj.setNotePositions(bar+i);
+		notesObj.storeMinMaxY(bar+i);
+	}
+	for (int i = 0; i < numBars; i++) {
+		notesObj.storeArticulationsCoords(bar+i);
+		notesObj.storeMinMaxY(bar+i);
+	}
+	for (int i = 0; i < numBars; i++) {
+		notesObj.storeTupletCoords(bar+i);
+		notesObj.storeMinMaxY(bar+i);
+	}
+	for (int i = 0; i < numBars; i++) {
+		notesObj.storeSlurCoords(bar+i);
+		notesObj.storeMinMaxY(bar+i);
+	}
+	for (int i = 0; i < numBars; i++) {
+		notesObj.storeOttavaCoords(bar+i);
+		notesObj.storeMinMaxY(bar+i);
+	}
+	for (int i = 0; i < numBars; i++) {
+		notesObj.storeTextCoords(bar+i);
+		notesObj.storeMinMaxY(bar+i);
+	}
+	for (int i = 0; i < numBars; i++) {
+		notesObj.storeDynamicsCoords(bar+i);
+		notesObj.storeMinMaxY(bar+i);
+	}
+}
+	
+//--------------------------------------------------------------
+void Instrument::setNoteCoords(float xLen, float yPos1, float yPos2, float staffLineDist, int fontSize)
+{
+	notesObj.setCoords(xLen, yPos1, yPos2, staffLineDist, fontSize);
 }
 
 //--------------------------------------------------------------
@@ -355,6 +423,7 @@ void Instrument::setScoreOrientation(int orientation)
 {
 	staff.setOrientation(orientation);
 	notesObj.setOrientation(orientation);
+	notesObj.setOrientationForDots(orientation);
 }
 
 //--------------------------------------------------------------
@@ -403,21 +472,16 @@ float Instrument::getStaffYAnchor()
 }
 
 //--------------------------------------------------------------
-void Instrument::setStaffSize(int fontSize)
-{
-	staff.setSize(fontSize);
-}
-
-//--------------------------------------------------------------
 void Instrument::setStaffCoords(float xStartPnt, float yAnchor1, float yAnchor2, float staffLineDist)
 {
 	staff.setCoords(xStartPnt, yAnchor1, yAnchor2, staffLineDist);
 }
 
 //--------------------------------------------------------------
-void Instrument::setNotesFontSize(int fontSize)
+void Instrument::setNotesFontSize(int fontSize, float staffLinesDist)
 {
-	notesObj.setFontSize(fontSize);
+	staff.setSize(fontSize, staffLinesDist);
+	notesObj.setFontSize(fontSize, staffLinesDist);
 }
 
 //--------------------------------------------------------------
@@ -563,8 +627,8 @@ bool Instrument::mustFireStep(uint64_t stamp, int bar, float tempo)
 void Instrument::setNoteDur(int bar, float tempo)
 {
 	int64_t durMs = (int64_t)((double)durs[bar][barDataCounter] * (tempo * 1000));
-	int64_t noteOn = (int64_t)((double)durMs * durPercentages[articulations[bar][barDataCounter]]);
-	int64_t noteOff = (int64_t)((double)durMs * (1.0 - durPercentages[articulations[bar][barDataCounter]]));
+	int64_t noteOn = (int64_t)((double)durMs * durPercentages[articulations[bar][barDataCounter][0]]);
+	int64_t noteOff = (int64_t)((double)durMs * (1.0 - durPercentages[articulations[bar][barDataCounter][0]]));
 	// we must make sure the sum of the note on and note off durations
 	// equals the sum of the note duration of the score
 	// this might not be the case because of floating point impressision
@@ -688,10 +752,10 @@ int Instrument::getPitchBendVal(int bar)
 }
 
 //--------------------------------------------------------------
-int Instrument::getProgramChangeVal(int bar)
-{
-	return midiArticulationVals[bar][barDataCounter];
-}
+//int Instrument::getProgramChangeVal(int bar)
+//{
+//	return midiArticulationVals[bar][barDataCounter];
+//}
 
 //--------------------------------------------------------------
 int Instrument::getMidiVel(int bar)
@@ -700,10 +764,10 @@ int Instrument::getMidiVel(int bar)
 }
 
 //--------------------------------------------------------------
-int Instrument::getArticulationIndex(int bar)
-{
-	return articulations[bar][barDataCounter];
-}
+//int Instrument::getArticulationIndex(int bar)
+//{
+//	return articulations[bar][barDataCounter];
+//}
 
 //--------------------------------------------------------------
 int Instrument::getDynamic(int bar)
@@ -742,9 +806,10 @@ float Instrument::getMeterXOffset()
 }
 
 //--------------------------------------------------------------
-void Instrument::drawStaff(int bar, float xOffset, float yOffset, bool drawClef, bool drawMeter, bool drawLoopStartEnd)
+void Instrument::drawStaff(int bar, float xOffset, float yOffset, bool drawClef,
+		bool drawMeter, bool drawLoopStartEnd, bool drawTempo)
 {
-	staff.drawStaff(bar, xOffset, yOffset, drawClef, drawMeter, drawLoopStartEnd);
+	staff.drawStaff(bar, xOffset, yOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempo);
 }
 
 //--------------------------------------------------------------

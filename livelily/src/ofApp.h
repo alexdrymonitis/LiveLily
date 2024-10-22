@@ -18,7 +18,9 @@
 // 64ths are the minimum note duration
 // so we use 4 steps per this duration as a default
 #define MINDUR 256
-#define BEATVIZBRIGHTNESS 200 // transparency for showing the beat in the score
+// size of cosine table to control the transparency of the beat visualization rectangle
+#define BEATVIZBRIGHTNESS 255
+#define BEATVIZCOEFF 0.8 // coefficient to reduce maximum brightness of rectange
 #define MINDB 60
 #define TRACEBACKDUR 2000
 #define MINTRACEBACKLINES 2
@@ -30,6 +32,7 @@
 #define INBUFFSIZE 5
 
 #define SENDBARDATA_WAITDUR 1000 // in milliseconds
+#define NOTESXOFFSETCOEF 3 // multiplication coefficient for giving offset to the notes
 
 // class for storing data concerning livelily functions
 class Function
@@ -233,7 +236,7 @@ typedef struct _SharedData
 	// since string keys are sorted, we need a way to retrieve them in arbirtary order
 	// e.g. a bar named "5" stored first, will be moved after a bar named "4" that is stored later on
 	// the map below is ordered, but we store the index as a key, which is stored with an incrementing value anyway
-	map<int, string> loopsUnordered;
+	map<int, string> loopsOrdered;
 	// the map below keeps track of how many variants of each loop we create so we can use this as a name extension
 	map<int, int> loopsVariants;
 
@@ -260,6 +263,7 @@ typedef struct _SharedData
 	uint64_t beatVizRampStart;
 	uint64_t beatVizTimeStamp;
 	int beatVizDegrade;
+	int beatVizCosTab[BEATVIZBRIGHTNESS+1];
 	bool beatAnimate;
 	bool beatTypeCommand;
 	int beatVizType;
@@ -276,9 +280,14 @@ typedef struct _SharedData
 	// one for updating tempo while sequencer is running (newTempo)
 	// and one to hold the tempo in ms without the conversion
 	// to the global minimum duration
-	double tempo;
-	double newTempo;
-	double tempoMs;
+	map<int, double> tempo;
+	map<int, double> tempoMs;
+	map<int, int> BPMTempi;
+	map<int, int> BPMMultiplier;
+	map<int, bool> beatAtDifferentThanDivisor;
+	map<int, int> beatAtValues;
+	map<int, int> tempoBaseForScore;
+	map<int, bool> BPMDisplayHasDot;
 	// variables for positioning staffs for every pattern
 	map<int, float> barFirstStaffAnchor;
 	float maxBarFirstStaffAnchor;
@@ -298,7 +307,6 @@ typedef struct _SharedData
 	map<int, Function> functions;
 	
 	map<int, int> numBeats;
-	int tempNumBeats;
 
 	int scoreFontSize;
 
@@ -316,7 +324,7 @@ typedef struct _SharedData
 
 	// MIDI clock
 	unsigned long PPQN;
-	uint64_t PPQNPerUs;
+	map<int, uint64_t> PPQNPerUs;
 	unsigned long PPQNCounter;
 	uint64_t PPQNTimeStamp;
 } SharedData;
@@ -331,7 +339,6 @@ class Sequencer : public ofThread
 		void stopNow();
 		void update();
 		void setSequencerRunning(bool seqRun);
-		void tempoUpdate();
 		void setFinish(bool finishState);
 		void setCountdown(int num);
 		void setMidiTune(int tuneVal);
@@ -343,7 +350,7 @@ class Sequencer : public ofThread
 		int setBarIndex(bool increment);
 		void checkMute();
 		void sendAllNotesOff();
-		void sendBeatVizInfo();
+		void sendBeatVizInfo(int bar);
 		void threadedFunction();
 
 		SharedData *sharedData;
@@ -360,6 +367,7 @@ class Sequencer : public ofThread
 		int onNextStartMidiByte;
 		uint64_t tickCounter;
 		int beatCounter;
+		int sendBeatVizInfoCounter;
 		unsigned thisLoopIndex;
 		bool firstIter;
 		bool endOfBar;
@@ -413,6 +421,7 @@ class ofApp : public ofBaseApp
 		void sendCountdownToParts(int countdown);
 		void sendStopCountdownToParts();
 		void sendLoopDataToParts(int barIndex, vector<int> ndxs);
+		void sendSizeToPart(int instNdx, int size);
 		void sendLoopDataToPart(int instNdx, int barIndex, vector<int> ndxs);
 		void sendBarIndexBeatMeterToPart(int instNdx, int barIndex);
 		void sendInstNdxToPart(int instNdx);
@@ -422,9 +431,10 @@ class ofApp : public ofBaseApp
 		void sendLoopIndexToParts();
 		void sendNewBarToParts(string barName, int barIndex);
 		void sendNewBarToPart(int instNdx, string barName, int barIndex);
-		void sendClefToPart(int instNdx, int clef);
+		void sendClefToPart(int instNdx, int bar, int clef);
 		void sendRhythmToPart(int instNdx);
 		void sendScoreChangeToPart(int instNdx, bool scoreChange);
+		void sendChangeBeatColorToPart(int instNdx, bool changeBeatColor);
 		void sendFullscreenToPart(int instNdx, bool fullscreen);
 		void sendCursorToPart(int instNdx, bool cursor);
 		void sendFinishToParts(bool finishState);
@@ -439,6 +449,7 @@ class ofApp : public ofBaseApp
 		vector<int> findRepetitionInt(string str, int multIndex);
 		int findNextStrCharIdx(string str, string compareStr, int index);
 		bool areBracketsBalanced(string str);
+		bool areParenthesesBalanced(string str);
 		std::pair<int, string> expandStringBasedOnBrackets(const string& str);
 		std::pair<int, string> expandChordsInString(const string& firstPart, const string& str);
 		std::pair<int, string> expandSingleChars(string str);
@@ -458,7 +469,8 @@ class ofApp : public ofBaseApp
 		void sendPushPopPattern();
 		int storeNewBar(string barName);
 		void storeNewLoop(string loopName);
-		void popNewPattern();
+		int getBaseDurValue(string str, int denominator);
+		std::pair<int, string> getBaseDurError(string str);
 		std::pair<int, string> parseCommand(string str, int lineNum, int numLines);
 		std::pair<bool, std::pair<int, string>> isInstrument(vector<string>& commands, int lineNum, int numLines);
 		std::pair<bool, std::pair<int, string>> isBarLoop(vector<string>& commands, int lineNum, int numLines);
@@ -493,10 +505,11 @@ class ofApp : public ofBaseApp
 		unsigned setLoopIter(int ptrnIdx);
 		int setInstIndex(int ptrnIdx, int i);
 		int setBar(int ptrnIdx, int idx, int i);
-		void updateTempoBeatsInsts(int barIndex);
 		// staff and notes handling
 		void setScoreCoords();
 		void setScoreNotes(int barIndex);
+		void setNotePositions(int bar);
+		void setNotePositions(int bar, int numBars);
 		void swapScorePosition(int orientation);
 		void setScoreSizes();
 		void calculateStaffPositions(int bar);
@@ -548,8 +561,8 @@ class ofApp : public ofBaseApp
 		bool startSequencer;
 		bool midiPortOpen;
 
-		map<int, map<string, ofColor>> commands_map;
-		map<int, map<string, ofColor>> commands_map_second;
+		map<int, map<string, ofColor>> commandsMap;
+		map<int, map<string, ofColor>> commandsMapSecond;
 		enum languages {livelily, python, lua};
 
 		// various lists
@@ -634,7 +647,7 @@ class ofApp : public ofBaseApp
 		int scoreOrientation;
 		float scoreXStartPnt;
 		int numBarsToDisplay;
-		float notesXLength; // used to derive the ratio when we display more than two bars horizontally
+		float notesLength; // used to derive the ratio when we display more than two bars horizontally
 		bool mustUpdateScore;
 		bool scoreUpdated;
 		bool scoreChangeOnLastBar;
@@ -679,6 +692,7 @@ class ofApp : public ofBaseApp
 		// about adding a natural after the same note has been inserted with an accidental
 		bool correctOnSameOctaveOnly;
 		bool showBarCount;
+		bool showTempo;
 };
 
 #endif

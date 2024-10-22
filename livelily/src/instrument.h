@@ -25,6 +25,7 @@ class Instrument
 		void setStaccatissimoDur(float dur);
 		void setTenutoDur(float dur);
 		void setNumBarsToDisplay(int numBars);
+		float getXCoef();
 		void setPassed(bool passed);
 		bool hasPassed();
 		void setCopied(int barIndex, bool copyState);
@@ -32,19 +33,24 @@ class Instrument
 		void setCopyNdx(int barIndex, int barToCopy);
 		int getCopyNdx(int barIndex);
 		bool hasNewStep();
+		std::pair<int, int> isLinked(int bar);
 		void setNewStep(bool stepState);
 		int getNewStep();
 		bool getMultiBarsDone();
 		void setMultiBarsDone(bool done);
 		size_t getMultiBarsStrBegin();
 		void setMultiBarsStrBegin(size_t pos);
-		void setClef(int clefIdx);
+		void setClef(int bar, int clefIdx);
+		int getClef(int bar);
 		void copyMelodicLine(int barIndex);
 		void createEmptyMelody(int barIndex);
 		void setMeter(int bar, int numerator, int denominator, int numBeats);
-		void setScoreNotes(int bar, int numerator, int denominator, int numBeats);
+		std::pair<int, int> getMeter(int bar);
+		void setScoreNotes(int bar, int numerator, int denominator, int numBeats,
+				int BPMValue, int beatAtValue, bool hasDot);
 		void setNoteCoords(float xLen, float yPos1, float yPos2, float staffLineDist, int fontSize);
 		void setNotePositions(int bar);
+		void setNotePositions(int bar, int numBars);
 		void correctScoreYAnchor(float yAnchor1, float yAnchor2);
 		void setScoreOrientation(int orientation);
 		void moveScoreX(int numPixels);
@@ -54,9 +60,8 @@ class Instrument
 		float getNoteWidth();
 		float getNoteHeight();
 		float getStaffYAnchor();
-		void setStaffSize(int fontSize);
 		void setStaffCoords(float xStartPnt, float yAnchor1, float yAnchor2, float staffLineDist);
-		void setNotesFontSize(int fontSize);
+		void setNotesFontSize(int fontSize, float staffLinesDist);
 		void setAnimation(bool animationState);
 		void setLoopStart(bool loopStartState);
 		void setLoopEnd(bool loopEndState);
@@ -103,7 +108,8 @@ class Instrument
 		float getMinYPos(int bar);
 		float getClefXOffset();
 		float getMeterXOffset();
-		void drawStaff(int bar, float xOffset, float yOffset, bool drawClef, bool drawMeter, bool drawLoopStartEnd);
+		void drawStaff(int bar, float xOffset, float yOffset, bool drawClef,
+				bool drawMeter, bool drawLoopStartEnd, bool drawTempo);
 		void drawNotes(int bar, int loopNdx, vector<int> *v, float xOffset, float yOffset, bool animate, float xCoef);
 		void printVector(vector<int> v);
 		void printVector(vector<string> v);
@@ -130,8 +136,8 @@ class Instrument
 		map<int, vector<int>> midiDynamicsRampDurs;
 		map<int, vector<int>> glissandi;
 		map<int, vector<int>> midiGlissDurs;
-		map<int, vector<int>> articulations;
-		map<int, vector<int>> midiArticulationVals;
+		map<int, vector<vector<int>>> articulations;
+		map<int, vector<vector<int>>> midiArticulationVals;
 		map<int, vector<bool>> isSlurred;
 		map<int, vector<string>> text;
 		map<int, vector<int>> textIndexes;
@@ -147,7 +153,7 @@ class Instrument
 		map<int, vector<vector<int>>> scoreOctaves;
 		map<int, vector<int>> scoreOttavas;
 		map<int, vector<int>> scoreGlissandi;
-		map<int, vector<int>> scoreArticulations;
+		map<int, vector<vector<int>>> scoreArticulations;
 		map<int, vector<int>> scoreDynamics;
 		map<int, vector<int>> scoreDynamicsIndexes;
 		map<int, vector<int>> scoreDynamicsRampStart;

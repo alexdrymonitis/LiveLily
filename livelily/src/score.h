@@ -11,12 +11,17 @@ class Staff
 {
 	public:
 		Staff();
-		void setClef(int clefIdx);
+		void setID(int id);
+		void setClef(int bar, int clefIdx);
+		int getClef(int bar);
 		void setRhythm(bool isRhythm);
-		void setSize(int fontSize);
+		void setSize(int fontSize, float staffLinesDist);
 		void setMeter(int bar, int numer, int denom);
+		std::pair<int, int> getMeter(int bar);
+		void setTempo(int bar, int BPMTempo, int beatAtValue, bool hasDot);
 		void setOrientation(int orientation);
 		void setNumBarsToDisplay(int numBars);
+		float getXCoef();
 		void setCoords(float xLen, float y1, float y2, float dist);
 		void correctYAnchor(float y1, float y2);
 		float getXLength();
@@ -26,7 +31,8 @@ class Staff
 		void recenterScore();
 		float getClefXOffset();
 		float getMeterXOffset();
-		void drawStaff(int loopIndex, float xStartPnt, float yOffset, bool drawClef, bool drawMeter, bool drawLoopStartEnd);
+		void drawStaff(int loopIndex, float xStartPnt, float yOffset, bool drawClef,
+				bool drawMeter, bool drawLoopStartEnd, bool drawTempo);
 		void drawLoopStart(int loopIndex, float xStart, float yOffset);
 		void drawLoopEnd(int loopIndex, float xEnd, float yOffset);
 		void drawScoreEnd(int loopIndex, float xEnd, float yOffset);
@@ -46,16 +52,26 @@ class Staff
 		float clefLength;
 		float meterLength;
 		int scoreOrientation;
+		int scoreOrientationForDots;
 		map<int, int> numerator;
 		map<int, int> denominator;
-		int meterIndex;
+		map<int, int> BPMTempi;
+		map<int, int> tempoBase;
+		// half note, quarter note, eighth note, sixteenth note, thirty-second note, sixty-fourth note
+		string BPMDisplayNotes[7] = {"w", "h", "q", "e", "x", "r", "Æ"};
+		map<int, bool> BPMDisplayDots;
+		map<int, int> meterIndex;
 		int lineWidth;
-		string clefSyms[3];
-		string meterSyms[2];
-		int clefIndex;
+		float staffDist;
+		float noteWidth;
+		// G, F, C clefs
+		string clefSyms[3] = {"&", "?", "B"};
+		string meterSyms[2] = {"c", "C"};
+		map<int, int> clefIndex;
 		int fontSize;
 		bool rhythm; // for rhythmic instruments
 		ofTrueTypeFont notationFont;
+		ofTrueTypeFont BPMDisplayFont;
 };
 
 
@@ -66,7 +82,7 @@ class Notes
 		void setID(int id);
 		float getDist(int bar);
 		void setRhythm(bool isRhythm);
-		void setFontSize(int fontSize);
+		void setFontSize(int fontSize, float staffLinesDist);
 		void setNumBarsToDisplay(int numBars);
 		void setXCoef(float coef);
 		void setCoords(float xLen, float yStart1, float yStart2, float staffLinesDist, int fontSize);
@@ -77,8 +93,9 @@ class Notes
 		float getMinVsAnchor(int bar);
 		float getNoteWidth();
 		float getNoteHeight();
-		void setClef(int clefIdx);
+		void setClef(int bar, int clefIdx);
 		void setOrientation(int orientation);
+		void setOrientationForDots(int orientation);
 		void setAnimation(bool anim);
 		void setActiveNote(int note);
 		void setMute(bool muteState);
@@ -92,7 +109,7 @@ class Notes
 				vector<int> durs,
 				vector<int> dots,
 				vector<int> gliss,
-				vector<int>articul,
+				vector<vector<int>>articul,
 				vector<int> dyns,
 				vector<int> dynIdx,
 				vector<int> dynRampStart,
@@ -121,6 +138,7 @@ class Notes
 		void storeMinMaxY(int bar);
 		void copyMelodicLine(int barIndex, int barToCopy);
 		void insertNaturalSigns(int bar, int loopNdx, vector<int> *v);
+		std::pair<int, int> isBarLinked(int bar);
 		void drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, float yOffset, bool animation, float xCoef);
 		void drawBeams(float x1, float y1, float x2, float y2);
 		int drawRest(int bar, int restDur, float x, int color, float yOffset);
@@ -131,7 +149,7 @@ class Notes
 		void drawOttavas(int bar, float xStartPnt, float yOffset, float xCoef);
 		void drawOttavaLine(int bar, unsigned startNdx, unsigned endNdx, float xStartPnt, float yOffset, float xCoef);
 		void drawText(int bar, float xStartPnt, float yOffset, float xCoef);
-		void drawSlurs(int bar, float xStartPnt, float yOffset, float xCoef);
+		void drawSlurs(int bar, int loopNdx, float xStartPnt, float yOffset, float xCoef);
 		void drawDynamics(int bar, float xStartPnt, float yOffset, float xCoef);
 		void printVector(vector<int> v);
 		void printVector(vector<string> v);
@@ -141,18 +159,21 @@ class Notes
 	private:
 		int objID;
 		bool rhythm;
+		vector<int> allBars;
 		map<int, vector<vector<int>>> allNotes;
 		map<int, vector<int>> actualDurs;
 		map<int, vector<int>> hasStem;
 		// base and edge indexes of Y coords for chords
-		map<int, vector<int>> whichIdxBase;
-		map<int, vector<int>> whichIdxEdge;
+		// base is the bottom note with a stem up and edge is the top one
+		// and vice verse with a stem down
+		map<int, vector<int>> allChordsBaseIndexes;
+		map<int, vector<int>> allChordsEdgeIndexes;
 		map<int, vector<vector<int>>> allAccidentals;
 		map<int, vector<vector<int>>> naturalSignsNotWritten;
 		map<int, vector<vector<int>>> allOctaves;
 		map<int, vector<int>> allOttavas;
 		map<int, vector<int>> allGlissandi;
-		map<int, vector<int>> allArticulations;
+		map<int, vector<vector<int>>> allArticulations;
 		//map<int, vector<int>> slurBeginnings;
 		//map<int, vector<int>> slurEndings;
 		map<int, vector<std::pair<int, int>>> slurIndexes;
@@ -164,7 +185,12 @@ class Notes
 		map<int, vector<float>> slurMiddleY1;
 		map<int, vector<float>> slurMiddleX2;
 		map<int, vector<float>> slurMiddleY2;
+		map<int, vector<std::pair<int, int>>> slurLinks;
 		map<int, bool> isWholeSlurred;
+		// the map below is queried when creating loops, to determine whether a bar can be included in a loop
+		// if a bar is linked to another bar due to slurs, glissandi, or (de)crescendi spanning over more than one bar
+		// then it will not be able to include this bar in a loop
+		map<int, std::pair<int, int>> isLinked;
 		map<int, map<int, std::pair<int, int>>> tupRatios;
 		map<int, map<int, std::pair<unsigned, unsigned>>> tupStartStop;
 		map<int, map<int, vector<float>>> tupXCoords;
@@ -190,9 +216,9 @@ class Notes
 		map<int, vector<int>> hasRests;
 		map<int, vector<int>> maxNumLines;
 		map<int, vector<float>> startPnts;
-		map<int, vector<vector<float>>> allNotesXCoords;
-		map<int, vector<vector<float>>> allNotesYCoords1;
-		map<int, vector<float>> allNotesYCoords2;
+		map<int, vector<vector<float>>> allNoteCoordsX;
+		map<int, vector<vector<float>>> allNoteHeadCoordsY;
+		map<int, vector<float>> allNoteStemCoordsY;
 		// two vectors to hold the maximum and minimum Y coordinates of each (group of) note(s)
 		map<int, vector<float>> allNotesMaxYPos;
 		map<int, vector<float>> allNotesMinYPos;
@@ -215,25 +241,35 @@ class Notes
 		map<int, vector<float>> dynsRampEndYCoords;
 		map<int, vector<int>> dynamicsRampDir;
 		map<int, vector<float>> articulXPos;
-		map<int, vector<float>> articulYPos;
+		map<int, vector<vector<float>>> articulYPos;
 		map<int, float> maxYCoord;
 		map<int, float> minYCoord;
 		float yStartPnt[2];
 		float xCoef; // multiplied by X coordinates, based on how many bars are displayed in horizontal view
 		float xOffset;
+		// a map of xOffsets so that these can be queried for other bars than the one currently drawn
+		// this is useful when drawing items that span over more than one bar, like slurs etc.
+		map<int, float> xOffsets;
 		float yStartPntRecenter[2];
 		float xLength;
 		int scoreOrientation;
+		int scoreOrientationForDots;
 		map<int, float> distBetweenBeats;
 		map<int, bool> tacet;
 		ofTrueTypeFont notationFont;
 		ofTrueTypeFont textFont;
-		string notesSyms[5];
-		string accSyms[9];
-		string restsSyms[6];
-		string dynSyms[8];
-		string articulSyms[6];
-		string octaveSyms[3];
+		// whole note, half note (without stem), filled note, tail for upward stem, tail for downward stem
+		string notesSyms[5] = {"w", "ú", "ö", "j", "J"};
+		// double flat, dummy 1.5 flat, flat, dummy half flat, natural,
+		// dummy half sharp, sharp, dummy 1.5 sharp, double sharp
+		string accSyms[9] = {"º", "", "b", "", "n", "", "#", "", "Ü"};
+		// whole and half (first symbol), and the rest of rests
+		string restsSyms[6] = {"î", "Î", "ä", "Å", "¨", "ô"};
+		// ppp, pp, p, mp, mf, f, ff, fff
+		string dynSyms[8] = {"¸", "¹", "p", "P", "F", "f", "Ä", "ì"};
+		// marcato, trill, tenuto, staccatissimo, accent, staccato
+		string articulSyms[6] = {"^", "Ù", "_", "à", ">", "."};
+		string octaveSyms[3] = {"", "8", "15"};
 		// arrays to hold the widths and heights of strings
 		// since these can be called from a threaded class and calling stringWidth() won't work
 		float dynSymsWidths[8];
@@ -251,12 +287,12 @@ class Notes
 		int beamsLineWidth;
 		float staffDist;
 		int fontSize;
-		int clefIndex;
+		map<int, int> clefIndex;
 		float restYOffset;
 		float halfStaffDist;
-		int denominator;
-		int numerator;
-		int beats;
+		map<int, int> denominator;
+		map<int, int> numerator;
+		map<int, int> beats;
 		bool animate;
 		int whichNote;
 };
