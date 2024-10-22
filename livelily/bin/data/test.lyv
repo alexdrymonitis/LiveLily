@@ -1,0 +1,9 @@
+\score show
+\score animate
+
+\insts inst
+
+\bar 12 {
+    \inst <c' ees'>8-.-> <c' ees'>8 <g' des''>4 <c' ees'>8-.-> <c' ees'>8-.-> <g' des''>4
+}
+
