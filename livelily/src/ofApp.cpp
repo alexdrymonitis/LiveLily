@@ -5672,7 +5672,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	}
 	// then copy the texts to textsForScore
 	vector<string> textsForScore;
-	for (i = 0; i < (int)texts.size(); i++) {
+	for (i = 0; i < texts.size(); i++) {
 		textsForScore.push_back(texts[i]);
 	}
 

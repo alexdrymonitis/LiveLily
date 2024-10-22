@@ -1035,7 +1035,7 @@ void Notes::setNotePositions(int bar)
 			grouppedStemDirs[bar][i] = stemDir;
 			for (j = beamsIndexes[bar][i][0]; j <= beamsIndexes[bar][i][1]; j++) {
 				// set the second Y coordinate of the note which is the stem length as the direction might have changed
-				allNoteStemCoordsY[bar][j] = allNoteHeadCoordsY[bar][j][allChordsBaseIndexes[bar][j]] + (noteHeight / 8.0) - (staffDist / 10.0) - ((stemHeight + halfStaffDist) * grouppedStemDirs[bar][i]);
+				allNoteStemCoordsY[bar][j] = allNoteHeadCoordsY[bar][j][allChordsEdgeIndexes[bar][j]] + (noteHeight / 8.0) - (staffDist / 10.0) - ((stemHeight + halfStaffDist) * grouppedStemDirs[bar][i]);
 				// update the stem directions variables too
 				stemDirections[bar][j] = grouppedStemDirs[bar][i];
 			}
