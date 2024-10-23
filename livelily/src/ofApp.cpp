@@ -5335,11 +5335,11 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	vector<int> dynamicsRampDirForScore(numNotesVertical, -1);
 	vector<bool> isSlurred (numNotesVertical, false);
 	vector<int> notesCounter(tokens.size()-numErasedOttTokens, 0);
-	int verticalNotesIndexes[tokens.size()-numErasedOttTokens+1] = {0}; // plus one to easily break out of loops in case of chords
-	int beginningOfChords[tokens.size()-numErasedOttTokens] = {0};
-	int endingOfChords[tokens.size()-numErasedOttTokens] = {0};
+	std::vector<int> verticalNotesIndexes (tokens.size()-numErasedOttTokens+1, 0); // plus one to easily break out of loops in case of chords
+	std::vector<int> beginningOfChords (tokens.size()-numErasedOttTokens, 0);
+	std::vector<int> endingOfChords (tokens.size()-numErasedOttTokens, 0);
 	unsigned accidentalIndexes[tokens.size()-numErasedOttTokens];
-	unsigned chordNotesIndexes[tokens.size()-numErasedOttTokens] = {0};
+	std::vector<unsigned> chordNotesIndexes (tokens.size()-numErasedOttTokens, 0);
 	vector<int> ottavas(numNotesVertical, 0);
 	int verticalNoteIndex;
 	// create variables for the loop below but outside of it, so they are kept in the stack
