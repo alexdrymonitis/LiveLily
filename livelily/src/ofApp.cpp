@@ -5335,21 +5335,21 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	vector<int> dynamicsRampDirForScore(numNotesVertical, -1);
 	vector<bool> isSlurred (numNotesVertical, false);
 	vector<int> notesCounter(tokens.size()-numErasedOttTokens, 0);
-	int verticalNotesIndexes[tokens.size()-numErasedOttTokens+1] = {0}; // plus one to easily break out of loops in case of chords
-	int beginningOfChords[tokens.size()-numErasedOttTokens] = {0};
-	int endingOfChords[tokens.size()-numErasedOttTokens] = {0};
+	std::vector<int> verticalNotesIndexes (tokens.size()-numErasedOttTokens+1, 0); // plus one to easily break out of loops in case of chords
+	std::vector<int> beginningOfChords (tokens.size()-numErasedOttTokens, 0);
+	std::vector<int> endingOfChords (tokens.size()-numErasedOttTokens, 0);
 	unsigned accidentalIndexes[tokens.size()-numErasedOttTokens];
-	unsigned chordNotesIndexes[tokens.size()-numErasedOttTokens] = {0};
+	std::vector<unsigned> chordNotesIndexes (tokens.size()-numErasedOttTokens, 0);
 	vector<int> ottavas(numNotesVertical, 0);
 	int verticalNoteIndex;
 	// create variables for the loop below but outside of it, so they are kept in the stack
 	// this way we are sure the push_back() calls won't cause any problems
 	bool foundNotes[i];
-	int transposedOctaves[i-numErasedOttTokens] = {0};
-	int transposedAccidentals[i-numErasedOttTokens] = {0};
+	std::vector<int> transposedOctaves (i-numErasedOttTokens, 0);
+	std::vector<int> transposedAccidentals (i-numErasedOttTokens, 0);
 	// variable to determine which character we start looking at
 	// useful in case we start a bar with a chord
-	unsigned firstChar[tokens.size()-numErasedOttTokens] = {0};
+	std::vector<unsigned> firstChar (tokens.size()-numErasedOttTokens, 0);
 	unsigned firstCharOffset[tokens.size()-numErasedOttTokens]; // this is zeroed in case of a rhythm staff with durations only
 	for (i = 0; i < tokens.size()-numErasedOttTokens; i++) firstCharOffset[i] = 1;
 	int midiNote, naturalScaleNote; // the second is for the score
@@ -5555,18 +5555,18 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// now we have enough information to allocate memory for the rest of the vectors
 	// but we do it one by one, to allocate the required memory only
 	// as each note might be a chord or not
-	vector<vector<int>> midiNotesData;
+	auto midiNotesData = std::make_shared<vector<vector<int>>>();
 	for (i = 0; i < notePairs.size(); i++) {
-		midiNotesData.push_back({notePairs[i][0].first});
+		midiNotesData->push_back({notePairs[i][0].first});
 		for (j = 1; j < notePairs[i].size(); j++) {
-			midiNotesData.back().push_back(notePairs[i][j].first);
+			midiNotesData->back().push_back(notePairs[i][j].first);
 		}
 	}
 	vector<vector<float>> notesData;
-	for (i = 0; i < midiNotesData.size(); i++) {
-		notesData.push_back({(float)midiNotesData[i][0]});
-		for (j = 1; j < midiNotesData[i].size(); j++) {
-			notesData.back().push_back((float)midiNotesData[i][j]);
+	for (i = 0; i < midiNotesData->size(); i++) {
+		notesData.push_back({(float)midiNotesData->at(i).at(0)});
+		for (j = 1; j < midiNotesData->at(i).size(); j++) {
+			notesData.back().push_back((float)midiNotesData->at(i).at(j));
 		}
 	}
 	vector<vector<int>> notesForScore;
@@ -5577,31 +5577,31 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		}
 	}
 	vector<vector<int>> accidentalsForScore;
-	for (i = 0; i < midiNotesData.size(); i++) {
+	for (i = 0; i < midiNotesData->size(); i++) {
 		accidentalsForScore.push_back({-1});
-		for (j = 1; j < midiNotesData[i].size(); j++) {
+		for (j = 1; j < midiNotesData->at(i).size(); j++) {
 			accidentalsForScore.back().push_back(-1);
 		}
 	}
 	// the 2D vector below is used here only for memory allocation
 	// its contents are updated in drawNotes() of the Notes() class
 	vector<vector<int>> naturalSignsNotWrittenForScore;
-	for (i = 0; i < midiNotesData.size(); i++) {
+	for (i = 0; i < midiNotesData->size(); i++) {
 		naturalSignsNotWrittenForScore.push_back({0});
-		for (j = 1; j < midiNotesData[i].size(); j++) {
+		for (j = 1; j < midiNotesData->at(i).size(); j++) {
 			naturalSignsNotWrittenForScore.back().push_back(0);
 		}
 	}
 	int transposedIndex = 0;
 	vector<vector<int>> octavesForScore;
-	for (i = 0; i < midiNotesData.size(); i++) {
+	for (i = 0; i < midiNotesData->size(); i++) {
 		if (sharedData.instruments[lastInstrumentIndex].isRhythm()) {
 			octavesForScore.push_back({1});
 		}
 		else {
 			octavesForScore.push_back({transposedOctaves[transposedIndex++]});
 		}
-		for (j = 1; j < midiNotesData[i].size(); j++) {
+		for (j = 1; j < midiNotesData->at(i).size(); j++) {
 			octavesForScore.back().push_back(transposedOctaves[transposedIndex++]);
 		}
 	}
@@ -5755,7 +5755,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 
 	// we are now done with dynamically allocating memory, so we can move on to the rest of the data
 	// we can now create more variables without worrying about memory
-	int foundAccidentals[tokens.size()] = {0};
+	std::vector<int>  foundAccidentals (tokens.size(), 0);
 	float accidental = 0.0;
 	// various counters
 	unsigned numDurs = 0;
@@ -5823,7 +5823,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		}
 		if (foundAccidentals[i]) {
 			notesData[verticalNoteIndex][chordNotesIndexes[i]] += accidental;
-			midiNotesData[verticalNoteIndex][chordNotesIndexes[i]] += (int)accidental;
+			midiNotesData->at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += (int)accidental;
 			// accidentals can go up to a whole tone, which is accidental=2.0
 			// but in case it's one and a half tone, one tone is already added above
 			// so we need the half tone only, which we get with accidental-(int)accidental
@@ -5864,8 +5864,8 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		accidental = 0;
 	}
 	
-	int foundDynamics[tokens.size()] = {0};
-	int foundOctaves[tokens.size()] = {0};
+	std::vector<int> foundDynamics (tokens.size(), 0);
+	std::vector<int> foundOctaves (tokens.size(), 0);
 	bool dynAtFirstNote = false;
 	unsigned beginningOfChordIndex = 0;
 	bool tokenInsideChord = false;
@@ -5889,7 +5889,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			if (int(tokens[i][j]) == 39) {
 				if (!sharedData.instruments[lastInstrumentIndex].isRhythm()) {
 					notesData[verticalNoteIndex][chordNotesIndexes[i]] += 12.0;
-					midiNotesData[verticalNoteIndex][chordNotesIndexes[i]] += 12;
+					midiNotesData->at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += 12;
 					octavesForScore[verticalNoteIndex][chordNotesIndexes[i]]++;
 				}
 				foundOctaves[i] = 1;
@@ -5897,7 +5897,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			else if (int(tokens[i][j]) == 44) {
 				if (!sharedData.instruments[lastInstrumentIndex].isRhythm()) {
 					notesData[verticalNoteIndex][chordNotesIndexes[i]] -= 12.0;
-					midiNotesData[verticalNoteIndex][chordNotesIndexes[i]] -= 12;
+					midiNotesData->at(verticalNoteIndex).at(chordNotesIndexes.at(i)) -= 12;
 					octavesForScore[verticalNoteIndex][chordNotesIndexes[i]]--;
 				}
 				foundOctaves[i] = 1;
@@ -6326,7 +6326,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	}
 	int thisInstIndex = it->second;
 	sharedData.instruments[thisInstIndex].notes[barIndex] = notesData;
-	sharedData.instruments[thisInstIndex].midiNotes[barIndex] = midiNotesData;
+	sharedData.instruments[thisInstIndex].midiNotes[barIndex] = *midiNotesData;
 	sharedData.instruments[thisInstIndex].durs[barIndex] = dursData;
 	sharedData.instruments[thisInstIndex].dursWithoutSlurs[barIndex] = dursDataWithoutSlurs;
 	sharedData.instruments[thisInstIndex].midiDursWithoutSlurs[barIndex] = midiDursDataWithoutSlurs;
