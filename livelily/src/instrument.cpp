@@ -267,10 +267,7 @@ void Instrument::copyMelodicLine(int barIndex)
 	isWholeBarSlurred[barIndex] = isWholeBarSlurred[copyNdxs[barIndex]];
 	scoreTexts[barIndex] = scoreTexts[copyNdxs[barIndex]];
 	scoreNaturalSignsNotWritten[barIndex] = scoreNaturalSignsNotWritten[copyNdxs[barIndex]];
-	// we only need to copy vectors for the notes object
-	// as the staff object needs to copy only the numerator and denominator of the meter
-	// but that is done in setMeter() below, which is called by setScoreNotes()
-	// which in turn is called by the main program
+	staff.copyMelodicLine(barIndex, copyNdxs[barIndex]);
 	notesObj.copyMelodicLine(barIndex, copyNdxs[barIndex]);
 }
 

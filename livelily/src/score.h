@@ -31,6 +31,7 @@ class Staff
 		void recenterScore();
 		float getClefXOffset();
 		float getMeterXOffset();
+		void copyMelodicLine(int barIndex, int barToCopy);
 		void drawStaff(int loopIndex, float xStartPnt, float yOffset, bool drawClef,
 				bool drawMeter, bool drawLoopStartEnd, bool drawTempo);
 		void drawLoopStart(int loopIndex, float xStart, float yOffset);
@@ -217,6 +218,8 @@ class Notes
 		map<int, vector<int>> maxNumLines;
 		map<int, vector<float>> startPnts;
 		map<int, vector<vector<float>>> allNoteCoordsX;
+		map<int, vector<float>> allNoteCoordsXOffset;
+		map<int, vector<float>> allChordsChangeXCoef;
 		map<int, vector<vector<float>>> allNoteHeadCoordsY;
 		map<int, vector<float>> allNoteStemCoordsY;
 		// two vectors to hold the maximum and minimum Y coordinates of each (group of) note(s)

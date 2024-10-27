@@ -1,38 +1,12 @@
-#ifndef OF_APP_H
-#define OF_APP_H
+#pragma once
 
 #include "ofMain.h"
-#include "ofxOsc.h"
-#include "ofxMidi.h"
 #include <map>
 #include <vector>
-#include "editor.h"
 #include "instrument.h"
 
-#define OFRECVPORT 8001
-#define OFSENDPORT 1234 // for sending sequencer data to other software
-#define SCOREPARTPORT 9000
-#define HOST "localhost"
-#define BACKGROUND 15
-
-// 64ths are the minimum note duration
-// so we use 4 steps per this duration as a default
 #define MINDUR 256
-// size of cosine table to control the transparency of the beat visualization rectangle
 #define BEATVIZBRIGHTNESS 255
-#define BEATVIZCOEFF 0.8 // coefficient to reduce maximum brightness of rectange
-#define MINDB 60
-#define TRACEBACKDUR 2000
-#define MINTRACEBACKLINES 2
-
-#define OSCPORT 9050 // for receiving OSC messages in editors
-
-#define WINDOW_RESIZE_GAP 50
-
-#define INBUFFSIZE 5
-
-#define SENDBARDATA_WAITDUR 1000 // in milliseconds
-#define NOTESXOFFSETCOEF 3 // multiplication coefficient for giving offset to the notes
 
 // class for storing data concerning livelily functions
 class Function
@@ -329,370 +303,44 @@ typedef struct _SharedData
 	uint64_t PPQNTimeStamp;
 } SharedData;
 
-class Sequencer : public ofThread
-{
+class ofApp : public ofBaseApp{
 	public:
-		void setup(SharedData *sData);
-		void setSendMidiClock(bool sendMidiClockState);
-		void start();
-		void stop();
-		void stopNow();
-		void update();
-		void setSequencerRunning(bool seqRun);
-		void setFinish(bool finishState);
-		void setCountdown(int num);
-		void setMidiTune(int tuneVal);
-		float midiToFreq(int midiNote);
-
-		ofxMidiOut midiOut;
-
-	private:
-		int setBarIndex(bool increment);
-		void checkMute();
-		void sendAllNotesOff();
-		void sendBeatVizInfo(int bar);
-		void threadedFunction();
-
-		SharedData *sharedData;
-
-		ofxOscSender oscSender;
-		ofTimer timer;
-		bool runSequencer;
-		bool sequencerRunning;
-		bool updateSequencer;
-		bool updateTempo;
-		bool finish;
-		bool mustStop;
-		bool mustStopCalled;
-		int onNextStartMidiByte;
-		uint64_t tickCounter;
-		int beatCounter;
-		int sendBeatVizInfoCounter;
-		unsigned thisLoopIndex;
-		bool firstIter;
-		bool endOfBar;
-		int numBeats;
-		bool finished;
-		bool sendMidiClock;
-		bool muteChecked;
-		int countdownCounter;
-		bool countdown;
-		int midiTuneVal;
-
-		/* iterators for accessing data in Instrument objects */
-		map<string, int>::iterator instNamesIt;
-		//map<int, Instrument>::iterator instMapIt;
-
-		/* and reverse iterators */
-		map<string, int>::reverse_iterator instRevIt;
-		map<int, Instrument>::reverse_iterator instMapRevIt;
-};
-
-class ofApp : public ofBaseApp
-{
-	public:
-		// basic OF program structure
 		void setup();
 		void update();
 		void draw();
-		// custom drawing functions
-		void drawTraceback();
-		void drawScore();
 
-		void moveCursorOnShiftReturn();
-		// the following two functions execute key commands
-		// so each can be called from any of the overloaded keyPressed() and keyRelease() below
-		// functions and lock the mutex without creating a dead lock
-		void executeKeyPressed(int key);
-		void executeKeyReleased(int key);
-		// overloaded keyPressed and keyReleased functions
-		// so out-of-focus editors can receive input from OSC
-		void keyPressed(int key, int thisEditor);
-		void keyReleased(int key, int thisEditor);
-		// OF keyboard input functions
+		bool endsWith(string a, string b);
+		bool startsWith(string a, string b);
+		bool isNumber(string str);
+		int getPrevBarIndex();
+		int getLastBarIndex();
+		int getLastLoopIndex();
+		void initializeInstrument(string instName);
+		vector<string> tokenizeString(string str, string delimiter);
+		std::pair<int, string> parseMelodicLine(string str);
+		void setScoreCoords();
+		
 		void keyPressed(int key);
 		void keyReleased(int key);
-		// the following two functions are used in drawTraceback to sort the indexes based on the
-		// time stamps. it is copied from https://www.geeksforgeeks.org/quick-sort/ 
-		int partition(uint64_t arr[], int arr2[], int low, int high);
-		void quickSort(uint64_t arr[], int arr2[], int low, int high);
-		// send data to score parts
-		void sendToParts(ofxOscMessage m);
-		void sendCountdownToParts(int countdown);
-		void sendStopCountdownToParts();
-		void sendLoopDataToParts(int barIndex, vector<int> ndxs);
-		void sendSizeToPart(int instNdx, int size);
-		void sendLoopDataToPart(int instNdx, int barIndex, vector<int> ndxs);
-		void sendBarIndexBeatMeterToPart(int instNdx, int barIndex);
-		void sendInstNdxToPart(int instNdx);
-		void sendBarDataToPart(int instNdx, int barIndex);
-		void sendCopyToPart(int instNdx, int barIndex, int barToCopy);
-		void sendBarDataToParts(int barIndex);
-		void sendLoopIndexToParts();
-		void sendNewBarToParts(string barName, int barIndex);
-		void sendNewBarToPart(int instNdx, string barName, int barIndex);
-		void sendClefToPart(int instNdx, int bar, int clef);
-		void sendRhythmToPart(int instNdx);
-		void sendScoreChangeToPart(int instNdx, bool scoreChange);
-		void sendChangeBeatColorToPart(int instNdx, bool changeBeatColor);
-		void sendFullscreenToPart(int instNdx, bool fullscreen);
-		void sendCursorToPart(int instNdx, bool cursor);
-		void sendFinishToParts(bool finishState);
-		// debugging
-		void printVector(vector<int> v);
-		void printVector(vector<string> v);
-		void printVector(vector<float> v);
-		// functions for parsing strings
-		bool startsWith(string a, string b);
-		bool endsWith(string a, string b);
-		bool isNumber(string str);
-		vector<int> findRepetitionInt(string str, int multIndex);
-		int findNextStrCharIdx(string str, string compareStr, int index);
-		bool areBracketsBalanced(string str);
-		bool areParenthesesBalanced(string str);
-		std::pair<int, string> expandStringBasedOnBrackets(const string& str);
-		std::pair<int, string> expandChordsInString(const string& firstPart, const string& str);
-		std::pair<int, string> expandSingleChars(string str);
-		string detectRepetitions(string str);
-		// string handling
-		vector<int> findIndexesOfCharInStr(string str, string charToFind);
-		string replaceCharInStr(string str, string a, string b);
-		vector<string> tokenizeString(string str, string delimiter);
-		void resetEditorStrings(int index, int numLines);
-		void parseStrings(int index, int numLines);
-		std::pair<int, string> parseString(string str, int lineNum, int numLines);
-		void storeList(string str);
-		std::pair<int, string> traverseList(string str, int lineNum, int numLines);
-		void fillInMissingInsts(int barIndex);
-		void createEmptyMelody(int index);
-		void resizePatternVectors();
-		void sendPushPopPattern();
-		int storeNewBar(string barName);
-		void storeNewLoop(string loopName);
-		int getBaseDurValue(string str, int denominator);
-		std::pair<int, string> getBaseDurError(string str);
-		std::pair<int, string> parseCommand(string str, int lineNum, int numLines);
-		std::pair<bool, std::pair<int, string>> isInstrument(vector<string>& commands, int lineNum, int numLines);
-		std::pair<bool, std::pair<int, string>> isBarLoop(vector<string>& commands, int lineNum, int numLines);
-		std::pair<bool, std::pair<int, string>> isFunction(vector<string>& commands, int lineNum, int numLines);
-		std::pair<bool, std::pair<int, string>> isList(vector<string>& commands, int lineNum, int numLines);
-		std::pair<bool, std::pair<int, string>> isOscClient(vector<string>& commands, int lineNum, int numLines);
-		std::pair<int, string> functionFuncs(vector<string>& commands);
-		int getLastLoopIndex();
-		int getLastBarIndex();
-		int getPrevBarIndex();
-		int getPlayingBarIndex();
-		void updateIndexesForScore(int thisIndex, int nextIndex);
-		std::pair<int, string> stripLineFromBar(string str);
-		void deleteLastBar();
-		void deleteLastLoop();
-		void copyMelodicLine(int bar);
-		std::pair<int, string> parseBarLoop(string str, int lineNum, int numLines);
-		bool areWeInsideChord(size_t size, unsigned i, unsigned *chordNotesIndexes);
-		std::pair<int, string> parseMelodicLine(string str);
-		// set coordinates for all panes
-		void setPaneCoords();
-		// set the global font size to calculate dimensions
-		void setFontSize();
-		// change the font size on all editors
-		void changeFontSizeForAllPanes();
-		// various commands for the score
-		std::pair<int, string> scoreCommands(vector<string>& commands, int lineNum, int numLines);
-		// initialize an instrument
-		void initializeInstrument(string instName);
-		// the sequencer functions of the system
-		int setPatternIndex(bool increment);
-		unsigned setLoopIter(int ptrnIdx);
-		int setInstIndex(int ptrnIdx, int i);
-		int setBar(int ptrnIdx, int idx, int i);
-		// staff and notes handling
-		void setScoreCoords();
-		void setScoreNotes(int barIndex);
-		void setNotePositions(int bar);
-		void setNotePositions(int bar, int numBars);
-		void swapScorePosition(int orientation);
-		void setScoreSizes();
-		void calculateStaffPositions(int bar);
-		// release memory on exit
-		void exit();
-		// rest of OF functions
-		void mouseMoved(int x, int y );
+		void mouseMoved(int x, int y);
 		void mouseDragged(int x, int y, int button);
 		void mousePressed(int x, int y, int button);
 		void mouseReleased(int x, int y, int button);
 		void mouseEntered(int x, int y);
 		void mouseExited(int x, int y);
-		void resizeWindow();
 		void windowResized(int w, int h);
-		void gotMessage(ofMessage msg);
 		void dragEvent(ofDragInfo dragInfo);
+		void gotMessage(ofMessage msg);
 
-		map<int, Editor> editors; // keys are panes indexes
-		int whichPane; // this variable indexes the keys of the map above
-		// rows and pair of number of columns in each row and line width between panes horizontally
-		map<int, int> numPanes; 
-		int paneSplitOrientation;
-		float screenSplitHorizontal;
-
-		SharedData sharedData;
-		Sequencer sequencer;
-
-		map<string, ofxOscSender> oscClients;
-		ofSerial serial;
-
-		// map of instrument index and pair of IP and port
-		// so we can group instruments that send their data to the same server
-		// this way, generic messages will be sent only once
-		map<int, std::pair<string, int>> instrumentOSCHostPorts;
-		// the vector below will store unique OSC clients, one for each server
-		// additional clients that send to the same server will be ignored
-		// as this is intended for generic messages, like storeNotes()
-		vector<int> grouppedOSCClients;
-
-		// time to wait for a positive/negative response from a server
-		uint64_t scorePartResponseTime;
-		// vector of pairs with instrument index and bar index received from a score part client
-		// where an error occured in receiving bar data
-		vector<std::pair<int, int>> scorePartErrors;
-		// map with loop indexes as keys and ints as values to count how many times we call a loop
-		// useful in case some instruments (servers) haven't received the data of a bar correctly
-		map<int, int> partsReceivedOKCounters;
-
-		bool startSequencer;
-		bool midiPortOpen;
-
-		map<int, map<string, ofColor>> commandsMap;
-		map<int, map<string, ofColor>> commandsMapSecond;
-		enum languages {livelily, python, lua};
-
-		// various lists
-		map<int, list<string>> listMap;
-		map<string, int> listIndexes;
-		bool storingList;
-		int lastListIndex;
-		int listIndexCounter;
-		bool traversingList;
-
-		enum errorTypeNdx {note, warning, error};
-
-		int notesID; // used mainly for debugging note and staff objects
-
-		bool fullScreen;
-		bool isWindowResized;
-		uint64_t windowResizeTimeStamp;
-		
-		ofColor backgroundColor;
-		int brightness;
-		float brightnessCoeff;
-
-		ofTrueTypeFont font;
-		ofTrueTypeFont instFont;
-
-		ofxOscReceiver oscReceiver;
-
-		map<int, string> allStrings;
-		map<int, int> allStringStartPos;
-		map<int, vector<int>> allStringTabs;
-		//vector<vector<int>> curlyIndexes;
-
-		// map of function names and indexes
-		// the map with int and Function objects is in SharedData
-		map<string, int> functionIndexes;
-		int functionBodyOffset;
-		bool storingFunction;
-		int lastFunctionIndex;
-
-		int fontSize; // the size of the font of the editor
-		int instFontSize; // the size of the font of the instrument display
-		float cursorHeight;
-
-		bool shiftPressed;
-		bool ctrlPressed;
-		bool altPressed;
-
-		// global line width
-		int lineWidth;
-
-		// boolean to determine whethere there was an error when storing a bar
-		// useful to avoid storing melodic lines in such a case
-		bool barError;
-		// variable used for copying contents of bars
-		int barToCopy;
-
-		int minDur;
-
-		// variable to determine when to start storing patterns
-		int whenToStore;
-		// temporary storage of editor lines, needed for \\bars command
-		vector<string> tempLines;
-		// temporary storage for separated bars, needed for \\bars command
-		vector<string> allBars;
-		// and a boolean to allow storing a pattern and to insert lines
-		bool storePattern;
-		bool inserting;
-		// a string to hold the name of a \\bars command argument
-		// until it is stored as a loop
-		string barsName;
-
-		// STDERR
-		bool parsingCommand;
-
-		float scoreXOffset;
-		float scoreYOffset;
-		float scoreBackgroundWidth;
-		float scoreBackgroundHeight;
-		// variables to determine whether we call a command for moving the score
-		bool scoreMoveXCommand;
-		bool scoreMoveYCommand;
-		int scoreOrientation;
-		float scoreXStartPnt;
-		int numBarsToDisplay;
-		float notesLength; // used to derive the ratio when we display more than two bars horizontally
-		bool mustUpdateScore;
-		bool scoreUpdated;
-		bool scoreChangeOnLastBar;
-
-		// map that stores which editors can receive data from OSC
-		map<int, bool> fromOsc;
-		// and a map with the OSC address for each editor
-		map<int, string> fromOscAddr;
-
-		map<int, int> instNameWidths;
-		// we need an index to point to the correct 2D vector
-		int patternIndex;
-		// the boolean below determines whether we're parsing a bar 
-		bool parsingBar;
-		// and one for parsing multiple bars
-		bool parsingBars;
-		// and one for parsing loops
-		bool parsingLoop;
-		// a boolean for sending data defined with \bars to score parts one at each frame
-		bool waitToSendBarDataToParts;
-		// and one to denote that all bars have finished parsing so we can start sending to parts
-		bool sendBarDataToPartsBool;
-		// a counter that increments at each frame
-		int sendBarDataToPartsCounter;
-		// another counter that increments when we receive an OK from parts
-		int barDataOKFromPartsCounter;
-		int numScorePartSenders;
-		bool checkIfAllPartsReceivedBarData;
-		uint64_t sendBarDataToPartsTimeStamp;
-		// a string to termporarily store the name of the multiple bars
-		string multiBarsName;
-		// and a counter for the iterations of multiple bars parsing
-		int barsIterCounter;
-		// a variable to check if all instruments parsed the same number of bars
-		int numBarsParsed;
-		char noteChars[8];
-		string lastInstrument;
 		int lastInstrumentIndex;
-		int firstInstForBarsIndex;
-		bool firstInstForBarsSet;
-		int tempNumInstruments;
-		// about adding a natural after the same note has been inserted with an accidental
+		char noteChars[8];
+		ofTrueTypeFont instFont;
+		map<int, int> instNameWidths;
+		string lastInstrument;
 		bool correctOnSameOctaveOnly;
-		bool showBarCount;
-		bool showTempo;
-};
 
-#endif
+		float brightnessCoeff;
+		int lineWidth;
+		
+		SharedData sharedData;
+};
