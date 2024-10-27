@@ -205,6 +205,7 @@ void Sequencer::threadedFunction()
 				instMapIt->second.initSeqToggle();
 				instMapIt->second.setFirstIter(true);
 			}
+			thisLoopIndex = sharedData->thisLoopIndex;
 			sharedData->mutex.unlock();
 		}
 	
@@ -804,6 +805,9 @@ void ofApp::setup()
 	commandsMapSecond[livelily]["correct"] =  ofColor::pink;
 	commandsMapSecond[livelily]["onoctave"] =  ofColor::pink;
 	commandsMapSecond[livelily]["correct"] =  ofColor::pink;
+	commandsMapSecond[livelily]["tempo"] =  ofColor::pink;
+	commandsMapSecond[livelily]["seek"] =  ofColor::pink;
+	commandsMapSecond[livelily]["locate"] =  ofColor::pink;
 }
 
 //--------------------------------------------------------------
@@ -1157,9 +1161,6 @@ void ofApp::drawTraceback()
 //--------------------------------------------------------------
 void ofApp::drawScore()
 {
-	static int counter = 0;
-	counter++;
-	if (counter >= 60) counter = 0;
 	ofSetColor(brightness);
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
 	// safety test to avoid crashes when changing the window size before creating any bars
@@ -1363,10 +1364,10 @@ void ofApp::drawScore()
 			if (sharedData.beatAnimate && sharedData.beatViz && sharedData.beatVizType == 2) {
 				// draw only for the currenlty playing bar, whichever that is in the horizontal line
 				if (barNdx == (int)sharedData.thisLoopIndex) {
-					//beatPulseStartX = notesOffsetX + (((notesLength  / sharedData.numerator[getPlayingBarIndex()]) * notesXCoef) * sharedData.beatCounter);
-					beatPulseStartX = ((notesLength * notesXCoef)  / sharedData.numerator[getPlayingBarIndex()]) * sharedData.beatCounter;
+					beatPulseStartX = notesOffsetX + ((notesLength  / sharedData.numerator[getPlayingBarIndex()]) * sharedData.beatCounter) * notesXCoef;
+					//beatPulseStartX = ((notesLength * notesXCoef)  / sharedData.numerator[getPlayingBarIndex()]) * sharedData.beatCounter;
 					//beatPulseStartX *= notesXCoef;
-					beatPulseStartX += notesOffsetX;
+					//beatPulseStartX += notesOffsetX;
 					if (sharedData.beatCounter == -1) beatPulseStartX = notesOffsetX - sharedData.instruments.begin()->second.getClefXOffset();
 					noteSize = sharedData.instruments.begin()->second.getNoteWidth();
 					beatPulsePosX = beatPulseStartX - noteSize;
@@ -1821,6 +1822,15 @@ void ofApp::sendSizeToPart(int instNdx, int size)
 }
 
 //--------------------------------------------------------------
+void ofApp::sendNumBarsToPart(int instNdx, int numBars)
+{
+	ofxOscMessage m;
+	m.setAddress("/numbars");
+	m.addIntArg(numBars);
+	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+}
+
+//--------------------------------------------------------------
 void ofApp::sendBarIndexBeatMeterToPart(int instNdx, int barIndex)
 {
 	ofxOscMessage m;
@@ -1831,7 +1841,8 @@ void ofApp::sendBarIndexBeatMeterToPart(int instNdx, int barIndex)
 	m.setAddress("/bardata");
 	m.addIntArg(barIndex);
 	m.addIntArg(sharedData.BPMTempi[barIndex]);
-	m.addIntArg(sharedData.beatAtValues[barIndex]);
+	m.addIntArg(sharedData.tempoBaseForScore[barIndex]);
+	m.addBoolArg(sharedData.BPMDisplayHasDot[barIndex]);
 	m.addIntArg(sharedData.numBeats[barIndex]);
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
@@ -1851,14 +1862,14 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	m.setAddress("/notes");
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreNotes[barIndex].size(); i++) {
 		size += (int)sharedData.instruments[instNdx].scoreNotes[barIndex][i].size();
-		size++; // we add a -2 to separate the vectors within a vector
+		size++; // we add a 1000 to separate the vectors within a vector
 	}
 	m.addIntArg(size);
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreNotes[barIndex].size(); i++) {
 		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreNotes[barIndex][i].size(); j++) {
 			m.addIntArg(sharedData.instruments[instNdx].scoreNotes[barIndex][i][j]);
 		}
-		m.addIntArg(-2);
+		m.addIntArg(1000);
 	}
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
@@ -1866,14 +1877,14 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	m.setAddress("/acc");
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreAccidentals[barIndex].size(); i++) {
 		size += (int)sharedData.instruments[instNdx].scoreAccidentals[barIndex][i].size();
-		size++; // we add a -2 to separate the vectors within a vector
+		size++; // we add a 1000 to separate the vectors within a vector
 	}
 	m.addIntArg(size);
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreAccidentals[barIndex].size(); i++) {
 		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreAccidentals[barIndex][i].size(); j++) {
 			m.addIntArg(sharedData.instruments[instNdx].scoreAccidentals[barIndex][i][j]);
 		}
-		m.addIntArg(-2);
+		m.addIntArg(1000);
 	}
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
@@ -1881,14 +1892,14 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	m.setAddress("/natur");
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreNaturalSignsNotWritten[barIndex].size(); i++) {
 		size += (int)sharedData.instruments[instNdx].scoreNaturalSignsNotWritten[barIndex][i].size();
-		size++; // we add a -2 to separate the vectors within a vector
+		size++; // we add a 1000 to separate the vectors within a vector
 	}
 	m.addIntArg(size);
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreNaturalSignsNotWritten[barIndex].size(); i++) {
 		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreNaturalSignsNotWritten[barIndex][i].size(); j++) {
 			m.addIntArg(sharedData.instruments[instNdx].scoreNaturalSignsNotWritten[barIndex][i][j]);
 		}
-		m.addIntArg(-2);
+		m.addIntArg(1000);
 	}
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
@@ -1896,14 +1907,14 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	m.setAddress("/oct");
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreOctaves[barIndex].size(); i++) {
 		size += (int)sharedData.instruments[instNdx].scoreOctaves[barIndex][i].size();
-		size++; // we add a -2 to separate the vectors within a vector
+		size++; // we add a 1000 to separate the vectors within a vector
 	}
 	m.addIntArg(size);
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreOctaves[barIndex].size(); i++) {
 		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreOctaves[barIndex][i].size(); j++) {
 			m.addIntArg(sharedData.instruments[instNdx].scoreOctaves[barIndex][i][j]);
 		}
-		m.addIntArg(-2);
+		m.addIntArg(1000);
 	}
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
@@ -1943,14 +1954,14 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	m.setAddress("/artic");
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreArticulations[barIndex].size(); i++) {
 		size += (int)sharedData.instruments[instNdx].scoreArticulations[barIndex][i].size();
-		size++; // we add a -2 to separate the vectors within a vector
+		size++; // we add a 1000 to separate the vectors within a vector
 	}
 	m.addIntArg(size);
 	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreArticulations[barIndex].size(); i++) {
 		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreArticulations[barIndex][i].size(); j++) {
 			m.addIntArg(sharedData.instruments[instNdx].scoreArticulations[barIndex][i][j]);
 		}
-		m.addIntArg(-2);
+		m.addIntArg(1000);
 	}
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
@@ -2007,14 +2018,6 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	m.addBoolArg(sharedData.instruments[instNdx].isWholeBarSlurred[barIndex]);
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
-	m.setAddress("/beatatbool");
-	m.addBoolArg(sharedData.beatAtDifferentThanDivisor[barIndex]);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/beatatval");
-	m.addIntArg(sharedData.beatAtValues[barIndex]);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
 	m.setAddress("/texts");
 	size = (int)sharedData.instruments[instNdx].scoreTexts[barIndex].size();
 	m.addIntArg(size);
@@ -2024,7 +2027,7 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
 	m.setAddress("/tupratio");
-	size = (int)sharedData.instruments[instNdx].scoreTupRatios[barIndex].size() * 2;
+	size = (int)sharedData.instruments[instNdx].scoreTupRatios[barIndex].size() * 3;
 	m.addIntArg(size);
 	for (auto it = sharedData.instruments[instNdx].scoreTupRatios[barIndex].begin(); it != sharedData.instruments[instNdx].scoreTupRatios[barIndex].end(); ++it) {
 		m.addIntArg(it->first);
@@ -2034,7 +2037,7 @@ void ofApp::sendBarDataToPart(int instNdx, int barIndex)
 	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
 	m.setAddress("/tupstartstop");
-	size = (int)sharedData.instruments[instNdx].scoreTupStartStop[barIndex].size() * 2;
+	size = (int)sharedData.instruments[instNdx].scoreTupStartStop[barIndex].size() * 3;
 	m.addIntArg(size);
 	for (auto it = sharedData.instruments[instNdx].scoreTupStartStop[barIndex].begin(); it != sharedData.instruments[instNdx].scoreTupStartStop[barIndex].end(); ++it) {
 		m.addIntArg(it->first);
@@ -4300,6 +4303,21 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					}
 					sendSizeToPart(lastInstrumentIndex, stoi(commands[2]));
 				}
+				else if (commands[1].compare("numbars") == 0) {
+					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
+						std::pair<int, string> p = std::make_pair(3, "instrument doesn't have OSC set");
+						return std::make_pair(instrumentExists, p);
+					}
+					if (commands.size() != 3) {
+						std::pair<int, string> p = std::make_pair(3, "\"numbars\" command takes one argument, the number of bars to display");
+						return std::make_pair(instrumentExists, p);
+					}
+					if (!isNumber(commands[2])) {
+						std::pair<int, string> p = std::make_pair(3, commands[2] + " is not a number");
+						return std::make_pair(instrumentExists, p);
+					}
+					sendNumBarsToPart(lastInstrumentIndex, stoi(commands[2]));
+				}
 				else {
 				parseMelody:
 					string restOfCommand = "";
@@ -4312,7 +4330,8 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 						firstInstForBarsIndex = lastInstrumentIndex;
 						firstInstForBarsSet = true;
 					}
-					return std::make_pair(instrumentExists, parseMelodicLine(restOfCommand));
+					std::pair<int, std::string> result = parseMelodicLine(restOfCommand);
+					return std::make_pair(instrumentExists, result);
 				}
 			}
 		}
@@ -4324,7 +4343,7 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 std::pair<bool, std::pair<int, string>> ofApp::isBarLoop(vector<string>& commands, int lineNum, int numLines)
 {
 	bool barLoopExists = false;
-	std::pair p = std::make_pair(0, "");
+	std::pair<int, string> err = std::make_pair(0, "");
 	if (sharedData.loopsIndexes.size() > 0) {
 		if (sharedData.loopsIndexes.find(commands[0]) != sharedData.loopsIndexes.end()) {
 			barLoopExists = true;
@@ -4350,32 +4369,71 @@ std::pair<bool, std::pair<int, string>> ofApp::isBarLoop(vector<string>& command
 				string errorStr = "not all parts have received data for ";
 				if (sharedData.loopData[indexLocal].size() > 1) errorStr += "this loop";
 				else errorStr += "this bar";
-				std::pair<int, string> p = std::make_pair(2, errorStr);
+				err.first = 2;
+				err.second = errorStr;
 				// increment the counter so if we call this loop again it means that we want it to go through
 				partsReceivedOKCounters[indexLocal]++; 
-				return std::make_pair(barLoopExists, p);
+				return std::make_pair(barLoopExists, err);
 			}
 			// if all is OK, or if we insist on calling this loop, it goes through
 			else {
-				partsReceivedOKCounters[indexLocal] = 1;
-				sharedData.tempBarLoopIndex = sharedData.loopsIndexes[commands[0]];
-				if (sequencer.isThreadRunning()) {
-					sequencer.update();
-					mustUpdateScore = true;
-					ofxOscMessage m;
-					m.setAddress("/update");
-					m.addIntArg(sharedData.tempBarLoopIndex);
-					sendToParts(m);
-					m.clear();
+				if (commands.size() > 1) {
+					if (commands.size() > 3) {
+						err.first = 3;
+						err.second = "if arguments are provided to a loop, these are two, either \"locate bar/loop-name\" or \"seek bar/loop-name\"";
+						return std::make_pair(barLoopExists, err);
+					}
+					if (commands[1].compare("seek") != 0 && commands[1].compare("locate") != 0) {
+						err.first = 3;
+						err.second = "if arguments are provided to a loop, first must be \"seek\" or \"locate\"";
+						return std::make_pair(barLoopExists, err);
+					}
+					if (commands.size() < 3) {
+						err.first = 3;
+						err.second = commands[1] + " takes one argument, the bar/loop name to " + commands[1];
+						return std::make_pair(barLoopExists, err);
+					}
+					auto it = find(sharedData.loopData[indexLocal].begin(), sharedData.loopData[indexLocal].end(), sharedData.loopsIndexes[commands[2]]);
+					if (it == sharedData.loopData[indexLocal].end()) {
+						err.first = 3;
+						err.second = commands[2] + " doesn't exist in " + sharedData.loopsOrdered[indexLocal];
+						return std::make_pair(barLoopExists, err);
+					}
+					if (commands[1].compare("seek") == 0) {
+						sharedData.thisLoopIndex = it - sharedData.loopData[indexLocal].begin();
+						ofxOscMessage m;
+						m.setAddress("/thisloopndx");
+						m.addIntArg(sharedData.thisLoopIndex);
+						sendToParts(m);
+						m.clear();
+					}
+					else {
+						err.first = 1;
+						err.second = to_string(it - sharedData.loopData[indexLocal].begin() + 1);
+						return std::make_pair(barLoopExists, err);
+					}
 				}
 				else {
-					sharedData.loopIndex = sharedData.tempBarLoopIndex;
-					sendLoopIndexToParts();
+					partsReceivedOKCounters[indexLocal] = 1;
+					sharedData.tempBarLoopIndex = sharedData.loopsIndexes[commands[0]];
+					if (sequencer.isThreadRunning()) {
+						sequencer.update();
+						mustUpdateScore = true;
+						ofxOscMessage m;
+						m.setAddress("/update");
+						m.addIntArg(sharedData.tempBarLoopIndex);
+						sendToParts(m);
+						m.clear();
+					}
+					else {
+						sharedData.loopIndex = sharedData.tempBarLoopIndex;
+						sendLoopIndexToParts();
+					}
 				}
 			}
 		}
 	}
-	return std::make_pair(barLoopExists, p);
+	return std::make_pair(barLoopExists, err);
 }
 
 //--------------------------------------------------------------
@@ -5335,21 +5393,28 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	vector<int> dynamicsRampDirForScore(numNotesVertical, -1);
 	vector<bool> isSlurred (numNotesVertical, false);
 	vector<int> notesCounter(tokens.size()-numErasedOttTokens, 0);
-	std::vector<int> verticalNotesIndexes (tokens.size()-numErasedOttTokens+1, 0); // plus one to easily break out of loops in case of chords
-	std::vector<int> beginningOfChords (tokens.size()-numErasedOttTokens, 0);
-	std::vector<int> endingOfChords (tokens.size()-numErasedOttTokens, 0);
+	//int verticalNotesIndexes[tokens.size()-numErasedOttTokens+1] = {0}; // plus one to easily break out of loops in case of chords
+	vector<int> verticalNotesIndexes(tokens.size()-numErasedOttTokens+1, 0);
+	//int beginningOfChords[tokens.size()-numErasedOttTokens] = {0};
+	vector<int> beginningOfChords(tokens.size()-numErasedOttTokens, 0);
+	//int endingOfChords[tokens.size()-numErasedOttTokens] = {0};
+	vector<int> endingOfChords(tokens.size()-numErasedOttTokens, 0);
 	unsigned accidentalIndexes[tokens.size()-numErasedOttTokens];
-	std::vector<unsigned> chordNotesIndexes (tokens.size()-numErasedOttTokens, 0);
+	//unsigned chordNotesIndexes[tokens.size()-numErasedOttTokens] = {0};
+	vector<unsigned> chordNotesIndexes(tokens.size()-numErasedOttTokens, 0);
 	vector<int> ottavas(numNotesVertical, 0);
 	int verticalNoteIndex;
 	// create variables for the loop below but outside of it, so they are kept in the stack
 	// this way we are sure the push_back() calls won't cause any problems
 	bool foundNotes[i];
-	std::vector<int> transposedOctaves (i-numErasedOttTokens, 0);
-	std::vector<int> transposedAccidentals (i-numErasedOttTokens, 0);
+	//int transposedOctaves[i-numErasedOttTokens] = {0};
+	vector<int> transposedOctaves(i-numErasedOttTokens, 0);
+	//int transposedAccidentals[i-numErasedOttTokens] = {0};
+	vector<int> transposedAccidentals(i-numErasedOttTokens, 0);
 	// variable to determine which character we start looking at
 	// useful in case we start a bar with a chord
-	std::vector<unsigned> firstChar (tokens.size()-numErasedOttTokens, 0);
+	//unsigned firstChar[tokens.size()-numErasedOttTokens] = {0};
+	vector<unsigned> firstChar(tokens.size()-numErasedOttTokens, 0);
 	unsigned firstCharOffset[tokens.size()-numErasedOttTokens]; // this is zeroed in case of a rhythm staff with durations only
 	for (i = 0; i < tokens.size()-numErasedOttTokens; i++) firstCharOffset[i] = 1;
 	int midiNote, naturalScaleNote; // the second is for the score
@@ -5360,13 +5425,11 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	chordNotesCounter = 0;
 	unsigned index1 = 0, index2 = 0; // variables to index various data
 	int erasedTokens = 0;
-	bool reiterate = false;
 	// create an unpopullated vector of vector of pairs of the notes as MIDI and natural scale
 	// after all vectors with known size and all single variables have been created
 	vector<vector<std::pair<int, int>>> notePairs;
 	// then iterate over all the tokens and parse them to store the notes
 	for (i = 0; i < tokens.size(); i++) {
-		reiterate = false;
 		if (erasedTokens > 0) {
 			// go back as many indexes as we have erased in case we have an \ottava or \tuplet 
 			// the loop returned to its last field that incremented i, so we need to decrement it
@@ -5468,7 +5531,9 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			storeNote:
 				if (!chordStarted || (chordStarted && firstChordNote)) {
 					// create a new vector for each single note or a group of notes of a chord
-					notePairs.push_back({std::make_pair(midiNote, naturalScaleNote)});
+					std::pair p = std::make_pair(midiNote, naturalScaleNote);
+					std::vector<std::pair<int, int>> aVector(1, p);
+					notePairs.push_back(std::move(aVector));
 					verticalNotesIndexes[i] = i;
 					chordNotesIndexes[i] = 0;
 					chordNotesCounter = 0;
@@ -5546,7 +5611,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 				endingOfChords[i] = 1;
 			}
 		}
-		if (!reiterate) index1++;
+		index1++;
 	}
 	
 	// reset the indexes
@@ -5555,53 +5620,87 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// now we have enough information to allocate memory for the rest of the vectors
 	// but we do it one by one, to allocate the required memory only
 	// as each note might be a chord or not
-	auto midiNotesData = std::make_shared<vector<vector<int>>>();
+	vector<vector<int>> midiNotesData;
 	for (i = 0; i < notePairs.size(); i++) {
-		midiNotesData->push_back({notePairs[i][0].first});
-		for (j = 1; j < notePairs[i].size(); j++) {
-			midiNotesData->back().push_back(notePairs[i][j].first);
+		int value = notePairs.at(i).at(0).first;
+		std::vector<int> aVector(1, value);
+		midiNotesData.push_back(std::move(aVector));
+		for (j = 1; j < notePairs.at(i).size(); j++) {
+			midiNotesData.back().push_back(notePairs.at(i).at(j).first);
 		}
 	}
+	//auto midiNotesData = std::make_shared<vector<vector<int>>>();
+	//for (i = 0; i < notePairs->size(); i++) {
+	//	midiNotesData->push_back({notePairs->at(i).at(0).first});
+	//	for (j = 1; j < notePairs->at(i).size(); j++) {
+	//		midiNotesData->back().push_back(notePairs->at(i).at(j).first);
+	//	}
+	//}
+	//auto notesData = std::make_shared<vector<vector<float>>>();
 	vector<vector<float>> notesData;
-	for (i = 0; i < midiNotesData->size(); i++) {
-		notesData.push_back({(float)midiNotesData->at(i).at(0)});
-		for (j = 1; j < midiNotesData->at(i).size(); j++) {
-			notesData.back().push_back((float)midiNotesData->at(i).at(j));
+	//for (i = 0; i < midiNotesData.size(); i++) {
+	//	notesData.push_back({(float)midiNotesData[i][0]});
+	//	for (j = 1; j < midiNotesData[i].size(); j++) {
+	//		notesData.back().push_back((float)midiNotesData[i][j]);
+	//	}
+	//}
+	for (i = 0; i < midiNotesData.size(); i++) {
+		float value = midiNotesData.at(i).at(0);
+		std::vector<float> aVector(1, value);
+		notesData.push_back(std::move(aVector));
+		//notesData.emplace_back(std::vector<float>(1, value));
+		//notesData.push_back({(float)midiNotesData.at(i).at(0)});
+		for (j = 1; j < midiNotesData.at(i).size(); j++) {
+			notesData.back().push_back((float)midiNotesData.at(i).at(j));
 		}
 	}
 	vector<vector<int>> notesForScore;
 	for (i = 0; i < notePairs.size(); i++) {
-		notesForScore.push_back({notePairs[i][0].second});
-		for (j = 1; j < notePairs[i].size(); j++) {
-			notesForScore.back().push_back(notePairs[i][j].second);
+		int value = notePairs.at(i).at(0).second;
+		std::vector<int> aVector(1, value);
+		notesForScore.push_back(std::move(aVector));
+		for (j = 1; j < notePairs.at(i).size(); j++) {
+			notesForScore.back().push_back(notePairs.at(i).at(j).second);
 		}
 	}
 	vector<vector<int>> accidentalsForScore;
-	for (i = 0; i < midiNotesData->size(); i++) {
-		accidentalsForScore.push_back({-1});
-		for (j = 1; j < midiNotesData->at(i).size(); j++) {
+	for (i = 0; i < midiNotesData.size(); i++) {
+		std::vector<int> aVector(1, -1);
+		accidentalsForScore.push_back(std::move(aVector));
+		//accidentalsForScore.emplace_back(vector<int>(1, -1));
+		//accidentalsForScore.push_back({-1});
+		for (j = 1; j < midiNotesData[i].size(); j++) {
 			accidentalsForScore.back().push_back(-1);
 		}
 	}
 	// the 2D vector below is used here only for memory allocation
 	// its contents are updated in drawNotes() of the Notes() class
 	vector<vector<int>> naturalSignsNotWrittenForScore;
-	for (i = 0; i < midiNotesData->size(); i++) {
-		naturalSignsNotWrittenForScore.push_back({0});
-		for (j = 1; j < midiNotesData->at(i).size(); j++) {
+	for (i = 0; i < midiNotesData.size(); i++) {
+		std::vector<int> aVector(1, 0);
+		naturalSignsNotWrittenForScore.push_back(std::move(aVector));
+		//naturalSignsNotWrittenForScore.emplace_back(vector<int>(1, 0));
+		//naturalSignsNotWrittenForScore.push_back({0});
+		for (j = 1; j < midiNotesData[i].size(); j++) {
 			naturalSignsNotWrittenForScore.back().push_back(0);
 		}
 	}
 	int transposedIndex = 0;
 	vector<vector<int>> octavesForScore;
-	for (i = 0; i < midiNotesData->size(); i++) {
+	for (i = 0; i < midiNotesData.size(); i++) {
 		if (sharedData.instruments[lastInstrumentIndex].isRhythm()) {
-			octavesForScore.push_back({1});
+			std::vector<int> aVector(1, 1);
+			octavesForScore.push_back(std::move(aVector));
+			//octavesForScore.emplace_back(vector<int>(1, 1));
+			//octavesForScore.push_back({1});
 		}
 		else {
-			octavesForScore.push_back({transposedOctaves[transposedIndex++]});
+			std::vector<int> aVector(1, transposedOctaves[transposedIndex++]);
+			octavesForScore.push_back(std::move(aVector));
+			//octavesForScore.emplace_back(vector<int>(1, transposedOctaves[transposedIndex++]));
+			//octavesForScore.push_back({transposedOctaves[transposedIndex++]});
 		}
-		for (j = 1; j < midiNotesData->at(i).size(); j++) {
+		for (j = 1; j < midiNotesData[i].size(); j++) {
 			octavesForScore.back().push_back(transposedOctaves[transposedIndex++]);
 		}
 	}
@@ -5755,7 +5854,8 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 
 	// we are now done with dynamically allocating memory, so we can move on to the rest of the data
 	// we can now create more variables without worrying about memory
-	std::vector<int>  foundAccidentals (tokens.size(), 0);
+	//int foundAccidentals[tokens.size()] = {0};
+	vector<int> foundAccidentals(tokens.size(), 0);
 	float accidental = 0.0;
 	// various counters
 	unsigned numDurs = 0;
@@ -5822,8 +5922,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			accidentalIndexes[i]++;
 		}
 		if (foundAccidentals[i]) {
-			notesData[verticalNoteIndex][chordNotesIndexes[i]] += accidental;
-			midiNotesData->at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += (int)accidental;
+			//notesData[verticalNoteIndex][chordNotesIndexes[i]] += accidental;
+			notesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += accidental;
+			//midiNotesData[verticalNoteIndex][chordNotesIndexes[i]] += (int)accidental;
+			midiNotesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += (int)accidental;
 			// accidentals can go up to a whole tone, which is accidental=2.0
 			// but in case it's one and a half tone, one tone is already added above
 			// so we need the half tone only, which we get with accidental-(int)accidental
@@ -5864,8 +5966,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		accidental = 0;
 	}
 	
-	std::vector<int> foundDynamics (tokens.size(), 0);
-	std::vector<int> foundOctaves (tokens.size(), 0);
+	//int foundDynamics[tokens.size()] = {0};
+	vector<int> foundDynamics(tokens.size(), 0);
+	//int foundOctaves[tokens.size()] = {0};
+	vector<int> foundOctaves(tokens.size(), 0);
 	bool dynAtFirstNote = false;
 	unsigned beginningOfChordIndex = 0;
 	bool tokenInsideChord = false;
@@ -5888,16 +5992,20 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		for (j = accidentalIndexes[i]; j < tokens[i].size(); j++) {
 			if (int(tokens[i][j]) == 39) {
 				if (!sharedData.instruments[lastInstrumentIndex].isRhythm()) {
-					notesData[verticalNoteIndex][chordNotesIndexes[i]] += 12.0;
-					midiNotesData->at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += 12;
+					//notesData[verticalNoteIndex][chordNotesIndexes[i]] += 12.0;
+					notesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += 12;
+					//midiNotesData[verticalNoteIndex][chordNotesIndexes[i]] += 12;
+					midiNotesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += 12;
 					octavesForScore[verticalNoteIndex][chordNotesIndexes[i]]++;
 				}
 				foundOctaves[i] = 1;
 			}
 			else if (int(tokens[i][j]) == 44) {
 				if (!sharedData.instruments[lastInstrumentIndex].isRhythm()) {
-					notesData[verticalNoteIndex][chordNotesIndexes[i]] -= 12.0;
-					midiNotesData->at(verticalNoteIndex).at(chordNotesIndexes.at(i)) -= 12;
+					//notesData[verticalNoteIndex][chordNotesIndexes[i]] -= 12.0;
+					notesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) -= 12;
+					//midiNotesData[verticalNoteIndex][chordNotesIndexes[i]] -= 12;
+					midiNotesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) -= 12;
 					octavesForScore[verticalNoteIndex][chordNotesIndexes[i]]--;
 				}
 				foundOctaves[i] = 1;
@@ -6292,7 +6400,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 					diff--;
 				}
 			}
-			break;
+			//break;
 		}
 		dursAccum += dursData[i];
 		dursForScore[i] = scoreDur;
@@ -6319,47 +6427,47 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		if (slurBeginningsIndexes[i] > -1) slurIndexes[slurNdx].first = slurBeginningsIndexes[i];
 		if (slurEndingsIndexes[i] > -1) slurIndexes[slurNdx].second = slurEndingsIndexes[i];
 	}
-	// once the melodic line has been parsed, we can insert the new data to the maps
+	// once the melodic line has been parsed, we can insert the new data to the maps of the Instrument object
 	map<string, int>::iterator it = sharedData.instrumentIndexes.find(lastInstrument);
 	if (it == sharedData.instrumentIndexes.end()) {
 		return std::make_pair(3, "instrument does not exist");
 	}
 	int thisInstIndex = it->second;
-	sharedData.instruments[thisInstIndex].notes[barIndex] = notesData;
-	sharedData.instruments[thisInstIndex].midiNotes[barIndex] = *midiNotesData;
-	sharedData.instruments[thisInstIndex].durs[barIndex] = dursData;
-	sharedData.instruments[thisInstIndex].dursWithoutSlurs[barIndex] = dursDataWithoutSlurs;
-	sharedData.instruments[thisInstIndex].midiDursWithoutSlurs[barIndex] = midiDursDataWithoutSlurs;
-	sharedData.instruments[thisInstIndex].dynamics[barIndex] = dynamicsData;
-	sharedData.instruments[thisInstIndex].midiVels[barIndex] = midiVels;
-	sharedData.instruments[thisInstIndex].pitchBendVals[barIndex] = pitchBendVals;
-	sharedData.instruments[thisInstIndex].dynamicsRamps[barIndex] = dynamicsRampData;
-	sharedData.instruments[thisInstIndex].glissandi[barIndex] = glissandiIndexes;
-	sharedData.instruments[thisInstIndex].midiGlissDurs[barIndex] = midiGlissDurs;
-	sharedData.instruments[thisInstIndex].midiDynamicsRampDurs[barIndex] = midiDynamicsRampDurs;
-	sharedData.instruments[thisInstIndex].articulations[barIndex] = articulationIndexes;
-	sharedData.instruments[thisInstIndex].midiArticulationVals[barIndex] = midiArticulationVals;
-	sharedData.instruments[thisInstIndex].isSlurred[barIndex] = isSlurred;
-	sharedData.instruments[thisInstIndex].text[barIndex] = texts;
-	sharedData.instruments[thisInstIndex].textIndexes[barIndex] = textIndexesLocal;
-	sharedData.instruments[thisInstIndex].slurIndexes[barIndex] = slurIndexes;
-	sharedData.instruments[thisInstIndex].scoreNotes[barIndex] = notesForScore;
-	sharedData.instruments[thisInstIndex].scoreDurs[barIndex] = dursForScore;
-	sharedData.instruments[thisInstIndex].scoreDotIndexes[barIndex] = dotIndexes;
-	sharedData.instruments[thisInstIndex].scoreAccidentals[barIndex] = accidentalsForScore;
-	sharedData.instruments[thisInstIndex].scoreNaturalSignsNotWritten[barIndex] = naturalSignsNotWrittenForScore;
-	sharedData.instruments[thisInstIndex].scoreOctaves[barIndex] = octavesForScore;
-	sharedData.instruments[thisInstIndex].scoreOttavas[barIndex] = ottavas;
-	sharedData.instruments[thisInstIndex].scoreGlissandi[barIndex] = glissandiIndexes;
-	sharedData.instruments[thisInstIndex].scoreArticulations[barIndex] = articulationIndexes;
-	sharedData.instruments[thisInstIndex].scoreDynamics[barIndex] = dynamicsForScore;
-	sharedData.instruments[thisInstIndex].scoreDynamicsIndexes[barIndex] = dynamicsForScoreIndexes;
-	sharedData.instruments[thisInstIndex].scoreDynamicsRampStart[barIndex] = dynamicsRampStartForScore;
-	sharedData.instruments[thisInstIndex].scoreDynamicsRampEnd[barIndex] = dynamicsRampEndForScore;
-	sharedData.instruments[thisInstIndex].scoreDynamicsRampDir[barIndex] = dynamicsRampDirForScore;
-	sharedData.instruments[thisInstIndex].scoreTupRatios[barIndex] = tupRatios;
-	sharedData.instruments[thisInstIndex].scoreTupStartStop[barIndex] = tupStartStop;
-	sharedData.instruments[thisInstIndex].scoreTexts[barIndex] = textsForScore;
+	sharedData.instruments[thisInstIndex].notes[barIndex] = std::move(notesData);
+	sharedData.instruments[thisInstIndex].midiNotes[barIndex] = std::move(midiNotesData);
+	sharedData.instruments[thisInstIndex].durs[barIndex] = std::move(dursData);
+	sharedData.instruments[thisInstIndex].dursWithoutSlurs[barIndex] = std::move(dursDataWithoutSlurs);
+	sharedData.instruments[thisInstIndex].midiDursWithoutSlurs[barIndex] = std::move(midiDursDataWithoutSlurs);
+	sharedData.instruments[thisInstIndex].dynamics[barIndex] = std::move(dynamicsData);
+	sharedData.instruments[thisInstIndex].midiVels[barIndex] = std::move(midiVels);
+	sharedData.instruments[thisInstIndex].pitchBendVals[barIndex] = std::move(pitchBendVals);
+	sharedData.instruments[thisInstIndex].dynamicsRamps[barIndex] = std::move(dynamicsRampData);
+	sharedData.instruments[thisInstIndex].glissandi[barIndex] = std::move(glissandiIndexes);
+	sharedData.instruments[thisInstIndex].midiGlissDurs[barIndex] = std::move(midiGlissDurs);
+	sharedData.instruments[thisInstIndex].midiDynamicsRampDurs[barIndex] = std::move(midiDynamicsRampDurs);
+	sharedData.instruments[thisInstIndex].articulations[barIndex] = std::move(articulationIndexes);
+	sharedData.instruments[thisInstIndex].midiArticulationVals[barIndex] = std::move(midiArticulationVals);
+	sharedData.instruments[thisInstIndex].isSlurred[barIndex] = std::move(isSlurred);
+	sharedData.instruments[thisInstIndex].text[barIndex] = std::move(texts);
+	sharedData.instruments[thisInstIndex].textIndexes[barIndex] = std::move(textIndexesLocal);
+	sharedData.instruments[thisInstIndex].slurIndexes[barIndex] = std::move(slurIndexes);
+	sharedData.instruments[thisInstIndex].scoreNotes[barIndex] = std::move(notesForScore);
+	sharedData.instruments[thisInstIndex].scoreDurs[barIndex] = std::move(dursForScore);
+	sharedData.instruments[thisInstIndex].scoreDotIndexes[barIndex] = std::move(dotIndexes);
+	sharedData.instruments[thisInstIndex].scoreAccidentals[barIndex] = std::move(accidentalsForScore);
+	sharedData.instruments[thisInstIndex].scoreNaturalSignsNotWritten[barIndex] = std::move(naturalSignsNotWrittenForScore);
+	sharedData.instruments[thisInstIndex].scoreOctaves[barIndex] = std::move(octavesForScore);
+	sharedData.instruments[thisInstIndex].scoreOttavas[barIndex] = std::move(ottavas);
+	sharedData.instruments[thisInstIndex].scoreGlissandi[barIndex] = std::move(glissandiIndexes);
+	sharedData.instruments[thisInstIndex].scoreArticulations[barIndex] = std::move(articulationIndexes);
+	sharedData.instruments[thisInstIndex].scoreDynamics[barIndex] = std::move(dynamicsForScore);
+	sharedData.instruments[thisInstIndex].scoreDynamicsIndexes[barIndex] = std::move(dynamicsForScoreIndexes);
+	sharedData.instruments[thisInstIndex].scoreDynamicsRampStart[barIndex] = std::move(dynamicsRampStartForScore);
+	sharedData.instruments[thisInstIndex].scoreDynamicsRampEnd[barIndex] = std::move(dynamicsRampEndForScore);
+	sharedData.instruments[thisInstIndex].scoreDynamicsRampDir[barIndex] = std::move(dynamicsRampDirForScore);
+	sharedData.instruments[thisInstIndex].scoreTupRatios[barIndex] = std::move(tupRatios);
+	sharedData.instruments[thisInstIndex].scoreTupStartStop[barIndex] = std::move(tupStartStop);
+	sharedData.instruments[thisInstIndex].scoreTexts[barIndex] = std::move(textsForScore);
 	sharedData.instruments[thisInstIndex].isWholeBarSlurred[barIndex] = false;
 	// in case we have no slurs, we must check if there is a slurred that is not closed in the previous bar
 	// of if the whole previous bar is slurred
@@ -6716,11 +6824,11 @@ void ofApp::setScoreCoords()
 	}
 	sharedData.notesXStartPnt = 0;
 	int i = 0;
+	notesLength = staffLength - (sharedData.staffLinesDist * NOTESXOFFSETCOEF);
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 		float yAnchor1 = yPos1 + (i * (sharedData.staffLinesDist * 10));
 		float yAnchor2 = yPos2 + (i * (sharedData.staffLinesDist * 10));
 		it->second.setStaffCoords(staffLength, yAnchor1, yAnchor2, sharedData.staffLinesDist);
-		notesLength = staffLength - (sharedData.staffLinesDist * NOTESXOFFSETCOEF);
 		it->second.setNoteCoords(notesLength, yAnchor1, yAnchor2, sharedData.staffLinesDist, sharedData.scoreFontSize);
 		i++;
 	}
