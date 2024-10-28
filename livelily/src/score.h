@@ -7,6 +7,18 @@
 #define EXTRALINECOEFF 0.7
 #define BEAMDISTCOEFF 0.75
 
+typedef struct _intPair
+{
+	int first;
+	int second;
+} intPair;
+
+typedef struct _uintPair
+{
+	unsigned first;
+	unsigned second;
+} uintPair;
+
 class Staff
 {
 	public:
@@ -17,7 +29,7 @@ class Staff
 		void setRhythm(bool isRhythm);
 		void setSize(int fontSize, float staffLinesDist);
 		void setMeter(int bar, int numer, int denom);
-		std::pair<int, int> getMeter(int bar);
+		intPair getMeter(int bar);
 		void setTempo(int bar, int BPMTempo, int beatAtValue, bool hasDot);
 		void setOrientation(int orientation);
 		void setNumBarsToDisplay(int numBars);
@@ -116,10 +128,10 @@ class Notes
 				vector<int> dynRampStart,
 				vector<int> dynRampEnd,
 				vector<int> dynRampDir,
-				vector<std::pair<int, int>> slurIndexes,
+				vector<intPair> slurIndexes,
 				bool isWholeBarSlurred,
-				map<int, std::pair<int, int>> tupletRatios,
-				map<int, std::pair<unsigned, unsigned>> tupletStartStop,
+				map<int, intPair> tupletRatios,
+				map<int, uintPair> tupletStartStop,
 				vector<string> texts,
 				vector<int> textIndexes);
 		void changeNotesBasedOnClef(int bar);
@@ -139,7 +151,7 @@ class Notes
 		void storeMinMaxY(int bar);
 		void copyMelodicLine(int barIndex, int barToCopy);
 		void insertNaturalSigns(int bar, int loopNdx, vector<int> *v);
-		std::pair<int, int> isBarLinked(int bar);
+		intPair isBarLinked(int bar);
 		void drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, float yOffset, bool animation, float xCoef);
 		void drawBeams(float x1, float y1, float x2, float y2);
 		int drawRest(int bar, int restDur, float x, int color, float yOffset);
@@ -177,7 +189,7 @@ class Notes
 		map<int, vector<vector<int>>> allArticulations;
 		//map<int, vector<int>> slurBeginnings;
 		//map<int, vector<int>> slurEndings;
-		map<int, vector<std::pair<int, int>>> slurIndexes;
+		map<int, vector<intPair>> slurIndexes;
 		map<int, vector<float>> slurStartX;
 		map<int, vector<float>> slurStopX;
 		map<int, vector<float>> slurStartY;
@@ -186,14 +198,14 @@ class Notes
 		map<int, vector<float>> slurMiddleY1;
 		map<int, vector<float>> slurMiddleX2;
 		map<int, vector<float>> slurMiddleY2;
-		map<int, vector<std::pair<int, int>>> slurLinks;
+		map<int, vector<intPair>> slurLinks;
 		map<int, bool> isWholeSlurred;
 		// the map below is queried when creating loops, to determine whether a bar can be included in a loop
 		// if a bar is linked to another bar due to slurs, glissandi, or (de)crescendi spanning over more than one bar
 		// then it will not be able to include this bar in a loop
-		map<int, std::pair<int, int>> isLinked;
-		map<int, map<int, std::pair<int, int>>> tupRatios;
-		map<int, map<int, std::pair<unsigned, unsigned>>> tupStartStop;
+		map<int, intPair> isLinked;
+		map<int, map<int, intPair>> tupRatios;
+		map<int, map<int, uintPair>> tupStartStop;
 		map<int, map<int, vector<float>>> tupXCoords;
 		map<int, map<int, vector<float>>> tupYCoords;
 		map<int, map<int, int>> tupDirs;

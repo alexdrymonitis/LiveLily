@@ -178,7 +178,7 @@ bool Instrument::hasNewStep()
 }
 
 //--------------------------------------------------------------
-std::pair<int, int> Instrument::isLinked(int bar)
+intPair Instrument::isLinked(int bar)
 {
 	return notesObj.isBarLinked(bar);
 }
@@ -293,7 +293,9 @@ void Instrument::createEmptyMelody(int barIndex)
 	text[barIndex] = vector<string>(1, "");
 	textIndexes[barIndex] = vector<int>(1, 0);
 	isWholeBarSlurred[barIndex] = false;
-	slurIndexes[barIndex] = vector<std::pair<int, int>>(1, std::make_pair(-1, -1));
+	intPair p;
+	p.first = p.second = -1;
+	slurIndexes[barIndex] = vector<intPair>(1, p);
 	scoreNotes[barIndex] = vector<vector<int>>(1, vector<int>(1, -1));
 	scoreDurs[barIndex] = vector<int>(1, MINDUR);
 	scoreDotIndexes[barIndex] = vector<int>(1, 0);
@@ -307,9 +309,9 @@ void Instrument::createEmptyMelody(int barIndex)
 	scoreDynamicsRampStart[barIndex] = vector<int>(1, -1);
 	scoreDynamicsRampEnd[barIndex] = vector<int>(1, -1);
 	scoreDynamicsRampDir[barIndex] = vector<int>(1, -1);
-	map<int, std::pair<int, int>> m1;
+	map<int, intPair> m1;
 	scoreTupRatios[barIndex] = m1;
-	map<int, std::pair<unsigned, unsigned>> m2;
+	map<int, uintPair> m2;
 	scoreTupStartStop[barIndex] = m2;
 	scoreTexts[barIndex] = vector<string>(1, "");
 }
@@ -322,7 +324,7 @@ void Instrument::setMeter(int bar, int numerator, int denominator, int numBeats)
 }
 
 //--------------------------------------------------------------
-std::pair<int, int> Instrument::getMeter(int bar)
+intPair Instrument::getMeter(int bar)
 {
 	return staff.getMeter(bar);
 }

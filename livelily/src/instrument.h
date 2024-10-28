@@ -33,7 +33,7 @@ class Instrument
 		void setCopyNdx(int barIndex, int barToCopy);
 		int getCopyNdx(int barIndex);
 		bool hasNewStep();
-		std::pair<int, int> isLinked(int bar);
+		intPair isLinked(int bar);
 		void setNewStep(bool stepState);
 		int getNewStep();
 		bool getMultiBarsDone();
@@ -45,7 +45,7 @@ class Instrument
 		void copyMelodicLine(int barIndex);
 		void createEmptyMelody(int barIndex);
 		void setMeter(int bar, int numerator, int denominator, int numBeats);
-		std::pair<int, int> getMeter(int bar);
+		intPair getMeter(int bar);
 		void setScoreNotes(int bar, int numerator, int denominator, int numBeats,
 				int BPMValue, int beatAtValue, bool hasDot);
 		void setNoteCoords(float xLen, float yPos1, float yPos2, float staffLineDist, int fontSize);
@@ -143,7 +143,7 @@ class Instrument
 		map<int, vector<int>> textIndexes;
 		//map<int, vector<int>> slurBeginnings;
 		//map<int, vector<int>> slurEndings;
-		map<int, vector<std::pair<int, int>>> slurIndexes;
+		map<int, vector<intPair>> slurIndexes;
 		// same vectors for sending data to the Notes objects
 		map<int, vector<vector<int>>> scoreNotes; // notes are ints here
 		map<int, vector<int>> scoreDurs;
@@ -162,8 +162,8 @@ class Instrument
 		//map<int, vector<int>> scoreSlurBeginnings;
 		//map<int, vector<int>> scoreSlurEndings;
 		map<int, bool> isWholeBarSlurred;
-		map<int, map<int, std::pair<int, int>>> scoreTupRatios;
-		map<int, map<int, std::pair<unsigned, unsigned>>> scoreTupStartStop;
+		map<int, map<int, intPair>> scoreTupRatios;
+		map<int, map<int, uintPair>> scoreTupStartStop;
 		map<int, vector<string>> scoreTexts;
 
 		// score parts OSC handling

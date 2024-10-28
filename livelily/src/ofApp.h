@@ -303,6 +303,12 @@ typedef struct _SharedData
 	uint64_t PPQNTimeStamp;
 } SharedData;
 
+typedef struct _intStrPair
+{
+	int first;
+	string second;
+} intStrPair;
+
 class ofApp : public ofBaseApp{
 	public:
 		void setup();
@@ -317,7 +323,7 @@ class ofApp : public ofBaseApp{
 		int getLastLoopIndex();
 		void initializeInstrument(string instName);
 		vector<string> tokenizeString(string str, string delimiter);
-		std::pair<int, string> parseMelodicLine(string str);
+		intStrPair parseMelodicLine(string str);
 		void setScoreCoords();
 		
 		void keyPressed(int key);

@@ -68,9 +68,12 @@ void Staff::setMeter(int bar, int numer, int denom)
 }
 
 //--------------------------------------------------------------
-std::pair<int, int> Staff::getMeter(int bar)
+intPair Staff::getMeter(int bar)
 {
-	return std::make_pair(numerator[bar], denominator[bar]);
+	intPair p;
+	p.first = numerator[bar];
+	p.second = denominator[bar];
+	return p;
 }
 
 //--------------------------------------------------------------
@@ -503,10 +506,10 @@ void Notes::setNotes(int bar,
 		vector<int> dynRampStart,
 		vector<int> dynRampEnd,
 		vector<int> dynRampDir,
-		vector<std::pair<int, int>> slurNdxs,
+		vector<intPair> slurNdxs,
 		bool isWholeBarSlurred,
-		map<int, std::pair<int, int>> tupletRatios,
-		map<int, std::pair<unsigned, unsigned>> tupletStartStop,
+		map<int, intPair> tupletRatios,
+		map<int, uintPair> tupletStartStop,
 		vector<string> texts,
 		vector<int> textIndexes)
 {
@@ -536,7 +539,9 @@ void Notes::setNotes(int bar,
 	allTextsIndexes[bar] = std::move(textIndexes);
 	maxYCoord[bar] = FLT_MIN;
 	minYCoord[bar] = FLT_MAX;
-	isLinked[bar] = std::make_pair(0, 0);
+	intPair p;
+	p.first = p.second = 0;
+	isLinked[bar] = p;
 	if (clefIndex[bar] != 0) changeNotesBasedOnClef(bar);
 }
 
@@ -1581,7 +1586,9 @@ void Notes::storeSlurCoords(int bar)
 	slurMiddleX2[bar] = vector<float>(slurIndexes[bar].size(), -1);
 	slurMiddleY1[bar] = vector<float>(slurIndexes[bar].size(), -1);
 	slurMiddleY2[bar] = vector<float>(slurIndexes[bar].size(), -1);
-	slurLinks[bar] = vector<std::pair<int, int>>(slurIndexes[bar].size(), std::make_pair(0, 0));
+	intPair p;
+	p.first = p.second = 0;
+	slurLinks[bar] = vector<intPair>(slurIndexes[bar].size(), p);
 	for (unsigned i = 0; i < slurIndexes[bar].size(); i++) {
 		// if both start and end indexes of a slur are -1, it means there is no slur
 		if (slurIndexes[bar][i].first == -1 && slurIndexes[bar][i].second == -1 && !isWholeSlurred[bar]) continue;
@@ -2333,7 +2340,7 @@ void Notes::insertNaturalSigns(int bar, int loopNdx, vector<int> *v)
 }
 
 //--------------------------------------------------------------
-std::pair<int, int> Notes::isBarLinked(int bar)
+intPair Notes::isBarLinked(int bar)
 {
 	return isLinked[bar];
 }

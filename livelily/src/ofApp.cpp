@@ -20,14 +20,16 @@ void ofApp::setup(){
 	
 	lineWidth = 2;
 	brightnessCoeff = 0.75;
-	
+	// dummy	
 	// set the notes chars
 	for (int i = 2; i < 9; i++) {
 		noteChars[i-2] = char((i%7)+97);
 	}
 	noteChars[7] = char(114); // "r" for rest
 	initializeInstrument("\\inst");
-	parseMelodicLine("<c' ees'>8-.-> <c' ees'>8 <g' des''>4 <c' ees'>8-.-> <c' ees'>8-.-> <g' des''>4");
+	cout << "initialized instrument, will parse line\n";
+	intStrPair p = parseMelodicLine("<c' ees'>8-.-> <c' ees'>8 <g' a' des''>4 <c' ees'>8-.-> <c' ees'>8-.-> <g' a' des''>4");
+	cout << p.first << " " << p.second << endl;
 }
 
 //--------------------------------------------------------------
@@ -161,7 +163,7 @@ vector<string> ofApp::tokenizeString(string str, string delimiter)
 }
 
 //--------------------------------------------------------------
-std::pair<int, string> ofApp::parseMelodicLine(string str)
+intStrPair ofApp::parseMelodicLine(string str)
 {
 	int tempDur = 0;
 	// the following array is used to map the dynamic values
@@ -196,10 +198,16 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	for (i = 0; i < tokens.size(); i++) {
 		if (tokens[i].compare("\\ottava") == 0 || tokens[i].compare("\\ott") == 0) {
 			if (tokens.size() < i+2) {
-				return std::make_pair(3, "\\ottava must be followed by (-)1 or (-)2");
+				intStrPair p;
+				p.first = 3;
+				p.second = "\\ottava must be followed by (-)1 or (-)2";
+				return p;
 			}
 			if (!isNumber(tokens[i+1])) {
-				return std::make_pair(3, "\\ottava must be followed by (-)1 or (-)2");
+				intStrPair p;
+				p.first = 3;
+				p.second = "\\ottava must be followed by (-)1 or (-)2";
+				return p;
 			}
 			numErasedOttTokens += 2;
 			i += 1;
@@ -207,31 +215,49 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		}
 		if (tokens[i].compare("\\tuplet") == 0 || tokens[i].compare("\\tup") == 0) {
 			if (tokens.size() < i+3) {
-				return std::make_pair(3, "\\tuplet must be followed by ratio and the actual tuplet");
+				intStrPair p;
+				p.first = 3;
+				p.second = "\\tuplet must be followed by ratio and the actual tuplet";
+				return p;
 			}
 			if (tokens[i+1].find("/") == string::npos) {
-				return std::make_pair(3, "\\tuplet ratio formatted wrong");
+				intStrPair p;
+				p.first = 3;
+				p.second = "\\tuplet ratio formatted wrong";
+				return p;
 			}
 			size_t divisionNdx = tokens[i+1].find("/");
 			size_t remainingStr = tokens[i+1].size() - divisionNdx - 1;
 			if (!isNumber(tokens[i+1].substr(0, divisionNdx)) || !isNumber(tokens[i+1].substr(divisionNdx+1, remainingStr))) {
-				return std::make_pair(3, "numerator or denominator of tuplet ratio is not a number");
+				intStrPair p;
+				p.first = 3;
+				p.second = "numerator or denominator of tuplet ratio is not a number";
+				return p;
 			}
 			if (!startsWith(tokens[i+2], "{")) {
-				return std::make_pair(3, "tuplet notes must be placed in curly brackets");
+				intStrPair p;
+				p.first = 3;
+				p.second = "tuplet notes must be placed in curly brackets";
+				return p;
 			}
 		}
 		if (chordStarted) {
 			bool chordEnded = false;
 			for (j = 0; j < 9; j++) {
 				if (tokens[i].substr(0, tokens[i].find(">")).find(char(forbiddenCharsInChord[j])) != string::npos) {
-					return std::make_pair(3, char(forbiddenCharsInChord[j]) + (string)" can't be included within a chord, only outside of it");
+					intStrPair p;
+					p.first = 3;
+					p.second = char(forbiddenCharsInChord[j]) + (string)" can't be included within a chord, only outside of it";
+					return p;
 				}
 			}
 			for (j = 0; j < tokens[i].size(); j++) {
 				if (tokens[i][j] == '>') chordEnded = true;
 				else if (isdigit(tokens[i][j]) && !chordEnded) {
-					return std::make_pair(3, "durations can't be included within a chord, only outside of it");
+					intStrPair p;
+					p.first = 3;
+					p.second = "durations can't be included within a chord, only outside of it";
+					return p;
 				}
 			}
 			chordNotesCounter++;
@@ -245,50 +271,82 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			if (chordStarted) {
 				if (chordOpeningNdx > 0) {
 					if (tokens[i][chordOpeningNdx-1] == '\\') {
-						return std::make_pair(3, "crescendi can't be included within a chord, only outside of it");
+						intStrPair p;
+						p.first = 3;
+						p.second = "crescendi can't be included within a chord, only outside of it";
+						return p;
 					}
 					else {
-						return std::make_pair(3, "chords can't be nested");
+						intStrPair p;
+						p.first = 3;
+						p.second = "chords can't be nested";
+						return p;
 					}
 				}
 				else {
-					return std::make_pair(3, "chords can't be nested");
+					intStrPair p;
+					p.first = 3;
+					p.second = "chords can't be nested";
+					return p;
 				}
 			}
 			if (sharedData.instruments[lastInstrumentIndex].isRhythm()) {
-				return std::make_pair(3, "chords are not allowed in rhythm staffs");
+				intStrPair p;
+				p.first = 3;
+				p.second = "chords are not allowed in rhythm staffs";
+				return p;
 			}
 			chordStarted = true;
 		}
 		else if (chordClosingNdx != string::npos && chordClosingNdx < tokens[i].size()) {
 			if (chordClosingNdx == 0) {
-				return std::make_pair(3, "chord closing character can't be at the beginning of a token");
+				intStrPair p;
+				p.first = 3;
+				p.second = "chord closing character can't be at the beginning of a token";
+				return p;
 			}
 			else if (chordStarted && tokens[i][chordClosingNdx-1] == '\\') {
-				return std::make_pair(3, "diminuendi can't be included within a chord, only outside of it");
+				intStrPair p;
+				p.first = 3;
+				p.second = "diminuendi can't be included within a chord, only outside of it";
+				return p;
 			}
 			else if (!chordStarted && tokens[i][chordClosingNdx-1] != '-' && tokens[i][chordClosingNdx-1] != '\\') {
-				return std::make_pair(3, "can't close a chord that hasn't been opened");
+				intStrPair p;
+				p.first = 3;
+				p.second = "can't close a chord that hasn't been opened";
+				return p;
 			}
 			chordStarted = false;
 		}
 	}
 	if (chordStarted) {
-		return std::make_pair(3, "chord left open");
+		intStrPair p;
+		p.first = 3;
+		p.second = "chord left open";
+		return p;
 	}
-	if (tokens.size() == numErasedOttTokens) return std::make_pair(1, ""); // in case we only provide the ottava
+	if (tokens.size() == numErasedOttTokens) { // in case we only provide the ottava
+		intStrPair p;
+		p.first = 0;
+		p.second = "";
+		return p;
+	}
 	numNotesVertical -= (chordNotesCounter + numErasedOttTokens);
 
 	// check for tuplets
 	int tupMapNdx = 0;
-	map<int, std::pair<int, int>> tupRatios;
+	map<int, intPair> tupRatios;
 	for (i = 0; i < tokens.size(); i++) {
 		if (tokens[i].compare("\\tuplet") == 0 || tokens[i].compare("\\tup") == 0) {
 			// tests whether the tuplet format is correct have been made above
 			// so we can safely query tokens[i+1] etc
 			size_t divisionNdx = tokens[i+1].find("/");
 			size_t remainingStr = tokens[i+1].size() - divisionNdx - 1;
-			tupRatios[tupMapNdx++] = std::make_pair(stoi(tokens[i+1].substr(0, divisionNdx)), stoi(tokens[i+1].substr(divisionNdx+1, remainingStr)));
+			intPair p;
+			p.first = stoi(tokens[i+1].substr(0, divisionNdx));
+			p.second = stoi(tokens[i+1].substr(divisionNdx+1, remainingStr));
+			tupRatios[tupMapNdx++] = p;
 		}
 	}
 
@@ -297,7 +355,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	int tupStartHasNoBracket = 0, tupStopHasNoBracket = 0;
 	int numErasedTupTokens = 0;
 	tupMapNdx = 0;
-	map<int, std::pair<unsigned, unsigned>> tupStartStop;
+	map<int, uintPair> tupStartStop;
 	for (i = 0; i < tokens.size(); i++) {
 		if (tokens[i].compare("\\tuplet") == 0 || tokens[i].compare("\\tup") == 0) {
 			if (tokens[i+2].compare("{") == 0) {
@@ -331,7 +389,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			// check if the opening and closing curly bracket is isolated from the tuplet body
 			if (tupStartHasNoBracket) tokens.erase(tokens.begin() + tupStart);
 			if (tupStopHasNoBracket) tokens.erase(tokens.begin() + tupStop + 1);
-			tupStartStop[tupMapNdx++] = std::make_pair(tupStart, tupStop);
+			uintPair p;
+			p.first = tupStart;
+			p.second = tupStop;
+			tupStartStop[tupMapNdx++] = p;
 			numErasedTupTokens += (2 + tupStartHasNoBracket + tupStopHasNoBracket);
 			tupStartHasNoBracket = tupStopHasNoBracket = 0;
 			i = tupStop;
@@ -404,7 +465,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	int erasedTokens = 0;
 	// create an unpopullated vector of vector of pairs of the notes as MIDI and natural scale
 	// after all vectors with known size and all single variables have been created
-	vector<vector<std::pair<int, int>>> notePairs;
+	vector<vector<intPair>> notePairs;
 	// then iterate over all the tokens and parse them to store the notes
 	for (i = 0; i < tokens.size(); i++) {
 		if (erasedTokens > 0) {
@@ -418,7 +479,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			// so we can now safely query tokens[i+1] and extract the digit that follows
 			ottava = stoi(tokens[i+1]);
 			if (abs(ottava) > 2) {
-				return std::make_pair(3, "up to two octaves up/down can be inserted with \\ottava");
+				intStrPair p;
+				p.first = 3;
+				p.second = "up to two octaves up/down can be inserted with \\ottava";
+				return p;
 			}
 			// erase the \ottava val tokens from the tokens vector
 			tokens.erase(tokens.begin() + i);
@@ -508,8 +572,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			storeNote:
 				if (!chordStarted || (chordStarted && firstChordNote)) {
 					// create a new vector for each single note or a group of notes of a chord
-					std::pair p = std::make_pair(midiNote, naturalScaleNote);
-					std::vector<std::pair<int, int>> aVector(1, p);
+					intPair p;
+					p.first = midiNote;
+					p.second = naturalScaleNote;
+					std::vector<intPair> aVector(1, p);
 					notePairs.push_back(std::move(aVector));
 					verticalNotesIndexes[i] = i;
 					chordNotesIndexes[i] = 0;
@@ -526,7 +592,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 				}
 				else if (chordStarted && !firstChordNote) {
 					// if we have a chord, push this note to the current vector
-					notePairs.back().push_back(std::make_pair(midiNote, naturalScaleNote));
+					intPair p;
+					p.first = midiNote;
+					p.second = naturalScaleNote;
+					notePairs.back().push_back(p);
 					// a -1 will be filtered out further down in the code
 					verticalNotesIndexes[index1] = -1;
 					// increment the counter of the chord notes
@@ -536,7 +605,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
                     notesCounter[index1]++;
 				}
 				else {
-					return std::make_pair(3, "something went wrong");
+					intStrPair p;
+					p.first = 3;
+					p.second = "something went wrong";
+					return p;
 				}
 				foundNotes[i] = true;
 				break;
@@ -555,14 +627,20 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 						dur = int(tokens[i][0]);
 					}
 					else {
-						return std::make_pair(3, (string)"first character must be a note or a chord opening symbol (<), not \"" + tokens[i][0] + (string)"\"");
+						intStrPair p;
+						p.first = 3;
+						p.second = (string)"first character must be a note or a chord opening symbol (<), not \"" + tokens[i][0] + (string)"\"";
+						return p;
 					}
 				}
 				else if (isdigit(tokens[i][0])) {
 					dur = int(tokens[i][0]);
 				}
 				else {
-					return std::make_pair(3, (string)"first character must be a note or a chord opening symbol (<), not \"" + tokens[i][0] +(string)"\"");
+					intStrPair p;
+					p.first = 3;
+					p.second = (string)"first character must be a note or a chord opening symbol (<), not \"" + tokens[i][0] +(string)"\"";
+					return p;
 				}
 				if (std::find(std::begin(dursArr), std::end(dursArr), dur) == std::end(dursArr)) {
 					midiNote = 59;
@@ -574,11 +652,17 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 					goto storeNote;
 				}
 				else {
-					return std::make_pair(3, to_string(dur) + ": wrong duration");
+					intStrPair p;
+					p.first = 3;
+					p.second = std::to_string(dur) + ": wrong duration";
+					return p;
 				}
 			}
 			else {
-				return std::make_pair(3, (string)"first character must be a note or a chord opening symbol (<), not \"" + tokens[i][0] + (string)"\"");
+				intStrPair p;
+				p.first = 3;
+				p.second = (string)"first character must be a note or a chord opening symbol (<), not \"" + tokens[i][0] + (string)"\"";
+				return p;
 			}
 		}
 		else {
@@ -703,19 +787,31 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 				}
 				if (j >= (tokens[i].size()-1) && !foundArticulation) {
 					if (tokens[i][j] == char(94)) {
-						return std::make_pair(3, "a carret must be followed by text in quotes");
+						intStrPair p;
+						p.first = 3;
+						p.second = "a carret must be followed by text in quotes";
+						return p;
 					}
 					else {
-						return std::make_pair(3, "an undescore must be followed by text in quotes");
+						intStrPair p;
+						p.first = 3;
+						p.second = "an undescore must be followed by text in quotes";
+						return p;
 					}
 				}
 				if (j < tokens[i].size()-1) {
 					if (tokens[i][j+1] != char(34) && !foundArticulation) { // "
 						if (tokens[i][j] == char(94)) {
-							return std::make_pair(3, "a carret must be followed by a bouble quote sign");
+							intStrPair p;
+							p.first = 3;
+							p.second = "a carret must be followed by a bouble quote sign";
+							return p;
 						}
 						else {
-							return std::make_pair(3, "an underscore must be followed by a bouble quote sign");
+							intStrPair p;
+							p.first = 3;
+							p.second = "an underscore must be followed by a bouble quote sign";
+							return p;
 						}
 					}
 				}
@@ -731,7 +827,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 						index2++;
 					}
 					if (closeQuote <= openQuote) {
-						return std::make_pair(3, "text must be between two double quote signs");
+						intStrPair p;
+						p.first = 3;
+						p.second = "text must be between two double quote signs";
+						return p;
 					}
 					texts.push_back(tokens[i].substr(openQuote, closeQuote-openQuote));
 					if (tokens[i][j] == char(94)) {
@@ -768,7 +867,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		for (j = 0; j < tokens[i].size(); j++) {
 			if (tokens[i][j] == char(45)) { // - for articulation symbols
 				if (j > (tokens[i].size()-1)) {
-					return std::make_pair(3, "a hyphen must be followed by an articulation symbol");
+					intStrPair p;
+					p.first = 3;
+					p.second = "a hyphen must be followed by an articulation symbol";
+					return p;
 				}
 				if (!foundArticulation) {
 					firstArticulIndex = j;
@@ -807,7 +909,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 						articulIndex = 7;
 						break;
 					default:
-						return std::make_pair(3, "unknown articulation symbol");
+						intStrPair p;
+						p.first = 3;
+						p.second = "unknown articulation symbol";
+						return p;
 				}
 				if (articulationIndexes[verticalNoteIndex].size() == 1 && articulationIndexes[verticalNoteIndex][0] == 0) {
 					articulationIndexes[verticalNoteIndex][0] = articulIndex;
@@ -862,11 +967,17 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 						foundAccidentals[i] = 1;
 					}
 					else {
-						return std::make_pair(3, tokens[i][accidentalIndexes[i]+1] + (string)": unknown accidental character");
+						intStrPair p;
+						p.first = 3;
+						p.second = tokens[i][accidentalIndexes[i]+1] + (string)": unknown accidental character";
+						return p;
 					}
 				}
 				else {
-					return std::make_pair(3, "\"e\" must be followed by \"s\" or \"h\"");
+					intStrPair p;
+					p.first = 3;
+					p.second = "\"e\" must be followed by \"s\" or \"h\"";
+					return p;
 				}
 			}
 			else if (tokens[i][accidentalIndexes[i]] == char(105)) { // 105 is "i"
@@ -880,11 +991,17 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 						foundAccidentals[i] = 1;
 					}
 					else {
-						return std::make_pair(3, tokens[i][accidentalIndexes[i]+1] + (string)": unknown accidental character");
+						intStrPair p;
+						p.first = 3;
+						p.second = tokens[i][accidentalIndexes[i]+1] + (string)": unknown accidental character";
+						return p;
 					}
 				}
 				else {
-					return std::make_pair(3, "\"i\" must be followed by \"s\" or \"h\"");
+					intStrPair p;
+					p.first = 3;
+					p.second = "\"i\" must be followed by \"s\" or \"h\"";
+					return p;
 				}
 			}
 			// we ignore "s" and "h" as we have checked them above
@@ -1006,7 +1123,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 					dynAtFirstNote = true;
 				}
 				if (verticalNoteIndex > 0 && !tokenInsideChord && !dynAtFirstNote) {
-					return std::make_pair(3, "first note doesn't have a duration");
+					intStrPair p;
+					p.first = 3;
+					p.second = "first note doesn't have a duration";
+					return p;
 				}
 			}
 			
@@ -1016,7 +1136,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 				bool foundDynamicLocal = false;
 				bool foundGlissandoLocal = false;
 				if (index2 > (tokens[i].size()-1)) {
-					return std::make_pair(3, "a backslash must be followed by a command");
+					intStrPair p;
+					p.first = 3;
+					p.second = "a backslash must be followed by a command";
+					return p;
 				}
 				// loop till you find all dynamics or other commands
 				while (index2 < tokens[i].size()) {
@@ -1095,7 +1218,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 							dynamicsRampIndexes[dynamicsRampCounter-1].second = verticalNoteIndex;
 						}
 						else {
-							return std::make_pair(3, "no crescendo or diminuendo initiated");
+							intStrPair p;
+							p.first = 3;
+							p.second = "no crescendo or diminuendo initiated";
+							return p;
 						}
 					}
 					else if (tokens[i][index2+1] == char(103)) { // g for gliss
@@ -1139,7 +1265,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 						// if we haven't found a dynamic and the ramp vectors are empty
 						// it means that we have received some unknown character
 						else if (dynamicsRampCounter == 0 && !foundGlissandoLocal) {
-							return std::make_pair(3, tokens[i][index2+1] + (string)": unknown character");
+							intStrPair p;
+							p.first = 3;
+							p.second = tokens[i][index2+1] + (string)": unknown character";
+							return p;
 						}
 						break;
 					}
@@ -1174,13 +1303,22 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			// check for _ or ^ and make sure that the previous character is not -
 			else if ((int(tokens[i][j]) == 94 || int(tokens[i][j]) == 95) && int(tokens[i][j-1]) != 45) {
 				if (textIndexesLocal[verticalNoteIndex] == 0) {
-					return std::make_pair(3, (string)"stray " + tokens[i][j]);
+					intStrPair p;
+					p.first = 3;
+					p.second = (string)"stray " + tokens[i][j];
+					return p;
 				}
 				if (tokens[i].size() < j+3) {
-					return std::make_pair(3, "incorrect text notation");
+					intStrPair p;
+					p.first = 3;
+					p.second = "incorrect text notation";
+					return p;
 				}
 				if (int(tokens[i][j+1]) != 34) {
-					return std::make_pair(3, "a text symbol must be followed by quote signs");
+					intStrPair p;
+					p.first = 3;
+					p.second = "a text symbol must be followed by quote signs";
+					return p;
 				}
 				else {
 					quotesCounter++;
@@ -1192,7 +1330,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		// store durations at the end of each token only if tempDur is greater than 0
 		if (tempDur > 0) {
 			if (std::find(std::begin(dursArr), std::end(dursArr), tempDur) == std::end(dursArr)) {
-				return std::make_pair(3, to_string(tempDur) + " is not a valid duration");
+				intStrPair p;
+				p.first = 3;
+				p.second = std::to_string(tempDur) + " is not a valid duration";
+				return p;
 			}
 			dursData[verticalNoteIndex] = tempDur;
 			durIndexes[verticalNoteIndex] = verticalNoteIndex;
@@ -1245,7 +1386,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 
 	// check if there are any unmatched quote signs
 	if (quotesCounter > 0) {
-		return std::make_pair(3, "unmatched quote sign");
+		intStrPair p;
+		p.first = 3;
+		p.second = "unmatched quote sign";
+		return p;
 	}
 
 	// once all elements have been parsed we can determine whether we're fine to go on
@@ -1255,12 +1399,18 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		//	continue;
 		//}
 		if (!foundNotes[i] && !foundDynamics[i] && !foundAccidentals[i] && !foundOctaves[i]) {
-			return std::make_pair(3, tokens[i][j] + (string)": unknown character");
+			intStrPair p;
+			p.first = 3;
+			p.second = tokens[i][j] + (string)": unknown character";
+			return p;
 		}
 	}
 
 	if (numDurs == 0) {
-		return std::make_pair(3, "no durations added");
+		intStrPair p;
+		p.first = 3;
+		p.second = "no durations added";
+		return p;
 	}
 
 	// fill in possible empty slots of durations
@@ -1386,10 +1536,16 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// if all we have is "r1", then it's a tacet, otherwise, we need to check the durations sum
 	if (!(tokens.size() == 1 && tokens[0].compare("r1") == 0)) {
 		if (dursAccum < sharedData.numBeats[barIndex]) {
-			return std::make_pair(3, "durations sum is less than bar duration");
+			intStrPair p;
+			p.first = 3;
+			p.second = "durations sum is less than bar duration";
+			return p;
 		}
 		if (dursAccum > sharedData.numBeats[barIndex]) {
-			return std::make_pair(3, "durations sum is greater than bar duration");
+			intStrPair p;
+			p.first = 3;
+			p.second = "durations sum is greater than bar duration";
+			return p;
 		}
 	}
 	// now we can create a vector of pairs with the indexes of the slurs
@@ -1398,7 +1554,9 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		if (slurBeginningsIndexes[i] > -1) numSlurStarts++;
 		if (slurEndingsIndexes[i] > -1) numSlurStops++;
 	}
-	vector<std::pair<int, int>> slurIndexes (max(max(numSlurStarts, numSlurStops), 1), std::make_pair(-1, -1));
+	intPair p;
+	p.first = p.second = -1;
+	vector<intPair> slurIndexes (max(max(numSlurStarts, numSlurStops), 1), p);
 	int slurNdx = 0;
 	for (i = 0; i < numNotesVertical; i++) {
 		if (slurBeginningsIndexes[i] > -1) slurIndexes[slurNdx].first = slurBeginningsIndexes[i];
@@ -1407,7 +1565,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// once the melodic line has been parsed, we can insert the new data to the maps of the Instrument object
 	map<string, int>::iterator it = sharedData.instrumentIndexes.find(lastInstrument);
 	if (it == sharedData.instrumentIndexes.end()) {
-		return std::make_pair(3, "instrument does not exist");
+		intStrPair p;
+		p.first = 3;
+		p.second = "instrument does not exist";
+		return p;
 	}
 	int thisInstIndex = it->second;
 	sharedData.instruments[thisInstIndex].notes[barIndex] = std::move(notesData);
@@ -1457,7 +1618,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		}
 	}
 	sharedData.instruments[thisInstIndex].passed = true;
-	return std::make_pair(0, "");
+	intStrPair p1;
+	p1.first = 0;
+	p1.second = "";
+	return p1;
 }
 
 //--------------------------------------------------------------
