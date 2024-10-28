@@ -10,7 +10,7 @@ void ofApp::setup(){
 	sharedData.beatAtDifferentThanDivisor[0] = false;
 	sharedData.numerator[0] = 4;
 	sharedData.denominator[0] = 4;
-	sharedData.numBeats[0] = 4;
+	sharedData.numBeats[0] = 256;
 	
 	sharedData.loopIndex = 0;
 	sharedData.tempBarLoopIndex = 0;
@@ -27,9 +27,10 @@ void ofApp::setup(){
 	}
 	noteChars[7] = char(114); // "r" for rest
 	initializeInstrument("\\inst");
+	sharedData.numBeats[-1] = 256;
 	cout << "initialized instrument, will parse line\n";
 	intStrPair p = parseMelodicLine("<c' ees'>8-.-> <c' ees'>8 <g' a' des''>4 <c' ees'>8-.-> <c' ees'>8-.-> <g' a' des''>4");
-	cout << p.first << " " << p.second << endl;
+	cout << "error code: " << p.first << ", error message: " << p.second << endl;
 }
 
 //--------------------------------------------------------------
