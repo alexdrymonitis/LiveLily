@@ -16,8 +16,7 @@ void ofApp::setup()
 	notesID = 0;
 	fullscreen = false;
 	finishState = false;
-	isWindowResized = false;
-	windowResizeTimeStamp = 0;
+	changeBeatColorOnUpdate = false;
 	
 	ofSetFrameRate(framerate);
 	lineWidth = 2;
@@ -80,13 +79,16 @@ void ofApp::setup()
 	scoreUpdated = false;
 	showUpdatePulseColor = false;
 	scoreChangeOnLastBar = false;
+	scoreOrientation = 1;
 
 	showCountdown = false;
 	countdown = 0;
+	showTempo = true;
 
 	oscSenderSetup = false;
 
 	thisBarIndex = 0;
+	lastBarIndex = 0;
 	barDataError = false;
 	//instNdx = 0;
 	
@@ -166,31 +168,9 @@ void ofApp::update()
 				}
 			}
 		}
-		else if (m.getAddress() == "/bardata") {
-			if (m.getArgType(0) != OFXOSC_TYPE_INT32 || m.getArgType(1) != OFXOSC_TYPE_INT32) {
-				barDataError = true;
-			}
-			else {
-				thisBarIndex = m.getArgAsInt32(0);
-				numBeats[thisBarIndex] = m.getArgAsInt32(1);
-				if (instrumentCounterPerBar.find(thisBarIndex) == instrumentCounterPerBar.end()) {
-					instrumentCounterPerBar[thisBarIndex] = 0;
-				}
-			}
-		}
-		else if (m.getAddress() == "/meter") {
-			if (m.getArgType(0) != OFXOSC_TYPE_INT32 || m.getArgType(1) != OFXOSC_TYPE_INT32) {
-				barDataError = true;
-			}
-			else {
-				if (numerator.find(thisBarIndex) == numerator.end()) {
-					numerator[thisBarIndex] = m.getArgAsInt32(0);
-					denominator[thisBarIndex] = m.getArgAsInt32(1);
-				}
-			}
-		}
 		else if (m.getAddress() == "/instndx") {
 			if (m.getArgType(0) != OFXOSC_TYPE_INT32) {
+				cout << "bar error on instndx\n";
 				barDataError = true;
 			}
 			else {
@@ -198,10 +178,47 @@ void ofApp::update()
 				instruments[instNdx].setCopied(thisBarIndex, false);
 			}
 		}
+		else if (m.getAddress() == "/bardata") {
+			if (false);
+			//if (m.getArgType(0) != OFXOSC_TYPE_INT32 || m.getArgType(1) != OFXOSC_TYPE_INT32 || \
+			//		m.getArgType(2) != OFXOSC_TYPE_INT32 || \
+			//		(m.getArgType(3) != OFXOSC_TYPE_TRUE || m.getArgType(3) != OFXOSC_TYPE_FALSE) || \
+			//		m.getArgType(4) != OFXOSC_TYPE_INT32) {
+			//	barDataError = true;
+			//}
+			else {
+				thisBarIndex = m.getArgAsInt32(0);
+				BPMTempi[thisBarIndex] = m.getArgAsInt32(1);
+				tempoBaseForScore[thisBarIndex] = m.getArgAsInt32(2);
+				BPMDisplayHasDot[thisBarIndex] = m.getArgAsBool(3);
+				numBeats[thisBarIndex] = m.getArgAsInt32(4);
+				if (instrumentCounterPerBar.find(thisBarIndex) == instrumentCounterPerBar.end()) {
+					instrumentCounterPerBar[thisBarIndex] = 0;
+				}
+			}
+		}
+		else if (m.getAddress() == "/meter") {
+			if (m.getArgType(0) != OFXOSC_TYPE_INT32 || m.getArgType(1) != OFXOSC_TYPE_INT32) {
+				cout << "bar error on meter\n";
+				barDataError = true;
+			}
+			else {
+				//if (numerator.find(thisBarIndex) == numerator.end()) {
+				//	cout << "received numer: " << m.getArgAsInt32(0) << ", denom: " << m.getArgAsInt32(1) << ", for bar " << thisBarIndex << endl;
+				//	numerator[thisBarIndex] = m.getArgAsInt32(0);
+				//	denominator[thisBarIndex] = m.getArgAsInt32(1);
+				//}
+				numerator[thisBarIndex] = m.getArgAsInt32(0);
+				denominator[thisBarIndex] = m.getArgAsInt32(1);
+				instruments[instNdx].setMeter(thisBarIndex, numerator[thisBarIndex],
+						denominator[thisBarIndex], numBeats[thisBarIndex]);
+			}
+		}
 		else if (m.getAddress() == "/notes") {
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on notes\n";
 					barDataError = true;
 					break;
 				}
@@ -209,6 +226,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on notes size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setNotes(thisBarIndex, v);
@@ -217,6 +235,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on acc\n";
 					barDataError = true;
 					break;
 				}
@@ -224,6 +243,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on acc size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setAccidentals(thisBarIndex, v);
@@ -232,6 +252,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on natur\n";
 					barDataError = true;
 					break;
 				}
@@ -239,6 +260,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on natur size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setNaturalSignsNotWritten(thisBarIndex, v);
@@ -247,6 +269,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on oct\n";
 					barDataError = true;
 					break;
 				}
@@ -254,6 +277,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on oct size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setOctaves(thisBarIndex, v);
@@ -262,6 +286,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on ott\n";
 					barDataError = true;
 					break;
 				}
@@ -269,6 +294,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on ott size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setOttavas(thisBarIndex, v);
@@ -277,6 +303,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on durs\n";
 					barDataError = true;
 					break;
 				}
@@ -284,6 +311,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on durs size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setDurs(thisBarIndex, v);
@@ -292,6 +320,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on dots\n";
 					barDataError = true;
 					break;
 				}
@@ -299,6 +328,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on dots size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setDotIndexes(thisBarIndex, v);
@@ -307,6 +337,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on gliss\n";
 					barDataError = true;
 					break;
 				}
@@ -314,6 +345,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on gliss size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setGlissandi(thisBarIndex, v);
@@ -322,6 +354,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on artic\n";
 					barDataError = true;
 					break;
 				}
@@ -329,6 +362,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on artic size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setArticulations(thisBarIndex, v);
@@ -337,6 +371,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on dyn\n";
 					barDataError = true;
 					break;
 				}
@@ -344,6 +379,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on dyn size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setDynamics(thisBarIndex, v);
@@ -352,6 +388,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on dynidx\n";
 					barDataError = true;
 					break;
 				}
@@ -359,6 +396,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on dynidx size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setDynamicsIndexes(thisBarIndex, v);
@@ -367,6 +405,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on dynramp start\n";
 					barDataError = true;
 					break;
 				}
@@ -374,6 +413,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on dynramp start size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setDynamicsRampStart(thisBarIndex, v);
@@ -382,6 +422,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on dynramp end\n";
 					barDataError = true;
 					break;
 				}
@@ -389,6 +430,7 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on dynramp end size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setDynamicsRampEnd(thisBarIndex, v);
@@ -397,6 +439,7 @@ void ofApp::update()
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on dynramp dir\n";
 					barDataError = true;
 					break;
 				}
@@ -404,14 +447,16 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on dynramp dir size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setDynamicsRampDir(thisBarIndex, v);
 		}
-		else if (m.getAddress() == "/slurbegin") {
+		else if (m.getAddress() == "/slurndxs") {
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on slurndxs\n";
 					barDataError = true;
 					break;
 				}
@@ -419,14 +464,25 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on slurndxs size\n";
 				barDataError = true;
 			}
-			if (!barDataError) instruments[instNdx].setSlurBeginnings(thisBarIndex, v);
+			if (!barDataError) instruments[instNdx].setSlurIndexes(thisBarIndex, v);
 		}
-		else if (m.getAddress() == "/slurend") {
+		else if (m.getAddress() == "/barslurred") {
+			if (m.getArgType(0) != OFXOSC_TYPE_TRUE && m.getArgType(0) != OFXOSC_TYPE_FALSE) {
+				cout << "bar error on barslurred\n";
+				barDataError = true;
+			}
+			else {
+				instruments[instNdx].setWholeBarSlurred(thisBarIndex, m.getArgAsBool(0));
+			}
+		}
+		else if (m.getAddress() == "/ties") {
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on ties\n";
 					barDataError = true;
 					break;
 				}
@@ -434,33 +490,75 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on ties size\n";
 				barDataError = true;
 			}
-			if (!barDataError) instruments[instNdx].setSlurEndings(thisBarIndex, v);
+			if (!barDataError) instruments[instNdx].setTies(thisBarIndex, v);
+		}
+		else if (m.getAddress() == "/tupratio") {
+			vector<int> v;
+			for (size_t i = 0; i < m.getNumArgs(); i++) {
+				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on tupratio\n";
+					barDataError = true;
+					break;
+				}
+				if (i > 0) v.push_back(m.getArgAsInt32(i));
+				else numBarData = m.getArgAsInt32(i);
+			}
+			if ((int)v.size() != numBarData) {
+				cout << "bar error on tupratio size\n";
+				barDataError = true;
+			}
+			if (!barDataError) instruments[instNdx].setTupRatios(thisBarIndex, v);
+		}
+		else if (m.getAddress() == "/tupstartstop") {
+			vector<int> v;
+			for (size_t i = 0; i < m.getNumArgs(); i++) {
+				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on tupstartstop\n";
+					barDataError = true;
+					break;
+				}
+				if (i > 0) v.push_back(m.getArgAsInt32(i));
+				else numBarData = m.getArgAsInt32(i);
+			}
+			if ((int)v.size() != numBarData) {
+				cout << "bar error on tupstartstop size\n";
+				barDataError = true;
+			}
+			if (!barDataError) instruments[instNdx].setTupStartStop(thisBarIndex, v);
 		}
 		else if (m.getAddress() == "/texts") {
 			vector<string> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_STRING && i > 0) {
+					cout << "bar error on texts\n";
 					barDataError = true;
 					break;
 				}
 				if (i > 0) v.push_back(m.getArgAsString(i));
 				else if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on texts two\n";
 					barDataError = true;
 					break;
 				}
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on texts size\n";
 				barDataError = true;
 			}
 			if (!barDataError) instruments[instNdx].setTexts(thisBarIndex, v);
+		}
+		else if (m.getAddress() == "/bpmmult") {
+			BPMMultiplier[thisBarIndex] = m.getArgAsInt32(0);
 		}
 		else if (m.getAddress() == "/textidx") {
 			vector<int> v;
 			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				if (m.getArgType(i) != OFXOSC_TYPE_INT32) {
+					cout << "bar error on textidx\n";
 					barDataError = true;
 					break;
 				}
@@ -468,12 +566,15 @@ void ofApp::update()
 				else numBarData = m.getArgAsInt32(i);
 			}
 			if ((int)v.size() != numBarData) {
+				cout << "bar error on textidx size\n";
 				barDataError = true;
 			}
 			if (!barDataError) {
 				// first check if all vectors have the same size
-				bool allSizesAreEqual = instruments[instNdx].checkVecSizesForEquality(thisBarIndex);
+				//bool allSizesAreEqual = instruments[instNdx].checkVecSizesForEquality(thisBarIndex);
+				bool allSizesAreEqual = true;
 				if (!allSizesAreEqual) {
+					cout << "not all data are equal\n";
 					// add this bar index to the vector of this instrument only if it doesn't already exist
 					if (find(barDataErrorsMap[instNdx].begin(), barDataErrorsMap[instNdx].end(), thisBarIndex) == barDataErrorsMap[instNdx].end()) {
 						barDataErrorsMap[instNdx].push_back(thisBarIndex);
@@ -510,6 +611,9 @@ void ofApp::update()
 			}
 			loopData[oscLoopIndex] = v;
 		}
+		//else if (m.getAddress() == "/setpos") {
+		//	instruments[m.getArgAsInt32(0)].setNotePositions(m.getArgAsInt32(1));
+		//}
 		else if (m.getAddress() == "/initinst") {
 			int ndx = m.getArgAsInt32(0);
 			string name = m.getArgAsString(1);
@@ -518,13 +622,17 @@ void ofApp::update()
 			initializeInstrument(ndx, "\\" + name, hostIP, hostPort);
 		}
 		else if (m.getAddress() == "/clef") {
-			instruments[getMappedIndex(m.getArgAsInt32(0))].setClef(m.getArgAsInt32(1));
+			instruments[getMappedIndex(m.getArgAsInt32(0))].setClef(m.getArgAsInt32(1), m.getArgAsInt32(2));
 		}
 		else if (m.getAddress() == "/rhythm") {
 			instruments[getMappedIndex(m.getArgAsInt32(0))].setRhythm(m.getArgAsBool(1));
 		}
 		else if (m.getAddress() == "/numbars") {
 			numBarsToDisplay = m.getArgAsInt32(0);
+			for (auto it = instruments.begin(); it != instruments.end(); ++it) {
+				it->second.setNumBarsToDisplay(numBarsToDisplay);
+			}
+			setScoreCoords();
 		}
 		else if (m.getAddress() == "/scorechange") {
 			scoreChangeOnLastBar = m.getArgAsBool(0);
@@ -544,6 +652,9 @@ void ofApp::update()
 			if (fullscreenBool != fullscreen) {
 				ofToggleFullscreen();
 				fullscreen = fullscreenBool;
+				screenWidth = ofGetWindowWidth();
+				screenHeight = ofGetWindowHeight();
+				setScoreSizes();
 			}
 		}
 		else if (m.getAddress() == "/beatviztype") {
@@ -558,6 +669,26 @@ void ofApp::update()
 			}
 			else {
 				ofHideCursor();
+			}
+		}
+		else if (m.getAddress() == "/beatcolor") {
+			changeBeatColorOnUpdate = m.getArgAsBool(0);
+		}
+		else if (m.getAddress() == "/size") {
+			staffLinesDist = m.getArgAsFloat(0);
+			scoreFontSize = (int)(35.0 * staffLinesDist / 10.0);
+	    	instFontSize = scoreFontSize / 3.5;
+	    	instFont.load("Monaco.ttf", instFontSize);
+	    	setScoreSizes();
+		}
+		else if (m.getAddress() == "/group") {
+			int instNdx = m.getArgAsInt32(0);
+			int groupID = m.getArgAsInt32(1);
+			instruments[instNdx].setGroup(groupID);
+		}
+		else if (m.getAddress() == "/accoffset") {
+			for (auto it = instruments.begin(); it != instruments.end(); ++it) {
+				it->second.setAccidentalsOffsetCoef(m.getArgAsFloat(0));
 			}
 		}
 		else if (m.getAddress() == "/exit") {
@@ -583,13 +714,6 @@ void ofApp::update()
 	}
 	if (counter > 0) oscSender.sendMessage(m, false);
 	m.clear();
-
-	if (isWindowResized) {
-		if ((ofGetElapsedTimeMillis() - windowResizeTimeStamp) > WINDOW_RESIZE_GAP) {
-			isWindowResized = false;
-			resizeWindow();
-		}
-	}
 }
 
 //--------------------------------------------------------------
@@ -602,7 +726,7 @@ void ofApp::draw()
 	int numBars = min(numBarsToDisplay, (int)loopData[loopIndex].size());
 	numBars = max(numBars, 1);
 	bool drawLoopStartEnd = false;
-	int bar;
+	int bar, prevBar = 0;
 	int ndx = ((thisLoopIndex - (thisLoopIndex % numBars)) / numBars) * numBars;
 	//--------------- end of horizontal score view variables --------------
 	//------------------ variables for the beat visualization -------------
@@ -616,8 +740,14 @@ void ofApp::draw()
 	ofSetColor(0);
 	if (instruments.size() > 0) {
 		if (beatAnimate) {
-			beatPulseMinPosY = instruments.begin()->second.getMinYPos(thisLoopIndex) - noteHeight;
-			beatPulseMaxPosY = instruments.rbegin()->second.getMaxYPos(thisLoopIndex) + noteHeight;
+			beatPulseMinPosY = yStartPnt - noteHeight;
+			beatPulseMaxPosY = yStartPnt;
+			for (auto it = instruments.begin(); it != instruments.end(); ++it) {
+				beatPulseMaxPosY += it->second.getMaxYPos(thisLoopIndex);
+				beatPulseMaxPosY += allStaffDiffs;
+			}
+			beatPulseMaxPosY -= allStaffDiffs;
+			beatPulseMaxPosY += noteHeight;
 			beatPulseSizeY = beatPulseMaxPosY - beatPulseMinPosY;
 			if (beatViz) {
 				switch (beatVizType) {
@@ -653,35 +783,64 @@ void ofApp::draw()
 				}
 			}
 		}
-		// write the names of the instruments without the backslash and get the longest name
-		for (map<string, int>::iterator it = instrumentIndexes.begin(); it != instrumentIndexes.end(); ++it) {
-			float xPos = scoreXStartPnt + scoreXOffset - instNameWidths[it->second] - (blankSpace/2);
-			float yPos = instruments[it->second].getStaffYAnchor()+(staffLinesDist*2.5) + scoreYOffset;
-			instFont.drawString(it->first.substr(1), xPos, yPos);
-		}
-		// then draw one line at each side of the staffs to connect them
-		// we draw the first one here, and the rest inside the for loop below
-		float connectingLineX = scoreXStartPnt + scoreXOffset;
-		float connectingLineY1 = instruments.begin()->second.getStaffYAnchor() + scoreYOffset;
-		float connectingLineY2 = instruments.rbegin()->second.getStaffYAnchor() + scoreYOffset;
-		if (numInstruments > 1) {
-			ofDrawLine(connectingLineX, connectingLineY1, connectingLineX, connectingLineY2);
-		}
 		// then we display the score
 		float staffOffsetX = scoreXStartPnt + scoreXOffset;
 		float notesOffsetX = staffOffsetX;
-		notesOffsetX += instruments.begin()->second.getClefXOffset();
-		notesOffsetX += instruments.begin()->second.getMeterXOffset();
-		notesOffsetX += (staffLinesDist * 2);
-		float notesXCoef = (instruments.begin()->second.getStaffXLength() + staffOffsetX - notesOffsetX) / notesXLength;
+		//notesOffsetX += instruments.begin()->second.getClefXOffset();
+		//notesOffsetX += instruments.begin()->second.getMeterXOffset();
+		notesOffsetX += (staffLinesDist * NOTESXOFFSETCOEF);
+		float prevNotesOffsetX = notesOffsetX;
+		//float notesXCoef = (instruments.begin()->second.getStaffXLength() + staffOffsetX - notesOffsetX) / notesLength;
+		std::pair prevMeter = std::make_pair(4, 4);
+		std::pair prevTempo = std::make_pair(0, 0);
+		vector<int> prevClefs (instruments.size(), 0); 
+		bool prevDrawClef = false, prevDrawMeter = false;
+		float connectingLineX = scoreXStartPnt + scoreXOffset;
 		for (int i = 0; i < numBars; i++) {
 			bool drawClef = false, drawMeter = false, animate = false;
+			bool drawTempo = false;
 			bool showBar = true;
-			if (i == 0) drawClef = drawMeter = true;
 			int barNdx = (ndx + i) % (int)loopData[loopIndex].size();
 			if (loopData.find(loopIndex) == loopData.end()) return;
 			if ((int)loopData[loopIndex].size() <= barNdx) return;
 			bar = loopData[loopIndex][barNdx];
+			if (i == 0) {
+				drawClef = true;
+				for (auto it = instruments.begin(); it != instruments.end(); ++it) {
+					prevClefs[it->first] = it->second.getClef(bar);
+				}
+			}
+			else {
+				drawClef = false;
+				for (auto it = instruments.begin(); it != instruments.end(); ++it) {
+					if (prevClefs[it->first] != it->second.getClef(bar)) {
+						drawClef = true;
+						break;
+					}
+				}
+				for (auto it = instruments.begin(); it != instruments.end(); ++it) {
+					prevClefs[it->first] = it->second.getClef(bar);
+				}
+			}
+			// get the meter of this bar to determine if it has changed and thus it has be to written
+			std::pair<int, int> thisMeter = instruments.begin()->second.getMeter(bar);
+			std::pair<int, int> thisTempo = std::make_pair(tempoBaseForScore[bar], BPMTempi[bar]);
+			if (i > 0 && scoreOrientation == 1) {
+				if (prevMeter.first != thisMeter.first || prevMeter.second != thisMeter.second) {
+					drawMeter = true;
+				}
+				else {
+					drawMeter = false;
+				}
+			}
+			else if (i == 0) {
+				drawMeter = true;
+			}
+			if (showTempo) {
+				if (prevTempo.first != thisTempo.first || prevTempo.second != thisTempo.second) {
+					drawTempo = true;
+				}
+			}
 			if (barNdx == (int)thisLoopIndex) animate = true;
 			// the index below is used in insertNaturalSigns() in Notes() to deterimine if we must
 			// insert a natural sign at the beginning of a bar in case the same note appears
@@ -713,35 +872,32 @@ void ofApp::draw()
 			else if (((int)thisLoopIndex % numBars) == numBars - 1 && i < numBars - 1) {
 				bar = loopData[loopIndex][(barNdx+numBars)%(int)loopData[loopIndex].size()];
 			}
-			// draw the rest of the lines that connect the various staffs together horizontally
-			if (numInstruments > 1) {
-				connectingLineX += instruments.begin()->second.getStaffXLength();
-				if (i > 0) {
-					if (!drawClef) connectingLineX -= instruments.begin()->second.getClefXOffset();
-					if (!drawMeter) connectingLineX -= instruments.begin()->second.getMeterXOffset();
-				}
-				ofDrawLine(connectingLineX, connectingLineY1, connectingLineX, connectingLineY2);
-			}
 			// like with the beat visualization, accumulate X offsets for all bars but the first
 			if (i > 0) {
 				// only the notes need to go back some pixels, in case the clef or meter is not drawn
 				// so we use a separate value for the X coordinate
 				staffOffsetX += instruments.begin()->second.getStaffXLength();
 				notesOffsetX += instruments.begin()->second.getStaffXLength();
-				if (i > 1) {
-					if (!drawClef) staffOffsetX -= instruments.begin()->second.getClefXOffset();
-					if (!drawMeter) staffOffsetX -= instruments.begin()->second.getMeterXOffset();
-				}
-				if (!drawClef) notesOffsetX -= instruments.begin()->second.getClefXOffset();
-				if (!drawMeter) notesOffsetX -= instruments.begin()->second.getMeterXOffset();
 			}
+			if (prevDrawClef != drawClef) {
+				if (drawClef) notesOffsetX += instruments.begin()->second.getClefXOffset();
+				else notesOffsetX -= instruments.begin()->second.getClefXOffset();
+			}
+			if (prevDrawMeter != drawMeter) {
+				if (drawMeter) notesOffsetX += instruments.begin()->second.getMeterXOffset();
+				else notesOffsetX -= instruments.begin()->second.getMeterXOffset();
+			}
+			float notesXCoef = notesLength * instruments.begin()->second.getXCoef(); // instruments.begin()->second.getStaffXLength();
+			if (drawClef) notesXCoef -= instruments.begin()->second.getClefXOffset();
+			if (drawMeter) notesXCoef -= instruments.begin()->second.getMeterXOffset();
+			notesXCoef /= notesLength; // (notesLength * instruments.begin()->second.getXCoef());
 			// if we're displaying the beat pulse on each beat instead of a rectangle that encloses the whole score
 			// we need to display it here, in case we display the score horizontally, where we need to give
 			// an offset to the pulse so it is displayed on top of the currently playing bar
 			if (beatAnimate && beatViz && beatVizType == 2) {
 				// draw only for the currenlty playing bar, whichever that is in the horizontal line
 				if (barNdx == (int)thisLoopIndex) {
-					beatPulseStartX = notesOffsetX + (((notesXLength / numerator[getPlayingBarIndex()]) * beatCounter) * notesXCoef);
+					beatPulseStartX = notesOffsetX + ((notesLength / numerator[getPlayingBarIndex()]) * beatCounter) * notesXCoef;
 					if (beatCounter == -1) beatPulseStartX = notesOffsetX - instruments.begin()->second.getClefXOffset();
 					noteSize = instruments.begin()->second.getNoteWidth();
 					beatPulsePosX =  beatPulseStartX - noteSize;
@@ -752,7 +908,8 @@ void ofApp::draw()
 						if ((int)loopData[loopIndex].size() > numBars) {
 							if (barNdx > numBars) {
 								if (finishState) color = ofColor::red;
-								else color = ofColor::cyan;
+								else if (changeBeatColorOnUpdate) color = ofColor::cyan;
+								else color = ofColor::paleGreen;
 								for (auto it = instruments.begin(); it != instruments.end(); ++it) {
 									it->second.setScoreEnd(true);
 								}
@@ -766,7 +923,8 @@ void ofApp::draw()
 						}
 						else {
 							if (finishState) color = ofColor::red;
-							else color = ofColor::cyan;
+							else if (changeBeatColorOnUpdate) color = ofColor::cyan;
+							else color = ofColor::paleGreen;
 							for (auto it = instruments.begin(); it != instruments.end(); ++it) {
 								it->second.setScoreEnd(true);
 							}
@@ -784,20 +942,68 @@ void ofApp::draw()
 				}
 			}
 			//if (showCountdown) {
-			//	float countdownXPos = notesOffsetX + (((notesXLength / numerator[getPlayingBarIndex()]) * beatCounter) * notesXCoef);
+			//	float countdownXPos = notesOffsetX + (((notesLength / numerator[getPlayingBarIndex()]) * beatCounter) * notesXCoef);
 			//	float countdownYPos = instruments.begin()->second.getMinYPos(thisLoopIndex) - noteHeight - countdownFont.stringHeight(to_string(countdown));
 			//	countdownFont.drawString(to_string(countdown), countdownXPos, countdownYPos);
 			//}
-			if (showBar) {
-				for (auto it = instruments.begin(); it != instruments.end(); ++it) {
-					it->second.drawStaff(bar, staffOffsetX, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd);
-					it->second.drawNotes(bar, i, &loopData[insertNaturalsNdx], notesOffsetX, scoreYOffset, animate, notesXCoef);
+			unsigned instCounter = 0;
+			map<int, Instrument>::iterator prevInst;
+			float yStartPntLocal = yStartPnt;
+			for (auto it = instruments.begin(); it != instruments.end(); ++it) {
+				if (i == 0) {
+					// write the names of the instruments without the backslash and get the longest name
+					// only at the first iteration of the bars loop
+					float xPos = scoreXOffset + (blankSpace * 0.75) + (longestInstNameWidth - instNameWidths[it->first]);
+					float yPos = yStartPntLocal + (staffLinesDist*2.5) + scoreYOffset;
+					instFont.drawString(it->second.getName(), xPos, yPos);
 				}
+				// then draw one line at each side of the staffs to connect them
+				// we draw the first one here, and the rest inside the for loop below
+				float connectingLineY2 = yStartPntLocal - allStaffDiffs + (staffLinesDist * 2);
+				if (instCounter > 0) {
+					if (i == 0) {
+						ofDrawLine(connectingLineX, yStartPntLocal, connectingLineX, connectingLineY2);
+						if (numBars == 1) {
+							if (it->second.getGroup() == prevInst->second.getID() && it->second.getGroup() > -1) {
+								int barEndX = connectingLineX + instruments.begin()->second.getStaffXLength();
+								ofDrawLine(barEndX, yStartPntLocal, barEndX, connectingLineY2);
+							}
+						}
+					}
+					else {
+						if (instCounter == 1) connectingLineX += instruments.begin()->second.getStaffXLength();
+						// if this instrument is groupped with the previous one, draw a connecting line at the end of the bar too
+						if (it->second.getGroup() == prevInst->second.getID() && it->second.getGroup() > -1) {
+							ofDrawLine(connectingLineX, yStartPntLocal, connectingLineX, connectingLineY2);
+							if (i  == numBars - 1) {
+								int barEndX = connectingLineX + instruments.begin()->second.getStaffXLength();
+								ofDrawLine(barEndX, yStartPntLocal, barEndX, connectingLineY2);
+							}
+						}
+					}
+				}
+				bool drawTempoLocal = (showTempo && drawTempo ? true : false);
+				if (showBar) {
+					it->second.drawStaff(bar, staffOffsetX, yStartPntLocal, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempoLocal);
+					it->second.drawNotes(bar, i, &loopData[insertNaturalsNdx], notesOffsetX, yStartPntLocal, scoreYOffset, animate, notesXCoef);
+				}
+				yStartPntLocal += (allStaffDiffs + (staffLinesDist * 2));
+				instCounter++;
+				prevInst = it;
 			}
+			prevMeter.first = thisMeter.first;
+			prevMeter.second = thisMeter.second;
+			prevTempo.first = thisTempo.first;
+			prevTempo.second = thisTempo.second;
+			prevDrawClef = drawClef;
+			prevDrawMeter = drawMeter;
+			prevNotesOffsetX = notesOffsetX;
+			prevBar = bar;
 		}
 	}
 }
 
+//--------------------------------------------------------------
 int ofApp::getMappedIndex(int index)
 {
 	int foundIndex = 0;
@@ -856,6 +1062,7 @@ void ofApp::storeNewBar(int barIndex)
 	}
 	barsIndexes[barName] = barIndex;
 	tempBarLoopIndex = barIndex;
+	lastBarIndex = barIndex;
 }
 
 //--------------------------------------------------------------
@@ -879,8 +1086,7 @@ void ofApp::initializeInstrument(int index, string instName, string hostIP, int 
 	if (thisInstNameWidth > longestInstNameWidth) {
 		longestInstNameWidth = thisInstNameWidth;
 	}
-	instruments[maxIndex].setStaffSize(scoreFontSize);
-	instruments[maxIndex].setNotesFontSize(scoreFontSize);
+	instruments[maxIndex].setNotesFontSize(scoreFontSize, staffLinesDist);
 	instruments[maxIndex].setNumBarsToDisplay(numBarsToDisplay);
 	barDataErrorsMap[maxIndex] = vector<int>();
 	sendBarDataOKMap[maxIndex] = std::make_pair(false, 0);
@@ -897,10 +1103,16 @@ void ofApp::initializeInstrument(int index, string instName, string hostIP, int 
 void ofApp::createFirstBar(int instNdx)
 {
 	numerator[0] = denominator[0] = numBeats[0] = 4;
+	BPMTempi[0] = 120;
+	tempoBaseForScore[0] = 1;
+	BPMDisplayHasDot[0] = false;
+	BPMMultiplier[0] = 1;
 	instruments[instNdx].createEmptyMelody(0);
-	instruments[instNdx].setScoreNotes(0, denominator[0], numerator[0], numBeats[0]);
+	instruments[instNdx].setScoreNotes(0, denominator[0], numerator[0], numBeats[0],
+			BPMTempi[0], tempoBaseForScore[0], BPMDisplayHasDot[0], BPMMultiplier[0]);
+	instruments[instNdx].setNotePositions(0);
 	loopData[0] = {0};
-	calculateStaffPositions(0);
+	calculateStaffPositions(0, false);
 }
 
 //--------------------------------------------------------------
@@ -914,33 +1126,13 @@ void ofApp::updateTempoBeatsInsts(int barIndex)
 void ofApp::setScoreCoords()
 {
 	scoreXStartPnt = longestInstNameWidth + (blankSpace * 1.5);
-	float staffXLength = (screenWidth / 2) - blankSpace - staffLinesDist - scoreXStartPnt;
-	// place yPos at the center of the screen in the Y axis
-	float yPos1 = (screenHeight / 2) - (staffLinesDist * 2);
-	// and give an offset according to the number of staffs
-	// so they are all centered
-	if (instruments.size() > 1) {
-		// we distance each staff so that another staff could fit in between them
-		// hence staffLinesDist * 10, which yields ten times the distance between staff lines
-		yPos1 -= ((instruments.size() / 2) * (staffLinesDist * 10));
-		// if the number of staffs is even, we must subtract half the distance
-		// between each staff
-		if ((instruments.size() % 2) == 0) {
-			yPos1 += (staffLinesDist * 5);
-		}
-	}
+	float staffLength = screenWidth - blankSpace - scoreXStartPnt;
+	staffLength /= min(2, numBarsToDisplay);
 	notesXStartPnt = 0;
-	int i = 0;
+	notesLength = staffLength - (staffLinesDist * NOTESXOFFSETCOEF);
 	for (auto it = instruments.begin(); it != instruments.end(); ++it) {
-		float yAnchor1 = yPos1 + (i * (staffLinesDist * 10));
-		// to make maintainance easier, we use the same score.h and score.cpp files for both
-		// the main program and the accompaning one, so we use to identical Y anchors here
-		// since in the accompaning program, the score orientation is always horizontal
-		float yAnchor2 = yAnchor1;
-		it->second.setStaffCoords(staffXLength, yAnchor1, yAnchor2, staffLinesDist);
-		notesXLength = staffXLength - it->second.getClefXOffset() - it->second.getMeterXOffset() - (staffLinesDist * 2);
-		it->second.setNoteCoords(notesXLength, yAnchor1, yAnchor2, staffLinesDist, scoreFontSize);
-		i++;
+		it->second.setStaffCoords(staffLength, staffLinesDist);
+		it->second.setNoteCoords(notesLength, staffLinesDist, scoreFontSize);
 	}
 	// get the note width from the first instrument, as they all have the same size
 	noteWidth = instruments[0].getNoteWidth();
@@ -955,22 +1147,25 @@ void ofApp::setScoreNotes(int barIndex)
 			// copy the numerator and demoninator of the meter as this is used for drawing the pulsating rectangle
 			numerator[barIndex] = numerator[it->second.getCopyNdx(barIndex)];
 			denominator[barIndex] = denominator[it->second.getCopyNdx(barIndex)];
+			tempoBaseForScore[barIndex] = tempoBaseForScore[it->second.getCopyNdx(barIndex)];
+			BPMMultiplier[barIndex] = BPMMultiplier[it->second.getCopyNdx(barIndex)];
 			it->second.copyMelodicLine(barIndex);
 		}
 		else {
-			it->second.setScoreNotes(barIndex, denominator[barIndex], numerator[barIndex], numBeats[barIndex]);
+			it->second.setScoreNotes(barIndex, numerator[barIndex],
+					denominator[barIndex], numBeats[barIndex],
+					BPMTempi[barIndex], tempoBaseForScore[barIndex],
+					BPMDisplayHasDot[barIndex], BPMMultiplier[barIndex]);
+			it->second.setNotePositions(barIndex);
 		}
 	}
-	calculateStaffPositions(barIndex);
+	calculateStaffPositions(barIndex, false);
 }
 
 //--------------------------------------------------------------
-void ofApp::calculateStaffPositions(int bar)
+void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 {
-	// no need to calculate any coordinates for one instrument only
-	if (numInstruments == 1) return;
 	float maxHeightSum = 0;
-	float minVsAnchor = 0;
 	float lastMaxPosition = 0;
 	float firstMinPosition = 0;
 	int i = 0;
@@ -978,57 +1173,35 @@ void ofApp::calculateStaffPositions(int bar)
 		if ((int)instruments.size() > numInstruments && it == instruments.begin()) continue;
 		float maxPosition = it->second.getMaxYPos(bar);
 		float minPosition = it->second.getMinYPos(bar);
-		float minVsAnchorLocal = it->second.getMinVsAnchor(bar);
 		if (i == 0) { // used to be  && it->first == 0
 			firstMinPosition = minPosition;
 		}
 		float diff = maxPosition - minPosition;
 		if (diff > maxHeightSum) {
 			maxHeightSum = diff;
-			minVsAnchor = minVsAnchorLocal;
 		}
 		lastMaxPosition = maxPosition;
 		i++;
 	}
 	// if the current bar is wider than the existing ones, we need to change the current Y coordinates
-	if (maxHeightSum >= allStaffDiffs) {
+	if (maxHeightSum >= allStaffDiffs || windowChanged) {
 		allStaffDiffs = maxHeightSum;
-		float yAnchor1, yAnchor2;
 		float totalDiff = lastMaxPosition - firstMinPosition;
-		// if all staffs fit in the screen
 		if (totalDiff < screenHeight) {
-			yAnchor1 = (screenHeight / 2);
-			yAnchor1 -= (((allStaffDiffs + (staffLinesDist * 2)) * \
-						(numInstruments / 2)));
-			yAnchor1 -= (staffLinesDist * 2);
+			yStartPnt = (screenHeight / 2);
+			yStartPnt -= (((allStaffDiffs + (staffLinesDist * 2)) * (numInstruments / 2)));
+			yStartPnt -= (staffLinesDist * 2);
 			if ((instruments.size() % 2) == 0) {
-				yAnchor1 += ((allStaffDiffs + (staffLinesDist * 2)) / 2); 
+				yStartPnt += ((allStaffDiffs + (staffLinesDist * 2)) / 2); 
 			}
 			// make sure anything that sticks out of the staff doesn't go below 0 in the Y axis
-			if ((yAnchor1 - minVsAnchor) < 0) {
-				yAnchor1 += minVsAnchor;
+			if ((yStartPnt - firstMinPosition) < 0) {
+				yStartPnt += firstMinPosition;
 			}
 		}
 		else {
 			// if the full score exceeds the screen just place it 10 pixels below the top part of the window
-			yAnchor1 = minVsAnchor + 10;
-		}
-		// to make maintainance easier, we use the same score.h and score.cpp files for both
-		// the main program and the accompaning one, so we use to identical Y anchors here
-		// since in the accompaning program, the score orientation is always horizontal
-		yAnchor2 = yAnchor1;
-		// use a counter instead of the Instrument() map key, as in the case of the part
-		// only one part can have key 0 (this is for the comparison below: if (counter > 0)
-		// which used to be: if (it->first > 0), as it is in the main program)
-		int counter = 0;
-		for (auto it = instruments.begin(); it != instruments.end(); ++it) {
-			if ((int)instruments.size() > numInstruments && it == instruments.begin()) continue;
-			if (counter > 0) {
-				yAnchor1 += (allStaffDiffs + (staffLinesDist * 2));
-				yAnchor2 += (allStaffDiffs + (staffLinesDist * 2));
-			}
-			counter++;
-			it->second.correctScoreYAnchor(yAnchor1, yAnchor2);
+			yStartPnt = firstMinPosition + 10;
 		}
 	}
 }
@@ -1036,28 +1209,29 @@ void ofApp::calculateStaffPositions(int bar)
 //--------------------------------------------------------------
 void ofApp::setScoreSizes()
 {
-	// for a 35 font size the staff lines distance is 10
-	staffLinesDist = 10 * ((float)scoreFontSize / 35.0);
 	longestInstNameWidth = 0;
 	for (auto it = instruments.begin(); it != instruments.end(); ++it) {
-		it->second.setStaffSize(scoreFontSize);
-		it->second.setNotesFontSize(scoreFontSize);
-		if (instFont.stringWidth(it->second.getName()) > longestInstNameWidth) {
-			longestInstNameWidth = instFont.stringWidth(it->second.getName());
+		it->second.setNotesFontSize(scoreFontSize, staffLinesDist);
+		size_t nameWidth = instFont.stringWidth(it->second.getName());
+		instNameWidths[it->first] = nameWidth;
+		if ((int)nameWidth > longestInstNameWidth) {
+			longestInstNameWidth = nameWidth;
 		}
 	}
 	scoreXStartPnt = longestInstNameWidth + (blankSpace * 1.5);
+	setScoreCoords();
 	if (barsIndexes.size() > 0) {
-		for (map<string, int>::iterator it = barsIndexes.begin(); it != barsIndexes.end(); ++it) {
-			setScoreCoords();
+		for (auto it = barsIndexes.begin(); it != barsIndexes.end(); ++it) {
+			//setScoreCoords();
 			for (auto it2 = instruments.begin(); it2 != instruments.end(); ++it2) {
+				it2->second.setMeter(it->second, numerator[it->second], denominator[it->second], numBeats[it->second]);
 				it2->second.setNotePositions(it->second);
 			}
 		}
 	}
-	else {
-		setScoreCoords();
-	}
+	//else {
+	//	setScoreCoords();
+	//}
 }
 
 //--------------------------------------------------------------
@@ -1097,30 +1271,25 @@ void ofApp::mouseExited(int x, int y)
 }
 
 //--------------------------------------------------------------
-void ofApp::resizeWindow()
-{
-	setScoreSizes();
-}
-
-//--------------------------------------------------------------
 void ofApp::windowResized(int w, int h)
 {
+	// hold the previous middle of screen value so the score is also properly updated
+	int prevMiddleOfScreenX = middleOfScreenX;
 	screenWidth = w;
 	screenHeight = h;
 	middleOfScreenX = screenWidth / 2;
 	middleOfScreenY = screenHeight / 2;
-	windowResizeTimeStamp = ofGetElapsedTimeMillis();
-	isWindowResized = true;
-	setScoreCoords();
-	for (auto it = barsIndexes.begin(); it != barsIndexes.end(); ++it) {
-		for (auto it2 = instruments.begin(); it2 != instruments.end(); ++it2) {
-			// first we need to set the meter, because that's where the distance between beats is set
-			// for the Notes() object
-			it2->second.setMeter(it->second, numerator[it->second],
-								 denominator[it->second], numBeats[it->second]);
-			it2->second.setNotePositions(it->second);
-		}
+	if (staffXOffset == prevMiddleOfScreenX) {
+		staffXOffset = 0;
+		staffWidth = screenWidth / 2;
 	}
+	else {
+		staffXOffset = middleOfScreenX;
+		staffWidth = screenWidth;
+	}
+	if (scoreYOffset > 0) scoreYOffset = (screenHeight / 2);
+	setScoreSizes();
+	calculateStaffPositions(lastBarIndex, true);
 }
 
 //--------------------------------------------------------------

@@ -16,9 +16,14 @@ class Instrument
 		void setName(string name);
 		string getName();
 		void setID(int id);
+		int getID();
+		void setGroup(int groupID);
+		int getGroup();
 		void setRhythm(bool isRhythm);
 		void setNumBarsToDisplay(int numBars);
-		void setClef(int clefIdx);
+		float getXCoef();
+		void setClef(int bar, int clefIdx);
+		int getClef(int bar);
 		void setCopied(int barIndex, bool copyState);
 		bool getCopied(int barIndex);
 		void setCopyNdx(int barIndex, int barToCopy);
@@ -38,28 +43,31 @@ class Instrument
 		void setDynamicsRampStart(int bar, vector<int> v);
 		void setDynamicsRampEnd(int bar, vector<int> v);
 		void setDynamicsRampDir(int bar, vector<int> v);
-		void setSlurBeginnings(int bar, vector<int> v);
-		void setSlurEndings(int bar, vector<int> v);
+		void setSlurIndexes(int bar, vector<int> v);
+		void setWholeBarSlurred(int bar, bool b);
+		void setTies(int bar, vector<int> v);
+		void setTupRatios(int bar, vector<int> v);
+		void setTupStartStop(int bar, vector<int> v);
 		void setTexts(int bar, vector<string> v);
 		void setTextIndexes(int bar, vector<int> v);
 		bool checkVecSizesForEquality(int bar);
 		void copyMelodicLine(int barIndex);
 		void createEmptyMelody(int barIndex);
 		void setMeter(int bar, int numerator, int denominator, int numBeats);
-		void setScoreNotes(int bar, int denominator, int numerator, int numBeats);
-		void setNoteCoords(float xLen, float yPos1, float yPos2, float staffLineDist, int fontSize);
+		std::pair<int, int> getMeter(int bar);
+		void setScoreNotes(int bar, int denominator, int numerator, int numBeats,
+				int BPMTempo, int beatAtValue, bool hasDot, int BPMMultiplier);
 		void setNotePositions(int bar);
-		void correctScoreYAnchor(float yAnchor1, float yAnchor2);
+		void setNoteCoords(float xLen, float staffLineDist, int fontSize);
+		void setAccidentalsOffsetCoef(float coef);
 		void moveScoreX(int numPixels);
 		void moveScoreY(int numPixels);
 		void recenterScore();
 		float getStaffXLength();
 		float getNoteWidth();
 		float getNoteHeight();
-		float getStaffYAnchor();
-		void setStaffSize(int fontSize);
-		void setStaffCoords(float xStartPnt, float yAnchor1, float yAnchor2, float staffLineDist);
-		void setNotesFontSize(int fontSize);
+		void setStaffCoords(float xStartPnt, float staffLineDist);
+		void setNotesFontSize(int fontSize, float staffLinesDist);
 		void setAnimation(bool animationState);
 		void setLoopStart(bool loopStartState);
 		void setLoopEnd(bool loopEndState);
@@ -72,8 +80,8 @@ class Instrument
 		float getMinYPos(int bar);
 		float getClefXOffset();
 		float getMeterXOffset();
-		void drawStaff(int bar, float xOffset, float yOffset, bool drawClef, bool drawMeter, bool drawLoopStartEnd);
-		void drawNotes(int bar, int loopNdx, vector<int> *v, float xOffset, float yOffset, bool animate, float xCoef);
+		void drawStaff(int bar, float xOffset, float yStartPnt, float yOffset, bool drawClef, bool drawMeter, bool drawLoopStartEnd, bool drawTempo);
+		void drawNotes(int bar, int loopNdx, vector<int> *v, float xOffset, float yStartPnt, float yOffset, bool animate, float xCoef);
 		void printVector(vector<int> v);
 		void printVector(vector<string> v);
 		void printVector(vector<float> v);
@@ -82,6 +90,7 @@ class Instrument
 		Staff staff;
 		Notes notesObj;
 		int objID;
+		int groupID;
 		string name;
 		// maps of int and map of int and vector (of vectors)
 		// int key of outter map is instrument index, retrieved from instrumentIndexes above
@@ -99,19 +108,27 @@ class Instrument
 		map<int, vector<int>> scoreDurs;
 		map<int, vector<int>> scoreDotIndexes;
 		map<int, vector<int>> scoreGlissandi;
-		map<int, vector<int>> scoreArticulations;
+		map<int, vector<vector<int>>> scoreArticulations;
 		map<int, vector<int>> scoreDynamics;
 		map<int, vector<int>> scoreDynamicsIndexes;
 		map<int, vector<int>> scoreDynamicsRampStart;
 		map<int, vector<int>> scoreDynamicsRampEnd;
 		map<int, vector<int>> scoreDynamicsRampDir;
-		map<int, vector<int>> scoreSlurBeginnings;
-		map<int, vector<int>> scoreSlurEndings;
+		//map<int, vector<int>> scoreSlurBeginnings;
+		//map<int, vector<int>> scoreSlurEndings;
+		map<int, vector<std::pair<int, int>>> scoreSlurIndexes;
+		map<int, bool> isWholeBarSlurred;
+		map<int, vector<int>> tieIndexes;
+		map<int, map<int, std::pair<int, int>>> scoreTupRatios;
+		map<int, map<int, std::pair<unsigned, unsigned>>> scoreTupStartStop;
 		map<int, vector<string>> scoreTexts;
 		map<int, vector<int>> scoreTextIndexes;
 
 		map<int, bool> copyStates;
 		map<int, int> copyNdxs;
+
+		map<int, bool> isClefSet;
+		int clef;
 };
 
 #endif

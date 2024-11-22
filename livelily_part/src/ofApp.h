@@ -22,6 +22,7 @@
 #define OSCPORT 9000 // for receiving OSC messages from main program 
 
 #define WINDOW_RESIZE_GAP 50
+#define NOTESXOFFSETCOEF 3
 
 class ofApp : public ofBaseApp
 {
@@ -47,7 +48,7 @@ class ofApp : public ofBaseApp
 		// staff and notes handling
 		void setScoreCoords();
 		void setScoreNotes(int barIndex);
-		void calculateStaffPositions(int bar);
+		void calculateStaffPositions(int bar, bool windowChanged);
 		void setScoreSizes();
 		// rest of OF functions
 		void mouseMoved(int x, int y );
@@ -56,7 +57,6 @@ class ofApp : public ofBaseApp
 		void mouseReleased(int x, int y, int button);
 		void mouseEntered(int x, int y);
 		void mouseExited(int x, int y);
-		void resizeWindow();
 		void windowResized(int w, int h);
 		void gotMessage(ofMessage msg);
 		void dragEvent(ofDragInfo dragInfo);
@@ -69,8 +69,7 @@ class ofApp : public ofBaseApp
 
 		bool fullscreen;
 		bool finishState;
-		bool isWindowResized;
-		uint64_t windowResizeTimeStamp;
+		bool changeBeatColorOnUpdate;
 		
 		ofColor backgroundColor;
 		int brightness;
@@ -91,6 +90,7 @@ class ofApp : public ofBaseApp
 		bool scoreUpdated;
 		bool showUpdatePulseColor;
 		bool scoreChangeOnLastBar;
+		int scoreOrientation;
 		// variables to determine whether we call a command for moving the score
 		bool scoreMoveXCommand;
 		bool scoreMoveYCommand;
@@ -104,6 +104,7 @@ class ofApp : public ofBaseApp
 		// variables for receiving bar data over OSC
 		int thisBarIndex;
 		int instNdx;
+		int lastBarIndex;
 		// the keys of the map below are the bar indexes
 		// and the values hold the count of instruments that receive bar data without errors
 		map<int, int> instrumentCounterPerBar;
@@ -175,6 +176,9 @@ class ofApp : public ofBaseApp
 		float tempo;
 		float newTempo;
 		int tempoMs;
+		map<int, int> BPMTempi;
+		map<int, int> tempoBaseForScore;
+		map<int, bool> BPMDisplayHasDot;
 		// variables for positioning staffs for every pattern
 		map<int, float> barFirstStaffAnchor;
 		float maxBarFirstStaffAnchor;
@@ -193,18 +197,21 @@ class ofApp : public ofBaseApp
 
 		map<int, int> numerator;
 		map<int, int> denominator;
+		map<int, int> BPMMultiplier;
 
 		int screenWidth;
 		int screenHeight;
 		int middleOfScreenX;
 		int middleOfScreenY;
 		float scoreXStartPnt;
-		float notesXLength;
+		float notesLength;
 		int staffXOffset;
 		int staffWidth;
+		float yStartPnt;
 
 		bool showCountdown;
 		int countdown;
+		bool showTempo;
 };
 
 #endif
