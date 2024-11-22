@@ -656,7 +656,7 @@ void Editor::setMaxCharactersPerString()
 void Editor::setGlobalFontSize(int fontSize)
 {
 	((ofApp*)ofGetAppPtr())->fontSize = fontSize;
-	((ofApp*)ofGetAppPtr())->changeFontSizeForAllPanes();
+	((ofApp*)ofGetAppPtr())->setFontSize();
 }
 
 //--------------------------------------------------------------
@@ -2130,7 +2130,7 @@ void Editor::fromOscPress(int ascii)
 {
 	if (!activity) {
 		// call overloaded keyPressed function to set a temporary whichEditor in ofApp.cpp
-		((ofApp*)ofGetAppPtr())->keyPressed(ascii, objID);
+		((ofApp*)ofGetAppPtr())->keyPressedOsc(ascii, objID);
 	}
 	else {
 		((ofApp*)ofGetAppPtr())->keyPressed(ascii);
@@ -2142,7 +2142,7 @@ void Editor::fromOscRelease(int ascii)
 {
 	if (!activity) {
 		// the same applies to releasing a key
-		((ofApp*)ofGetAppPtr())->keyReleased(ascii, objID);
+		((ofApp*)ofGetAppPtr())->keyReleasedOsc(ascii, objID);
 	}
 	else {
 		((ofApp*)ofGetAppPtr())->keyReleased(ascii);
@@ -2315,6 +2315,8 @@ void Editor::loadXMLFile(string filePath)
 		instLine += " ";
 		instLine += it->second.second.second;
 	}
+	createNewLine(instLine, 0);
+	cursorLineIndex++;
 	int instNdx = 0;
 	int barNum = 0;
 	int clefOffset = 0;
@@ -2322,9 +2324,7 @@ void Editor::loadXMLFile(string filePath)
 	bool isGroupped = false;
 	bool clefFollows = false;
 	map<string, int> clefNdxs {{"G", 0}, {"F", 1}, {"C", 2}};
-	map<int, map<int, int>> instClefs;
-	createNewLine(instLine, 0);
-	cursorLineIndex++;
+	map<int, map<int, std::pair<bool, int>>> instClefs;
 	// we have read the instruments, we now read the rest of the score to store clef changes
 	file.clear();
 	file.seekg(0, file.beg);
@@ -2350,13 +2350,13 @@ void Editor::loadXMLFile(string filePath)
 			barNumNdx = lineWithoutSpaces.substr(16).find("\"");
 			barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
 			if (instClefs.find(instNdx) == instClefs.end()) {
-				map<int, int> m;
+				map<int, std::pair<bool, int>> m {{barNum, std::make_pair(false, 0)}};
 				instClefs[instNdx] = m;
 			}
-			instClefs[instNdx][barNum] = 0;
+			//instClefs[instNdx][barNum] = 0;
 			if (isGroupped) {
 				for (i = 1; i < insts[instNdx].first; i++) {
-					instClefs[instNdx+i][barNum] = 0;
+					instClefs[instNdx+i][barNum] = std::make_pair(false, 0);
 				}
 			}
 		}
@@ -2369,17 +2369,72 @@ void Editor::loadXMLFile(string filePath)
 			}
 		}
 		else if (startsWith(lineWithoutSpaces, "<sign>") && clefFollows) {
-			instClefs[instNdx+clefOffset][barNum] = clefNdxs[lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6)];
+			instClefs[instNdx+clefOffset][barNum] = std::make_pair(true, clefNdxs[lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6)]);
 			clefFollows = false;
 		}
 	}
-	int prevClef;
-	for (auto it = instClefs.begin(); it != instClefs.end(); ++it) {
-		prevClef = 0;
-		for (auto it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
-			if (it2->second != prevClef) {
-				prevClef = it2->second;
-			}
+	file.clear();
+	file.seekg(0, file.beg);
+	int beatNumerator = 4, beatDenominator = 4;
+	map<int, std::pair<int, int>> times;
+	while (getline(file, line)) {
+		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
+		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
+		if (startsWith(lineWithoutSpaces, "<measurenumber=")) {
+			barNumNdx = lineWithoutSpaces.substr(16).find("\"");
+			barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
+		}
+		else if (startsWith(lineWithoutSpaces, "<beats>")) {
+			beatNumerator = stoi(lineWithoutSpaces.substr(7, lineWithoutSpaces.substr(7).find("<")));
+		}
+		else if (startsWith(lineWithoutSpaces, "<beat-type>")) {
+			beatDenominator = stoi(lineWithoutSpaces.substr(11, lineWithoutSpaces.substr(11).find("<")));
+			times[barNum] = std::make_pair(beatNumerator, beatDenominator);
+		}
+	}
+	for (unsigned i = 1; i <= barNum; i++) {
+		if (times.find(i) == times.end()) {
+			times[i] = std::make_pair(beatNumerator, beatDenominator);
+		}
+		else {
+			beatNumerator = times[i].first;
+			beatDenominator = times[i].second;
+		}
+	}
+	file.clear();
+	file.seekg(0, file.beg);
+	int tempoBase = 4, tempo = 120;
+	map<string, int> tempoBases {{"whole", 1}, {"half", 2}, {"quarter", 4}, {"eighth", 8}, {"16th", 16}, {"32nd", 32}, {"64th", 64}};
+	map<int, std::pair<int, int>> tempi;
+	while (getline(file, line)) {
+		string lineWithoutTabs = replaceCharInStr(line, "\t", "");
+		string lineWithoutSpaces = replaceCharInStr(lineWithoutTabs, " ", "");
+		if (startsWith(lineWithoutSpaces, "<measurenumber=")) {
+			barNumNdx = lineWithoutSpaces.substr(16).find("\"");
+			barNum = stoi(lineWithoutSpaces.substr(16, barNumNdx));
+		}
+		else if (startsWith(lineWithoutSpaces, "<beat-unit")) {
+			tempoBase = tempoBases[lineWithoutSpaces.substr(11, lineWithoutSpaces.substr(11).find("<"))];
+		}
+		else if (startsWith(lineWithoutSpaces, "<per-minute")) {
+			size_t firstDigitNdx = lineWithoutSpaces.find_first_of("0123456789");
+			size_t lastDigitNdx = lineWithoutSpaces.find_last_of("0123456789");
+			//string perminStr = lineWithoutSpaces.substr(firstDigitNdx, lastDigitNdx);
+			//if (perminStr.find("c.") != string::npos) {
+			//	firstDigitNdx = lineWithoutSpaces.find_first_of("0123456789");
+			//	lastDigitNdx = lineWithoutSpaces.find_last_of("0123456789");
+			//}
+			tempo = stoi(lineWithoutSpaces.substr(firstDigitNdx, lastDigitNdx));
+			tempi[barNum] = std::make_pair(tempoBase, tempo);
+		}
+	}
+	for (unsigned i = 1; i <= barNum; i++) {
+		if (tempi.find(i) == tempi.end()) {
+			tempi[i] = std::make_pair(tempoBase, tempo);
+		}
+		else {
+			tempoBase = tempi[i].first;
+			tempo = tempi[i].second;
 		}
 	}
 	file.clear();
@@ -2400,7 +2455,6 @@ void Editor::loadXMLFile(string filePath)
 	bool addedText = false;
 	int instNdxOffset = 0;
 	lineNum = 1;
-	int beatNumerator = 4, beatDenominator = 4;
 	int tupletNumerator = 3, tupletDenominator = 2;
 	int direction = 1;
 	int dynamicNdx = 0;
@@ -2478,12 +2532,6 @@ void Editor::loadXMLFile(string filePath)
 			}
 			isChord = false;
 			foundNote = false;
-		}
-		else if (startsWith(lineWithoutSpaces, "<beats>")) {
-			beatNumerator = stoi(lineWithoutSpaces.substr(7, lineWithoutSpaces.substr(7).find("<")));
-		}
-		else if (startsWith(lineWithoutSpaces, "<beat-type>")) {
-			beatDenominator = stoi(lineWithoutSpaces.substr(11, lineWithoutSpaces.substr(11).find("<")));
 		}
 		else if (startsWith(lineWithoutSpaces, "<note")) {
 			foundNote = true;
@@ -2687,21 +2735,21 @@ void Editor::loadXMLFile(string filePath)
 				direction = 1;
 			}
 		}
-		else if (startsWith(lineWithoutSpaces, "<words")) {
-			// we don't care to check if it's a chord or note, because the text comes right after the first chord note
-			// and when we find a chord, we insert the necessary characters to the correct positions
-			if (direction > 0) words += "^";
-			else words += "_";
-			words += "\"";
-			// here we use line and not lineWithoutSpaces, because we want the spaces to be included in the text
-			closingAngleBracketNdx = line.find(">");
-			openingAngleBracketNdx = line.substr(closingAngleBracketNdx).find("<");
-			if (openingAngleBracketNdx == string::npos) openingAngleBracketNdx = line.size() - closingAngleBracketNdx;
-			else openingAngleBracketNdx--;
-			words += line.substr(closingAngleBracketNdx+1, openingAngleBracketNdx);
-			words += "\"";
-			foundWords = true;
-		}
+		//else if (startsWith(lineWithoutSpaces, "<words")) {
+		//	// we don't care to check if it's a chord or note, because the text comes right after the first chord note
+		//	// and when we find a chord, we insert the necessary characters to the correct positions
+		//	if (direction > 0) words += "^";
+		//	else words += "_";
+		//	words += "\"";
+		//	// here we use line and not lineWithoutSpaces, because we want the spaces to be included in the text
+		//	closingAngleBracketNdx = line.find(">");
+		//	openingAngleBracketNdx = line.substr(closingAngleBracketNdx).find("<");
+		//	if (openingAngleBracketNdx == string::npos) openingAngleBracketNdx = line.size() - closingAngleBracketNdx;
+		//	else openingAngleBracketNdx--;
+		//	words += line.substr(closingAngleBracketNdx+1, openingAngleBracketNdx);
+		//	words += "\"";
+		//	foundWords = true;
+		//}
 		else if (startsWith(lineWithoutSpaces, "<dot")) {
 			if (!isChord) {
 				// if there is text in the current note, the dot will go after the text if we just concatenate
@@ -2792,14 +2840,28 @@ void Editor::loadXMLFile(string filePath)
 	// now write the notes in LiveLily notation
 	createNewLine("", 0);
 	cursorLineIndex++;
+	map<int, string> clefSymbols {{0, "treble"}, {1, "bass"}, {2, "alto"}};
 	// all parts have the same number of bars, so we query the first one
 	// to determine how many bars we have to write
 	for (auto it = notes[0].begin(); it != notes[0].end(); ++it) {
 		string barOpening = "\\bar " + to_string(it->first) + " {";
 		createNewLine(barOpening, 0);
 		cursorLineIndex++;
+		string time = tabStr + "\\time " + std::to_string(times[it->first].first) + "/" + std::to_string(times[it->first].second);
+		createNewLine(time, 0);
+		cursorLineIndex++;
+		string tempoStr = tabStr + "\\tempo " + std::to_string(tempi[it->first].first) + " = " + std::to_string(tempi[it->first].second);
+		createNewLine(tempoStr, 0);
+		cursorLineIndex++;
+		string beatAtStr = tabStr + "\\beatat " + std::to_string(tempi[it->first].first);
+		createNewLine(beatAtStr, 0);
+		cursorLineIndex++;
 		for (auto it2 = insts.begin(); it2 != insts.end(); ++it2) {
 			string instLine = tabStr + "\\" + it2->second.second.second;
+			if (instClefs[it2->first][it->first].first) {
+				instLine += " clef ";
+				instLine += clefSymbols[instClefs[it2->first][it->first].second];
+			}
 			instLine += notes[it2->first][it->first].second;
 			createNewLine(instLine, 0);
 			cursorLineIndex++;

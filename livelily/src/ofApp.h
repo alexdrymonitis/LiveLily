@@ -109,6 +109,10 @@ class Function
 			argErrorType = 0;
 			strcpy(arguments[numArgs++], str.c_str());
 		}
+
+		void resetArgumentIndex() {
+			numArgs = 0;
+		}
 		
 		int getNumArgs() {
 			return numArgs;
@@ -292,6 +296,7 @@ typedef struct _SharedData
 	map<int, float> barFirstStaffAnchor;
 	float maxBarFirstStaffAnchor;
 	float allStaffDiffs;
+	float yStartPnts[2];
 
 	float staffLinesDist;
 	int longestInstNameWidth;
@@ -328,6 +333,12 @@ typedef struct _SharedData
 	unsigned long PPQNCounter;
 	uint64_t PPQNTimeStamp;
 } SharedData;
+
+typedef struct _intPair
+{
+	int first;
+	int second;
+} intPair;
 
 class Sequencer : public ofThread
 {
@@ -407,8 +418,8 @@ class ofApp : public ofBaseApp
 		void executeKeyReleased(int key);
 		// overloaded keyPressed and keyReleased functions
 		// so out-of-focus editors can receive input from OSC
-		void keyPressed(int key, int thisEditor);
-		void keyReleased(int key, int thisEditor);
+		void keyPressedOsc(int key, int thisEditor);
+		void keyReleasedOsc(int key, int thisEditor);
 		// OF keyboard input functions
 		void keyPressed(int key);
 		void keyReleased(int key);
@@ -417,11 +428,13 @@ class ofApp : public ofBaseApp
 		int partition(uint64_t arr[], int arr2[], int low, int high);
 		void quickSort(uint64_t arr[], int arr2[], int low, int high);
 		// send data to score parts
-		void sendToParts(ofxOscMessage m);
+		void sendToParts(ofxOscMessage m, bool delay);
 		void sendCountdownToParts(int countdown);
 		void sendStopCountdownToParts();
 		void sendLoopDataToParts(int barIndex, vector<int> ndxs);
 		void sendSizeToPart(int instNdx, int size);
+		void sendNumBarsToPart(int instNdx, int numBars);
+		void sendAccOffsetToPart(int instNdx, float accOffset);
 		void sendLoopDataToPart(int instNdx, int barIndex, vector<int> ndxs);
 		void sendBarIndexBeatMeterToPart(int instNdx, int barIndex);
 		void sendInstNdxToPart(int instNdx);
@@ -446,6 +459,7 @@ class ofApp : public ofBaseApp
 		bool startsWith(string a, string b);
 		bool endsWith(string a, string b);
 		bool isNumber(string str);
+		bool isFloat(string str);
 		vector<int> findRepetitionInt(string str, int multIndex);
 		int findNextStrCharIdx(string str, string compareStr, int index);
 		bool areBracketsBalanced(string str);
@@ -494,8 +508,6 @@ class ofApp : public ofBaseApp
 		void setPaneCoords();
 		// set the global font size to calculate dimensions
 		void setFontSize();
-		// change the font size on all editors
-		void changeFontSizeForAllPanes();
 		// various commands for the score
 		std::pair<int, string> scoreCommands(vector<string>& commands, int lineNum, int numLines);
 		// initialize an instrument
@@ -512,7 +524,7 @@ class ofApp : public ofBaseApp
 		void setNotePositions(int bar, int numBars);
 		void swapScorePosition(int orientation);
 		void setScoreSizes();
-		void calculateStaffPositions(int bar);
+		void calculateStaffPositions(int bar, bool windowChanged);
 		// release memory on exit
 		void exit();
 		// rest of OF functions

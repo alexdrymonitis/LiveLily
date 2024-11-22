@@ -16,8 +16,16 @@ class Instrument
 		void setName(string name);
 		string getName();
 		void setID(int id);
+		int getID();
+		void setGroup(int groupID);
+		int getGroup();
 		void setRhythm(bool isRhythm);
 		bool isRhythm();
+		void setDelay(int64_t dur);
+		bool hasDelay();
+		int64_t getDelayTime();
+		void setSendMIDI(bool sendMIDI);
+		bool sendMIDI();
 		void setTransposition(int transpo);
 		int getTransposition();
 		void setDefaultDur(float dur);
@@ -44,23 +52,23 @@ class Instrument
 		int getClef(int bar);
 		void copyMelodicLine(int barIndex);
 		void createEmptyMelody(int barIndex);
+		void deleteNotesBar(int bar);
 		void setMeter(int bar, int numerator, int denominator, int numBeats);
 		std::pair<int, int> getMeter(int bar);
 		void setScoreNotes(int bar, int numerator, int denominator, int numBeats,
-				int BPMValue, int beatAtValue, bool hasDot);
-		void setNoteCoords(float xLen, float yPos1, float yPos2, float staffLineDist, int fontSize);
+				int BPMValue, int beatAtValue, bool hasDot, int BPMMultiplier);
+		void setNoteCoords(float xLen, float staffLineDist, int fontSize);
+		void setAccidentalsOffsetCoef(float coef);
 		void setNotePositions(int bar);
 		void setNotePositions(int bar, int numBars);
-		void correctScoreYAnchor(float yAnchor1, float yAnchor2);
 		void setScoreOrientation(int orientation);
 		void moveScoreX(int numPixels);
 		void moveScoreY(int numPixels);
-		void recenterScore();
 		float getStaffXLength();
 		float getNoteWidth();
 		float getNoteHeight();
 		float getStaffYAnchor();
-		void setStaffCoords(float xStartPnt, float yAnchor1, float yAnchor2, float staffLineDist);
+		void setStaffCoords(float xStartPnt, float staffLineDist);
 		void setNotesFontSize(int fontSize, float staffLinesDist);
 		void setAnimation(bool animationState);
 		void setLoopStart(bool loopStartState);
@@ -84,6 +92,8 @@ class Instrument
 		bool mustFireStep(uint64_t stamp, int bar, float tempo);
 		void setNoteDur(int bar, float tempo);
 		bool isNoteSlurred(int bar, int dataCounter);
+		bool isNoteTied(int bar, int dataCounter);
+		bool isLastNoteTied(int bar);
 		bool mustUpdateTempo();
 		void setUpdateTempo(bool tempoUpdate);
 		bool hasNotesInBar(int bar);
@@ -108,9 +118,10 @@ class Instrument
 		float getMinYPos(int bar);
 		float getClefXOffset();
 		float getMeterXOffset();
-		void drawStaff(int bar, float xOffset, float yOffset, bool drawClef,
+		void drawStaff(int bar, float xOffset, float yStartPnt, float yOffset, bool drawClef,
 				bool drawMeter, bool drawLoopStartEnd, bool drawTempo);
-		void drawNotes(int bar, int loopNdx, vector<int> *v, float xOffset, float yOffset, bool animate, float xCoef);
+		void drawNotes(int bar, int loopNdx, vector<int> *v, float xOffset, float yStartPnt,
+				float yOffset, bool animate, float xCoef);
 		void printVector(vector<int> v);
 		void printVector(vector<string> v);
 		void printVector(vector<float> v);
@@ -141,9 +152,8 @@ class Instrument
 		map<int, vector<bool>> isSlurred;
 		map<int, vector<string>> text;
 		map<int, vector<int>> textIndexes;
-		//map<int, vector<int>> slurBeginnings;
-		//map<int, vector<int>> slurEndings;
 		map<int, vector<std::pair<int, int>>> slurIndexes;
+		map<int, vector<int>> tieIndexes;
 		// same vectors for sending data to the Notes objects
 		map<int, vector<vector<int>>> scoreNotes; // notes are ints here
 		map<int, vector<int>> scoreDurs;
@@ -171,6 +181,13 @@ class Instrument
 		ofxOscSender scorePartSender;
 		// map to hold a boolean determining that a part that receives data has received bar data correctly
 		map<int, bool> barDataOKFromParts; // keys are bar indexes
+
+		// the vector below is used in case a connected instrument needs a delay for incoming messages
+		// so we store a pair with the ofxOscMessage object and a time stamp	
+		vector<std::pair<ofxOscMessage, uint64_t>> oscFifo; 
+		// the boolean below stores the state of the delay
+		bool delayState;
+		int64_t delayTime;
 	
 		// MIDI stuff
 		int midiChan;
@@ -183,6 +200,7 @@ class Instrument
 		float tenutoDur;
 
 		uint64_t beatCounter;
+		int barCounter;
 		int barDataCounter;
 		bool barDataCounterReset;
 		int seqToggle; // so we can alternate between notes on and notes off
@@ -202,12 +220,14 @@ class Instrument
 		Staff staff;
 		Notes notesObj;
 		int objID;
+		int groupID;
 		bool multiBarsDone;
 		size_t multiBarsStrBegin;
 		bool hasNewStepBool;
 		int newStep;
 		bool updateTempo;
 		bool isRhythmBool;
+		bool sendMIDIBool;
 		int transposition;
 
 		map<int, bool> copyStates;
