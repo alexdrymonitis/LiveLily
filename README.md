@@ -8,7 +8,7 @@ LiveLily is a live sequencing and live scoring system through live coding with a
 LiveLily does not produce any sound. It sends OSC or MIDI messages to control other software and hardware. It can be combined with the LiveLily-Score, to display parts of the full score separately, that can be sight-read by instrumentalists. The possible setups that LiveLily supports are pure electronic, electroacoustic, or acoustic only.
 
 LiveLily is written entirely in [openFrameworks], using the ofxOsc and ofxMidi addons. You will need to use the OF 0.12.0 or higher.
-The directories livelily/ (which is the main program) and livelily-score-part/ must be placed in the OF_ROOT/apps/myapps/ directory, so they can compile properly.
+The directories livelily/ (which is the main program) and livelily-part/ must be placed in the OF_ROOT/apps/myapps/ directory, so they can compile properly.
    
 ![LiveLily screenshow](images/livelily_screenshot.png?raw=true)
   
