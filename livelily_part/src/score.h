@@ -138,7 +138,7 @@ class Notes
 		void insertNaturalSigns(int bar, int loopNdx, vector<int> *v);
 		std::pair<int, int> isBarLinked(int bar);
 		void drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, float yStartPnt,
-			   	float yOffset, bool animation, float xCoef);
+				float yOffset, bool animation, float xCoef);
 		void drawBeams(float x1, float y1, float x2, float y2);
 		int drawRest(int bar, int restDur, float x, float yStartPnt, int color, float yOffset);
 		void drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
@@ -218,6 +218,7 @@ class Notes
 		map<int, vector<int>> maxNumLines;
 		map<int, vector<float>> startPnts;
 		map<int, vector<vector<float>>> allNoteCoordsX;
+		map<int, vector<vector<bool>>> allNoteShiftX;
 		map<int, vector<float>> allNoteCoordsXOffset;
 		map<int, vector<float>> allChordsChangeXCoef;
 		map<int, vector<vector<float>>> allNoteHeadCoordsY;

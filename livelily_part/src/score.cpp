@@ -582,6 +582,14 @@ void Notes::setNotePositions(int bar)
 			vvf2.back().push_back(FLT_MIN);
 		}
 	}
+	// special 2D vector for shifting notes on the X axis, in case of clamped chords
+	vector<vector<bool>> vvb;
+	for (auto vvit = allNotes[bar].begin(); vvit != allNotes[bar].end(); ++vvit) {
+		vvb.push_back(vector<bool>());
+		for (auto vit = vvit->begin(); vit != vvit->end(); ++vit) {
+			vvb.back().push_back(false);
+		}
+	}
 	vector<int> vi1(allNotes[bar].size(), 1);
 	vector<int> vi2(allNotes[bar].size(), 0);
 	vector<float> vf1(allNotes[bar].size(), 0);
@@ -595,6 +603,7 @@ void Notes::setNotePositions(int bar)
 	numTails[bar] = vi2;
 	numBeams[bar] = vi2;
 	allNoteCoordsX[bar] = vvf;
+	allNoteShiftX[bar] = vvb;
 	allNoteCoordsXOffset[bar] = vf1;
 	allChordsChangeXCoef[bar] = vf1;
 	allNoteHeadCoordsY[bar] = vvf;
@@ -635,18 +644,11 @@ void Notes::setNotePositions(int bar)
 		}
 		// get the duration in musical terms, 1 for whole note
 		// 2 for half note, 4 for quarter, etc.
-		int durWithoutDots = beats[bar];
-		int duration = durations[bar][i];
-		if (numerator[bar] > denominator[bar]) {
-			duration = (int)((float)durations[bar][i] * ((float)numerator[bar] / (float)denominator[bar]));
-		}
-		while (durWithoutDots > duration) {
-			durWithoutDots /= 2;
-		}
-		actualDurs[bar][i] = (int)(((float)beats[bar] / (float)durWithoutDots) + 0.5);
+		int duration = durations[bar][i] * ((float)numerator[bar] / (float)denominator[bar]);
+		actualDurs[bar][i] = (int)(((float)beats[bar] / (float)duration) + 0.5);
 		// detect the beats based on the denominator
 		// so eights and shorter notes are groupped properly
-		float thisDur = 0;
+		float thisDur;
 		int durInBeats = durations[bar][i];
 		int whichNdx;
 		for (int j = 0; j < 7; j++) {
@@ -822,12 +824,13 @@ void Notes::setNotePositions(int bar)
 					if (allNoteHeadCoordsY[bar][i][j] > allNoteHeadCoordsY[bar][i][k]) {
 						// if both j and k haven't moved yet
 						if ((allNoteCoordsX[bar][i][j] == x) && (allNoteCoordsX[bar][i][k] == x)) {
-							// move the top note
+							// set the boolean to true, so the top note is moved when drawn
 							allNoteCoordsX[bar][i][k] += noteWidth;
+							allNoteShiftX[bar][i][j] = true;
 							xCoordChanged = true;
 							// if the base of the stem down chord changes
 							// then the X axis should not take an offset
-							if ((int)k == allChordsBaseIndexes[bar][i] && stemDirections[bar][i] == -1) {
+							if (k == allChordsBaseIndexes[bar][i] && stemDirections[bar][i] == -1) {
 								chordBaseNoteChangeCoef = 0;
 							}
 						}
@@ -835,8 +838,9 @@ void Notes::setNotePositions(int bar)
 					else {
 						if ((allNoteCoordsX[bar][i][k] == x) && (allNoteCoordsX[bar][i][j] == x)) {
 							allNoteCoordsX[bar][i][j] += noteWidth;
+							allNoteShiftX[bar][i][j] = true;
 							xCoordChanged = true;
-							if ((int)j == allChordsBaseIndexes[bar][i] && stemDirections[bar][i] == -1) {
+							if (j == allChordsBaseIndexes[bar][i] && stemDirections[bar][i] == -1) {
 								chordBaseNoteChangeCoef = 0;
 							}
 						}
@@ -1024,6 +1028,7 @@ void Notes::setNotePositions(int bar)
 	// the code below calculates the coordinates of the beams
 	if (beamsIndexes[bar].size() > 0) {
 		for (i = 0; i < beamsIndexes[bar].size(); i++) {
+			float averageHeight = 0;
 			int stemDir = 1;
 			bool storedGroupStemDir = false;
 			float stemDirDiff = 0;
@@ -2383,6 +2388,7 @@ void Notes::drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, flo
 				if (allNotes.at(bar).at(i).at(j) > -1) {
 					int noteIdx = (actualDurs.at(bar).at(i) < 4 ? actualDurs.at(bar).at(i) - 1 : 2);
 					float x = xStartPnt + (allNoteCoordsX.at(bar).at(i).at(j) * xCoefLocal);
+					//if (allNoteShiftX.at(bar).at(i).at(j)) x += noteWidth;
 					float y = yStartPnt + allNoteHeadCoordsY.at(bar).at(i).at(j)+(noteHeight/8.0)-(staffDist/10.0) + yOffset;
 					notationFont.drawString(notesSyms[noteIdx], x-(noteWidth/2.0), y);
 					if (dotIndexes.at(bar).at(i) > 0) {
@@ -2895,7 +2901,7 @@ void Notes::drawTies(int thisBar, int loopNdx, float xStartPnt, float yStartPnt,
 				drawTie(thisBar, i, allChordsEdgeIndexes[thisBar][i], xStartPnt, yStartPnt, yOffset, xCoef, -1);
 			}
 			for (unsigned j = 0; j < allNotes[thisBar][i].size(); j++) {
-				if ((int)j == allChordsBaseIndexes[thisBar][i] || (int)j == allChordsEdgeIndexes[thisBar][i]) {
+				if (j == allChordsBaseIndexes[thisBar][i] || j == allChordsEdgeIndexes[thisBar][i]) {
 					continue;
 				}
 				drawTie(thisBar, i, j, xStartPnt, yStartPnt, yOffset, xCoef, 1);
