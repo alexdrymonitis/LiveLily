@@ -12,6 +12,7 @@
 #define OFRECVPORT 8001
 #define OFSENDPORT 1234 // for sending sequencer data to other software
 #define SCOREPARTPORT 9000
+#define KEYCLIENTPORT 9100
 #define HOST "localhost"
 #define BACKGROUND 15
 
@@ -227,7 +228,7 @@ class Function
 typedef struct _SharedData
 {
     // a mutex to avoid accessing the same data by different threads at the same time
-    ofMutex mutex;
+    //ofMutex mutex;
 	// a map of Instruments()
 	map<int, Instrument> instruments;
 	// maps of string and int to easily store data based on strings
@@ -356,6 +357,8 @@ class Sequencer : public ofThread
 		float midiToFreq(int midiNote);
 
 		ofxMidiOut midiOut;
+		vector<ofxMidiOut> midiOuts;
+		vector<string> midiOutPorts;
 
 	private:
 		int setBarIndex(bool increment);
@@ -431,21 +434,12 @@ class ofApp : public ofBaseApp
 		void sendToParts(ofxOscMessage m, bool delay);
 		void sendCountdownToParts(int countdown);
 		void sendStopCountdownToParts();
-		void sendLoopDataToParts(int barIndex, vector<int> ndxs);
 		void sendSizeToPart(int instNdx, int size);
 		void sendNumBarsToPart(int instNdx, int numBars);
 		void sendAccOffsetToPart(int instNdx, float accOffset);
-		void sendLoopDataToPart(int instNdx, int barIndex, vector<int> ndxs);
-		void sendBarIndexBeatMeterToPart(int instNdx, int barIndex);
-		void sendInstNdxToPart(int instNdx);
-		void sendBarDataToPart(int instNdx, int barIndex);
-		void sendCopyToPart(int instNdx, int barIndex, int barToCopy);
-		void sendBarDataToParts(int barIndex);
 		void sendLoopIndexToParts();
+		void sendSequencerStateToParts(bool state);
 		void sendNewBarToParts(string barName, int barIndex);
-		void sendNewBarToPart(int instNdx, string barName, int barIndex);
-		void sendClefToPart(int instNdx, int bar, int clef);
-		void sendRhythmToPart(int instNdx);
 		void sendScoreChangeToPart(int instNdx, bool scoreChange);
 		void sendChangeBeatColorToPart(int instNdx, bool changeBeatColor);
 		void sendFullscreenToPart(int instNdx, bool fullscreen);
@@ -496,7 +490,6 @@ class ofApp : public ofBaseApp
 		int getLastBarIndex();
 		int getPrevBarIndex();
 		int getPlayingBarIndex();
-		void updateIndexesForScore(int thisIndex, int nextIndex);
 		std::pair<int, string> stripLineFromBar(string str);
 		void deleteLastBar();
 		void deleteLastLoop();
@@ -601,6 +594,7 @@ class ofApp : public ofBaseApp
 		ofTrueTypeFont instFont;
 
 		ofxOscReceiver oscReceiver;
+		bool oscReceiverIsSet;
 
 		map<int, string> allStrings;
 		map<int, int> allStringStartPos;

@@ -2,6 +2,7 @@
 #define EDITOR_H
 
 #include "ofMain.h"
+#include "ofxOsc.h"
 #include <vector>
 
 #define TABSIZE 4
@@ -16,10 +17,20 @@ class Editor
 		Editor();
 		// set the ID of each editor
 		void setID(int id);
+		int getID();
+		void setSessionActivity(bool activity);
+		bool getSessionActivity();
+		void setSendKeys(int paneNdx);
+		bool getSendKeys();
+		int getSendKeysPaneNdx();
+		void setSendLines(int paneNdx);
+		bool getSendLines();
+		int getSendLinesPaneNdx();
 		void setPassed(bool passed);
 		bool hasPassed();
 		void setLanguage(int langNdx);
 		int getLanguage();
+		void setAutocomplete(bool autocomp);
 		void setPaneRow(int row);
 		void setPaneCol(int col);
 		int getPaneRow();
@@ -158,6 +169,8 @@ class Editor
 		bool couldNotSaveFile;
 		uint64_t fileLoadErrorTimeStamp;
 
+		ofxOscSender oscKeys; // for sending key strokes to another LiveLily editor
+		
 		uint64_t executionRampStart;
 
 		bool ctrlPressed;
@@ -239,6 +252,12 @@ class Editor
 	private:
 		int objID;
 		bool fileEdited;
+		bool autocomplete;
+		bool activeSession;
+		bool sendKeys;
+		int sendKeysPaneNdx;
+		bool sendLines;
+		int sendLinesPaneNdx;
 		string fromOscStr;
 };
 

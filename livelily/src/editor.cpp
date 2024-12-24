@@ -15,6 +15,7 @@ Editor::Editor()
 	cursorLineIndex = 0;
 	cursorPos = 0;
 	arrowCursorPos = 0;
+	activeSession = true;
 
 	executionStepPerMs = (float)EXECUTIONBRIGHTNESS / (float)(EXECUTIONDUR - EXECUTIONRAMPSTART);
 
@@ -52,6 +53,9 @@ Editor::Editor()
 	couldNotLoadFile = false;
 	couldNotSaveFile = false;
 	fileEdited = false;
+	autocomplete = true;
+	sendKeys = false;
+	sendLines = false;
 
 	fromOscStr = "";
 }
@@ -60,6 +64,62 @@ Editor::Editor()
 void Editor::setID(int id)
 {
 	objID = id;
+}
+
+//--------------------------------------------------------------
+int Editor::getID()
+{
+	return objID;
+}
+
+//--------------------------------------------------------------
+void Editor::setSessionActivity(bool activity)
+{
+	activeSession = activity;
+}
+
+//--------------------------------------------------------------
+bool Editor::getSessionActivity()
+{
+	return activeSession;
+}
+
+//--------------------------------------------------------------
+void Editor::setSendKeys(int paneNdx)
+{
+	sendKeysPaneNdx = paneNdx;
+	sendKeys = true;
+}
+
+//--------------------------------------------------------------
+bool Editor::getSendKeys()
+{
+	return sendKeys;
+}
+
+//--------------------------------------------------------------
+int Editor::getSendKeysPaneNdx()
+{
+	return sendKeysPaneNdx;
+}
+
+//--------------------------------------------------------------
+void Editor::setSendLines(int paneNdx)
+{
+	sendLinesPaneNdx = paneNdx;
+	sendLines = true;
+}
+
+//--------------------------------------------------------------
+bool Editor::getSendLines()
+{
+	return sendLines;
+}
+
+//--------------------------------------------------------------
+int Editor::getSendLinesPaneNdx()
+{
+	return sendLinesPaneNdx;
 }
 
 //--------------------------------------------------------------
@@ -72,6 +132,12 @@ void Editor::setLanguage(int langNdx)
 int Editor::getLanguage()
 {
 	return thisLang;
+}
+
+//--------------------------------------------------------------
+void Editor::setAutocomplete(bool autocomp)
+{
+	autocomplete = autocomp;
 }
 
 //--------------------------------------------------------------
@@ -757,7 +823,7 @@ void Editor::postIncrementOnNewLine()
 	lineCount++;
 	cursorLineIndex++;
 	cursorPos = arrowCursorPos = 0;
-	if ((lineCount + lineCountOffset) > maxNumLines && cursorLineIndex == lineCount - 1) {
+	if ((lineCount + lineCountOffset) >= maxNumLines && (cursorLineIndex - lineCountOffset) >= maxNumLines) { // >= lineCount - 1) {
 		lineCountOffset++;
 	}
 }
@@ -1262,80 +1328,115 @@ void Editor::assembleString(int key)
 		cursorPosIncrement = TABSIZE;
 	}
 	else if (key == 34) { // "
-		if (quoteCounter == 0) {
-			// insert two quotation marks but increment the cursor by only one position
-			// so it stays in between the quotation marks
-			charToInsert = "\"\"";
-			doubleChar = true;
+		if (autocomplete) {
+			if (quoteCounter == 0) {
+				// insert two quotation marks but increment the cursor by only one position
+				// so it stays in between the quotation marks
+				charToInsert = "\"\"";
+				doubleChar = true;
+			}
+			else {
+				// the second time we type the quotation mark don't insert it
+				charToInsert = "";
+			}
+			quoteCounter++;
+			if (quoteCounter > 1) quoteCounter = 0;
 		}
 		else {
-			// the second time we type the quotation mark don't insert it
-			charToInsert = "";
+			charToInsert = "\"";
 		}
-		quoteCounter++;
-		if (quoteCounter > 1) quoteCounter = 0;
 	}
 	else if (key == 123) { // {
-		if (curlyBracketCounter == 0) {
-			// insert opening and closing curly brackets, but move the cursor only one position
-			charToInsert = "{}";
-			curlyBracketCounter++;
-			doubleChar = true;
+		if (autocomplete) {
+			if (curlyBracketCounter == 0) {
+				// insert opening and closing curly brackets, but move the cursor only one position
+				charToInsert = "{}";
+				curlyBracketCounter++;
+				doubleChar = true;
+			}
+			else {
+				charToInsert = "{";
+				curlyBracketCounter--;
+				if (curlyBracketCounter <= 0) curlyBracketCounter = 0;
+			}
 		}
 		else {
 			charToInsert = "{";
-			curlyBracketCounter--;
-			if (curlyBracketCounter <= 0) curlyBracketCounter = 0;
 		}
 	}
 	else if (key == 125) { // }
-		if (curlyBracketCounter > 0) {
-			charToInsert = "";
-			curlyBracketCounter = 0;
+		if (autocomplete) {
+			if (curlyBracketCounter > 0) {
+				charToInsert = "";
+				curlyBracketCounter = 0;
+			}
+			else {
+				charToInsert = "}";
+			}
 		}
 		else {
 			charToInsert = "}";
 		}
 	}
 	else if (key == 91) { // [
-		if (squareBracketCounter == 0) {
-			// insert opeining and closing square brackets, but move the cursor only one position
-			charToInsert = "[]";
-			squareBracketCounter++;
-			doubleChar = true;
+		if (autocomplete) {
+			if (squareBracketCounter == 0) {
+				// insert opeining and closing square brackets, but move the cursor only one position
+				charToInsert = "[]";
+				squareBracketCounter++;
+				doubleChar = true;
+			}
+			else {
+				charToInsert = "[";
+				squareBracketCounter--;
+				if (squareBracketCounter == 0) squareBracketCounter = 0;
+			}
 		}
 		else {
 			charToInsert = "[";
-			squareBracketCounter--;
-			if (squareBracketCounter == 0) squareBracketCounter = 0;
 		}
 	}
 	else if (key == 93) { // ]
-		if (squareBracketCounter > 0) {
-			charToInsert = "";
-			squareBracketCounter = 0;
+		if (autocomplete) {
+			if (squareBracketCounter > 0) {
+				charToInsert = "";
+				squareBracketCounter = 0;
+			}
+			else {
+				charToInsert = "]";
+			}
 		}
 		else {
 			charToInsert = "]";
 		}
 	}
 	else if (key == 40) { // (
-		if (roundBracketCounter == 0) {
-			// insert opeining and closing round brackets, but move the cursor only one position
-			charToInsert = "()";
-			roundBracketCounter++;
-			doubleChar = true;
+		if (autocomplete) {
+			if (roundBracketCounter == 0) {
+				// insert opeining and closing round brackets, but move the cursor only one position
+				charToInsert = "()";
+				roundBracketCounter++;
+				doubleChar = true;
+			}
+			else {
+				charToInsert = "(";
+				roundBracketCounter--;
+				if (roundBracketCounter == 0) roundBracketCounter = 0;
+			}
 		}
 		else {
 			charToInsert = "(";
-			roundBracketCounter--;
-			if (roundBracketCounter == 0) roundBracketCounter = 0;
 		}
 	}
 	else if (key == 41) { // )
-		if (roundBracketCounter > 0) {
-			charToInsert = "";
-			roundBracketCounter = 0;
+		if (autocomplete) {
+			if (roundBracketCounter > 0) {
+				charToInsert = "";
+				roundBracketCounter = 0;
+			}
+			else {
+				charToInsert = ")";
+			}
 		}
 		else {
 			charToInsert = ")";
@@ -2325,6 +2426,7 @@ void Editor::loadXMLFile(string filePath)
 	bool clefFollows = false;
 	map<string, int> clefNdxs {{"G", 0}, {"F", 1}, {"C", 2}};
 	map<int, map<int, std::pair<bool, int>>> instClefs;
+	map<int, int> prevInstClef;
 	// we have read the instruments, we now read the rest of the score to store clef changes
 	file.clear();
 	file.seekg(0, file.beg);
@@ -2353,10 +2455,16 @@ void Editor::loadXMLFile(string filePath)
 				map<int, std::pair<bool, int>> m {{barNum, std::make_pair(false, 0)}};
 				instClefs[instNdx] = m;
 			}
+			if (prevInstClef.find(instNdx) == prevInstClef.end()) {
+				prevInstClef[instNdx] = 0;
+			}
 			//instClefs[instNdx][barNum] = 0;
 			if (isGroupped) {
 				for (i = 1; i < insts[instNdx].first; i++) {
 					instClefs[instNdx+i][barNum] = std::make_pair(false, 0);
+					if (prevInstClef.find(instNdx+i) == prevInstClef.end()) {
+						prevInstClef[instNdx+i] = 0;
+					}
 				}
 			}
 		}
@@ -2370,6 +2478,7 @@ void Editor::loadXMLFile(string filePath)
 		}
 		else if (startsWith(lineWithoutSpaces, "<sign>") && clefFollows) {
 			instClefs[instNdx+clefOffset][barNum] = std::make_pair(true, clefNdxs[lineWithoutSpaces.substr(6, lineWithoutSpaces.find_last_of("<")-6)]);
+			prevInstClef[instNdx+clefOffset] = instClefs[instNdx+clefOffset][barNum].second;
 			clefFollows = false;
 		}
 	}
@@ -2861,6 +2970,10 @@ void Editor::loadXMLFile(string filePath)
 			if (instClefs[it2->first][it->first].first) {
 				instLine += " clef ";
 				instLine += clefSymbols[instClefs[it2->first][it->first].second];
+			}
+			else {
+				instLine += " clef ";
+				instLine += clefSymbols[prevInstClef[it2->first]];
 			}
 			instLine += notes[it2->first][it->first].second;
 			createNewLine(instLine, 0);

@@ -98,6 +98,7 @@ void Sequencer::stopNow()
 	else mustStopCalled = false;
 	runSequencer = sequencerRunning = false;
 	beatCounter = 0;
+	((ofApp*)ofGetAppPtr())->sendSequencerStateToParts(false);
 }
 
 //--------------------------------------------------------------
@@ -168,7 +169,7 @@ void Sequencer::threadedFunction()
 	while (isThreadRunning()) {
 		timer.waitNext();
 		if (runSequencer && !sequencerRunning) {
-			sharedData->mutex.lock();
+			//sharedData->mutex.lock();
 			int bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisLoopIndex];
 			// in here we calculate the number of beats on a microsecond basis
 			numBeats = sharedData->numBeats[bar] * sharedData->tempo[bar];
@@ -207,11 +208,12 @@ void Sequencer::threadedFunction()
 				instMapIt->second.setFirstIter(true);
 			}
 			thisLoopIndex = sharedData->thisLoopIndex;
-			sharedData->mutex.unlock();
+			((ofApp*)ofGetAppPtr())->sendSequencerStateToParts(true);
+			//sharedData->mutex.unlock();
 		}
 	
 		if (sequencerRunning) {
-			sharedData->mutex.lock();
+			//sharedData->mutex.lock();
 			uint64_t timeStamp = ofGetElapsedTimeMicros();
 			int bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisLoopIndex];
 			int prevBar = sharedData->loopData[sharedData->loopIndex][((int)sharedData->thisLoopIndex - 1 < 0 ? (int)sharedData->loopData[sharedData->loopIndex].size()-1 : sharedData->thisLoopIndex-1)];
@@ -284,7 +286,7 @@ void Sequencer::threadedFunction()
 					}
 					finished = false;
 					stopNow();
-					sharedData->mutex.unlock();
+					//sharedData->mutex.unlock();
 					return;
 				}
 				if (firstIter) tickCounter = timeStamp;
@@ -352,6 +354,7 @@ void Sequencer::threadedFunction()
 					if (countdownCounter == 0) {
 						countdown = false;
 						sharedData->beatCounter = 0;
+						((ofApp*)ofGetAppPtr())->sendCountdownToParts(countdownCounter);
 					}
 				}
 				else {
@@ -402,7 +405,7 @@ void Sequencer::threadedFunction()
 						mustStop = false;
 						mustStopCalled = true;
 						stopNow();
-						sharedData->mutex.unlock();
+						//sharedData->mutex.unlock();
 						return;
 					}
 				}
@@ -607,7 +610,7 @@ void Sequencer::threadedFunction()
 					//sharedData->setAnimation = true;
 				}
 			}
-			sharedData->mutex.unlock();
+			//sharedData->mutex.unlock();
 		}
 	}
 }
@@ -640,10 +643,6 @@ void ofApp::setup()
 	numBarsParsed = 0;
 	firstInstForBarsIndex = 0;
 	firstInstForBarsSet = false;
-	waitToSendBarDataToParts = false;
-	sendBarDataToPartsBool = false;
-	sendBarDataToPartsCounter = 0;
-	barDataOKFromPartsCounter = 0;
 	checkIfAllPartsReceivedBarData = false;
 	lastFunctionIndex = 0;
 	fullScreen = false;
@@ -656,7 +655,8 @@ void ofApp::setup()
 	
 	ofSetWindowTitle("LiveLily");
 	
-	oscReceiver.setup(OSCPORT);
+	//oscReceiver.setup(OSCPORT);
+	oscReceiverIsSet = false;
 	// waiting time to receive a response from a score part server is one frame at 60 FPS
 	scorePartResponseTime = (uint64_t)((1000.0 / 60.0) + 0.5);
 	
@@ -841,6 +841,11 @@ void ofApp::setup()
 	commandsMap[livelily]["\\beatat"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\group"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\accoffset"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\autocomplete"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\active"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\inactive"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\sendkeys"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\sendlines"] = ofColor::fuchsia;
 	
 	commandsMapSecond[livelily]["clef"] = ofColor::pink;
 	commandsMapSecond[livelily]["rhythm"] = ofColor::pink;
@@ -883,182 +888,86 @@ void ofApp::setup()
 	commandsMapSecond[livelily]["setargs"] = ofColor::pink;
 	commandsMapSecond[livelily]["send"] = ofColor::pink;
 	commandsMapSecond[livelily]["setup"] = ofColor::pink;
+	commandsMapSecond[livelily]["on"] = ofColor::pink;
+	commandsMapSecond[livelily]["off"] = ofColor::pink;
 }
 
 //--------------------------------------------------------------
 void ofApp::update()
 {
-	sharedData.mutex.lock();
+	//sharedData.mutex.lock();
 	bool mutexLocked = true;
-	// if there are any error messages already received by a server
-	// resend the bar data
-	if (scorePartErrors.size() > 0) {
-		for (unsigned i = 0; i < scorePartErrors.size(); i++) {
-			cout << "resending bar " << scorePartErrors[i].second << " to " << sharedData.instruments[scorePartErrors[i].first].getName() << endl;
-			// scorePartErrors is a vector of pairs, which consists of the instrument index and the bar index
-			if (sharedData.instruments[scorePartErrors[i].first].getCopied(scorePartErrors[i].second)) {
-				sendCopyToPart(scorePartErrors[i].first, scorePartErrors[i].second, sharedData.instruments[scorePartErrors[i].first].getCopyNdx(scorePartErrors[i].second));
-			}
-			else {
-				sendNewBarToPart(scorePartErrors[i].first, sharedData.loopsOrdered[scorePartErrors[i].second], scorePartErrors[i].second);
-				sendBarDataToPart(scorePartErrors[i].first, scorePartErrors[i].second);
-			}
-			sendLoopDataToPart(scorePartErrors[i].first, scorePartErrors[i].second, sharedData.loopData[scorePartErrors[i].second]);
-		}
-		scorePartErrors.clear();
-	}
-	// check if enought time has passed since we sent all bar data to parts
-	// and if it has, check whether all parts have reported that they have received the data without errors
-	if (checkIfAllPartsReceivedBarData && ofGetElapsedTimeMillis() - sendBarDataToPartsTimeStamp > SENDBARDATA_WAITDUR) {
-		cout << "failure time has passed, checking which insts failed to receive data\n";
-		// resend data to parts that haven't reported success through the /barok OSC address
-		for (unsigned i = 0; i < sharedData.loopData[sharedData.tempBarLoopIndex].size(); i++) {
-			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				if (it->second.sendToPart) {
-					if (it->second.barDataOKFromParts.find(sharedData.loopData[sharedData.tempBarLoopIndex][i]) == it->second.barDataOKFromParts.end()) {
-						cout << it->second.getName() << " didn't report success, resending data for bar " << sharedData.loopData[sharedData.tempBarLoopIndex][i] << endl;
-						if (it->second.getCopied(sharedData.loopData[sharedData.tempBarLoopIndex][i])) {
-							sendCopyToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i], it->second.getCopyNdx(sharedData.loopData[sharedData.tempBarLoopIndex][i]));
-						}
-						else {
-							sendNewBarToPart(it->first, sharedData.loopsOrdered[sharedData.tempBarLoopIndex], sharedData.tempBarLoopIndex);
-							sendBarDataToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i]);
-						}
-						sendLoopDataToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i], sharedData.loopData[sharedData.tempBarLoopIndex]);
-					}
-					else if (it->second.barDataOKFromParts[sharedData.loopData[sharedData.tempBarLoopIndex][i]] == false) {
-						cout << it->second.getName() << " didn't report success, resending data for bar " << sharedData.loopData[sharedData.tempBarLoopIndex][i] << endl;
-						if (it->second.getCopied(sharedData.loopData[sharedData.tempBarLoopIndex][i])) {
-							sendCopyToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i], it->second.getCopyNdx(sharedData.loopData[sharedData.tempBarLoopIndex][i]));
-						}
-						else {
-							sendNewBarToPart(it->first, sharedData.loopsOrdered[sharedData.tempBarLoopIndex], sharedData.tempBarLoopIndex);
-							sendBarDataToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i]);
-						}
-						sendLoopDataToPart(it->first, sharedData.loopData[sharedData.tempBarLoopIndex][i], sharedData.loopData[sharedData.tempBarLoopIndex]);
-					}
-				}
-			}
-		}
-		// take a new time stamp
-		// if the parts that haven't received bar data properly do receive it now
-		// the checkIfAllPartsReceivedBarData boolean will be set to false and this
-		// if test will not run again for this bar(s)
-		sendBarDataToPartsTimeStamp = ofGetElapsedTimeMillis();
-	}
-	// check if there are new bar data to be sent to parts
-	if (sendBarDataToPartsBool && !waitToSendBarDataToParts) {
-		if (sendBarDataToPartsCounter < (int)sharedData.loopData[sharedData.tempBarLoopIndex].size()) {
-			int barIndex = sharedData.loopData[sharedData.tempBarLoopIndex][sendBarDataToPartsCounter++];
-			sendBarDataToParts(barIndex);
-		}
-		else {
-			sendBarDataToPartsBool = false;
-			// once all bars have been sent, take a time stamp so we can check if all parts
-			// have received bar data properly
-			// a counter that increments when we receive an OK at the /barok OSC address
-			// will set the boolean below to false once it reaches the number of bars that are supposed to be sent
-			// if not, then the chunk of code above this nested if will be executed
-			sendBarDataToPartsTimeStamp = ofGetElapsedTimeMillis();
-			checkIfAllPartsReceivedBarData = true;
-			cout << "all bars sent, setting time stamp\n";
-		}
-	}
     // check for OSC messages
 	while (oscReceiver.hasWaitingMessages()) {
 		ofxOscMessage m;
 		oscReceiver.getNextMessage(m);
 		string address = m.getAddress();
-		// check the error message received by a server
-		if (address == "/error") {
-			std::pair<int, int> p;
-			for (size_t i = 0; i < m.getNumArgs()/2; i++) {
-				cout << sharedData.instruments[m.getArgAsInt32(i*2)].getName() << " got error for bar " << m.getArgAsInt32((i*2)+1) << endl;
-				p = std::make_pair(m.getArgAsInt32(i*2), m.getArgAsInt32((i*2)+1));
-			}
-			scorePartErrors.push_back(p);
-		}
-		else if (address == "/barok") {
-			cout << "got bar OK from " << sharedData.instruments[m.getArgAsInt32(0)].getName() << endl;
-			// store the instruments that have received bar data without errors
-			sharedData.instruments[m.getArgAsInt32(0)].barDataOKFromParts[m.getArgAsInt32(1)] = true;
-			barDataOKFromPartsCounter++;
-			if (barDataOKFromPartsCounter / numScorePartSenders == sendBarDataToPartsCounter) {
-				checkIfAllPartsReceivedBarData = false;
-				cout << "all parts received bar data with part counter " << barDataOKFromPartsCounter << " bar counter " << sendBarDataToPartsCounter << " and num senders " << numScorePartSenders << endl;;
-				if (!sequencer.isThreadRunning()) {
-					sendLoopIndexToParts();
-				}
-			}
-		}
-		else {
-			for (map<int, string>::iterator it = fromOscAddr.begin(); it != fromOscAddr.end(); ++it) {
-				if (address.substr(0, it->second.size()) == it->second) {
-					int whichPaneOsc = fromOsc[it->first] - 1;
-					// unlock the mutex here because the function that handles data received from OSC locks it
-					sharedData.mutex.unlock();
-					mutexLocked = false;
-					map<int, Editor>::iterator editIt = editors.find(whichPaneOsc);
-					if (editIt != editors.end()) {
-						if (m.getArgType(0) == OFXOSC_TYPE_STRING) {
-							string oscStr = m.getArgAsString(0);
-							for (unsigned j = 0; j < oscStr.size(); j++) {
-								if (address.find("/press") != string::npos) {
-									editIt->second.fromOscPress((int)oscStr.at(j));
-								}
-								else if (address.find("/release") != string::npos) {
-									editIt->second.fromOscRelease((int)oscStr.at(j));
-								}
+		for (map<int, string>::iterator it = fromOscAddr.begin(); it != fromOscAddr.end(); ++it) {
+			if (address.substr(0, it->second.size()) == it->second) {
+				int whichPaneOsc = it->first;
+				// unlock the mutex here because the function that handles data received from OSC locks it
+				//sharedData.mutex.unlock();
+				mutexLocked = false;
+				map<int, Editor>::iterator editIt = editors.find(whichPaneOsc);
+				if (editIt != editors.end()) {
+					if (m.getArgType(0) == OFXOSC_TYPE_STRING) {
+						string oscStr = m.getArgAsString(0);
+						for (unsigned j = 0; j < oscStr.size(); j++) {
+							if (address.find("/press") != string::npos) {
+								editIt->second.fromOscPress((int)oscStr.at(j));
 							}
-						}
-						else if (m.getArgType(0) == OFXOSC_TYPE_INT32) {
-							size_t numArgs = m.getNumArgs();
-							for (size_t j = 0; j < numArgs; j++) {
-								int oscVal = (int)m.getArgAsInt32(j);
-								if (address.find("/press") != string::npos) {
-									editIt->second.fromOscPress(oscVal);
-								}
-								else if (address.find("/release") != string::npos) {
-									editIt->second.fromOscRelease(oscVal);
-								}
+							else if (address.find("/release") != string::npos) {
+								editIt->second.fromOscRelease((int)oscStr.at(j));
 							}
-						}
-						else if (m.getArgType(0) == OFXOSC_TYPE_INT64) {
-							size_t numArgs = m.getNumArgs();
-							for (size_t j = 0; j < numArgs; j++) {
-								int oscVal = (int)m.getArgAsInt64(j);
-								if (address.find("/press") != string::npos) {
-									editIt->second.fromOscPress(oscVal);
-								}
-								else if (address.find("/release") != string::npos) {
-									editIt->second.fromOscRelease(oscVal);
-								}
-							}
-						}
-						else if (m.getArgType(0) == OFXOSC_TYPE_FLOAT) {
-							size_t numArgs = m.getNumArgs();
-							for (size_t j = 0; j < numArgs; j++) {
-								int oscVal = (int)m.getArgAsFloat(j);
-								if (address.find("/press") != string::npos) {
-									editIt->second.fromOscPress(oscVal);
-								}
-								else if (address.find("/release") != string::npos) {
-									editIt->second.fromOscRelease(oscVal);
-								}
-							}
-						}
-						else {
-							cout << "unknown OSC message type\n";
 						}
 					}
-					break;
+					else if (m.getArgType(0) == OFXOSC_TYPE_INT32) {
+						size_t numArgs = m.getNumArgs();
+						for (size_t j = 0; j < numArgs; j++) {
+							int oscVal = (int)m.getArgAsInt32(j);
+							if (address.find("/press") != string::npos) {
+								editIt->second.fromOscPress(oscVal);
+							}
+							else if (address.find("/release") != string::npos) {
+								editIt->second.fromOscRelease(oscVal);
+							}
+						}
+					}
+					else if (m.getArgType(0) == OFXOSC_TYPE_INT64) {
+						size_t numArgs = m.getNumArgs();
+						for (size_t j = 0; j < numArgs; j++) {
+							int oscVal = (int)m.getArgAsInt64(j);
+							if (address.find("/press") != string::npos) {
+								editIt->second.fromOscPress(oscVal);
+							}
+							else if (address.find("/release") != string::npos) {
+								editIt->second.fromOscRelease(oscVal);
+							}
+						}
+					}
+					else if (m.getArgType(0) == OFXOSC_TYPE_FLOAT) {
+						size_t numArgs = m.getNumArgs();
+						for (size_t j = 0; j < numArgs; j++) {
+							int oscVal = (int)m.getArgAsFloat(j);
+							if (address.find("/press") != string::npos) {
+								editIt->second.fromOscPress(oscVal);
+							}
+							else if (address.find("/release") != string::npos) {
+								editIt->second.fromOscRelease(oscVal);
+							}
+						}
+					}
+					else {
+						cout << "unknown OSC message type\n";
+					}
 				}
+				break;
 			}
 		}
 	}
 
 
-	if (!mutexLocked) sharedData.mutex.lock();
+	//if (!mutexLocked) sharedData.mutex.lock();
 	// check if any instrument has a delay for receiving OSC messages
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 		if (it->second.oscFifo.size() > 0) {
@@ -1075,7 +984,7 @@ void ofApp::update()
 			parseCommand(func->second.getName(), 1, 1);
 		}
 	}
-	sharedData.mutex.unlock();
+	//sharedData.mutex.unlock();
 
 	if (isWindowResized) {
 		if ((ofGetElapsedTimeMillis() - windowResizeTimeStamp) > WINDOW_RESIZE_GAP) {
@@ -1094,7 +1003,7 @@ void ofApp::update()
 //--------------------------------------------------------------
 void ofApp::draw()
 {
-	sharedData.mutex.lock();
+	//sharedData.mutex.lock();
 	for (map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 		it->second.drawText();
 	}
@@ -1131,7 +1040,7 @@ void ofApp::draw()
 		drawScore();
 	}
 	drawTraceback();
-	sharedData.mutex.unlock();
+	//sharedData.mutex.unlock();
 }
 
 //--------------------------------------------------------------
@@ -1341,6 +1250,8 @@ void ofApp::drawScore()
 			bool drawClef = false, drawMeter = false, animate = false;
 			bool drawTempo = false;
 			bool showBar = true;
+			// safety test to avoid division by zero, in case something went wrong when setting a loop
+			if (sharedData.loopData[sharedData.loopIndex].size() == 0) break;
 			int barNdx = (ndx + i) % (int)sharedData.loopData[sharedData.loopIndex].size();
 			bar = sharedData.loopData[sharedData.loopIndex][barNdx];
 			if (i == 0) {
@@ -1602,6 +1513,7 @@ void ofApp::executeKeyPressed(int key)
 						auto editNodeHolder = editors.extract(editKey);
 						editNodeHolder.key() = editKey + 1;
 						editors.insert(std::move(editNodeHolder));
+						editors[editKey+1].setID(editRevIt->second.getID()+1);
 					}
 				}
 				editors[whichPane+1] = editor;
@@ -1778,7 +1690,7 @@ void ofApp::executeKeyReleased(int key)
 // overloaded keyPressed() function called from OSC
 void ofApp::keyPressedOsc(int key, int thisEditor)
 {
-	sharedData.mutex.lock();
+	//sharedData.mutex.lock();
 	int whichPaneBackup = whichPane;
 	// change the currently active editor temporarily
 	// because this overloaded function is called from an editor
@@ -1788,7 +1700,7 @@ void ofApp::keyPressedOsc(int key, int thisEditor)
 	whichPane = thisEditor;
 	executeKeyPressed(key);
 	whichPane = whichPaneBackup;
-	sharedData.mutex.unlock();
+	//sharedData.mutex.unlock();
 }
 
 //--------------------------------------------------------------
@@ -1796,30 +1708,42 @@ void ofApp::keyPressedOsc(int key, int thisEditor)
 void ofApp::keyReleasedOsc(int key, int thisEditor)
 {
 	// the same applies to releasing a key
-	sharedData.mutex.lock();
+	//sharedData.mutex.lock();
 	int whichPaneBackup = whichPane;
 	whichPane = thisEditor;
 	executeKeyReleased(key);
 	whichPane = whichPaneBackup;
-	sharedData.mutex.unlock();
+	//sharedData.mutex.unlock();
 }
 
 //--------------------------------------------------------------
 // OF's default keyPressed() function
 void ofApp::keyPressed(int key)
 {
-	sharedData.mutex.lock();
+	//sharedData.mutex.lock();
+	if (editors[whichPane].getSendKeys()) {
+		ofxOscMessage m;
+		m.setAddress("/livelily"+to_string(editors[whichPane].getSendKeysPaneNdx())+"/press");
+		m.addIntArg(key);
+		editors[whichPane].oscKeys.sendMessage(m, false);
+	}
 	executeKeyPressed(key);
-	sharedData.mutex.unlock();
+	//sharedData.mutex.unlock();
 }
 
 //--------------------------------------------------------------
 // OF's default keyReleased() function
 void ofApp::keyReleased(int key)
 {
-	sharedData.mutex.lock();
+	//sharedData.mutex.lock();
+	if (editors[whichPane].getSendKeys()) {
+		ofxOscMessage m;
+		m.setAddress("/livelily"+to_string(editors[whichPane].getSendKeysPaneNdx())+"/release");
+		m.addIntArg(key);
+		editors[whichPane].oscKeys.sendMessage(m, false);
+	}
 	executeKeyReleased(key);
-	sharedData.mutex.unlock();
+	//sharedData.mutex.unlock();
 }
 
 //--------------------------------------------------------------
@@ -1867,7 +1791,7 @@ void ofApp::quickSort(uint64_t arr[], int arr2[], int low, int high)
 void ofApp::sendToParts(ofxOscMessage m, bool delay)
 {
 	for (auto it = grouppedOSCClients.begin(); it != grouppedOSCClients.end(); ++it) {
-		if (delay) { //sharedData.instruments[*it].hasDelay() && delay) {
+		if (sharedData.instruments[*it].hasDelay() && delay) {
 			std::pair<ofxOscMessage, unsigned long> p = std::make_pair(m, ofGetElapsedTimeMillis());
 			sharedData.instruments[*it].oscFifo.push_back(p);
 		}
@@ -1894,30 +1818,6 @@ void ofApp::sendStopCountdownToParts()
 	m.setAddress("/nocountdown");
 	m.addIntArg(1); // dummy arg
 	sendToParts(m, true);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::sendLoopDataToParts(int barIndex, vector<int> ndxs)
-{
-	// send the bar indexes of the loop to any connected instrument
-	ofxOscMessage m;
-	m.setAddress("/loop");
-	m.addIntArg(barIndex);
-	for (int ndx : ndxs) m.addIntArg(ndx);
-	sendToParts(m, false);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::sendLoopDataToPart(int instNdx, int barIndex, vector<int> ndxs)
-{
-	// send the bar indexes of the loop to any connected instrument
-	ofxOscMessage m;
-	m.setAddress("/loop");
-	m.addIntArg(barIndex);
-	for (int ndx : ndxs) m.addIntArg(ndx);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
 }
 
@@ -1949,273 +1849,6 @@ void ofApp::sendAccOffsetToPart(int instNdx, float accOffset)
 }
 
 //--------------------------------------------------------------
-void ofApp::sendBarIndexBeatMeterToPart(int instNdx, int barIndex)
-{
-	ofxOscMessage m;
-	m.setAddress("/instndx");
-	m.addIntArg(instNdx);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/bardata");
-	m.addIntArg(barIndex);
-	m.addIntArg(sharedData.BPMTempi[barIndex]);
-	m.addIntArg(sharedData.tempoBaseForScore[barIndex]);
-	m.addBoolArg(sharedData.BPMDisplayHasDot[barIndex]);
-	m.addIntArg(sharedData.numBeats[barIndex]);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/meter");
-	m.addIntArg(sharedData.numerator[barIndex]);
-	m.addIntArg(sharedData.denominator[barIndex]);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::sendBarDataToPart(int instNdx, int barIndex)
-{
-	sendBarIndexBeatMeterToPart(instNdx, barIndex);
-	int size = 0;
-	ofxOscMessage m;
-	m.setAddress("/notes");
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreNotes[barIndex].size(); i++) {
-		size += (int)sharedData.instruments[instNdx].scoreNotes[barIndex][i].size();
-		size++; // we add a 1000 to separate the vectors within a vector
-	}
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreNotes[barIndex].size(); i++) {
-		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreNotes[barIndex][i].size(); j++) {
-			m.addIntArg(sharedData.instruments[instNdx].scoreNotes[barIndex][i][j]);
-		}
-		m.addIntArg(1000);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	size = 0;
-	m.setAddress("/acc");
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreAccidentals[barIndex].size(); i++) {
-		size += (int)sharedData.instruments[instNdx].scoreAccidentals[barIndex][i].size();
-		size++; // we add a 1000 to separate the vectors within a vector
-	}
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreAccidentals[barIndex].size(); i++) {
-		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreAccidentals[barIndex][i].size(); j++) {
-			m.addIntArg(sharedData.instruments[instNdx].scoreAccidentals[barIndex][i][j]);
-		}
-		m.addIntArg(1000);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	size = 0;
-	m.setAddress("/natur");
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreNaturalSignsNotWritten[barIndex].size(); i++) {
-		size += (int)sharedData.instruments[instNdx].scoreNaturalSignsNotWritten[barIndex][i].size();
-		size++; // we add a 1000 to separate the vectors within a vector
-	}
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreNaturalSignsNotWritten[barIndex].size(); i++) {
-		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreNaturalSignsNotWritten[barIndex][i].size(); j++) {
-			m.addIntArg(sharedData.instruments[instNdx].scoreNaturalSignsNotWritten[barIndex][i][j]);
-		}
-		m.addIntArg(1000);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	size = 0;
-	m.setAddress("/oct");
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreOctaves[barIndex].size(); i++) {
-		size += (int)sharedData.instruments[instNdx].scoreOctaves[barIndex][i].size();
-		size++; // we add a 1000 to separate the vectors within a vector
-	}
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreOctaves[barIndex].size(); i++) {
-		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreOctaves[barIndex][i].size(); j++) {
-			m.addIntArg(sharedData.instruments[instNdx].scoreOctaves[barIndex][i][j]);
-		}
-		m.addIntArg(1000);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/ott");
-	size = (int)sharedData.instruments[instNdx].scoreOttavas[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreOttavas[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].scoreOttavas[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/durs");
-	size = (int)sharedData.instruments[instNdx].scoreDurs[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreDurs[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].scoreDurs[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/dots");
-	size = (int)sharedData.instruments[instNdx].scoreDotIndexes[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreDotIndexes[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].scoreDotIndexes[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/gliss");
-	size = (int)sharedData.instruments[instNdx].scoreGlissandi[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreGlissandi[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].scoreGlissandi[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	size = 0;
-	m.setAddress("/artic");
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreArticulations[barIndex].size(); i++) {
-		size += (int)sharedData.instruments[instNdx].scoreArticulations[barIndex][i].size();
-		size++; // we add a 1000 to separate the vectors within a vector
-	}
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreArticulations[barIndex].size(); i++) {
-		for (unsigned j = 0; j < sharedData.instruments[instNdx].scoreArticulations[barIndex][i].size(); j++) {
-			m.addIntArg(sharedData.instruments[instNdx].scoreArticulations[barIndex][i][j]);
-		}
-		m.addIntArg(1000);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/dyn");
-	size = (int)sharedData.instruments[instNdx].scoreDynamics[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreDynamics[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].scoreDynamics[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/dynidx");
-	size = (int)sharedData.instruments[instNdx].scoreDynamicsIndexes[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreDynamicsIndexes[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].scoreDynamicsIndexes[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/dynramp_start");
-	size = (int)sharedData.instruments[instNdx].scoreDynamicsRampStart[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreDynamicsRampStart[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].scoreDynamicsRampStart[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/dynramp_end");
-	size = (int)sharedData.instruments[instNdx].scoreDynamicsRampEnd[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreDynamicsRampEnd[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].scoreDynamicsRampEnd[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/dynramp_dir");
-	size = (int)sharedData.instruments[instNdx].scoreDynamicsRampDir[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreDynamicsRampDir[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].scoreDynamicsRampDir[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/slurndxs");
-	size = (int)sharedData.instruments[instNdx].slurIndexes[barIndex].size() * 2;
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].slurIndexes[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].slurIndexes[barIndex][i].first);
-		m.addIntArg(sharedData.instruments[instNdx].slurIndexes[barIndex][i].second);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/barslurred");
-	m.addBoolArg(sharedData.instruments[instNdx].isWholeBarSlurred[barIndex]);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/ties");
-	size = (int)sharedData.instruments[instNdx].tieIndexes[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].tieIndexes[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].tieIndexes[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/texts");
-	size = (int)sharedData.instruments[instNdx].scoreTexts[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].scoreTexts[barIndex].size(); i++) {
-		m.addStringArg(sharedData.instruments[instNdx].scoreTexts[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/tupratio");
-	size = (int)sharedData.instruments[instNdx].scoreTupRatios[barIndex].size() * 3;
-	m.addIntArg(size);
-	for (auto it = sharedData.instruments[instNdx].scoreTupRatios[barIndex].begin(); it != sharedData.instruments[instNdx].scoreTupRatios[barIndex].end(); ++it) {
-		m.addIntArg(it->first);
-		m.addIntArg(it->second.first);
-		m.addIntArg(it->second.second);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/tupstartstop");
-	size = (int)sharedData.instruments[instNdx].scoreTupStartStop[barIndex].size() * 3;
-	m.addIntArg(size);
-	for (auto it = sharedData.instruments[instNdx].scoreTupStartStop[barIndex].begin(); it != sharedData.instruments[instNdx].scoreTupStartStop[barIndex].end(); ++it) {
-		m.addIntArg(it->first);
-		m.addIntArg(it->second.first);
-		m.addIntArg(it->second.second);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/bpmmult");
-	m.addIntArg(sharedData.BPMMultiplier[barIndex]);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-	m.setAddress("/textidx");
-	size = (int)sharedData.instruments[instNdx].textIndexes[barIndex].size();
-	m.addIntArg(size);
-	for (unsigned i = 0; i < sharedData.instruments[instNdx].textIndexes[barIndex].size(); i++) {
-		m.addIntArg(sharedData.instruments[instNdx].textIndexes[barIndex][i]);
-	}
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::sendCopyToPart(int instNdx, int barIndex, int barToCopy)
-{
-	ofxOscMessage m;
-	m.setAddress("/copy");
-	m.addIntArg(instNdx);
-	m.addIntArg(barIndex);
-	m.addIntArg(barToCopy);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::sendBarDataToParts(int barIndex)
-{
-	for (auto it = sharedData.instrumentIndexesOrdered.begin(); it != sharedData.instrumentIndexesOrdered.end(); ++it) {
-		if (sharedData.instruments[it->second].sendToPart) {
-			if (sharedData.instruments[it->second].getCopied(barIndex)) {
-				sendCopyToPart(it->second, barIndex, sharedData.instruments[it->second].getCopyNdx(barIndex));
-			}
-			else {
-				sendNewBarToPart(it->second, sharedData.loopsOrdered[barIndex], barIndex);
-				sendBarDataToPart(it->second, barIndex);
-			}
-			sendLoopDataToPart(it->second, barIndex, sharedData.loopData[barIndex]);
-		}
-	}
-}
-
-//--------------------------------------------------------------
 void ofApp::sendLoopIndexToParts()
 {
 	ofxOscMessage m;
@@ -2226,47 +1859,12 @@ void ofApp::sendLoopIndexToParts()
 }
 
 //--------------------------------------------------------------
-void ofApp::sendNewBarToParts(string barName, int barIndex)
+void ofApp::sendSequencerStateToParts(bool state)
 {
 	ofxOscMessage m;
-	m.setAddress("/newbar");
-	m.addStringArg(barName);
-	m.addIntArg(barIndex);
+	m.setAddress("/seq");
+	m.addBoolArg(state);
 	sendToParts(m, false);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::sendNewBarToPart(int instNdx, string barName, int barIndex)
-{
-	ofxOscMessage m;
-	m.setAddress("/newbar");
-	m.addStringArg(barName);
-	m.addIntArg(barIndex);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::sendClefToPart(int instNdx, int bar, int clef)
-{
-	ofxOscMessage m;
-	m.setAddress("/clef");
-	m.addIntArg(instNdx);
-	m.addIntArg(bar);
-	m.addIntArg(clef);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::sendRhythmToPart(int instNdx)
-{
-	ofxOscMessage m;
-	m.setAddress("/rhythm");
-	m.addIntArg(instNdx);
-	m.addBoolArg(true);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
 	m.clear();
 }
 
@@ -2770,7 +2368,20 @@ void ofApp::parseStrings(int index, int numLines)
 	for (int i = index; i < (index+numLines); i++) {
 		// parseString() returns a pair of int and string, where the int determines the error type
 		// 0 for nothing, 1 for note, 2 for warning, and 3 for error
-		errors.push_back(parseString(editors[whichPane].allStrings[i], i, numLines));
+		if (editors[whichPane].getSessionActivity()) {
+			errors.push_back(parseString(editors[whichPane].allStrings[i], i, numLines));
+			if (editors[whichPane].getSendLines()) {
+				ofxOscMessage m;
+				m.setAddress("/livelily"+to_string(editors[whichPane].getSendLinesPaneNdx())+"/press");
+				m.addStringArg(editors[whichPane].allStrings[i]);
+				editors[whichPane].oscKeys.sendMessage(m, false);
+			}
+		}
+		else {
+			if (editors[whichPane].allStrings[i] == "\\active") {
+				errors.push_back(parseString(editors[whichPane].allStrings[i], i, numLines));
+			}
+		}
 	}
 	for (std::pair<int, string> error : errors) {
 		if (error.first == 3) {
@@ -2800,7 +2411,6 @@ void ofApp::parseStrings(int index, int numLines)
 				}
 				parsingBar = false;
 				checkIfAllPartsReceivedBarData = false;
-				sendBarDataToPartsBool = false;
 			}
 			if (parsingLoop) {
 				parsingLoop = false;
@@ -2816,10 +2426,24 @@ void ofApp::parseStrings(int index, int numLines)
 	}
 	// if we have parsed at least one melodic line
 	if (noErrors && (parsingBar || parsingLoop)) {
+		// first send the parsed lines to any connected instruments
+		ofxOscMessage m;
+		m.setAddress("/line");
+		m.addIntArg(numLines);
+		for (int i = index; i < (index+numLines); i++) {
+			m.addStringArg(editors[whichPane].allStrings[i]);
+		}
+		if (!sequencer.isThreadRunning()) {
+			m.addIntArg(1);
+		}
+		else {
+			m.addIntArg(0);
+		}
+		sendToParts(m, false);
 		// the bar index has already been stored with the \bar command
 		int barIndex = getLastLoopIndex();
 		if (!parsingLoop) {
-			// first add a rest for any instrument that is not included in the bar
+			// then add a rest for any instrument that is not included in the bar
 			fillInMissingInsts(barIndex);
 			// then store the number of beats for this bar
 			// if we create a bar, create a loop with this bar only
@@ -2831,20 +2455,13 @@ void ofApp::parseStrings(int index, int numLines)
 			}
 			setScoreNotes(barIndex);
 			if (!parsingBars) {
+				// then set the note positions and calculate the staff positions
 				setNotePositions(barIndex);
 				calculateStaffPositions(barIndex, false);
 			}
 			barError = false;
-			if (numScorePartSenders > 0) {
-				sendBarDataToPartsBool = true;
-				sendBarDataToPartsCounter = 0;
-				barDataOKFromPartsCounter = 0;
-			}
 			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 				it->second.setPassed(false);
-				if (it->second.barDataOKFromParts.find(barIndex) == it->second.barDataOKFromParts.end()) {
-					it->second.barDataOKFromParts[barIndex] = false;
-				}
 			}
 		}
 		if (!sequencer.isThreadRunning()) {
@@ -2875,6 +2492,17 @@ void ofApp::parseStrings(int index, int numLines)
 			parseStrings(index, numLines);
 		}
 		else {
+			// when we parse many bars, we wait for all the parsing to finish
+			// before we send the parsed lines to any connected instruments
+			// this is so that we avoid sending these lines mutliple times, one for each parsed bar
+			ofxOscMessage m;
+			m.setAddress("/line");
+			m.addIntArg(numLines);
+			for (int i = index; i < (index+numLines); i++) {
+				m.addStringArg(editors[whichPane].allStrings[i]);
+			}
+			sendToParts(m, false);
+			// once we send the parsed lines to any connected instrument, we go on
 			int barIndex = sharedData.barsIndexes["\\"+multiBarsName+"-1"];
 			setNotePositions(barIndex, barsIterCounter);
 			for (int i = 0; i < barsIterCounter; i++) {
@@ -2892,9 +2520,6 @@ void ofApp::parseStrings(int index, int numLines)
 			// and we close the curly brackets
 			multiBarsLoop += ("\\" + multiBarsName + "-" + to_string(barsIterCounter) + "}");
 			parseCommand(multiBarsLoop, index, 1);
-			waitToSendBarDataToParts = false;
-			sendBarDataToPartsCounter = 0;
-			barDataOKFromPartsCounter = 0;
 			barsIterCounter = 0;
 		}
 	}
@@ -3071,6 +2696,7 @@ int ofApp::storeNewBar(string barName)
 		sharedData.denominator[barIndex] = 4;
 		sharedData.numBeats[barIndex] = sharedData.numerator[barIndex] * (MINDUR / sharedData.denominator[barIndex]);
 		sharedData.tempoMs[barIndex] = 500;
+		sharedData.BPMTempi[barIndex] = 120;
 		sharedData.BPMMultiplier[barIndex] = 1;
 		sharedData.beatAtDifferentThanDivisor[barIndex] = false;
 		sharedData.beatAtValues[barIndex] = 1;
@@ -3084,6 +2710,7 @@ int ofApp::storeNewBar(string barName)
 		sharedData.denominator[barIndex] = sharedData.denominator[prevBarIndex];
 		sharedData.numBeats[barIndex] = sharedData.numBeats[prevBarIndex];
 		sharedData.tempoMs[barIndex] = sharedData.tempoMs[prevBarIndex];
+		sharedData.BPMTempi[barIndex] = sharedData.BPMTempi[prevBarIndex];
 		sharedData.BPMMultiplier[barIndex] = sharedData.BPMMultiplier[prevBarIndex];
 		sharedData.beatAtDifferentThanDivisor[barIndex] = sharedData.beatAtDifferentThanDivisor[prevBarIndex];
 		sharedData.beatAtValues[barIndex] = sharedData.beatAtValues[prevBarIndex];
@@ -3484,13 +3111,6 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		for (unsigned i = 1; i < commands.size(); i++) {
 			if (i > 1) {
 				sharedData.instruments[sharedData.instrumentIndexes[commands[i]]].setGroup(sharedData.instruments[sharedData.instrumentIndexes[commands[i-1]]].getID());
-				if (sharedData.instruments[sharedData.instrumentIndexes[commands[i]]].sendToPart) {
-					ofxOscMessage m;
-					m.setAddress("/group");
-					m.addIntArg(sharedData.instrumentIndexes[commands[i]]);
-					m.addIntArg(sharedData.instruments[sharedData.instrumentIndexes[commands[i]]].getGroup());
-					sharedData.instruments[sharedData.instrumentIndexes[commands[i]]].scorePartSender.sendMessage(m, false);
-				}
 			}
 		}
 	}
@@ -3544,9 +3164,8 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 			return std::make_pair(3, (string)"bar " + barName.substr(1) + (string)" already exists");
 		}
 		parsingBar = true;
-		waitToSendBarDataToParts = false;
 		int barIndex = storeNewBar(barName);
-		cout << "will parse bar " << sharedData.loopsOrdered[barIndex] << endl;
+		cout << "will parse bar " << sharedData.loopsOrdered[barIndex] << " with index " << barIndex << endl;
 		// first set all instruments to not passed and not copied
 		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 			it->second.setPassed(false);
@@ -3609,7 +3228,6 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 				it->second.setMultiBarsStrBegin(0);
 			}
 			parsingBars = true;
-			waitToSendBarDataToParts = true;
 		}
 		multiBarsName = commands[1];
 		auto barsExist = sharedData.loopsIndexes.find("\\" + multiBarsName);
@@ -3686,6 +3304,10 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 			fromOscAddr[whichPane] = "/livelily" + to_string(whichPane+1);
 		}
 		fromOsc[whichPane] = true;
+		if (!oscReceiverIsSet) {
+			oscReceiver.setup(OSCPORT);
+			oscReceiverIsSet = true;
+		}
 	}
 
 	else if (commands[0].compare("\\rest") == 0) {
@@ -4038,13 +3660,13 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		if (commands.size() > 1) {
 			return std::make_pair(3, "\\listmidiports command takes no arguments");
 		}
-		vector<string> outPorts = sequencer.midiOut.getOutPortList();
+		sequencer.midiOutPorts = sequencer.midiOut.getOutPortList();
 		string outPortsOneStr = "";
-		for (unsigned i = 0; i < outPorts.size()-1; i++) {
-			outPortsOneStr += "MIDI out port " + to_string(i) + ": " + outPorts[i] += "\n";
+		for (unsigned i = 0; i < sequencer.midiOutPorts.size()-1; i++) {
+			outPortsOneStr += "MIDI out port " + to_string(i) + ": " + sequencer.midiOutPorts[i] += "\n";
 		}
 		// append the last port separately to not include the newline
-		outPortsOneStr += "MIDI out port " + to_string(outPorts.size()-1) + ": " + outPorts.back();
+		outPortsOneStr += "MIDI out port " + to_string(sequencer.midiOutPorts.size()-1) + ": " + sequencer.midiOutPorts.back();
 		return std::make_pair(1, outPortsOneStr);
 	}
 	
@@ -4058,7 +3680,14 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		if (!isNumber(commands[1])) {
 			return std::make_pair(3, "midi port argument must be a number");
 		}
-		sequencer.midiOut.openPort(stoi(commands[1]));
+		unsigned midiPort = stoi(commands[1]);
+		if (midiPort >= sequencer.midiOutPorts.size()) {
+			return std::make_pair(3, "midi port doesn't exist");
+		}
+		ofxMidiOut midiOut;
+		midiOut.openPort(midiPort);
+		//sequencer.midiOut.openPort(midiPort);
+		sequencer.midiOuts.push_back(midiOut);
 		midiPortOpen = true;
 		return std::make_pair(1, "opened MIDI port " + commands[1]);
 	}
@@ -4210,7 +3839,63 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		}
 		return std::make_pair(1, ofSystem(sysCommand));
 	}
+	else if (commands[0].compare("\\autocomplete") == 0) {
+		if (commands.size() != 2) {
+			return std::make_pair(3, "\\autocomplete takes one argument only, \"on\" or \"off\"");
+		}
+		if (commands[1].compare("on") != 0 && commands[1].compare("off") != 0) {
+			return std::make_pair(3, " argument to \\autocomplete must be \"on\" or \"off\"");
+		}
+		if (commands[1].compare("on") == 0) {
+			editors[whichPane].setAutocomplete(true);
+		}
+		else {
+			editors[whichPane].setAutocomplete(false);
+		}
+	}
 
+	else if (commands[0].compare("\\active") == 0) {
+		if (commands.size() > 1) {
+			return std::make_pair(3, "\\active takes no arguments");
+		}
+		editors[whichPane].setSessionActivity(true);
+	}
+
+	else if (commands[0].compare("\\inactive") == 0) {
+		if (commands.size() > 1) {
+			return std::make_pair(3, "\\inactive takes no arguments");
+		}
+		editors[whichPane].setSessionActivity(false);
+	}
+
+	else if (commands[0].compare("\\sendkeys") == 0) {
+		if (commands.size() != 3) {
+			return std::make_pair(3, "\\sendkeys takes two arguments, host IP and pane index");
+		}
+		string hostIP = commands[1];
+		int paneNdx;
+		if (!isNumber(commands[2])) {
+			return std::make_pair(3, "pane index of host is not a number");
+		}
+		paneNdx = stoi(commands[2]);
+		editors[whichPane].oscKeys.setup(hostIP, OSCPORT);
+		editors[whichPane].setSendKeys(paneNdx);
+	}
+		
+	else if (commands[0].compare("\\sendlines") == 0) {
+		if (commands.size() != 3) {
+			return std::make_pair(3, "\\sendlines takes two arguments, host IP and pane index");
+		}
+		string hostIP = commands[1];
+		int paneNdx;
+		if (!isNumber(commands[2])) {
+			return std::make_pair(3, "pane index of host is not a number");
+		}
+		paneNdx = stoi(commands[2]);
+		editors[whichPane].oscKeys.setup(hostIP, OSCPORT);
+		editors[whichPane].setSendLines(paneNdx);
+	}
+		
 	else if (commands[0].compare("\\livelily") == 0) {
 		if (commands.size() > 1) {
 			return std::make_pair(3, "language command takes no arguments");
@@ -4307,9 +3992,6 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 						std::pair<int, string> p = std::make_pair(3, "unknown clef");
 						return std::make_pair(instrumentExists, p);
 					}
-					if (sharedData.instruments[lastInstrumentIndex].sendToPart) {
-						sendClefToPart(lastInstrumentIndex, getLastBarIndex(), clef);
-					}
 					if (commands.size() > 3) {
 						commandNdxOffset = 3;
 						goto parseMelody;
@@ -4322,9 +4004,6 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 						return std::make_pair(instrumentExists, p);
 					}
 					sharedData.instruments[lastInstrumentIndex].setRhythm(true);
-					if (sharedData.instruments[lastInstrumentIndex].sendToPart) {
-						sendRhythmToPart(lastInstrumentIndex);
-					}
 				}
 				else if (commands[1].compare("transpose") == 0) {
 					if (commands.size() != 3) {
@@ -4354,54 +4033,44 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					sharedData.instruments[lastInstrumentIndex].setSendMIDI(true);
 				}
 				else if (commands[1].compare("sendto") == 0) {
-					bool sendNotice = false;
-					if (commands.size() < 3) {
-						sendNotice = true;
-					}
-					else if (commands.size() > 5) {
-						std::pair<int, string> p = std::make_pair(3, "\"sendto\" takes zero or three arguments, host IP, port, and this computer's IP");
+					int sendNotice = 0;
+					if (commands.size() > 4) {
+						std::pair<int, string> p = std::make_pair(3, "\"sendto\" takes zero to two arguments, remote IP and/or port");
 						return std::make_pair(instrumentExists, p);
 					}
-					string host;
+					string remoteIP;
 					int port;
 					if (commands.size() < 3) {
-						host = "localhost\t127.0.0.1";
+						remoteIP = "127.0.0.1";
 						port = SCOREPARTPORT;
+						sendNotice = 1;
 					}
-					else if (commands.size() > 3) {
-						if (commands.size() == 5) {
-							if (isNumber(commands[2]) || !isNumber(commands[3]) || isNumber(commands[4])) {
-								std::pair<int, string> p = std::make_pair(3, "if two arguments are provided, first argument must be host IP, second must be port number, and third this computer's IP");
+					else if (commands.size() > 2) {
+						if (commands.size() == 4) {
+							if (isNumber(commands[2]) || !isNumber(commands[3])) {
+								std::pair<int, string> p = std::make_pair(3, "if two arguments are provided, first argument must be remote IP and second must be port number");
 								return std::make_pair(instrumentExists, p);
 							}
-							host = commands[2] + "\t" + commands[4];
+							remoteIP = commands[2];
 							port = stoi(commands[3]);
 						}
 						else {
-							if (isNumber(commands[2]) || isNumber(commands[3])) {
-								std::pair<int, string> p = std::make_pair(3, "if two arguments are provided, first argument must be host IP, and second this computer's IP");
-								return std::make_pair(instrumentExists, p);
+							if (isNumber(commands[2])) {
+								remoteIP = "127.0.0.1";
+								port = stoi(commands[2]);
+								sendNotice = 2;
 							}
-							host = commands[2] + "\t" + commands[3];
-							port = SCOREPARTPORT;
+							else {
+								remoteIP = commands[2];
+								port = SCOREPARTPORT;
+								sendNotice = 3;
+							}
 						}
 					}
-					else {
-						if (isNumber(commands[2])) {
-							host = "localhost\t127.0.0.1";
-							port = stoi(commands[2]);
-						}
-						else {
-							std::pair<int, string> p = std::make_pair(3, "if one argument is provided, it must be the port number");
-							return std::make_pair(instrumentExists, p);
-						}
-					}
-					size_t tabPos = host.find("\t");
-					string hostIP = host.substr(0, tabPos);
-					std::pair<string, int> hostPort = std::make_pair(hostIP, port);
+					std::pair<string, int> IPAndPort = std::make_pair(remoteIP, port);
 					bool clientExists = false;
 					for (auto it = instrumentOSCHostPorts.begin(); it != instrumentOSCHostPorts.end(); ++it) {
-						if (hostPort == it->second) {
+						if (IPAndPort == it->second) {
 							// if there is already a client that sends to the same server
 							// ignore this instrument, as the already existing client will send
 							// the generic OSC messages
@@ -4412,21 +4081,31 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					if (!clientExists) {
 						grouppedOSCClients.push_back(lastInstrumentIndex);
 					}
-					instrumentOSCHostPorts[lastInstrumentIndex] = hostPort;
+					instrumentOSCHostPorts[lastInstrumentIndex] = IPAndPort;
 					sharedData.instruments[lastInstrumentIndex].sendToPart = true;
-					sharedData.instruments[lastInstrumentIndex].scorePartSender.setup(hostIP, port);
+					sharedData.instruments[lastInstrumentIndex].scorePartSender.setup(remoteIP, port);
 					numScorePartSenders++;
-					string thisIP = host.substr(tabPos+1);
 					ofxOscMessage m;
 					m.setAddress("/initinst");
 					m.addIntArg(lastInstrumentIndex);
 					m.addStringArg(sharedData.instruments[lastInstrumentIndex].getName());
-					m.addStringArg(thisIP);
-					m.addIntArg(OSCPORT);
 					sharedData.instruments[lastInstrumentIndex].scorePartSender.sendMessage(m, false);
 					m.clear();
-					if (sendNotice) {
-						std::pair<int, string> p = std::make_pair(1, "setting localhost and port 9000");
+					if (sendNotice > 0) {
+						std::pair<int, string> p;
+						switch (sendNotice) {
+							case 1:
+								p = std::make_pair(1, "setting localhost and port 9000");
+								break;
+							case 2:
+								p = std::make_pair(1, "setting localhost");
+								break;
+							case 3:
+								p = std::make_pair(1, "setting port 9000");
+								break;
+							default:
+								break;
+						}
 						return std::make_pair(instrumentExists, p);
 					}
 				}
@@ -4510,7 +4189,7 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 						return std::make_pair(instrumentExists, p );
 					}
 				}
-				else if (commands[1].compare("midichan")== 0) {
+				else if (commands[1].compare("midichan") == 0) {
 					if (commands.size() == 2) {
 						std::pair<int, string> p = std::make_pair(3, "no MIDI channel set");
 						return std::make_pair(instrumentExists, p);
@@ -4618,115 +4297,84 @@ std::pair<bool, std::pair<int, string>> ofApp::isBarLoop(vector<string>& command
 	if (sharedData.loopsIndexes.size() > 0) {
 		if (sharedData.loopsIndexes.find(commands[0]) != sharedData.loopsIndexes.end()) {
 			barLoopExists = true;
-			bool partsReceivedOK = true;
 			int indexLocal = sharedData.loopsIndexes[commands[0]];
-			// if this is the first time we call this bar/loop
-			if (numScorePartSenders > 0 && partsReceivedOKCounters[indexLocal] == 0) {
-				// make sure all score parts have received the data for this bar without errors
-				for (unsigned i = 0; i < sharedData.loopData[indexLocal].size(); i++) {
-					for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-						// if a bar from the loop we're calling hasn't been received correctly by all parts
-						if (it->second.sendToPart && !it->second.barDataOKFromParts[sharedData.loopData[indexLocal][i]]) {
-							partsReceivedOK = false;
-							break;
-						}
-					}
-					if (!partsReceivedOK) break;
+			if (commands.size() > 1) {
+				if (commands.size() > 3) {
+					err.first = 3;
+					err.second = "if arguments are provided to a loop, these are two, either \"locate [bar/loop-name]\" or \"goto bar/loop-name/index\"";
+					return std::make_pair(barLoopExists, err);
 				}
-			}
-			// the first time we'll call this loop, if a part hasn't received bar data correctly
-			// we notify with a warning
-			if (!partsReceivedOK && partsReceivedOKCounters[indexLocal] == 0) {
-				string errorStr = "not all parts have received data for ";
-				if (sharedData.loopData[indexLocal].size() > 1) errorStr += "this loop";
-				else errorStr += "this bar";
-				err.first = 2;
-				err.second = errorStr;
-				// increment the counter so if we call this loop again it means that we want it to go through
-				partsReceivedOKCounters[indexLocal]++; 
-				return std::make_pair(barLoopExists, err);
-			}
-			// if all is OK, or if we insist on calling this loop, it goes through
-			else {
-				if (commands.size() > 1) {
-					if (commands.size() > 3) {
-						err.first = 3;
-						err.second = "if arguments are provided to a loop, these are two, either \"locate [bar/loop-name]\" or \"goto bar/loop-name/index\"";
-						return std::make_pair(barLoopExists, err);
-					}
-					if (commands[1].compare("goto") != 0 && commands[1].compare("locate") != 0) {
-						err.first = 3;
-						err.second = "if arguments are provided to a loop, first must be \"goto\" or \"locate\"";
-						return std::make_pair(barLoopExists, err);
-					}
-					if (commands.size() < 3 && commands[1].compare("goto") == 0) {
-						err.first = 3;
-						err.second = commands[1] + " takes one argument, the bar/loop-name/index to " + commands[1];
-						return std::make_pair(barLoopExists, err);
-					}
-					if (commands.size() == 3) {
-						auto it = find(sharedData.loopData[indexLocal].begin(), sharedData.loopData[indexLocal].end(), sharedData.loopsIndexes[commands[2]]);
-						int gotoIndexOrBarName = 0;
-						if (it == sharedData.loopData[indexLocal].end()) {
-							if (isNumber(commands[2])) {
-								int indexToGoto = stoi(commands[2]);
-								if (indexToGoto < 1) {
-									err.first = 3;
-									err.second = "index to \"goto\" must be greater than 0";
-									return std::make_pair(barLoopExists, err);
-								} 
-								if (indexToGoto <= sharedData.loopData[indexLocal].size()) {
-									sharedData.thisLoopIndex = indexToGoto - 1; // argument is 1-based
-									gotoIndexOrBarName = 1;
-								}
-								else {
-									err.first = 3;
-									err.second = "index to \"goto\" is greater than loop's size";
-									return std::make_pair(barLoopExists, err);
-								}
+				if (commands[1].compare("goto") != 0 && commands[1].compare("locate") != 0) {
+					err.first = 3;
+					err.second = "if arguments are provided to a loop, first must be \"goto\" or \"locate\"";
+					return std::make_pair(barLoopExists, err);
+				}
+				if (commands.size() < 3 && commands[1].compare("goto") == 0) {
+					err.first = 3;
+					err.second = commands[1] + " takes one argument, the bar/loop-name/index to " + commands[1];
+					return std::make_pair(barLoopExists, err);
+				}
+				if (commands.size() == 3) {
+					auto it = find(sharedData.loopData[indexLocal].begin(), sharedData.loopData[indexLocal].end(), sharedData.loopsIndexes[commands[2]]);
+					int gotoIndexOrBarName = 0;
+					if (it == sharedData.loopData[indexLocal].end()) {
+						if (isNumber(commands[2])) {
+							int indexToGoto = stoi(commands[2]);
+							if (indexToGoto < 1) {
+								err.first = 3;
+								err.second = "index to \"goto\" must be greater than 0";
+								return std::make_pair(barLoopExists, err);
+							} 
+							if (indexToGoto <= sharedData.loopData[indexLocal].size()) {
+								sharedData.thisLoopIndex = indexToGoto - 1; // argument is 1-based
+								gotoIndexOrBarName = 1;
 							}
 							else {
 								err.first = 3;
-								err.second = commands[2] + " doesn't exist in " + sharedData.loopsOrdered[indexLocal];
+								err.second = "index to \"goto\" is greater than loop's size";
 								return std::make_pair(barLoopExists, err);
 							}
 						}
-						if (commands[1].compare("goto") == 0) {
-							if (gotoIndexOrBarName == 0) sharedData.thisLoopIndex = it - sharedData.loopData[indexLocal].begin();
-							ofxOscMessage m;
-							m.setAddress("/thisloopndx");
-							m.addIntArg(sharedData.thisLoopIndex);
-							sendToParts(m, false);
-							m.clear();
-						}
 						else {
-							err.first = 1;
-							err.second = to_string(it - sharedData.loopData[indexLocal].begin() + 1);
+							err.first = 3;
+							err.second = commands[2] + " doesn't exist in " + sharedData.loopsOrdered[indexLocal];
 							return std::make_pair(barLoopExists, err);
 						}
 					}
+					if (commands[1].compare("goto") == 0) {
+						if (gotoIndexOrBarName == 0) sharedData.thisLoopIndex = it - sharedData.loopData[indexLocal].begin();
+						ofxOscMessage m;
+						m.setAddress("/thisloopndx");
+						m.addIntArg(sharedData.thisLoopIndex);
+						sendToParts(m, false);
+						m.clear();
+					}
 					else {
 						err.first = 1;
-						err.second = sharedData.loopsOrdered[indexLocal][sharedData.loopData[indexLocal][sharedData.thisLoopIndex]];
+						err.second = to_string(it - sharedData.loopData[indexLocal].begin() + 1);
 						return std::make_pair(barLoopExists, err);
 					}
 				}
 				else {
-					partsReceivedOKCounters[indexLocal] = 1;
-					sharedData.tempBarLoopIndex = sharedData.loopsIndexes[commands[0]];
-					if (sequencer.isThreadRunning()) {
-						sequencer.update();
-						mustUpdateScore = true;
-						ofxOscMessage m;
-						m.setAddress("/update");
-						m.addIntArg(sharedData.tempBarLoopIndex);
-						sendToParts(m, true);
-						m.clear();
-					}
-					else {
-						sharedData.loopIndex = sharedData.tempBarLoopIndex;
-						sendLoopIndexToParts();
-					}
+					err.first = 1;
+					err.second = sharedData.loopsOrdered[indexLocal][sharedData.loopData[indexLocal][sharedData.thisLoopIndex]];
+					return std::make_pair(barLoopExists, err);
+				}
+			}
+			else {
+				sharedData.tempBarLoopIndex = sharedData.loopsIndexes[commands[0]];
+				if (sequencer.isThreadRunning()) {
+					sequencer.update();
+					mustUpdateScore = true;
+					ofxOscMessage m;
+					m.setAddress("/update");
+					m.addIntArg(sharedData.tempBarLoopIndex);
+					sendToParts(m, true);
+					m.clear();
+				}
+				else {
+					sharedData.loopIndex = sharedData.tempBarLoopIndex;
+					sendLoopIndexToParts();
 				}
 			}
 		}
@@ -4770,13 +4418,26 @@ std::pair<bool, std::pair<int, string>> ofApp::isFunction(vector<string>& comman
 					dollarVal = stoi(lineWithArgs.substr(argNdxs[i]+1, nextWhiteSpaceNdx-1));
 					if (dollarVal <= sharedData.functions[lastFunctionIndex].getNumArgs()) {
 						lineWithArgs = replaceCharInStr(lineWithArgs,
-										lineWithArgs.substr(argNdxs[i],
-										nextWhiteSpaceNdx),
+										lineWithArgs.substr(argNdxs[i], nextWhiteSpaceNdx),
 										sharedData.functions[lastFunctionIndex].getArgument(dollarVal-1));
+						for (unsigned j = i; j < argNdxs.size(); j++) {
+							argNdxs[j] += (2 - (int)sharedData.functions[lastFunctionIndex].getArgument(dollarVal-1).size());
+						}
 					}
 					else {
-						lineWithArgs = replaceCharInStr(lineWithArgs, lineWithArgs.substr(argNdxs[i],
-														nextWhiteSpaceNdx), "0");
+						if (i + 1 < commands.size() - 1) {
+							lineWithArgs = replaceCharInStr(lineWithArgs,
+								lineWithArgs.substr(argNdxs[i], nextWhiteSpaceNdx),
+								commands[i+1]);
+						}
+						else {
+							lineWithArgs = replaceCharInStr(lineWithArgs,
+								lineWithArgs.substr(argNdxs[i], nextWhiteSpaceNdx),
+								"0");
+						}
+						for (unsigned j = i; j < argNdxs.size(); j++) {
+							argNdxs[j]--;
+						}
 					}
 				}
 			}
@@ -4889,34 +4550,36 @@ std::pair<bool, std::pair<int, string>> ofApp::isOscClient(vector<string>& comma
 						m.setAddress(commands[i+1]);
 						bool allNumbers = true;
 						for (unsigned j = i+2; j < commands.size(); j++) {
-							if (!isNumber(commands[j])) allNumbers = false;
-						}
-						if (allNumbers) {
-							for (unsigned j = i+2; j < commands.size(); j++) {
+							if (isNumber(commands[j])) {
 								m.addIntArg(stoi(commands[j]));
 							}
-							oscClients[commands[0]].sendMessage(m, false);
-							return std::make_pair(oscClientExists, error);
-						}
-						string restOfCommand = "";
-						for (unsigned j = i+2; j < commands.size(); j++) {
-							if (j > i+2) restOfCommand += " ";
-							restOfCommand += commands[j];
-						}
-						std::pair<int, string> errorNew = parseCommand(restOfCommand, lineNum, numLines);
-						if (errorNew.first < 2) {
-							vector<string> tokens = tokenizeString(errorNew.second, " ");
-							for (string token : tokens) {
-								if (isNumber(token)) m.addIntArg(stoi(token));
-								else m.addStringArg(token);
+							else if (isFloat(commands[j])) {
+								m.addFloatArg(stof(commands[j]));
 							}
-							oscClients[commands[0]].sendMessage(m, false);
-							m.clear();
-							return std::make_pair(oscClientExists, errorNew);
+							else if (startsWith(commands[j], "\"") && endsWith(commands[j], "\"")) {
+								m.addStringArg(commands[j].substr(1, commands[j].size()-2));
+							}
+							else {
+								string restOfCommand = "";
+								for (unsigned j = i+2; j < commands.size(); j++) {
+									if (j > i+2) restOfCommand += " ";
+									restOfCommand += commands[j];
+								}
+								std::pair<int, string> errorNew = parseCommand(restOfCommand, lineNum, numLines);
+								if (errorNew.first < 2) {
+									vector<string> tokens = tokenizeString(errorNew.second, " ");
+									for (string token : tokens) {
+										if (isNumber(token)) m.addIntArg(stoi(token));
+										else m.addStringArg(token);
+									}
+								}
+								else {
+									return std::make_pair(oscClientExists, errorNew);
+								}
+							}
 						}
-						else {
-							return std::make_pair(oscClientExists, errorNew);
-						}
+						oscClients[commands[0]].sendMessage(m, false);
+						m.clear();
 					}
 					else {
 						error.first = 3;
@@ -5219,6 +4882,9 @@ std::pair<int, string> ofApp::parseBarLoop(string str, int lineNum, int numLines
 {
 	// first check if there is anything after the closing bracket
 	size_t closingBracketIndex = str.find("}");
+	if (str.substr(closingBracketIndex-1, 1).compare(" ") == 0) {
+		str = str.substr(0, closingBracketIndex-1) + str.substr(closingBracketIndex);
+	}
 	size_t strLength = str.size();
 	string restOfCommand = "";
 	// storing anything after a closing bracket enables us
@@ -5297,21 +4963,27 @@ std::pair<int, string> ofApp::parseBarLoop(string str, int lineNum, int numLines
 			if (!isNumber(name.substr(multIndex+1))) {
 				return std::make_pair(3, "repetition coefficient not an int");
 			}
+			else if (multIndex == 0) {
+				// the multiplication symbol cannot be the first symbol in the token
+				return std::make_pair(3, "the multiplication character must be concatenated to the bar/loop name");
+			}
+			else if (multIndex == name.size()-1) {
+				// the multiplication symbol must be followed by a number
+				return std::make_pair(3, "the multiplication symbol must be concatenated to a number");
+			}
 			howManyTimes = stoi(name.substr(multIndex+1));
-		}
-		else if (multIndex == 0) {
-			// the multiplication symbol cannot be the first symbol in the token
-			return std::make_pair(3, "the multiplication character must be concatenated to the bar/loop name");
-		}
-		else if (multIndex == name.size()-1) {
-			// the multiplication symbol must be followed by a number
-			return std::make_pair(3, "the multiplication symbol must be concatenated to a number");
 		}
 		// first check for barLoops because when we define a bar with data
 		// and not with combinations of other bars, we create a barLoop with the same name
 		thisBarLoopIndexIt = sharedData.loopsIndexes.find(name.substr(0, nameLength));
 		if (thisBarLoopIndexIt == sharedData.loopsIndexes.end()) {
-			return std::make_pair(3, name.substr(0, nameLength) + (string)" doesn't exist");
+			// check if the substring ends with a closing curly bracket, in which case we must remove it
+			if (endsWith(name.substr(0, nameLength), "}")) {
+				thisBarLoopIndexIt = sharedData.loopsIndexes.find(name.substr(0, nameLength-1));
+			}
+			else {
+				return std::make_pair(3, name.substr(0, nameLength) + (string)" doesn't exist");
+			}
 		}
 		// find the map of the loop with the vector that contains indexes of bars
 		thisBarLoopDataIt = sharedData.loopData.find(thisBarLoopIndexIt->second);
@@ -5362,7 +5034,6 @@ std::pair<int, string> ofApp::parseBarLoop(string str, int lineNum, int numLines
 	// find the last index of the stored loops and store the vector we just created to the value of loopData
 	int loopNdx = getLastLoopIndex();
 	sharedData.loopData[loopNdx] = thisLoopIndexes;
-	sendLoopDataToParts(loopNdx, thisLoopIndexes);
 	if (restOfCommand.size() > 0) {
 		// falsify this so that the name of the loop is treated properly in parseString()
 		// otherwise, parseString() will again call this function
@@ -5371,7 +5042,7 @@ std::pair<int, string> ofApp::parseBarLoop(string str, int lineNum, int numLines
 	}
 	if (!sequencer.isThreadRunning()) {
 		sharedData.loopIndex = sharedData.tempBarLoopIndex;
-		sendLoopIndexToParts();
+		//sendLoopIndexToParts();
 	}
 	return std::make_pair(0, "");
 }
@@ -6862,8 +6533,10 @@ void ofApp::setPaneCoords()
 	}
 	int paneNdx = 0;
 	for (map<int, int>::iterator it = numPanes.begin(); it != numPanes.end(); ++it) {
-		// each row sets the number of lines for its panes according to the number of columns (it->second)
-		int numLines = maxNumLines / it->second;
+		// each row sets the number of lines for its panes according to the number of rows (it->first) for paneSplitOrientation == 0
+		// or number of columns (it->second) for paneSplitOrientation == 1
+		int divisor = paneSplitOrientation == 0 ? (int)numPanes.size() : it->second;
+		int numLines = maxNumLines / (divisor > 0 ? divisor : 1);
 		int additionalLines = 0;
 		if (numLines * it->second != maxNumLines) additionalLines = maxNumLines - (numLines * it->second);
 		if (paneSplitOrientation == 0) {
@@ -6873,8 +6546,9 @@ void ofApp::setPaneCoords()
 				editors[paneNdx].setFrameXOffset(paneWidth * (float)col);
 				editors[paneNdx].setFrameHeight(paneHeight);
 				editors[paneNdx].setFrameYOffset(paneHeight * (float)(it->first));
-				if (!col) editors[paneNdx].setMaxNumLines(numLines+additionalLines);
-				else editors[paneNdx].setMaxNumLines(numLines);
+				//if (!col) editors[paneNdx].setMaxNumLines(numLines+additionalLines);
+				//else editors[paneNdx].setMaxNumLines(numLines);
+				editors[paneNdx].setMaxNumLines(numLines);
 				editors[paneNdx].setMaxCharactersPerString();
 				paneNdx++;
 			}
@@ -7210,11 +6884,11 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 	}
 	// if the current bar is wider than the existing ones, we need to change the current Y coordinates
 	if (maxHeightSum >= sharedData.allStaffDiffs || windowChanged) {
-		sharedData.allStaffDiffs = maxHeightSum;
+		sharedData.allStaffDiffs = min(maxHeightSum, (sharedData.tracebackBase - cursorHeight) / (float)sharedData.instruments.size());
 		float totalDiff = lastMaxPosition - firstMinPosition;
 		for (int i = 0; i < 2; i++) {
 			float heightCompare = sharedData.tracebackBase - cursorHeight;
-			if (i == 2) {
+			if (i == 1) {
 				heightCompare = (sharedData.tracebackBase - cursorHeight) / 2;
 			}
 			if (totalDiff < heightCompare) {
@@ -7355,7 +7029,7 @@ void ofApp::mouseExited(int x, int y)
 //--------------------------------------------------------------
 void ofApp::resizeWindow()
 {
-	sharedData.mutex.lock();
+	//sharedData.mutex.lock();
 	setPaneCoords();
 	if (scoreOrientation == 0) {
 		scoreBackgroundWidth = sharedData.screenWidth / 2;
@@ -7369,7 +7043,7 @@ void ofApp::resizeWindow()
 	}
 	setScoreSizes();
 	calculateStaffPositions(getLastBarIndex(), true);
-	sharedData.mutex.unlock();
+	//sharedData.mutex.unlock();
 }
 
 //--------------------------------------------------------------
