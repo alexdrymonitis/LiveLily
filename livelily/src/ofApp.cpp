@@ -164,6 +164,52 @@ float Sequencer::midiToFreq(int midiNote)
 }
 
 //--------------------------------------------------------------
+void Sequencer::startGlissando(int intNdx, int bar, int barDataCounter)
+{
+//	sharedData->instruments.at(instNdx).setGlissandoStart(true);
+//	// if the isntrument sends MIDI, then we have to determine the pitch bend value we need to cover
+//	// but we should bare in mind that the user might have set a specific tuning
+//	// in which case we have to compensate for that
+//	auto itBegin = sharedData->instruments.at(instNdx).notes.at(bar).at(sharedData->instruments.at(instNdx).getBarDataCounter()).begin();
+//	auto itEnd = sharedData->instruments.at(instNdx).notes.at(bar).at(sharedData->instruments.at(instNdx).getBarDataCounter()).end();
+//	for (auto it = itBegin; it != itEnd; ++it) {
+//		sharedData->instruments.at(instNdx).glissVecStart.push_back(*it);
+//	}
+//	int nextNote = sharedData->instruments.at(instNdx).getBarDataCounter() + 1;
+//	int nextBar = sharedData->thisLoopIndex;
+//	if (nextNote >= (int)sharedData->instruments.at(instNdx).notes.at(bar).size()) {
+//		nextNote = 0;
+//		nextBar = sharedData->thisLoopIndex + 1;
+//		if (nextBar >= (int)sharedData->loopData.at(sharedData->loopIndex).size()) {
+//			nextBar = 0;
+//		}
+//	}
+//	itBegin = sharedData->instruments.at(instNdx).notes.at(nextBar).at(nextNote).begin();
+//	itEnd = sharedData->instruments.at(instNdx).notes.at(nextBar).at(nextNote).end();
+//	for (auto it = itBegin; it != itEnd; ++it) {
+//		sharedData->instruments.at(instNdx).glissVecEnd.push_back(*it);
+//	}
+//	// check if the two vectors dont't have the same size
+//	if (sharedData->instruments.at(instNdx).glissStart.size() != sharedData->instruments.at(instNdx).glissEnd.size()) {
+//		
+//	}
+}
+
+//--------------------------------------------------------------
+void Sequencer::runGlissando(int instNdx, int bar)
+{
+//	// here we run a glissando that has been started by the function above
+//	// with a time grain of 100um (the sequencer's time grain)
+//	// based on the current tempo
+//	if (sharedData->instruments.at(instNdx).getGlissandoStart()) {
+//		// here we run the glissando, and when we reach its target, we set the glissandoStart to false
+//		if (reachedTargetPitch) {
+//			sharedData->instruments.at(instNdx).setGlissandoStart(false);
+//		}
+//	}
+}
+
+//--------------------------------------------------------------
 void Sequencer::threadedFunction()
 {
 	while (isThreadRunning()) {
@@ -297,7 +343,6 @@ void Sequencer::threadedFunction()
 				//}
 				if (endOfBar || firstIter) {
 					sharedData->thisLoopIndex = thisLoopIndex;
-					uint64_t loopNdxStamp = ofGetElapsedTimeMicros();
 					bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisLoopIndex];
 					ofxOscMessage m;
 					m.setAddress("/thisloopndx");
@@ -427,6 +472,7 @@ void Sequencer::threadedFunction()
 							instMapIt->second.setUpdateTempo(false);
 						}
 					}
+					//runGlissando(instMapIt->first, bar); // this function determines whethere there are any glissandi active
 					if (instMapIt->second.hasNotesInBar(bar)) {
 						if (instMapIt->second.mustFireStep(timeStamp, bar, sharedData->tempo[bar])) {
 							// if we have a note, not a rest, and the current instrument is not muted
@@ -466,6 +512,9 @@ void Sequencer::threadedFunction()
 												sendData = true;
 											}
 										}
+										//if (instMapIt->second.glissandi.at(bar).at(instMapIt->second.getBarDataCounter()) == 1) {
+										//	startGlissando(instMapIt->first, bar, instMapIt->second.getBarDataCounter());
+										//}
 										if (sendData) {
 											ofxOscMessage m;
 											m.setAddress("/" + instMapIt->second.getName() + "/articulation");
@@ -504,7 +553,7 @@ void Sequencer::threadedFunction()
 										if (!instMapIt->second.isNoteSlurred(bar, instMapIt->second.getBarDataCounter()) && \
 												!instMapIt->second.isNoteTied(bar, instMapIt->second.getBarDataCounter())) {
 											for (auto it = instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()].begin(); it != instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()].end(); ++it) {
-												midiOut.sendNoteOff(instMapIt->second.getMidiChan(), *it, 0);
+												midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendNoteOff(instMapIt->second.getMidiChan(), *it, 0);
 											}
 										}
 									}
@@ -532,12 +581,12 @@ void Sequencer::threadedFunction()
 											}
 										}
 										if (sendData) {
-											midiOut.sendPitchBend(instMapIt->second.getMidiChan(), instMapIt->second.getPitchBendVal(bar));
+											midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendPitchBend(instMapIt->second.getMidiChan(), instMapIt->second.getPitchBendVal(bar));
 											for (auto it = instMapIt->second.midiArticulationVals[bar][instMapIt->second.barDataCounter].begin(); it != instMapIt->second.midiArticulationVals[bar][instMapIt->second.barDataCounter].end(); ++it) {
-												midiOut.sendProgramChange(instMapIt->second.getMidiChan(), *it);
+												midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendProgramChange(instMapIt->second.getMidiChan(), *it);
 											}
 											for (auto it = instMapIt->second.midiNotes[bar][instMapIt->second.barDataCounter].begin(); it != instMapIt->second.midiNotes[bar][instMapIt->second.barDataCounter].end(); ++it) {
-												midiOut.sendNoteOn(instMapIt->second.getMidiChan(), *it, instMapIt->second.getMidiVel(bar));
+												midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendNoteOn(instMapIt->second.getMidiChan(), *it, instMapIt->second.getMidiVel(bar));
 											}
 										}
 										// if the previous note was slurred, but not tied, send the note off message after the note on of the new note
@@ -545,7 +594,7 @@ void Sequencer::threadedFunction()
 											if (instMapIt->second.isNoteSlurred(bar, instMapIt->second.getBarDataCounter()-1) && \
 													!instMapIt->second.isNoteTied(bar, instMapIt->second.getBarDataCounter()-1)) {
 												for (auto it = instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()-1].begin(); it != instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()-1].end(); ++it) {
-													midiOut.sendNoteOff(instMapIt->second.getMidiChan(), *it, 0);
+													midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendNoteOff(instMapIt->second.getMidiChan(), *it, 0);
 												}
 											}
 										}
@@ -660,8 +709,6 @@ void ofApp::setup()
 	// waiting time to receive a response from a score part server is one frame at 60 FPS
 	scorePartResponseTime = (uint64_t)((1000.0 / 60.0) + 0.5);
 	
-	midiPortOpen = false;
-	
 	sharedData.screenWidth = ofGetWindowWidth();
 	sharedData.screenHeight = ofGetWindowHeight();
 	sharedData.middleOfScreenX = sharedData.screenWidth / 2;
@@ -729,6 +776,7 @@ void ofApp::setup()
 	sharedData.beatVizTimeStamp = 0;
 	sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData.tempoMs[0] / 4.0);
 	sharedData.beatVizRampStart = sharedData.tempoMs[0] / 4;
+	sharedData.beatUpdated = false;
 	sharedData.noteWidth = 0;
 	sharedData.noteHeight = 0;
 	sharedData.allStaffDiffs = 0;
@@ -746,7 +794,16 @@ void ofApp::setup()
 	scoreUpdated = false;
 	scoreChangeOnLastBar = false;
 
+	maestroToggleSet = false;
+	receivingMaestro = false;
+	maestroValNdx = 0;
+	maestroInitialized = false;
+	maestroValThresh = 7.5;
+	maestroTimeStamp = ofGetElapsedTimeMillis();
+
 	correctOnSameOctaveOnly = true;
+
+	serialPortOpen = false;
 	
 	sharedData.PPQN = 24;
 	sharedData.PPQNCounter = 0;
@@ -810,10 +867,8 @@ void ofApp::setup()
 	commandsMap[livelily]["\\fromosc"] =  ofColor::fuchsia;
 	commandsMap[livelily]["\\listmidiports"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\openmidiport"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\mididur"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\midistaccato"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\midistaccatissimo"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\miditenuto"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\ctlchange"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\pgmchange"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\midiclock"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\dur"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\staccato"] = ofColor::fuchsia;
@@ -821,12 +876,15 @@ void ofApp::setup()
 	commandsMap[livelily]["\\tenuto"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\listserialports"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\openserialport"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\closeserialport"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\serialwrite"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\serialprint"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\time"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\print"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\osc"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\oscsend"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\beatcount"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\rand"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\random"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\barnum"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\list"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\ottava"] = ofColor::fuchsia;
@@ -841,11 +899,14 @@ void ofApp::setup()
 	commandsMap[livelily]["\\beatat"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\group"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\accoffset"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\autocomplete"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\autobrackets"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\active"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\inactive"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\sendkeys"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\sendlines"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\maestro"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\framerate"] = ofColor::fuchsia;
+	commandsMap[livelily]["\\barlines"] = ofColor::fuchsia;
 	
 	commandsMapSecond[livelily]["clef"] = ofColor::pink;
 	commandsMapSecond[livelily]["rhythm"] = ofColor::pink;
@@ -857,6 +918,7 @@ void ofApp::setup()
 	commandsMapSecond[livelily]["barstart"] = ofColor::pink;
 	commandsMapSecond[livelily]["loopstart"] = ofColor::pink;
 	commandsMapSecond[livelily]["sendto"] = ofColor::pink;
+	commandsMapSecond[livelily]["midiport"] = ofColor::pink;
 	commandsMapSecond[livelily]["midichan"] = ofColor::pink;
 	commandsMapSecond[livelily]["show"] = ofColor::pink;
 	commandsMapSecond[livelily]["hide"] = ofColor::pink;
@@ -890,78 +952,155 @@ void ofApp::setup()
 	commandsMapSecond[livelily]["setup"] = ofColor::pink;
 	commandsMapSecond[livelily]["on"] = ofColor::pink;
 	commandsMapSecond[livelily]["off"] = ofColor::pink;
+	commandsMapSecond[livelily]["address"] = ofColor::pink;
+	commandsMapSecond[livelily]["valndx"] = ofColor::pink;
+	commandsMapSecond[livelily]["toggle"] = ofColor::pink;
+	commandsMapSecond[livelily]["reset"] = ofColor::pink;
+	commandsMapSecond[livelily]["valthresh"] = ofColor::pink;
 }
 
 //--------------------------------------------------------------
 void ofApp::update()
 {
 	//sharedData.mutex.lock();
-	bool mutexLocked = true;
+	//bool mutexLocked = true;
     // check for OSC messages
+	static float prevVal = 0;
 	while (oscReceiver.hasWaitingMessages()) {
 		ofxOscMessage m;
 		oscReceiver.getNextMessage(m);
 		string address = m.getAddress();
-		for (map<int, string>::iterator it = fromOscAddr.begin(); it != fromOscAddr.end(); ++it) {
-			if (address.substr(0, it->second.size()) == it->second) {
-				int whichPaneOsc = it->first;
-				// unlock the mutex here because the function that handles data received from OSC locks it
-				//sharedData.mutex.unlock();
-				mutexLocked = false;
-				map<int, Editor>::iterator editIt = editors.find(whichPaneOsc);
-				if (editIt != editors.end()) {
-					if (m.getArgType(0) == OFXOSC_TYPE_STRING) {
-						string oscStr = m.getArgAsString(0);
-						for (unsigned j = 0; j < oscStr.size(); j++) {
-							if (address.find("/press") != string::npos) {
-								editIt->second.fromOscPress((int)oscStr.at(j));
+		if (address == maestroAddress) {
+			if (!sequencer.isThreadRunning() && sharedData.setBeatAnimation) {
+				sharedData.beatAnimate = true;
+				sharedData.setBeatAnimation = false;
+			}
+			float val = m.getArgAsFloat(maestroValNdx);
+			if (receivingMaestro) {
+				if (val > maestroValThresh) {
+					if (!sharedData.beatUpdated && ofGetElapsedTimeMillis() - maestroTimeStamp > MAESTROTHRESH) {
+						if (maestroInitialized) {
+							int bar = getPlayingBarIndex();
+							sharedData.beatCounter++;
+							if (sharedData.beatCounter >= sharedData.numerator[bar]) {
+								sharedData.beatCounter = 0;
+								sharedData.thisLoopIndex++;
+								if (sharedData.thisLoopIndex >= sharedData.loopData[sharedData.loopIndex].size()) {
+									sharedData.thisLoopIndex = 0;
+								}
+								bar = getPlayingBarIndex();
 							}
-							else if (address.find("/release") != string::npos) {
-								editIt->second.fromOscRelease((int)oscStr.at(j));
-							}
+							sharedData.BPMTempi[bar] = msToBPM(ofGetElapsedTimeMillis() - maestroTimeStamp);
+							sendBeatVizInfo(bar);
 						}
-					}
-					else if (m.getArgType(0) == OFXOSC_TYPE_INT32) {
-						size_t numArgs = m.getNumArgs();
-						for (size_t j = 0; j < numArgs; j++) {
-							int oscVal = (int)m.getArgAsInt32(j);
-							if (address.find("/press") != string::npos) {
-								editIt->second.fromOscPress(oscVal);
-							}
-							else if (address.find("/release") != string::npos) {
-								editIt->second.fromOscRelease(oscVal);
-							}
+						else {
+							maestroInitialized = true;
 						}
-					}
-					else if (m.getArgType(0) == OFXOSC_TYPE_INT64) {
-						size_t numArgs = m.getNumArgs();
-						for (size_t j = 0; j < numArgs; j++) {
-							int oscVal = (int)m.getArgAsInt64(j);
-							if (address.find("/press") != string::npos) {
-								editIt->second.fromOscPress(oscVal);
-							}
-							else if (address.find("/release") != string::npos) {
-								editIt->second.fromOscRelease(oscVal);
-							}
+						sharedData.beatUpdated = true;
+						maestroTimeStamp = ofGetElapsedTimeMillis();
+						cout << sharedData.beatCounter << endl;
+						printVector(maestroVec);
+						float accum = 0;
+						for (auto it = maestroVec.begin(); it != maestroVec.end(); ++it) {
+							accum += *it;
 						}
-					}
-					else if (m.getArgType(0) == OFXOSC_TYPE_FLOAT) {
-						size_t numArgs = m.getNumArgs();
-						for (size_t j = 0; j < numArgs; j++) {
-							int oscVal = (int)m.getArgAsFloat(j);
-							if (address.find("/press") != string::npos) {
-								editIt->second.fromOscPress(oscVal);
-							}
-							else if (address.find("/release") != string::npos) {
-								editIt->second.fromOscRelease(oscVal);
-							}
-						}
-					}
-					else {
-						cout << "unknown OSC message type\n";
+						accum /= (float)maestroVec.size();
+						cout << "accum: " << accum << endl;
+						maestroVec.clear();
 					}
 				}
-				break;
+				else {
+					sharedData.beatUpdated = false;
+					if (prevVal != 0) {
+						maestroVec.push_back(abs(val - prevVal));
+					}
+					prevVal = val;
+				}
+			}
+		}
+		else if (address == maestroToggleAddress) {
+			if (m.getArgType(0) == OFXOSC_TYPE_INT32) {
+				int val = m.getArgAsInt32(0);
+				if (val) receivingMaestro = true;
+				else receivingMaestro = false;
+			}
+			else if (m.getArgType(0) == OFXOSC_TYPE_FLOAT) {
+				int val = (int)m.getArgAsFloat(0);
+				if (val) receivingMaestro = true;
+				else receivingMaestro = false;
+			}
+			else if (m.getArgType(0) == OFXOSC_TYPE_TRUE || m.getArgType(0) == OFXOSC_TYPE_FALSE) {
+				receivingMaestro = m.getArgAsBool(0);
+			}
+			if (!receivingMaestro) maestroInitialized = false;
+			else sharedData.beatCounter = -1;
+		}
+		else if (address == maestroResetAddress) {
+			int val = m.getArgAsInt32(0);
+			if (val) sharedData.beatCounter = 0;
+		}
+		else {
+			for (map<int, string>::iterator it = fromOscAddr.begin(); it != fromOscAddr.end(); ++it) {
+				if (address.substr(0, it->second.size()) == it->second) {
+					int whichPaneOsc = it->first;
+					// unlock the mutex here because the function that handles data received from OSC locks it
+					//sharedData.mutex.unlock();
+					//mutexLocked = false;
+					map<int, Editor>::iterator editIt = editors.find(whichPaneOsc);
+					if (editIt != editors.end()) {
+						if (m.getArgType(0) == OFXOSC_TYPE_STRING) {
+							string oscStr = m.getArgAsString(0);
+							for (unsigned i = 0; i < oscStr.size(); i++) {
+								if (address.find("/press") != string::npos) {
+									editIt->second.fromOscPress((int)oscStr.at(i));
+								}
+								else if (address.find("/release") != string::npos) {
+									editIt->second.fromOscRelease((int)oscStr.at(i));
+								}
+							}
+						}
+						else if (m.getArgType(0) == OFXOSC_TYPE_INT32) {
+							size_t numArgs = m.getNumArgs();
+							for (size_t j = 0; j < numArgs; j++) {
+								int oscVal = (int)m.getArgAsInt32(j);
+								if (address.find("/press") != string::npos) {
+									editIt->second.fromOscPress(oscVal);
+								}
+								else if (address.find("/release") != string::npos) {
+									editIt->second.fromOscRelease(oscVal);
+								}
+							}
+						}
+						else if (m.getArgType(0) == OFXOSC_TYPE_INT64) {
+							size_t numArgs = m.getNumArgs();
+							for (size_t j = 0; j < numArgs; j++) {
+								int oscVal = (int)m.getArgAsInt64(j);
+								if (address.find("/press") != string::npos) {
+									editIt->second.fromOscPress(oscVal);
+								}
+								else if (address.find("/release") != string::npos) {
+									editIt->second.fromOscRelease(oscVal);
+								}
+							}
+						}
+						else if (m.getArgType(0) == OFXOSC_TYPE_FLOAT) {
+							size_t numArgs = m.getNumArgs();
+							for (size_t j = 0; j < numArgs; j++) {
+								int oscVal = (int)m.getArgAsFloat(j);
+								if (address.find("/press") != string::npos) {
+									editIt->second.fromOscPress(oscVal);
+								}
+								else if (address.find("/release") != string::npos) {
+									editIt->second.fromOscRelease(oscVal);
+								}
+							}
+						}
+						else {
+							cout << "unknown OSC message type\n";
+						}
+					}
+					break;
+				}
 			}
 		}
 	}
@@ -1039,8 +1178,43 @@ void ofApp::draw()
 	if (sharedData.showScore) {
 		drawScore();
 	}
-	drawTraceback();
+	if (editors[whichPane].showingCommand()) {
+		drawCommand();
+	}
+	else{
+		drawTraceback();
+	}
 	//sharedData.mutex.unlock();
+}
+
+//--------------------------------------------------------------
+int ofApp::msToBPM(unsigned long ms)
+{
+	return (int)((1000 / ms) * 60);
+}
+
+//--------------------------------------------------------------
+void ofApp::sendBeatVizInfo(int bar)
+{
+	// calculate the time stamp regardless of whether we're showing the beat
+	// or not in the editor, in case we have connected score parts
+	sharedData.beatVizTimeStamp = ofGetElapsedTimeMillis();
+	sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData.tempoMs[bar] / 4.0);
+	sharedData.beatVizRampStart = sharedData.tempoMs[bar] / 4;
+	if (sharedData.beatAnimate) {
+		sharedData.beatViz = true;
+	}
+	// notify all score parts of the time stamp and the beat visualization counter
+	ofxOscMessage m;
+	m.setAddress("/beatinfo");
+	m.addFloatArg(sharedData.beatVizStepsPerMs);
+	m.addIntArg((int)sharedData.beatVizRampStart);
+	sendToParts(m, false);
+	m.clear();
+	m.setAddress("/beat");
+	m.addIntArg(sharedData.beatCounter);
+	sendToParts(m, false);
+	m.clear();
 }
 
 //--------------------------------------------------------------
@@ -1051,6 +1225,12 @@ void ofApp::drawTraceback()
 	uint64_t stamps[editors[whichPane].tracebackTimeStamps.size()];
 	int ndxs[editors[whichPane].tracebackTimeStamps.size()];
 	int i = 0;
+	int paneNdx = 0;
+	//for (auto it = numPanes.begin(); it != numPanes.end(); ++it) {
+	//	for (i = 0; i < it->second; i++) {
+	//		editors[paneNdx++].resetMaxNumLines();
+	//	}
+	//}
 	// we must first determine which traceback string was initiated first, so we can print this on top
 	for (auto it = editors[whichPane].getTracebackTimeStampsBegin(); it != editors[whichPane].getTracebackTimeStampsEnd(); ++it) {
 		if ((ofGetElapsedTimeMillis() - it->second) < editors[whichPane].getTracebackDur() && editors[whichPane].getTracebackStr(it->first).size() > 0) {
@@ -1099,7 +1279,7 @@ void ofApp::drawTraceback()
 		tracebackNumLinesStatic = numTracebackLines;
 		// if the number of lines of the traceback changes, reset the maximum number of lines of the editor
 		// need to check which editors go till the bottom of the window
-		int paneNdx = 0;
+		paneNdx = 0;
 		for (auto it = numPanes.begin(); it != numPanes.end(); ++it) {
 			for (int i = 0; i < it->second; i++) {
 				// with split orientation set to 0, we need to offset the number of lines
@@ -1154,6 +1334,54 @@ void ofApp::drawTraceback()
 }
 
 //--------------------------------------------------------------
+void ofApp::drawCommand()
+{
+	static int commandNumLinesStatic = MINTRACEBACKLINES;
+	vector<string> commandSplit = tokenizeString(editors[whichPane].getCommandStr(), "\n");
+	int numCommandLines = (int)commandSplit.size();
+	// minimum number of lines is 2
+	// so the line that separates the panes from the traceback can fit one line of text
+	numCommandLines = max(numCommandLines, MINTRACEBACKLINES);
+	// if the number of lines in the traceback has changed, change the maximum number of lines in the editor
+	if (numCommandLines != commandNumLinesStatic) {
+		commandNumLinesStatic = numCommandLines;
+		// if the number of lines of the traceback changes, reset the maximum number of lines of the editor
+		// need to check which editors go till the bottom of the window
+		int paneNdx = 0;
+		for (auto it = numPanes.begin(); it != numPanes.end(); ++it) {
+			for (int i = 0; i < it->second; i++) {
+				// with split orientation set to 0, we need to offset the number of lines
+				// for the editors on the last row, so the last key of the numPanes map
+				// with split orientation set to 1, we need to offset the number of lines
+				// for the editors that are in the last column of every row
+				int leftOperand = (paneSplitOrientation == 0 ? it->first : i);
+				int rightOperand = (paneSplitOrientation == 0 ? (int)numPanes.size() : it->second);
+				if (leftOperand == rightOperand - 1) {
+					if (numCommandLines > MINTRACEBACKLINES) {
+						editors[paneNdx].offsetMaxNumLines(-(numCommandLines-MINTRACEBACKLINES));
+					}
+					else {
+						editors[paneNdx].resetMaxNumLines();
+					}
+				}
+				paneNdx++;
+			}
+		}
+	}
+	ofSetColor(editors[whichPane].getCommandStrColor());
+	string commandStr = editors[whichPane].getCommandStr();
+	float charWidth = editors[whichPane].oneCharacterWidth;
+	float cursorHeight = editors[whichPane].getCursorHeight();
+	float x = editors[whichPane].getHalfCharacterWidth();
+	float y = sharedData.tracebackYCoord+cursorHeight;
+	if (numCommandLines > 2) y -= ((numCommandLines - 2) * cursorHeight);
+	font.drawString(commandStr, x, y);
+	if (editors[whichPane].isTypingCommand()) {
+		ofDrawRectangle(font.stringWidth(commandStr)+(charWidth*0.5), y-(cursorHeight*0.85), charWidth, cursorHeight);
+	}
+}
+
+//--------------------------------------------------------------
 void ofApp::drawScore()
 {
 	ofSetColor(brightness);
@@ -1163,9 +1391,9 @@ void ofApp::drawScore()
 	//------------- variables for horizontal score view ------------------
 	int numBars = 1;
 	bool drawLoopStartEnd = true;
-	int bar, prevBar = 0;
+	int bar; //, prevBar = 0;
 	int ndx = sharedData.thisLoopIndex;
-	if (scoreOrientation == 1) {
+	if (scoreOrientation > 0) {
 		numBars = min(numBarsToDisplay, (int)sharedData.loopData[sharedData.loopIndex].size());
 		drawLoopStartEnd = false;
 		// the equation below yields the first bar to display
@@ -1173,6 +1401,12 @@ void ofApp::drawScore()
 		// e.g. for an 8-bar loop with two bars being displayed
 		// the line below yields 0, 2, 4, 6, every other index (it actually ignores the odd indexes)
 		ndx = ((sharedData.thisLoopIndex - (sharedData.thisLoopIndex % numBars)) / numBars) * numBars;
+		// in the if test below we set the number of bars to be displayed to fit the remaining bars
+		// e.g. in a six-bar loop, when the first four bars have been played, we need to display two bars only
+		// not four bars which is the maximum number of bars to display (these numbers are hypothetical)
+		if (ndx > 0) {
+			numBars -= ((int)sharedData.loopData[sharedData.loopIndex].size() - ndx);
+		}
 	}
 	//--------------- end of horizontal score view variables --------------
 	//---------------- variables for the beat visualization ---------------
@@ -1236,7 +1470,7 @@ void ofApp::drawScore()
 		//notesOffsetX += sharedData.instruments.begin()->second.getClefXOffset();
 		//notesOffsetX += sharedData.instruments.begin()->second.getMeterXOffset();
 		notesOffsetX += (sharedData.staffLinesDist * NOTESXOFFSETCOEF);
-		float prevNotesOffsetX = notesOffsetX;
+		//float prevNotesOffsetX = notesOffsetX;
 		//float notesXCoef = (sharedData.instruments.begin()->second.getStaffXLength() + staffOffsetX - notesOffsetX) / notesLength;
 		if (showBarCount) {
 			string barCountStr = "(" + to_string(sharedData.thisLoopIndex+1) + "/" + to_string(sharedData.loopData[sharedData.loopIndex].size()) + ") " + to_string(sharedData.barCounter);
@@ -1275,7 +1509,7 @@ void ofApp::drawScore()
 			// get the meter of this bar to determine if it has changed and thus it has be to written
 			std::pair<int, int> thisMeter = sharedData.instruments.begin()->second.getMeter(bar);
 			std::pair<int, int> thisTempo = std::make_pair(sharedData.tempoBaseForScore[bar], sharedData.BPMTempi[bar]);
-			if (i > 0 && scoreOrientation == 1) {
+			if (i > 0 && scoreOrientation > 0) {
 				if (prevMeter.first != thisMeter.first || prevMeter.second != thisMeter.second) {
 					drawMeter = true;
 				}
@@ -1322,6 +1556,19 @@ void ofApp::drawScore()
 			// all the other bars must display the next bars of the loop (if there are any)
 			else if (((int)sharedData.thisLoopIndex % numBars) == numBars - 1 && i < numBars - 1) {
 				bar = sharedData.loopData[sharedData.loopIndex][(barNdx+numBars)%(int)sharedData.loopData[sharedData.loopIndex].size()];
+				// the calculations below determine whether the remaining bars are less than numBars - 1
+				// (we subtract one because in the last slot, we display the bar of the current loop chunk)
+				// in which case, we should leave the remaining slots empty
+				// for example, in a 6-bar loop with numBars = 4, when we enter the second chunk of the loop
+				// we need to display two bars
+				// when at the last bar of the first chunk, we display the 5th and 6th bar on the left side
+				// and the 4th bar on the right side, with the 3rd slot being blank
+				int loopIndexLocal = sharedData.thisLoopIndex + 1;
+				if (loopIndexLocal >= (int)sharedData.loopData[sharedData.loopIndex].size()) loopIndexLocal = 0;
+				int ndxLocal = (((loopIndexLocal) - ((loopIndexLocal) % numBars)) / numBars) * numBars;
+				int numBarsLocal = (ndxLocal > 0 ? numBars - ((int)sharedData.loopData[sharedData.loopIndex].size() - ndxLocal) : numBars);
+				if (i >= numBarsLocal) showBar = false;
+				else showBar = true;
 			}
 			// like with the beat visualization, accumulate X offsets for all bars but the first
 			if (i > 0) {
@@ -1337,6 +1584,10 @@ void ofApp::drawScore()
 			if (prevDrawMeter != drawMeter) {
 				if (drawMeter) notesOffsetX += sharedData.instruments.begin()->second.getMeterXOffset();
 				else notesOffsetX -= sharedData.instruments.begin()->second.getMeterXOffset();
+			}
+			if (numBars == 1 && scoreOrientation > 0) {
+				staffOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
+				notesOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
 			}
 			float notesXCoef = notesLength * sharedData.instruments.begin()->second.getXCoef(); // sharedData.instruments.begin()->second.getStaffXLength();
 			if (drawClef) notesXCoef -= sharedData.instruments.begin()->second.getClefXOffset();
@@ -1406,9 +1657,12 @@ void ofApp::drawScore()
 			prevTempo.second = thisTempo.second;
 			prevDrawClef = drawClef;
 			prevDrawMeter = drawMeter;
-			prevNotesOffsetX = notesOffsetX;
-			prevBar = bar;
+			//prevNotesOffsetX = notesOffsetX;
+			//prevBar = bar;
 		}
+		ofSetColor(255, 0, 255);
+		ofDrawLine(staffOffsetX, 0, staffOffsetX, 1000);
+		ofSetColor(brightness);
 	}
 }
 
@@ -1468,6 +1722,11 @@ void ofApp::executeKeyPressed(int key)
 	    case 57361:
 	    	editors[whichPane].pageDown();
 	    	break;
+		// esc
+		case 27:
+			editors[whichPane].setInserting(false);
+			editors[whichPane].commandStr = "";
+			editors[whichPane].resetMaxNumLines();
 	    default:
 	    	if (key == 61 && ctrlPressed && !altPressed) { // +
 	    		fontSize += 2;
@@ -1502,141 +1761,11 @@ void ofApp::executeKeyPressed(int key)
 	    	}
 	    	// add panes. V for vertical, H for horizontal (with shift pressed)
 	    	else if (((key == 86) || (key == 72)) && ctrlPressed) {
-				Editor editor;
-				editor.setID(whichPane+1);
-				bool firstAddition = false;
-				if (editors.size() == 1) firstAddition = true;
-				// first move the keys of all the editors
-				for (map<int, Editor>::reverse_iterator editRevIt = editors.rbegin(); editRevIt != editors.rend(); ++editRevIt) {
-					if (editRevIt->first > whichPane) {
-						int editKey = editRevIt->first;
-						auto editNodeHolder = editors.extract(editKey);
-						editNodeHolder.key() = editKey + 1;
-						editors.insert(std::move(editNodeHolder));
-						editors[editKey+1].setID(editRevIt->second.getID()+1);
-					}
-				}
-				editors[whichPane+1] = editor;
-				setFontSize();
-				if (firstAddition) {
-					if (key == 86) paneSplitOrientation = 1;
-					else paneSplitOrientation = 0;
-				}
-				if ((paneSplitOrientation == 0 && key == 86) || (paneSplitOrientation == 1 && key == 72)) {
-					int paneRowWithCursor = editors[whichPane].getPaneRow();
-					numPanes[paneRowWithCursor]++;
-					editors[whichPane+1].setPaneRow(paneRowWithCursor);
-					//cout << "created a new pane in row " << editors[whichPane+1].getPaneRow() << endl;
-					editors[whichPane+1].setPaneCol(numPanes[paneRowWithCursor]);
-					//cout << "added a pane column in row " << paneRowWithCursor << endl;
-				}
-				else {
-					int paneRowWithCursor = editors[whichPane].getPaneRow();
-					map<int, int>::iterator numPanesIt = numPanes.find(paneRowWithCursor);
-					map<int, int>::reverse_iterator numPanesRevIt = numPanes.rbegin();
-					//cout << "testing " << numPanesIt->first << " against " << numPanesRevIt->first << endl;
-					if (numPanesIt != numPanes.end()) {
-						// first check if we are at the last row of editors
-						if (numPanesIt->first == numPanesRevIt->first) {
-							// in this case, we add a new row that now contains one column
-							numPanes[numPanesIt->first+1] = 1;
-							editors[whichPane+1].setPaneRow(numPanesIt->first+1);
-							editors[whichPane+1].setPaneCol(1);
-						}
-						else {
-							// otherwise we insert a row somewhere in the middle
-							// so we first have to change the keys of all rows after the current one
-							for (numPanesRevIt = numPanes.rbegin(); numPanesRevIt->first > paneRowWithCursor; ++numPanesRevIt) {
-								int key = numPanesRevIt->first;
-								auto nodeHolder = numPanes.extract(key);
-								nodeHolder.key() = key + 1;
-								numPanes.insert(std::move(nodeHolder));
-								// find which editors are contained in the panes that change rows
-								for (map<int, Editor>::reverse_iterator editRevIt = editors.rbegin(); editRevIt != editors.rend(); ++editRevIt) {
-									if (editRevIt->second.getPaneRow() == key) {
-										editRevIt->second.setPaneRow(key+1);
-									}
-								}
-							}
-							numPanes[paneRowWithCursor+1] = 1;
-							editors[whichPane+1].setPaneRow(paneRowWithCursor+1);
-							editors[whichPane+1].setPaneCol(1);
-						}
-					}
-				}
-				editors[whichPane].setActivity(false);
-				// release the Ctrl key from the previous pane before moving to the new one
-				editors[whichPane].setCtrlPressed(false);
-				// for safety, set also the shift and alt keys to released
-				editors[whichPane].setShiftPressed(false);
-				editors[whichPane].setAltPressed(false);
-				whichPane++;
-				editors[whichPane].setActivity(true);
-				setPaneCoords();
+				addPane(key);
 			}
 	    	// remove panes. Ctrl+w, where if only one pane, we quit 
 	    	else if (key == 119 && ctrlPressed) {
-				if (numPanes.size() == 1) {
-					exit();
-				}
-				else {
-					int paneRowWithCursor = editors[whichPane].getPaneRow();
-					//cout << "will remove pane from row " << paneRowWithCursor << endl;
-					// check if we're erasing the last pane, to determine which pane will become active
-					bool isLastPane = (editors.rbegin()->first == whichPane ? true : false);
-					editors.erase(whichPane);
-					// if the current row has only one pane, remove it from the map
-					if (numPanes[paneRowWithCursor] == 1) {
-						numPanes.erase(paneRowWithCursor);
-						// changes the keys of all panes with greater index than the one we just erased
-						for (map<int, int>::iterator numPanesIt = numPanes.find(paneRowWithCursor+1); numPanesIt != numPanes.end(); ++numPanesIt) {
-							int key = numPanesIt->first;
-							auto nodeHolder = numPanes.extract(key);
-							nodeHolder.key() = key-1;
-							numPanes.insert(std::move(nodeHolder));
-							// find all the editors located in this row and change it as well as their keys
-							for (map<int, Editor>::iterator editIt = editors.begin(); editIt != editors.end(); ++editIt) {
-								if (editIt->second.getPaneRow() == key) {
-									editIt->second.setPaneRow(key-1);
-									int editKey = editIt->first;
-									auto editNodeHolder = editors.extract(editKey);
-									editNodeHolder.key() = editKey - 1;
-									editors.insert(std::move(editNodeHolder));
-								}
-							}
-						}
-					}
-					else {
-						// find the editors in the same row that are above the column we are erasing
-						// or editors that are in greater rows than the one where we are erasing a column
-						for (map<int, Editor>::iterator editIt = editors.begin(); editIt != editors.end(); ++editIt) {
-							if (editIt->second.getPaneRow() >= paneRowWithCursor) {
-								// for the editors in panes of the same row where we erase a column
-								// change their column number
-								if ((editIt->second.getPaneRow() == paneRowWithCursor && editIt->second.getPaneCol() > numPanes[paneRowWithCursor]) ||
-										editIt->second.getPaneRow() > paneRowWithCursor) {
-									if (editIt->second.getPaneRow() == paneRowWithCursor) {
-										editIt->second.setPaneCol(numPanes[paneRowWithCursor]-1);
-									}
-									// for all editors in the same row and greater column or in a greater row
-									// change their index
-									int editKey = editIt->first;
-									auto editNodeHolder = editors.extract(editKey);
-									editNodeHolder.key() = editKey - 1;
-									editors.insert(std::move(editNodeHolder));
-								}
-							}
-						}
-						numPanes[paneRowWithCursor]--;
-					}
-					// if we deleted the last pane we must decrement the pane index
-					// otherwise it stays as it is, and the next pane becomes active
-					if (isLastPane) whichPane--;
-					editors[whichPane].setActivity(true);
-					// if we're left with one pane only, reset paneSplitOrientation
-					if (numPanes.size() == 1) paneSplitOrientation = 0;
-					setPaneCoords();
-				}
+				removePane();
 	    	}
 	    	// set which editor is active
 	    	else if ((key >= 49) && (key <= 57) && altPressed) {
@@ -1650,18 +1779,54 @@ void ofApp::executeKeyPressed(int key)
 	    			editors[whichPane].setActivity(true);
 	    		}
 	    	}
-	    	// swap score position with Ctl+P for horizontal
-	    	// and Ctl+Shift+P for vertical
+	    	// swap score position with Ctrl+P for horizontal
+	    	// Ctrl+Shift+P for vertical
+			// Ctrl+Alt+Shift+P for full screen
 	    	else if ((key == 112) && ctrlPressed) {
 	    		swapScorePosition(0);
 	    	}
-	    	else if ((key == 80) && ctrlPressed) {
+	    	else if ((key == 80) && ctrlPressed && !altPressed) {
 	    		swapScorePosition(1);
 	    	}
-	    	else {
+			else if ((key == 80) && ctrlPressed && altPressed) {
+				swapScorePosition(2);
+			}
+			else if (key == 105 && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
+				editors[whichPane].setInserting(true);
+				editors[whichPane].commandStr = "";
+				editors[whichPane].resetMaxNumLines();
+			}
+			else if ((key == 106 || key == 74) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
+				editors[whichPane].downArrow(-1); // -1 for single increment
+			}
+			else if ((key == 107 || key == 75) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
+				editors[whichPane].upArrow(-1); // -1 for single decrement
+			}
+			else if ((key == 104 || key == 72) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
+				editors[whichPane].leftArrow();
+			}
+			else if ((key == 108 || key == 76) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
+				editors[whichPane].rightArrow();
+			}
+			else if ((key == 102 && ctrlPressed) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
+				editors[whichPane].pageDown();
+			}
+			else if ((key == 98 && ctrlPressed) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
+				editors[whichPane].pageUp();
+			}
+			else if (key == 121 && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
+				editors[whichPane].yankString();
+			}
+			else if (key == 112 && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
+				editors[whichPane].pasteYankedString();
+			}
+	    	else if (editors[whichPane].getInserting()) {
 				editors[whichPane].allOtherKeys(key);
-	    }
-	    break;
+			}
+			else if (!editors[whichPane].getInserting() && (key == 58 || editors[whichPane].isTypingCommand())) {
+				editors[whichPane].typeCommand(key);
+			}
+			break;
 	}
 }
 
@@ -1744,6 +1909,148 @@ void ofApp::keyReleased(int key)
 	}
 	executeKeyReleased(key);
 	//sharedData.mutex.unlock();
+}
+
+//--------------------------------------------------------------
+void ofApp::addPane(int key)
+{
+	Editor editor;
+	editor.setID(whichPane+1);
+	bool firstAddition = false;
+	if (editors.size() == 1) firstAddition = true;
+	// first move the keys of all the editors
+	for (map<int, Editor>::reverse_iterator editRevIt = editors.rbegin(); editRevIt != editors.rend(); ++editRevIt) {
+		if (editRevIt->first > whichPane) {
+			int editKey = editRevIt->first;
+			auto editNodeHolder = editors.extract(editKey);
+			editNodeHolder.key() = editKey + 1;
+			editors.insert(std::move(editNodeHolder));
+			editors[editKey+1].setID(editRevIt->second.getID()+1);
+		}
+	}
+	editors[whichPane+1] = editor;
+	setFontSize();
+	if (firstAddition) {
+		if (key == 86) paneSplitOrientation = 1;
+		else paneSplitOrientation = 0;
+	}
+	if ((paneSplitOrientation == 0 && key == 86) || (paneSplitOrientation == 1 && key == 72)) {
+		int paneRowWithCursor = editors[whichPane].getPaneRow();
+		numPanes[paneRowWithCursor]++;
+		editors[whichPane+1].setPaneRow(paneRowWithCursor);
+		//cout << "created a new pane in row " << editors[whichPane+1].getPaneRow() << endl;
+		editors[whichPane+1].setPaneCol(numPanes[paneRowWithCursor]);
+		//cout << "added a pane column in row " << paneRowWithCursor << endl;
+	}
+	else {
+		int paneRowWithCursor = editors[whichPane].getPaneRow();
+		map<int, int>::iterator numPanesIt = numPanes.find(paneRowWithCursor);
+		map<int, int>::reverse_iterator numPanesRevIt = numPanes.rbegin();
+		//cout << "testing " << numPanesIt->first << " against " << numPanesRevIt->first << endl;
+		if (numPanesIt != numPanes.end()) {
+			// first check if we are at the last row of editors
+			if (numPanesIt->first == numPanesRevIt->first) {
+				// in this case, we add a new row that now contains one column
+				numPanes[numPanesIt->first+1] = 1;
+				editors[whichPane+1].setPaneRow(numPanesIt->first+1);
+				editors[whichPane+1].setPaneCol(1);
+			}
+			else {
+				// otherwise we insert a row somewhere in the middle
+				// so we first have to change the keys of all rows after the current one
+				for (numPanesRevIt = numPanes.rbegin(); numPanesRevIt->first > paneRowWithCursor; ++numPanesRevIt) {
+					int key = numPanesRevIt->first;
+					auto nodeHolder = numPanes.extract(key);
+					nodeHolder.key() = key + 1;
+					numPanes.insert(std::move(nodeHolder));
+					// find which editors are contained in the panes that change rows
+					for (map<int, Editor>::reverse_iterator editRevIt = editors.rbegin(); editRevIt != editors.rend(); ++editRevIt) {
+						if (editRevIt->second.getPaneRow() == key) {
+							editRevIt->second.setPaneRow(key+1);
+						}
+					}
+				}
+				numPanes[paneRowWithCursor+1] = 1;
+				editors[whichPane+1].setPaneRow(paneRowWithCursor+1);
+				editors[whichPane+1].setPaneCol(1);
+			}
+		}
+	}
+	editors[whichPane].setActivity(false);
+	// release the Ctrl key from the previous pane before moving to the new one
+	editors[whichPane].setCtrlPressed(false);
+	// for safety, set also the shift and alt keys to released
+	editors[whichPane].setShiftPressed(false);
+	editors[whichPane].setAltPressed(false);
+	whichPane++;
+	editors[whichPane].setActivity(true);
+	setPaneCoords();
+}
+
+//--------------------------------------------------------------
+void ofApp::removePane()
+{
+	if (numPanes.size() == 1) {
+		exit();
+	}
+	else {
+		int paneRowWithCursor = editors[whichPane].getPaneRow();
+		//cout << "will remove pane from row " << paneRowWithCursor << endl;
+		// check if we're erasing the last pane, to determine which pane will become active
+		bool isLastPane = (editors.rbegin()->first == whichPane ? true : false);
+		editors.erase(whichPane);
+		// if the current row has only one pane, remove it from the map
+		if (numPanes[paneRowWithCursor] == 1) {
+			numPanes.erase(paneRowWithCursor);
+			// changes the keys of all panes with greater index than the one we just erased
+			for (map<int, int>::iterator numPanesIt = numPanes.find(paneRowWithCursor+1); numPanesIt != numPanes.end(); ++numPanesIt) {
+				int key = numPanesIt->first;
+				auto nodeHolder = numPanes.extract(key);
+				nodeHolder.key() = key-1;
+				numPanes.insert(std::move(nodeHolder));
+				// find all the editors located in this row and change it as well as their keys
+				for (map<int, Editor>::iterator editIt = editors.begin(); editIt != editors.end(); ++editIt) {
+					if (editIt->second.getPaneRow() == key) {
+						editIt->second.setPaneRow(key-1);
+						int editKey = editIt->first;
+						auto editNodeHolder = editors.extract(editKey);
+						editNodeHolder.key() = editKey - 1;
+						editors.insert(std::move(editNodeHolder));
+					}
+				}
+			}
+		}
+		else {
+			// find the editors in the same row that are above the column we are erasing
+			// or editors that are in greater rows than the one where we are erasing a column
+			for (map<int, Editor>::iterator editIt = editors.begin(); editIt != editors.end(); ++editIt) {
+				if (editIt->second.getPaneRow() >= paneRowWithCursor) {
+					// for the editors in panes of the same row where we erase a column
+					// change their column number
+					if ((editIt->second.getPaneRow() == paneRowWithCursor && editIt->second.getPaneCol() > numPanes[paneRowWithCursor]) ||
+							editIt->second.getPaneRow() > paneRowWithCursor) {
+						if (editIt->second.getPaneRow() == paneRowWithCursor) {
+							editIt->second.setPaneCol(numPanes[paneRowWithCursor]-1);
+						}
+						// for all editors in the same row and greater column or in a greater row
+						// change their index
+						int editKey = editIt->first;
+						auto editNodeHolder = editors.extract(editKey);
+						editNodeHolder.key() = editKey - 1;
+						editors.insert(std::move(editNodeHolder));
+					}
+				}
+			}
+			numPanes[paneRowWithCursor]--;
+		}
+		// if we deleted the last pane we must decrement the pane index
+		// otherwise it stays as it is, and the next pane becomes active
+		if (isLastPane) whichPane--;
+		editors[whichPane].setActivity(true);
+		// if we're left with one pane only, reset paneSplitOrientation
+		if (numPanes.size() == 1) paneSplitOrientation = 0;
+		setPaneCoords();
+	}
 }
 
 //--------------------------------------------------------------
@@ -1967,6 +2274,7 @@ bool ofApp::isNumber(string str)
 	// first check if there is a hyphen in the beginning
 	int loopStart = 0;
 	if (str[0] == '-') loopStart = 1;
+	if (str.size() == 0) return false;
 	for (int i = loopStart; i < (int)str.length(); i++) {
 		if (!isdigit(str[i])) {
 			return false;
@@ -2250,10 +2558,26 @@ std::pair<int, string> ofApp::expandSingleChars(string str)
 {
 	size_t multNdx = str.find("*");
 	size_t whiteSpaceBefore = str.substr(0, multNdx).find_last_of(" ");
+	size_t quoteIndex = str.substr(0, multNdx).find_last_of("\"");
 	int offset = 1;	
 	string firstPart = "";
 	if (whiteSpaceBefore != string::npos) {
-		firstPart = str.substr(0, whiteSpaceBefore) + " ";
+		// if there's a quote sign after the last white space
+		if ((quoteIndex != string::npos && quoteIndex > whiteSpaceBefore)) {
+			// spot the quote sign before the one we already found (which is the opening quote sing)
+			quoteIndex = str.substr(0, quoteIndex).find_last_of("\"");
+			// and move the white space index accordingly
+			whiteSpaceBefore = str.substr(0, quoteIndex).find_last_of(" ");
+			if (whiteSpaceBefore != string::npos) {
+				firstPart = str.substr(0, whiteSpaceBefore) + " ";
+			}
+			else {
+				whiteSpaceBefore = offset = 0;
+			}
+		}
+		else {
+			firstPart = str.substr(0, whiteSpaceBefore) + " ";
+		}
 	}
 	else {
 		whiteSpaceBefore = offset = 0;
@@ -2427,22 +2751,27 @@ void ofApp::parseStrings(int index, int numLines)
 	// if we have parsed at least one melodic line
 	if (noErrors && (parsingBar || parsingLoop)) {
 		// first send the parsed lines to any connected instruments
-		ofxOscMessage m;
-		m.setAddress("/line");
-		m.addIntArg(numLines);
-		for (int i = index; i < (index+numLines); i++) {
-			m.addStringArg(editors[whichPane].allStrings[i]);
+		if (!parsingBars) {
+			ofxOscMessage m;
+			m.setAddress("/line");
+			for (int i = index; i < (index+numLines); i++) {
+				m.addStringArg(editors[whichPane].allStrings[i]);
+			}
+			sendToParts(m, false);
 		}
-		if (!sequencer.isThreadRunning()) {
-			m.addIntArg(1);
-		}
-		else {
-			m.addIntArg(0);
-		}
-		sendToParts(m, false);
 		// the bar index has already been stored with the \bar command
 		int barIndex = getLastLoopIndex();
 		if (!parsingLoop) {
+			// store the strings of the bar definition, as these can be changed in the editor
+			// but we might need them at a later stage elsewhere
+			// these are stored as one line separated with newline characters
+			string barName = sharedData.barsOrdered[barIndex];
+			string barLinesStr = "";
+			for (int i = index; i < (index+numLines); i++) {
+				barLinesStr += editors[whichPane].allStrings[i];
+				if (i < index+numLines-1) barLinesStr += "\n";
+			}
+			sharedData.barLines[barName] = barLinesStr;
 			// then add a rest for any instrument that is not included in the bar
 			fillInMissingInsts(barIndex);
 			// then store the number of beats for this bar
@@ -2497,7 +2826,6 @@ void ofApp::parseStrings(int index, int numLines)
 			// this is so that we avoid sending these lines mutliple times, one for each parsed bar
 			ofxOscMessage m;
 			m.setAddress("/line");
-			m.addIntArg(numLines);
 			for (int i = index; i < (index+numLines); i++) {
 				m.addStringArg(editors[whichPane].allStrings[i]);
 			}
@@ -2688,6 +3016,7 @@ int ofApp::storeNewBar(string barName)
 	sharedData.barsIndexes[barName] = barIndex;
 	sharedData.loopsIndexes[barName] = barIndex;
 	sharedData.loopsOrdered[barIndex] = barName;
+	sharedData.barsOrdered[barIndex] = barName;
 	sharedData.loopsVariants[barIndex] = 0;
 	sharedData.tempBarLoopIndex = barIndex;
 	int prevBarIndex = getPrevBarIndex();
@@ -2842,7 +3171,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		if (commands.size() < 2) {
 			return std::make_pair(3, "\\tempo command needs at least one argument");
 		}
-		// a \time command must be placed inside a bar definition
+		// a \tempo command must be placed inside a bar definition
 		// and the bar index has already been stored, so we can safely query the last bar index
 		int bar = getLastBarIndex();
 		if (commands.size() == 4) {
@@ -3030,11 +3359,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 	}
 
 	else if (commands[0].compare("\\print") == 0) {
-		string restOfCommand = "";
-		for (unsigned i = 1; i < commands.size(); i++) {
-			restOfCommand += " ";
-			restOfCommand += commands[i];
-		}
+		string restOfCommand = getRestOfCommand(commands, 1);
 		std::pair<int, string> error = parseString(restOfCommand, lineNum, numLines);
 		if (error.first == 0) return std::make_pair(1, error.second);
 		else return error;
@@ -3113,6 +3438,12 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 				sharedData.instruments[sharedData.instrumentIndexes[commands[i]]].setGroup(sharedData.instruments[sharedData.instrumentIndexes[commands[i-1]]].getID());
 			}
 		}
+		ofxOscMessage m;
+		m.setAddress("/group");
+		for (unsigned i = 1; i < commands.size(); i++) {
+			m.addStringArg(commands[i]);
+		}
+		sendToParts(m, false);
 	}
 
 	else if (commands[0].compare("\\score") == 0) {
@@ -3177,12 +3508,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		// since bars include simple melodic lines in their definition
 		// we need to know this when we parse these lines
 		if (commands.size() > 2) {
-			string restOfCommand = "";
-			for (unsigned i = 2; i < commands.size()-1; i++) {
-				restOfCommand += commands[i];
-				restOfCommand += " ";
-			}
-			restOfCommand += commands[commands.size()-1];
+			string restOfCommand = getRestOfCommand(commands, 2);
 			return parseString(restOfCommand, lineNum, numLines);
 		}
 	}
@@ -3204,11 +3530,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		commandsMap[livelily][loopName] = ofColor::lightSeaGreen;
 		// loops are most likely defined in one-liners, so we parse the rest of the line here
 		if (commands.size() > 2) {
-			string restOfCommand = "";
-			for (unsigned i = 2; i < commands.size(); i++) {
-				restOfCommand += commands[i];
-				restOfCommand += " ";
-			}
+			string restOfCommand = getRestOfCommand(commands, 2);
 			std::pair<int, string> p = parseString(restOfCommand, lineNum, numLines);
 			if (p.first > 0) {
 				parsingLoop = false;
@@ -3238,6 +3560,49 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		// store each bar separately with the "-x" suffix, where x is the counter
 		// of the iterations, until all instruments have had all their separate bars parsed
 		parseCommand("\\bar "+multiBarsName+"-"+to_string(barsIterCounter), lineNum, numLines);
+	}
+
+	else if (commands[0].compare("\\random") == 0) {
+		int start = 0, end = 0, diff = 0, randVal;
+		bool symbols = false;
+		if (commands.size() < 2) {
+			return std::make_pair(3, "\\random takes at least one argument");
+		}
+		if (commands.size() == 2) {
+			if (isNumber(commands[1])) {
+				end = stoi(commands[1]);
+			}
+			else {
+				return std::make_pair(3, "if only one argument is provided to \\random, it must be a number");
+			}
+		}
+		else {
+			if (commands.size() == 3) {
+				if ((isNumber(commands[1]) && !isNumber(commands[2])) || (!isNumber(commands[1]) && isNumber(commands[2]))) {
+					return std::make_pair(3, "if \\random receives two arguments, they should both be of the same type, int or string");
+				}
+				if (isNumber(commands[1])) {
+					start = stoi(commands[1]);
+					end = stoi(commands[2]);
+				}
+				else {
+					end = (int)commands.size() - 1;
+					symbols = true;
+				}
+			}
+			else {
+				end = (int)commands.size() - 1;
+				symbols = true;
+			}
+		}
+		diff = end - start;
+		randVal = rand() % diff + start;
+		if (symbols) {
+			return std::make_pair(0, commands[randVal+1]);
+		}
+		else {
+			return std::make_pair(0, to_string(randVal));
+		}
 	}
 
 	else if (commands[0].compare("\\barcount") == 0) {
@@ -3278,11 +3643,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		else lastListIndex = listIndexes.rbegin()->second + 1;
 		listIndexes[listName] = lastListIndex;
 		commandsMap[livelily][listName] = ofColor::lightSeaGreen;
-		string restOfCommand = "";
-		for (unsigned i = 2; i < commands.size(); i++) {
-			if (i > 2) restOfCommand += " ";
-			restOfCommand += commands[i];
-		}
+		string restOfCommand = getRestOfCommand(commands, 2);
 		std::pair<int, string> error = parseString(restOfCommand, lineNum, numLines);
 		if (error.first == 3) {
 			storingList = false;
@@ -3630,12 +3991,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		// the size to be allocated for the null terminating character
 		sharedData.functions[lastFunctionIndex].allocate(functionBodySize);
 		functionBodyOffset = 0;
-		string restOfCommand = "";
-		for (unsigned i = 2; i < commands.size()-1; i++) {
-			restOfCommand += commands[i];
-			restOfCommand += " ";
-		}
-		restOfCommand += commands[commands.size()-1];
+		string restOfCommand = getRestOfCommand(commands, 2);
 		std::pair<int, string> p = parseString(restOfCommand, lineNum, numLines);
 		if (p.first > 0) {
 			storingFunction = false;
@@ -3669,30 +4025,82 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		outPortsOneStr += "MIDI out port " + to_string(sequencer.midiOutPorts.size()-1) + ": " + sequencer.midiOutPorts.back();
 		return std::make_pair(1, outPortsOneStr);
 	}
-	
+
 	else if (commands[0].compare("\\openmidiport") == 0) {
-		if (commands.size() > 2) {
-			return std::make_pair(3, "\\openmidiport takes one argument only");
-		}
-		else if (commands.size() == 1) {
-			return std::make_pair(3, "no midi port number provided");
+		if (commands.size() != 2) {
+			return std::make_pair(3, "\\openmidiport  takes one argument, the MIDI port to open");
 		}
 		if (!isNumber(commands[1])) {
-			return std::make_pair(3, "midi port argument must be a number");
+			return std::make_pair(3, "MIDI port must be a number");
 		}
-		unsigned midiPort = stoi(commands[1]);
-		if (midiPort >= sequencer.midiOutPorts.size()) {
-			return std::make_pair(3, "midi port doesn't exist");
+		int midiPort = stoi(commands[1]);
+		if (midiPort < 0) {
+			return std::make_pair(3, "MIDI port must be positive");
 		}
-		ofxMidiOut midiOut;
-		midiOut.openPort(midiPort);
-		//sequencer.midiOut.openPort(midiPort);
-		sequencer.midiOuts.push_back(midiOut);
-		midiPortOpen = true;
-		return std::make_pair(1, "opened MIDI port " + commands[1]);
+		if (midiPort >= (int)sequencer.midiOutPorts.size()) {
+			return std::make_pair(3, "MIDI port doesn't exist");
+		}
+		if (sequencer.midiPortsMap.find(midiPort) == sequencer.midiPortsMap.end()) {
+			ofxMidiOut midiOut;
+			midiOut.openPort(midiPort);
+			sequencer.midiOuts.push_back(midiOut);
+			sequencer.midiPortsMap[midiPort] = (int)sequencer.midiOuts.size()-1;
+			return std::make_pair(1, "opened MIDI port " + commands[1]);
+		}
+		else {
+			return std::make_pair(3, "MIDI port " + commands[1] + " is already open");
+		}
+	}
+	
+	else if (commands[0].compare("\\ctlchange") == 0) {
+		if (commands.size() != 5) {
+			return std::make_pair(3, "\\ctlchange takes four arguments, port, channel, controller nr, and value");
+		}
+		if (!isNumber(commands[1]) || !isNumber(commands[2]) || !isNumber(commands[3]) || !isNumber(commands[4])) {
+			return std::make_pair(3, "all arguments to \\ctlchange must be integers");
+		}
+		int port = stoi(commands[1]);
+		if (sequencer.midiPortsMap.find(port) == sequencer.midiPortsMap.end()) {
+			return std::make_pair(3, "selected MIDI port is not open");
+		}
+		int channel = stoi(commands[2]);
+		int control = stoi(commands[3]);
+		int val = stoi(commands[4]);
+		if (channel < 1 || channel > 16) {
+			return std::make_pair(3, "MIDI channel must be between 1 and 16");
+		}
+		if (control < 0) {
+			return std::make_pair(3, "control number must be positive");
+		}
+		if (val < 0 || val > 127) {
+			return std::make_pair(3, "MIDI value must be between 0 and 127");
+		}
+		sequencer.midiOuts[sequencer.midiPortsMap[port]].sendControlChange(channel, control, val);
+	}
+	
+	else if (commands[0].compare("\\pgmchange") == 0) {
+		if (commands.size() != 4) {
+			return std::make_pair(3, "\\pgmchange takes three arguments, port, channel, and value");
+		}
+		if (!isNumber(commands[1]) || !isNumber(commands[2]) || !isNumber(commands[3])) {
+			return std::make_pair(3, "all arguments to \\pgmchange must be integers");
+		}
+		int port = stoi(commands[1]);
+		if (sequencer.midiPortsMap.find(port) == sequencer.midiPortsMap.end()) {
+			return std::make_pair(3, "selected MIDI port is not open");
+		}
+		int channel = stoi(commands[2]);
+		int val = stoi(commands[3]);
+		if (channel < 1 || channel > 16) {
+			return std::make_pair(3, "MIDI channel must be between 1 and 16");
+		}
+		if (val < 0 || val > 127) {
+			return std::make_pair(3, "MIDI value must be between 0 and 127");
+		}
+		sequencer.midiOuts[sequencer.midiPortsMap[port]].sendProgramChange(channel, val);
 	}
 
-	else if (commands[0].compare("\\dur") == 0 || commands[0].compare("\\mididur") == 0) {
+	else if (commands[0].compare("\\dur") == 0) {
 		if (commands.size() == 1) {
 			return std::make_pair(3, "no duration percentage set");
 		}
@@ -3718,7 +4126,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		}
 	}
 
-	else if (commands[0].compare("\\staccato") == 0 || commands[0].compare("\\midistaccato") == 0) {
+	else if (commands[0].compare("\\staccato") == 0) {
 		if (commands.size() == 1) {
 			return std::make_pair(3, "no percentage value provided");
 		}
@@ -3744,7 +4152,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		}
 	}
 
-	else if (commands[0].compare("\\staccatissimo") == 0 || commands[0].compare("\\midistaccatissimo") == 0) {
+	else if (commands[0].compare("\\staccatissimo") == 0) {
 		if (commands.size() == 1) {
 			return std::make_pair(3, "no percentage value provided");
 		}
@@ -3770,7 +4178,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		}
 	}
 
-	else if (commands[0].compare("\\tenuto") == 0 || commands[0].compare("\\miditenuto") == 0) {
+	else if (commands[0].compare("\\tenuto") == 0) {
 		if (commands.size() == 1) {
 			return std::make_pair(3, "no percentage value provided");
 		}
@@ -3801,7 +4209,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 			return std::make_pair(3, "\\listserialports command takes no arguments");
 		}
 		serial.listDevices();
-		vector<ofSerialDeviceInfo> serialDeviceList = serial.getDeviceList();
+		serialDeviceList = serial.getDeviceList();
 		string outPortsOneStr = "";
 		for (unsigned i = 0; i < serialDeviceList.size()-1; i++) {
 			outPortsOneStr += "Serial port " + ofToString(serialDeviceList[i].getDeviceID()) + \
@@ -3817,14 +4225,103 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		if (commands.size() < 3 || commands.size() > 3) {
 			return std::make_pair(3, "\\openserialport takes two arguments, port path and baud rate");
 		}
+		int serialPort;
+		bool serialPortNumSet = false;
 		if (isNumber(commands[1])) {
-			return std::make_pair(3, "first argument must be port path");
+			serialPort = stoi(commands[1]);
+			if (serialPort < 0) {
+				return std::make_pair(3, "serial port list number must be positive");
+			}
+			if (serialPort >= (int)serialDeviceList.size()) {
+				return std::make_pair(3, "serial port list number out of range");
+			}
+			serialPortNumSet = true;
 		}
 		if (!isNumber(commands[2])) {
 			return std::make_pair(3, "second argument must be baud rate");
 		}
-		serial.setup(commands[1], stoi(commands[2]));
+		if (serialPortNumSet) {
+			serial.setup(serialDeviceList[serialPort].getDevicePath(), stoi(commands[2]));
+		}
+		else {
+			bool serialPortPathFound = false;
+			for (unsigned i = 0; i < serialDeviceList.size(); i++) {
+				if (serialDeviceList[i].getDevicePath().compare(commands[1]) == 0) {
+					serialPortPathFound = true;
+					break;
+				}
+			}
+			if (serialPortPathFound) {
+				serial.setup(commands[1], stoi(commands[2]));
+			}
+			else {
+				return std::make_pair(3, "serial port path \"" + commands[1] + "\" doesn't exist");
+			}
+		}
+		serialPortOpen = true;
 		return std::make_pair(1, "opened " + commands[1] + " at baud " + commands[2]);
+	}
+
+	else if (commands[0].compare("\\serialwrite") == 0) {
+		if (commands.size() == 1) {
+			return std::make_pair(3, "\\serialwrite takes at least one argument, a byte to send over serial");
+		}
+		if (!serial.isInitialized()) {
+			return std::make_pair(3, "serial port is not open");
+		}
+		for (unsigned i = 1; i < commands.size(); i++) {
+			if (!isNumber(commands[i])) {
+				return std::make_pair(3, "\\serialwrite takes numbers from 0 to 255 only");
+			}
+			int value = stoi(commands[i]);
+			if (value < 0 || value > 255) {
+				return std::make_pair(3, "\\serialwrite takes numbers from 0 to 255");
+			}
+			serial.writeByte((char)value);
+		}
+	}
+
+	else if (commands[0].compare("\\serialprint") == 0) {
+		if (commands.size() == 1) {
+			return std::make_pair(3, "\\serialprint takes at least one argument, a character to send over serial");
+		}
+		if (!serial.isInitialized()) {
+			return std::make_pair(3, "serial port is not open");
+		}
+		size_t charSize = 0;
+		for (unsigned i = 1; i < commands.size(); i++) {
+			for (unsigned j = 0; j < commands[i].size(); j++) {
+				charSize++;
+			}
+			charSize++;
+		}
+		// the last addition happens one time two many, so we subtract one here
+		charSize--;
+		unsigned char buf[charSize];
+		int index = 0;
+		for (unsigned i = 1; i < commands.size(); i++) {
+			for (unsigned j = 0; j < commands[i].size(); j++) {
+				buf[index++] = commands[i][j];
+			}
+			if (i < commands.size() - 1) buf[index++] = ' ';
+		}
+		serial.writeBytes(&buf[0], charSize);
+	}
+
+	else if (commands[0].compare("\\barlines") == 0) {
+		if (commands.size() != 2) {
+			return std::make_pair(3, "\\barlines takes one argument, the name of the bar to get its lines");
+		}
+		if (sharedData.barLines.find(commands[1]) == sharedData.barLines.end()) {
+			return std::make_pair(3, (string)"bar name \"" + commands[1] + (string)"\" doesn't exist");
+		}
+		return std::make_pair(0, sharedData.barLines[commands[1]]);
+	}
+
+	else if (commands[0].compare("\\closeserialport") == 0) {
+		if (serial.isInitialized()) {
+			serial.close();
+		}
 	}
 
 	else if (commands[0].compare("\\system") == 0) {
@@ -3839,12 +4336,13 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		}
 		return std::make_pair(1, ofSystem(sysCommand));
 	}
-	else if (commands[0].compare("\\autocomplete") == 0) {
+
+	else if (commands[0].compare("\\autobrackets") == 0) {
 		if (commands.size() != 2) {
-			return std::make_pair(3, "\\autocomplete takes one argument only, \"on\" or \"off\"");
+			return std::make_pair(3, "\\autobrackets takes one argument only, \"on\" or \"off\"");
 		}
 		if (commands[1].compare("on") != 0 && commands[1].compare("off") != 0) {
-			return std::make_pair(3, " argument to \\autocomplete must be \"on\" or \"off\"");
+			return std::make_pair(3, " argument to \\autobrackets must be \"on\" or \"off\"");
 		}
 		if (commands[1].compare("on") == 0) {
 			editors[whichPane].setAutocomplete(true);
@@ -3895,7 +4393,28 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		editors[whichPane].oscKeys.setup(hostIP, OSCPORT);
 		editors[whichPane].setSendLines(paneNdx);
 	}
-		
+
+	else if (commands[0].compare("\\maestro") == 0) {
+		return maestroCommands(commands, lineNum, numLines);
+	}
+
+	else if (commands[0].compare("\\framerate") == 0) {
+		if (commands.size() == 1) {
+			return std::make_pair(0, ofToString(ofGetFrameRate()));
+		}
+		if (commands.size() != 2) {
+			return std::make_pair(3, "\\framerate takes one argument, the framerate");
+		}
+		if (!isNumber(commands[1])) {
+			return std::make_pair(3, "argument to \\framerate must be an integer");
+		}
+		int framerate = stoi(commands[1]);
+		if (framerate <= 0) {
+			return std::make_pair(3, "framerate must be positive and higher than 0");
+		}
+		ofSetFrameRate(framerate);
+	}
+
 	else if (commands[0].compare("\\livelily") == 0) {
 		if (commands.size() > 1) {
 			return std::make_pair(3, "language command takes no arguments");
@@ -3963,7 +4482,6 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 			lastInstrumentIndex = sharedData.instrumentIndexes[commands[0]];
 			if (commands.size() > 1) {
 				if (commands[1].compare("clef") == 0) {
-					int clef = 0;
 					if (commands.size() < 3) {
 						std::pair<int, string> p = std::make_pair(3, "clef command takes a clef name as an argument");
 						return std::make_pair(instrumentExists, p);
@@ -3974,19 +4492,15 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					}
 					if (commands[2].compare("treble") == 0) {
 						sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 0);
-						clef = 0;
 					}
 					else if (commands[2].compare("bass") == 0) {
 						sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 1);
-						clef = 1;
 					}
 					else if (commands[2].compare("alto") == 0) {
 						sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 2);
-						clef = 2;
 					}
 					else if (commands[2].compare("perc") == 0 || commands[2].compare("percussion") == 0) {
 						sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 3);
-						clef = 3;
 					}
 					else {
 						std::pair<int, string> p = std::make_pair(3, "unknown clef");
@@ -4189,6 +4703,38 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 						return std::make_pair(instrumentExists, p );
 					}
 				}
+				else if (commands[1].compare("midiport") == 0) {
+					if (commands.size() != 3) {
+						std::pair<int, string> p = std::make_pair(3, "\"midiport\"  takes one argument, the MIDI port to open");
+						return std::make_pair(instrumentExists, p);
+					}
+					if (!isNumber(commands[2])) {
+						std::pair<int, string> p = std::make_pair(3, "MIDI port must be a number");
+						return std::make_pair(instrumentExists, p);
+					}
+					int midiPort = stoi(commands[2]);
+					if (midiPort < 0) {
+						std::pair<int, string> p = std::make_pair(3, "MIDI port must be positive");
+						return std::make_pair(instrumentExists, p);
+					}
+					if (midiPort >= (int)sequencer.midiOutPorts.size()) {
+						std::pair<int, string> p = std::make_pair(3, "MIDI port doesn't exist");
+						return std::make_pair(instrumentExists, p);
+					}
+					bool openedMidiPort = false;
+					if (sequencer.midiPortsMap.find(midiPort) == sequencer.midiPortsMap.end()) {
+						ofxMidiOut midiOut;
+						midiOut.openPort(midiPort);
+						sequencer.midiOuts.push_back(midiOut);
+						sequencer.midiPortsMap[midiPort] = (int)sequencer.midiOuts.size()-1;
+						openedMidiPort = true;
+					}
+					sharedData.instruments[lastInstrumentIndex].setMidiPort(midiPort);
+					if (openedMidiPort) {
+						std::pair<int, string> p = std::make_pair(1, "opened MIDI port " + commands[2]);
+						return std::make_pair(instrumentExists, p);
+					}
+				}
 				else if (commands[1].compare("midichan") == 0) {
 					if (commands.size() == 2) {
 						std::pair<int, string> p = std::make_pair(3, "no MIDI channel set");
@@ -4200,6 +4746,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					}
 					if (!isNumber(commands[2])) {
 						std::pair<int, string> p = std::make_pair(3, "MIDI channel must be a number");
+						return std::make_pair(instrumentExists, p);
+					}
+					if (sharedData.instruments[lastInstrumentIndex].getMidiPort() < 0) {
+						std::pair<int, string> p = std::make_pair(3, "no MIDI port has been set for this instrument");
 						return std::make_pair(instrumentExists, p);
 					}
 					int midiChan = stoi(commands[2]);
@@ -4270,12 +4820,7 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 				}
 				else {
 				parseMelody:
-					string restOfCommand = "";
-					for (unsigned i = commandNdxOffset; i < commands.size(); i++) {
-						// add a white space only after the first token has been added
-						if (i > commandNdxOffset) restOfCommand += " ";
-						restOfCommand += commands[i];
-					}
+					string restOfCommand = getRestOfCommand(commands, commandNdxOffset);
 					if (parsingBars && barsIterCounter == 1 && !firstInstForBarsSet) {
 						firstInstForBarsIndex = lastInstrumentIndex;
 						firstInstForBarsSet = true;
@@ -4425,7 +4970,7 @@ std::pair<bool, std::pair<int, string>> ofApp::isFunction(vector<string>& comman
 						}
 					}
 					else {
-						if (i + 1 < commands.size() - 1) {
+						if (i + 1 < commands.size()) {
 							lineWithArgs = replaceCharInStr(lineWithArgs,
 								lineWithArgs.substr(argNdxs[i], nextWhiteSpaceNdx),
 								commands[i+1]);
@@ -4464,24 +5009,56 @@ std::pair<bool, std::pair<int, string>> ofApp::isList(vector<string>& commands, 
 		if (listIndexes.find(commands[0]) != listIndexes.end()) {
 			listExists = true;
 			lastListIndex = listIndexes[commands[0]];
-			if (commands.size() < 2) return std::make_pair(listExists, error);
+			if (commands.size() < 2) {
+				return std::make_pair(listExists, error);
+			}
 			if (commands[1].compare("traverse") == 0) {
 				traversingList = true;
 				listIndexCounter = 0;
-				string restOfCommand = "";
-				for (unsigned i = 2; i < commands.size(); i++) {
-					if (i > 2) restOfCommand += " ";
-					restOfCommand += commands[i];
-				}
+				string restOfCommand = getRestOfCommand(commands, 2);
 				std::pair<int, string> p = traverseList(restOfCommand, lineNum, numLines);
 				if (p.first == 3) {
 					traversingList = false;
 					return std::make_pair(listExists, p);
 				}
 			}
+			else if (isNumber(commands[1])) {
+				std::pair<int, string> p = listItemExists(stoi(commands[1]));
+				return std::make_pair(listExists, p);
+			}
+			else {
+				string restOfCommand = getRestOfCommand(commands, 1);
+				std::pair<int, string> p = parseCommand(restOfCommand, lineNum, numLines);
+				if (p.first > 0) {
+					return std::make_pair(listExists, p);
+				}
+				else {
+					if (!isNumber(p.second)) {
+						return std::make_pair(listExists, std::make_pair(3, "list can only be indexed with an integer"));
+					}
+					int listItemNdx = stoi(p.second);
+					std::pair<int, string> p = listItemExists(listItemNdx);
+					return std::make_pair(listExists, p);
+				}
+			}
 		}
 	}
 	return std::make_pair(listExists, error);
+}
+
+//--------------------------------------------------------------
+std::pair<int, string> ofApp::listItemExists(int listItemNdx)
+{
+	if (listItemNdx < 1) {
+		return std::make_pair(3, "lists are 1-base indexed");
+	}
+	if (listItemNdx > listMap[lastListIndex].size()) {
+		return std::make_pair(3, "list index out of range");
+	}
+	listItemNdx--; // LiveLily is 1-based counting
+	auto lit = listMap[lastListIndex].begin();
+	std::advance(lit, listItemNdx);
+	return std::make_pair(0, *lit);
 }
 
 //--------------------------------------------------------------
@@ -4548,7 +5125,6 @@ std::pair<bool, std::pair<int, string>> ofApp::isOscClient(vector<string>& comma
 						}
 						ofxOscMessage m;
 						m.setAddress(commands[i+1]);
-						bool allNumbers = true;
 						for (unsigned j = i+2; j < commands.size(); j++) {
 							if (isNumber(commands[j])) {
 								m.addIntArg(stoi(commands[j]));
@@ -4560,14 +5136,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isOscClient(vector<string>& comma
 								m.addStringArg(commands[j].substr(1, commands[j].size()-2));
 							}
 							else {
-								string restOfCommand = "";
-								for (unsigned j = i+2; j < commands.size(); j++) {
-									if (j > i+2) restOfCommand += " ";
-									restOfCommand += commands[j];
-								}
+								string restOfCommand = getRestOfCommand(commands, j);
 								std::pair<int, string> errorNew = parseCommand(restOfCommand, lineNum, numLines);
 								if (errorNew.first < 2) {
-									vector<string> tokens = tokenizeString(errorNew.second, " ");
+									vector<string> tokens = tokenizeString(errorNew.second, "\n");
 									for (string token : tokens) {
 										if (isNumber(token)) m.addIntArg(stoi(token));
 										else m.addStringArg(token);
@@ -4729,6 +5301,17 @@ std::pair<int, string> ofApp::functionFuncs(vector<string>& commands)
 		}
 	}
 	return std::make_pair(0, "");
+}
+
+//--------------------------------------------------------------
+string ofApp::getRestOfCommand(vector<string>& commands, unsigned startNdx)
+{
+	string restOfCommand;
+	for (unsigned i = startNdx; i < commands.size(); i++) {
+		restOfCommand += commands[i];
+		if (i < commands.size() - 1) restOfCommand += " ";
+	}
+	return restOfCommand;
 }
 
 //--------------------------------------------------------------
@@ -4895,6 +5478,18 @@ std::pair<int, string> ofApp::parseBarLoop(string str, int lineNum, int numLines
 		strLength = closingBracketIndex;
 	}
 	string wildCardStr = (endsWith(str, "}") ? str.substr(0, str.size()-1) : str);
+	// if we get only an asterisk, it means we want to create a loop with all the bars
+	if (wildCardStr.compare("*") == 0) {
+		vector<int> thisLoopIndexes;
+		for (auto it = sharedData.barsOrdered.begin(); it != sharedData.barsOrdered.end(); ++it) {
+			// the first, default bar (a tacet) has index 0, which we must ignore here
+			if (it->first > 0) thisLoopIndexes.push_back(it->first);
+		}
+		// find the last index of the stored loops and store the vector we just created to the value of loopData
+		int loopNdx = getLastLoopIndex();
+		sharedData.loopData[loopNdx] = thisLoopIndexes;
+		return std::make_pair(0, "");
+	}
 	size_t multIndex = wildCardStr.find("*");
 	vector<string> names;
 	if (multIndex != string::npos) {
@@ -5401,12 +5996,13 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// so here we store the microtones only
 	vector<int> pitchBendVals(numNotesVertical, 0);
 	vector<int> dotIndexes(numNotesVertical, 0);
+	vector<unsigned> dotsCounter(numNotesVertical, 0);
 	vector<int> dynamicsData(numNotesVertical, 0);
 	vector<int> dynamicsRampData(numNotesVertical, 0);
 	vector<int> slurBeginningsIndexes(numNotesVertical, -1);
 	vector<int> slurEndingsIndexes(numNotesVertical, -1);
 	vector<int> tieIndexes(numNotesVertical, -1);
-	vector<int> textIndexesLocal(numNotesVertical, 0);
+	//vector<int> textIndexesLocal(numNotesVertical, 0);
 	vector<int> dursForScore(numNotesVertical, 0);
 	vector<int> dynamicsForScore(numNotesVertical, -1);
 	vector<int> dynamicsForScoreIndexes(numNotesVertical, -1);
@@ -5415,6 +6011,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	vector<pair<unsigned, unsigned>> dynamicsRampIndexes(numNotesVertical);
 	vector<int> midiDynamicsRampDurs(numNotesVertical, 0);
 	vector<int> glissandiIndexes(numNotesVertical, 0);
+	vector<int> glissandiIndexesForScore(numNotesVertical, 0);
 	vector<int> midiGlissDurs(numNotesVertical, 0);
 	vector<int> dynamicsRampStartForScore(numNotesVertical, -1);
 	vector<int> dynamicsRampEndForScore(numNotesVertical, -1);
@@ -5549,10 +6146,11 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
                     notesCounter.at(i)++;
 					dotIndexes.at(index2) = 0;
 					glissandiIndexes.at(index2) = 0;
+					glissandiIndexesForScore.at(index2) = 0;
 					midiGlissDurs.at(index2) = 0;
 					midiDynamicsRampDurs.at(index2) = 0;
 					pitchBendVals.at(index2) = 0;
-					textIndexesLocal.at(index2) = 0;
+					//textIndexesLocal.at(index2) = 0;
 					ottavas.at(index2) = ottava;
 					index2++;
 					if (firstChordNote) firstChordNote = false;
@@ -5643,27 +6241,11 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			midiNotesData.back().push_back(notePairs.at(i).at(j).first);
 		}
 	}
-	//auto midiNotesData = std::make_shared<vector<vector<int>>>();
-	//for (i = 0; i < notePairs->size(); i++) {
-	//	midiNotesData->push_back({notePairs->at(i).at(0).first});
-	//	for (j = 1; j < notePairs->at(i).size(); j++) {
-	//		midiNotesData->back().push_back(notePairs->at(i).at(j).first);
-	//	}
-	//}
-	//auto notesData = std::make_shared<vector<vector<float>>>();
 	vector<vector<float>> notesData;
-	//for (i = 0; i < midiNotesData.size(); i++) {
-	//	notesData.push_back({(float)midiNotesData.at(i).at(0)});
-	//	for (j = 1; j < midiNotesData.at(i).size(); j++) {
-	//		notesData.back().push_back((float)midiNotesData.at(i).at(j));
-	//	}
-	//}
 	for (i = 0; i < midiNotesData.size(); i++) {
 		float value = midiNotesData.at(i).at(0);
 		std::vector<float> aVector(1, value);
 		notesData.push_back(std::move(aVector));
-		//notesData.emplace_back(std::vector<float>(1, value));
-		//notesData.push_back({(float)midiNotesData.at(i).at(0)});
 		for (j = 1; j < midiNotesData.at(i).size(); j++) {
 			notesData.back().push_back((float)midiNotesData.at(i).at(j));
 		}
@@ -5681,8 +6263,6 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	for (i = 0; i < midiNotesData.size(); i++) {
 		std::vector<int> aVector(1, -1);
 		accidentalsForScore.push_back(std::move(aVector));
-		//accidentalsForScore.emplace_back(vector<int>(1, -1));
-		//accidentalsForScore.push_back({-1});
 		for (j = 1; j < midiNotesData.at(i).size(); j++) {
 			accidentalsForScore.back().push_back(-1);
 		}
@@ -5693,8 +6273,6 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	for (i = 0; i < midiNotesData.size(); i++) {
 		std::vector<int> aVector(1, 0);
 		naturalSignsNotWrittenForScore.push_back(std::move(aVector));
-		//naturalSignsNotWrittenForScore.emplace_back(vector<int>(1, 0));
-		//naturalSignsNotWrittenForScore.push_back({0});
 		for (j = 1; j < midiNotesData.at(i).size(); j++) {
 			naturalSignsNotWrittenForScore.back().push_back(0);
 		}
@@ -5705,14 +6283,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		if (sharedData.instruments.at(lastInstrumentIndex).isRhythm()) {
 			std::vector<int> aVector(1, 1);
 			octavesForScore.push_back(std::move(aVector));
-			//octavesForScore.emplace_back(vector<int>(1, 1));
-			//octavesForScore.push_back({1});
 		}
 		else {
 			std::vector<int> aVector(1, transposedOctaves[transposedIndex++]);
 			octavesForScore.push_back(std::move(aVector));
-			//octavesForScore.emplace_back(vector<int>(1, transposedOctaves[transposedIndex++]));
-			//octavesForScore.push_back({transposedOctaves[transposedIndex++]});
 		}
 		for (j = 1; j < midiNotesData.at(i).size(); j++) {
 			octavesForScore.back().push_back(transposedOctaves[transposedIndex++]);
@@ -5721,8 +6295,73 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 
 	// before we move on to the rest of the data, we need to store the texts
 	// because this is dynamically allocated memory too
+	int textsCounter;
+	vector<vector<int>> textIndexesLocal;
+	for (i = 0; i < (int)tokens.size(); i++) {
+		// check if we have a comment, so we exit the loop
+		if (startsWith(tokens.at(i), "%")) break;
+		verticalNoteIndex = 0;
+		for (int k = 0; k <= i; k++) {
+			// loop till we find a -1, which means that this token is a chord note, but not the first one
+			if (verticalNotesIndexes.at(k) < 0) continue;
+			verticalNoteIndex = k;
+		}
+		// create an empty entry for every note/chord
+		if (textIndexesLocal.size() <= verticalNoteIndex) {
+			textIndexesLocal.push_back({0});
+		}
+		textsCounter = 0;
+		// then check for carrets or underscores
+		for (j = 0; j < tokens.at(i).size(); j++) {
+			if (tokens.at(i).at(j) == (94)) {
+				if (j > 0) {
+					// a carret is also used for articulations, so we must check if the previous character is not a hyphen
+					if (tokens.at(i).at(j-1) != '-') {
+						if (textsCounter == 0) {
+							textIndexesLocal.back().back() = 1;
+						}
+						else {
+							textIndexesLocal.back().push_back(1);
+						}
+						textsCounter++;
+					}
+				}
+				else {
+					if (textsCounter == 0) {
+						textIndexesLocal.back().back() = 1;
+					}
+					else {
+						textIndexesLocal.back().push_back(1);
+					}
+					textsCounter++;
+				}
+			}
+			else if (tokens.at(i).at(j) == 95) {
+				if (tokens.at(i).at(j-1) != '-') {
+					if (textsCounter == 0) {
+						textIndexesLocal.back().back() = -1;
+					}
+					else {
+						textIndexesLocal.back().push_back(-1);
+					}
+					textsCounter++;
+				}
+			}
+		}
+	}
+	// once we have sorted out the indexes of the texts, we can sort out the actual texts
 	unsigned openQuote, closeQuote;
 	vector<string> texts;
+	for (i = 0; i < (int)tokens.size(); i++) {
+		// again, check if we have a comment, so we exit the loop
+		if (startsWith(tokens.at(i), "%")) break;
+		verticalNoteIndex = 0;
+		for (int k = 0; k <= i; k++) {
+			// loop till we find a -1, which means that this token is a chord note, but not the first one
+			if (verticalNotesIndexes.at(k) < 0) continue;
+			verticalNoteIndex = k;
+		}
+	}
 	for (i = 0; i < (int)tokens.size(); i++) {
 		// again, check if we have a comment, so we exit the loop
 		if (startsWith(tokens.at(i), "%")) break;
@@ -5771,12 +6410,12 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 						return std::make_pair(3, "text must be between two double quote signs");
 					}
 					texts.push_back(tokens.at(i).substr(openQuote, closeQuote-openQuote));
-					if (tokens.at(i).at(j) == char(94)) {
-						textIndexesLocal.at(verticalNoteIndex) = 1;
-					}
-					else if (tokens.at(i).at(j) == char(95)) {
-						textIndexesLocal.at(verticalNoteIndex) = -1;
-					}
+					//if (tokens.at(i).at(j) == char(94)) {
+					//	textIndexesLocal.at(verticalNoteIndex) = 1;
+					//}
+					//else if (tokens.at(i).at(j) == char(95)) {
+					//	textIndexesLocal.at(verticalNoteIndex) = -1;
+					//}
 					j = closeQuote;
 				}
 			}
@@ -5876,7 +6515,6 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	unsigned numDynamics = 0;
 	unsigned dynamicsRampCounter = 0;
 	unsigned slursCounter = 0;
-	unsigned dotsCounter = 0;
 	for (i = 0; i < (int)tokens.size(); i++) {
 		verticalNoteIndex = -1;
 		for (j = 0; j <= i; j++) {
@@ -6150,6 +6788,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 						if ((tokens.at(i).substr(index2+1,5).compare("gliss") == 0) ||
 							(tokens.at(i).substr(index2+1,9).compare("glissando") == 0)) {
 							glissandiIndexes.at(verticalNoteIndex) = 1;
+							glissandiIndexesForScore.at(verticalNoteIndex) = 1;
 							foundGlissandoLocal = true;
 						}
 					}
@@ -6200,7 +6839,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			// . for dotted note, which is also used for staccato, hence the second test against 45 (hyphen)
 			else if (tokens.at(i).at(j) == char(46) && tokens.at(i).at(j-1) != char(45)) {
 				dotIndexes.at(verticalNoteIndex) = 1;
-				dotsCounter++;
+				dotsCounter.at(verticalNoteIndex)++;
 			}
 
 			else if (tokens.at(i).at(j) == char(40)) { // ( for beginning of slur
@@ -6222,7 +6861,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 
 			// check for _ or ^ and make sure that the previous character is not -
 			else if ((int(tokens.at(i).at(j)) == 94 || int(tokens.at(i).at(j)) == 95) && int(tokens.at(i).at(j-1)) != 45) {
-				if (textIndexesLocal.at(verticalNoteIndex) == 0) {
+				if (textIndexesLocal.at(verticalNoteIndex).at(0) == 0) {
 					return std::make_pair(3, (string)"stray " + tokens.at(i).at(j));
 				}
 				if (tokens.at(i).size() < j+3) {
@@ -6396,11 +7035,16 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	int dursAccum = 0;
 	int diff = 0; // this is the difference between the expected and the actual sum of tuplets
 	int scoreDur; // durations for score should not be affected by tuplet calculations
+	int halfDur; // for halving for every dot
 	// convert durations to number of beats with respect to minimum duration
 	for (i = 0; i < numNotesVertical; i++) {
 		dursData.at(i) = MINDUR / dursData.at(i);
+		halfDur = dursData.at(i) / 2;
 		if (dotIndexes.at(i) == 1) {
-			dursData.at(i) += (dursData.at(i) / 2);
+			for (j = 0; j < dotsCounter.at(i); j++) {
+				dursData.at(i) += halfDur;
+				halfDur /= 2;
+			}
 		}
 		scoreDur = dursData.at(i);
 		for (auto it = tupStartStop.begin(); it != tupStartStop.end(); ++it) {
@@ -6477,11 +7121,12 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	sharedData.instruments.at(thisInstIndex).scoreNotes[barIndex] = std::move(notesForScore);
 	sharedData.instruments.at(thisInstIndex).scoreDurs[barIndex] = std::move(dursForScore);
 	sharedData.instruments.at(thisInstIndex).scoreDotIndexes[barIndex] = std::move(dotIndexes);
+	sharedData.instruments.at(thisInstIndex).scoreDotsCounter[barIndex] = std::move(dotsCounter);
 	sharedData.instruments.at(thisInstIndex).scoreAccidentals[barIndex] = std::move(accidentalsForScore);
 	sharedData.instruments.at(thisInstIndex).scoreNaturalSignsNotWritten[barIndex] = std::move(naturalSignsNotWrittenForScore);
 	sharedData.instruments.at(thisInstIndex).scoreOctaves[barIndex] = std::move(octavesForScore);
 	sharedData.instruments.at(thisInstIndex).scoreOttavas[barIndex] = std::move(ottavas);
-	sharedData.instruments.at(thisInstIndex).scoreGlissandi[barIndex] = std::move(glissandiIndexes);
+	sharedData.instruments.at(thisInstIndex).scoreGlissandi[barIndex] = std::move(glissandiIndexesForScore);
 	//sharedData.instruments.at(thisInstIndex).scoreArticulations[barIndex] = std::move(articulationIndexes);
 	sharedData.instruments.at(thisInstIndex).scoreDynamics[barIndex] = std::move(dynamicsForScore);
 	sharedData.instruments.at(thisInstIndex).scoreDynamicsIndexes[barIndex] = std::move(dynamicsForScoreIndexes);
@@ -6793,6 +7438,73 @@ std::pair<int, string> ofApp::scoreCommands(vector<string>& commands, int lineNu
 }
 
 //--------------------------------------------------------------
+std::pair<int, string> ofApp::maestroCommands(vector<string>& commands, int lineNum, int numLines)
+{
+	for (unsigned i = 1; i < commands.size(); i++) {
+		if (commands[i].compare("address") == 0) {
+			if (commands.size() < i + 2) {
+				return std::make_pair(3, "\\maestro address takes one argument, the OSC address to receive sensor data");
+			}
+			maestroAddress = commands[i+1];
+			if (!maestroToggleSet) receivingMaestro = true;
+			if (!oscReceiverIsSet) {
+				oscReceiver.setup(OSCPORT);
+				oscReceiverIsSet = true;
+			}
+			i++;
+		}
+
+		else if (commands[i].compare("toggle") == 0) {
+			if (commands.size() < i + 2) {
+				return std::make_pair(3, "\\maestro toggle takes one argument, the OSC address to receive a 0 or 1");
+			}
+			maestroToggleAddress = commands[i+1];
+			maestroToggleSet = true;
+			i++;
+		}
+		
+		else if (commands[i].compare("reset") == 0) {
+			if (commands.size() < i + 2) {
+				return std::make_pair(3, "\\maestro reset takes one argument, the OSC address to receive sensor data");
+			}
+			maestroResetAddress = commands[i+1];
+			i++;
+		}
+
+		else if (commands[i].compare("valndx") == 0) {
+			if (commands.size() < i + 2) {
+				return std::make_pair(3, "\\maestro valndx takes one argument, the index of the OSC data packet");
+			}
+			if (!isNumber(commands[i+1])) {
+				return std::make_pair(3, "argument to \\maestro valndx must be a number");
+			}
+			int val = stoi(commands[i+1]);
+			if (val < 0) {
+				return std::make_pair(3, "OSC data packet index must be positive");
+			}
+			maestroValNdx = val;
+			i++;
+		}
+
+		else if (commands[i].compare("valthresh") == 0) {
+			if (commands.size() < i + 2) {
+				return std::make_pair(3, "\\maestro valthresh takes one argument, the threshold for triggering beats");
+			}
+			if (!isFloat(commands[i+1])) {
+				return std::make_pair(3, "argument to \\maestro valthresh must be a number");
+			}
+			float val = stof(commands[i+1]);
+			if (val < 0) {
+				return std::make_pair(3, "maestro beat thresh must be positive");
+			}
+			maestroValThresh = val;
+			i++;
+		}
+	}
+	return std::make_pair(0, "");
+}
+
+//--------------------------------------------------------------
 void ofApp::initializeInstrument(string instName)
 {
 	int maxInstIndex = (int)sharedData.instruments.size();
@@ -6821,7 +7533,7 @@ void ofApp::setScoreCoords()
 {
 	scoreXStartPnt = sharedData.longestInstNameWidth + (sharedData.blankSpace * 1.5);
 	float staffLength = scoreBackgroundWidth - sharedData.blankSpace - scoreXStartPnt;
-	if (scoreOrientation == 1) staffLength /= min(2, numBarsToDisplay);
+	if (scoreOrientation > 0) staffLength /= min(2, numBarsToDisplay);
 	sharedData.notesXStartPnt = 0;
 	notesLength = staffLength - (sharedData.staffLinesDist * NOTESXOFFSETCOEF);
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
@@ -6909,6 +7621,7 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 				sharedData.yStartPnts[i] = firstMinPosition + 10;
 			}
 		}
+		sharedData.yStartPnts[2] = sharedData.yStartPnts[0];
 	}
 }
 
@@ -6936,7 +7649,7 @@ void ofApp::swapScorePosition(int orientation)
 			// this is because the number of lines of an editor is always odd, so that the line with the file name
 			// and pane index is also included, which makes the total number of lines even
 			// when we view the score horizontally, the background should match an exact number of lines
-			// and since the number of total lines is oddeven, we make this background one less
+			// and since the number of total lines is odd, we make this background one less
 			// e.g. for 37 lines, the score background will be 18 lines, not 19, or 18.5
 			// but when viewed on the lower side, it should touch the white line of the editor
 			// hence the scoreYOffset is not the same as the scoreBackgroundHeith
@@ -6944,6 +7657,11 @@ void ofApp::swapScorePosition(int orientation)
 			if (scoreYOffset == 0) scoreYOffset = (sharedData.tracebackBase / 2);
 			else scoreYOffset = 0;
 			break;
+		case 2:
+			scoreXOffset = 0;
+			scoreYOffset = 0;
+			scoreBackgroundWidth = sharedData.screenWidth;
+			scoreBackgroundHeight = sharedData.tracebackBase - cursorHeight;
 		default:
 			break;
 	}
@@ -6986,7 +7704,12 @@ void ofApp::exit()
 	m.addIntArg(1);
 	sendToParts(m, false);
 	m.clear();
-	if (midiPortOpen) sequencer.midiOut.closePort();
+	for (unsigned i = 0; i < sequencer.midiOuts.size(); i++) {
+		sequencer.midiOuts[i].closePort();
+	}
+	if (serialPortOpen) {
+		serial.close();
+	}
 	ofExit();
 }
 

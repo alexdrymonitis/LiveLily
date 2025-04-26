@@ -98,6 +98,8 @@ class Instrument
 		void setUpdateTempo(bool tempoUpdate);
 		bool hasNotesInBar(int bar);
 		bool hasNotesInStep(int bar);
+		void setMidiPort(int port);
+		int getMidiPort();
 		void setMidiChan(int chan);
 		int getMidiChan();
 		void setActiveNote();
@@ -151,13 +153,14 @@ class Instrument
 		map<int, vector<vector<int>>> midiArticulationVals;
 		map<int, vector<bool>> isSlurred;
 		map<int, vector<string>> text;
-		map<int, vector<int>> textIndexes;
+		map<int, vector<vector<int>>> textIndexes;
 		map<int, vector<std::pair<int, int>>> slurIndexes;
 		map<int, vector<int>> tieIndexes;
 		// same vectors for sending data to the Notes objects
 		map<int, vector<vector<int>>> scoreNotes; // notes are ints here
 		map<int, vector<int>> scoreDurs;
 		map<int, vector<int>> scoreDotIndexes;
+		map<int, vector<unsigned>> scoreDotsCounter;
 		map<int, vector<vector<int>>> scoreAccidentals;
 		map<int, vector<vector<int>>> scoreNaturalSignsNotWritten;
 		map<int, vector<vector<int>>> scoreOctaves;
@@ -190,6 +193,7 @@ class Instrument
 		int64_t delayTime;
 	
 		// MIDI stuff
+		int midiPort;
 		int midiChan;
 		bool isMidiBool;
 		// duration percentage for various notes

@@ -53,6 +53,7 @@ Instrument::Instrument()
 	delayTime = 0;
 
 	groupID = -1;
+	midiPort = -1;
 }
 
 //--------------------------------------------------------------
@@ -311,6 +312,7 @@ void Instrument::copyMelodicLine(int barIndex)
 	scoreNotes[barIndex] = scoreNotes[copyNdxs[barIndex]];
 	scoreDurs[barIndex] = scoreDurs[copyNdxs[barIndex]];
 	scoreDotIndexes[barIndex] = scoreDotIndexes[copyNdxs[barIndex]];
+	scoreDotsCounter[barIndex] = scoreDotsCounter[copyNdxs[barIndex]];
 	scoreAccidentals[barIndex] = scoreAccidentals[copyNdxs[barIndex]];
 	scoreOctaves[barIndex] = scoreOctaves[copyNdxs[barIndex]];
 	scoreOttavas[barIndex] = scoreOttavas[copyNdxs[barIndex]];
@@ -350,7 +352,7 @@ void Instrument::createEmptyMelody(int barIndex)
 	articulations[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	midiArticulationVals[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	text[barIndex] = vector<string>(1, "");
-	textIndexes[barIndex] = vector<int>(1, 0);
+	textIndexes[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	isWholeBarSlurred[barIndex] = false;
 	slurIndexes[barIndex] = vector<std::pair<int, int>>(1, std::make_pair(-1, -1));
 	tieIndexes[barIndex] = vector<int> (1, -1);
@@ -407,6 +409,7 @@ void Instrument::setScoreNotes(int bar, int numerator, int denominator, int numB
 			scoreOttavas[bar],
 			scoreDurs[bar],
 			scoreDotIndexes[bar],
+			scoreDotsCounter[bar],
 			scoreGlissandi[bar],
 			articulations[bar],
 			scoreDynamics[bar],
@@ -753,6 +756,18 @@ bool Instrument::hasNotesInStep(int bar)
 	if (barDataCounter >= (int)midiNotes[bar].size()) return false;
 	// a rest is stored as a -1, so a value from 0 and above is a note
 	return (midiNotes[bar][barDataCounter][0] >= 0 ? true : false); 
+}
+
+//--------------------------------------------------------------
+void Instrument::setMidiPort(int port)
+{
+	midiPort = port;
+}
+
+//--------------------------------------------------------------
+int Instrument::getMidiPort()
+{
+	return midiPort;
 }
 
 //--------------------------------------------------------------

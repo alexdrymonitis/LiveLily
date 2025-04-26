@@ -35,6 +35,8 @@
 #define SENDBARDATA_WAITDUR 1000 // in milliseconds
 #define NOTESXOFFSETCOEF 3 // multiplication coefficient for giving offset to the notes
 
+#define MAESTROTHRESH 100
+
 // class for storing data concerning livelily functions
 class Function
 {
@@ -242,6 +244,13 @@ typedef struct _SharedData
 	// e.g. a bar named "5" stored first, will be moved after a bar named "4" that is stored later on
 	// the map below is ordered, but we store the index as a key, which is stored with an incrementing value anyway
 	map<int, string> loopsOrdered;
+	// same goes for bars
+	map<int, string> barsOrdered;
+	// the map below stores the strings of each defined bar, since these can be edited or deleted in the editor.
+	// These can be used elsewhere, like sent to an AI model that is trained on LiveLily files
+	// the key is the bar name and the value is another string assembled by the strings of the bar lines
+	// separated with newline characters
+	map<string, string> barLines;
 	// the map below keeps track of how many variants of each loop we create so we can use this as a name extension
 	map<int, int> loopsVariants;
 
@@ -272,6 +281,7 @@ typedef struct _SharedData
 	bool beatAnimate;
 	bool beatTypeCommand;
 	int beatVizType;
+	bool beatUpdated;
 	// the variable below is used by the serquencer to iterate over one loop
 	unsigned thisLoopIndex;
 	int loopIndex;
@@ -297,7 +307,7 @@ typedef struct _SharedData
 	map<int, float> barFirstStaffAnchor;
 	float maxBarFirstStaffAnchor;
 	float allStaffDiffs;
-	float yStartPnts[2];
+	float yStartPnts[3];
 
 	float staffLinesDist;
 	int longestInstNameWidth;
@@ -359,12 +369,15 @@ class Sequencer : public ofThread
 		ofxMidiOut midiOut;
 		vector<ofxMidiOut> midiOuts;
 		vector<string> midiOutPorts;
+		map<int, int> midiPortsMap;
 
 	private:
 		int setBarIndex(bool increment);
 		void checkMute();
 		void sendAllNotesOff();
 		void sendBeatVizInfo(int bar);
+		void startGlissando(int instNdx, int bar, int barDataCounter);
+		void runGlissando(int instNdx, int bar);
 		void threadedFunction();
 
 		SharedData *sharedData;
@@ -409,8 +422,10 @@ class ofApp : public ofBaseApp
 		void setup();
 		void update();
 		void draw();
-		// custom drawing functions
+		int msToBPM(unsigned long ms);
+		void sendBeatVizInfo(int bar);
 		void drawTraceback();
+		void drawCommand();
 		void drawScore();
 
 		void moveCursorOnShiftReturn();
@@ -426,6 +441,8 @@ class ofApp : public ofBaseApp
 		// OF keyboard input functions
 		void keyPressed(int key);
 		void keyReleased(int key);
+		void addPane(int key);
+		void removePane();
 		// the following two functions are used in drawTraceback to sort the indexes based on the
 		// time stamps. it is copied from https://www.geeksforgeeks.org/quick-sort/ 
 		int partition(uint64_t arr[], int arr2[], int low, int high);
@@ -484,8 +501,10 @@ class ofApp : public ofBaseApp
 		std::pair<bool, std::pair<int, string>> isBarLoop(vector<string>& commands, int lineNum, int numLines);
 		std::pair<bool, std::pair<int, string>> isFunction(vector<string>& commands, int lineNum, int numLines);
 		std::pair<bool, std::pair<int, string>> isList(vector<string>& commands, int lineNum, int numLines);
+		std::pair<int, string> listItemExists(int listItemNdx);
 		std::pair<bool, std::pair<int, string>> isOscClient(vector<string>& commands, int lineNum, int numLines);
 		std::pair<int, string> functionFuncs(vector<string>& commands);
+		string getRestOfCommand(vector<string>& commands, unsigned startNdx);
 		int getLastLoopIndex();
 		int getLastBarIndex();
 		int getPrevBarIndex();
@@ -503,6 +522,7 @@ class ofApp : public ofBaseApp
 		void setFontSize();
 		// various commands for the score
 		std::pair<int, string> scoreCommands(vector<string>& commands, int lineNum, int numLines);
+		std::pair<int, string> maestroCommands(vector<string>& commands, int lineNum, int numLines);
 		// initialize an instrument
 		void initializeInstrument(string instName);
 		// the sequencer functions of the system
@@ -544,6 +564,8 @@ class ofApp : public ofBaseApp
 
 		map<string, ofxOscSender> oscClients;
 		ofSerial serial;
+		vector<ofSerialDeviceInfo> serialDeviceList;
+		bool serialPortOpen;
 
 		// map of instrument index and pair of IP and port
 		// so we can group instruments that send their data to the same server
@@ -577,6 +599,18 @@ class ofApp : public ofBaseApp
 		int lastListIndex;
 		int listIndexCounter;
 		bool traversingList;
+
+		// variables for controlling LiveLily with an accelerometer
+		string maestroAddress;
+		string maestroToggleAddress;
+		string maestroResetAddress;
+		int maestroValNdx;
+		bool maestroToggleSet;
+		bool receivingMaestro;
+		bool maestroInitialized;
+		unsigned long maestroTimeStamp;
+		float maestroValThresh;
+		vector<float> maestroVec;
 
 		enum errorTypeNdx {note, warning, error};
 

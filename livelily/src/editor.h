@@ -11,6 +11,18 @@
 #define EXECUTIONBRIGHTNESS 190 // transparency for the executing rect
 #define FILE_LOAD_ERROR_DUR 2000
 
+// structure copied from MIDIFileLoader.h
+struct noteData
+{
+	float beatPosition;//in beats from beginning
+	int pitch;//as MIDI note number
+	double timeMillis;
+	int ticks;
+	int velocity;
+	long  durationTicks;
+	double durationMillis;
+};
+
 class Editor
 {
 	public:
@@ -66,7 +78,7 @@ class Editor
 		// newline functions
 		void postIncrementOnNewLine();
 		void createNewLine(string str, int increment);
-		void moveLineNumbers();
+		void moveLineNumbers(int numLines);
 		void moveDataToNextLine();
 		void copyOnLineDelete();
 		void newLine();
@@ -98,6 +110,7 @@ class Editor
 		// for executing multiple lines, copying, pasting, deleting, cutting
 		void setHighlightManyChars(int charPos1, int charPos2, int charLine1, int charLine2);
 		bool isNumber(string str);
+		bool isFloat(string str);
 		// string handling
 		string replaceCharInStr(string str, string a, string b);
 		vector<string> tokenizeString(string str, string delimiter);
@@ -117,11 +130,21 @@ class Editor
 		void setShiftPressed(bool state);
 		void setCtrlPressed(bool state);
 		void setAltPressed(bool state);
+		void setInserting(bool insertingBool);
+		bool getInserting();
 		void allOtherKeys(int key);
+		void typeCommand(int key);
+		void executeCommand();
+		bool showingCommand();
+		bool isTypingCommand();
+		ofColor getCommandStrColor();
+		string getCommandStr();
 		void setExecutingLine();
 		// copying, pasting, deleting strings
 		void copyString();
+		void yankString();
 		void pasteString();
+		void pasteYankedString();
 		void deleteString();
 		vector<int> sortVec(vector<int> v);
 		// traceback functions
@@ -138,13 +161,15 @@ class Editor
 		void fromOscPress(int ascii);
 		void fromOscRelease(int ascii);
 		// save and load files
-		void saveFile();
+		void saveDialog();
+		void saveFile(string fileName);
 		void saveExistingFile();
 		size_t findChordEnd(string str);
 		size_t findChordStart(string str);
 		void loadXMLFile(string filePath);
 		void loadLyvFile(string filePath);
-		void loadFile();
+		void loadDialog();
+		void loadFile(string fileName);
 		// misc
 		float getCursorHeight();
 		// debugging
@@ -176,6 +201,12 @@ class Editor
 		bool ctrlPressed;
 		bool shiftPressed;
 		bool altPressed;
+
+		bool inserting;
+		bool typingCommand;
+		bool showCommand;
+		ofColor commandStrColor;
+		string commandStr;
 
 		ofTrueTypeFont font;
 		int fontSize;
@@ -252,13 +283,14 @@ class Editor
 	private:
 		int objID;
 		bool fileEdited;
-		bool autocomplete;
+		bool autobrackets;
 		bool activeSession;
 		bool sendKeys;
 		int sendKeysPaneNdx;
 		bool sendLines;
 		int sendLinesPaneNdx;
 		string fromOscStr;
+		string yankedStr;
 };
 
 #endif

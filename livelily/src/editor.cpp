@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <limits>
 #include "editor.h"
+//#include "readmidi.h"
 #include "ofApp.h"
 
 //--------------------------------------------------------------
@@ -53,9 +54,13 @@ Editor::Editor()
 	couldNotLoadFile = false;
 	couldNotSaveFile = false;
 	fileEdited = false;
-	autocomplete = true;
+	autobrackets = true;
 	sendKeys = false;
 	sendLines = false;
+
+	inserting = true;
+	typingCommand = false;
+	showCommand = false;
 
 	fromOscStr = "";
 }
@@ -137,7 +142,7 @@ int Editor::getLanguage()
 //--------------------------------------------------------------
 void Editor::setAutocomplete(bool autocomp)
 {
-	autocomplete = autocomp;
+	autobrackets = autocomp;
 }
 
 //--------------------------------------------------------------
@@ -451,7 +456,7 @@ void Editor::drawText()
 			strOnCursorLine = allStrings[i];
 			strOnCursorLineYOffset = strYOffset;
 		}
-		// then draw it as long as it's not empty
+		// draw all strings that are not empty
 		if (allStrings[i].size() > 0) {
 			// iterate through each word to check for keywords
 			vector<string> tokens = tokenizeString(allStrings[i], " ");
@@ -518,7 +523,7 @@ void Editor::drawText()
 							cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
 						}
 					}
-					else if (isNumber(token) && !isComment) {
+					else if ((isNumber(token) || isFloat(token)) && !isComment) {
 						ofSetColor(ofColor::gold.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 								ofColor::gold.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 								ofColor::gold.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
@@ -552,6 +557,9 @@ void Editor::drawText()
 				xOffset += ((token.size() + 1) * oneCharacterWidth); // + 1 for the white space
 				charAccum += ((int)token.size() + 1);
 			}
+		}
+		else if (i == cursorLineIndex) {
+			cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
 		}
 		
 		// then check if we have selected this string so we must highlight it
@@ -588,7 +596,9 @@ void Editor::drawText()
 	ofSetColor(cursorColor.r * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
 			cursorColor.g * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
 			cursorColor.b * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
-	ofDrawRectangle(cursorX, cursorY, oneCharacterWidth, cursorHeight);
+	if ((activity && !typingCommand) || !activity) {
+		ofDrawRectangle(cursorX, cursorY, oneCharacterWidth, cursorHeight);
+	}
 	if (!activity) {
 		ofFill();
 	}
@@ -638,11 +648,7 @@ void Editor::drawText()
 	string fileName;
 	// test if any error occured during loading a file
 	if (couldNotLoadFile || couldNotSaveFile) {
-		if ((ofGetElapsedTimeMillis() - fileLoadErrorTimeStamp) < FILE_LOAD_ERROR_DUR) {
-			if (couldNotLoadFile) fileName = "could not load file";
-			else fileName = "could not save file";
-		}
-		else {
+		if ((ofGetElapsedTimeMillis() - fileLoadErrorTimeStamp) > FILE_LOAD_ERROR_DUR) {
 			couldNotLoadFile = couldNotSaveFile = false;
 		}
 	}
@@ -662,6 +668,15 @@ void Editor::drawText()
 	}
 	font.drawString(ofToString(objID+1), halfCharacterWidth+frameXOffset, strYCoord);
 	font.drawString(fileName, fileNameXOffset, strYCoord);
+	float widthOffset = 0;
+	if (inserting) {
+		if (((ofApp*)ofGetAppPtr())->sharedData.showScore) {
+			if (frameWidth > ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX) {
+				widthOffset = ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX;
+			}
+		}
+		font.drawString("INSERT", frameWidth-widthOffset-font.stringWidth("INSERT")-10, strYCoord);
+	}
 	ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
 }
 
@@ -843,14 +858,27 @@ void Editor::createNewLine(string str, int increment)
 }
 
 //--------------------------------------------------------------
-void Editor::moveLineNumbers()
+void Editor::moveLineNumbers(int numLines)
 {
-	// move all strings below the line where the cursor is, one line below
-	map<int, string>::reverse_iterator it = allStrings.rbegin();
-	while (it->first > cursorLineIndex) {
-		int key = it->first;
-		changeMapKeys(key, 1);
-		++it;
+	if (numLines < 0) {
+		// move all strings below the line where the cursor is, one line above
+		map<int, string>::iterator it = allStrings.begin();
+		std::advance(it, cursorLineIndex);
+		while (it != allStrings.end()) {
+			int key = it->first;
+			changeMapKeys(key, numLines);
+			++it;
+		}
+	}
+	else {
+		// move all strings below the line where the cursor is, one line below
+		map<int, string>::reverse_iterator it = allStrings.rbegin();
+		while (it->first > cursorLineIndex) {
+			int key = it->first;
+			//cout << "key: " << key << endl;
+			changeMapKeys(key, numLines);
+			++it;
+		}
 	}
 }
 
@@ -921,7 +949,7 @@ void Editor::newLine()
 		stringBreaks = true;
 	}
 	if (cursorLineIndex != (lineCount-1)) {
-		moveLineNumbers();
+		moveLineNumbers(1);
 	}
 	if (stringBreaks) {
 		// create a new line with the remainder of the string
@@ -1068,7 +1096,7 @@ void Editor::eraseMapKeys(int key)
 {
 	// since all maps below are created with every new line
 	// we can safely make all the calls below inside the same loop
-	// and need to create a separate loop for each
+	// and dont't need to create a separate loop for each
 	eraseMapKey(&allStrings, key);
 	eraseMapKey(&allStringStartPos, key);
 	eraseMapKey(&tracebackStr, key);
@@ -1328,7 +1356,7 @@ void Editor::assembleString(int key)
 		cursorPosIncrement = TABSIZE;
 	}
 	else if (key == 34) { // "
-		if (autocomplete) {
+		if (autobrackets) {
 			if (quoteCounter == 0) {
 				// insert two quotation marks but increment the cursor by only one position
 				// so it stays in between the quotation marks
@@ -1347,7 +1375,7 @@ void Editor::assembleString(int key)
 		}
 	}
 	else if (key == 123) { // {
-		if (autocomplete) {
+		if (autobrackets) {
 			if (curlyBracketCounter == 0) {
 				// insert opening and closing curly brackets, but move the cursor only one position
 				charToInsert = "{}";
@@ -1365,7 +1393,7 @@ void Editor::assembleString(int key)
 		}
 	}
 	else if (key == 125) { // }
-		if (autocomplete) {
+		if (autobrackets) {
 			if (curlyBracketCounter > 0) {
 				charToInsert = "";
 				curlyBracketCounter = 0;
@@ -1379,7 +1407,7 @@ void Editor::assembleString(int key)
 		}
 	}
 	else if (key == 91) { // [
-		if (autocomplete) {
+		if (autobrackets) {
 			if (squareBracketCounter == 0) {
 				// insert opeining and closing square brackets, but move the cursor only one position
 				charToInsert = "[]";
@@ -1397,7 +1425,7 @@ void Editor::assembleString(int key)
 		}
 	}
 	else if (key == 93) { // ]
-		if (autocomplete) {
+		if (autobrackets) {
 			if (squareBracketCounter > 0) {
 				charToInsert = "";
 				squareBracketCounter = 0;
@@ -1411,7 +1439,7 @@ void Editor::assembleString(int key)
 		}
 	}
 	else if (key == 40) { // (
-		if (autocomplete) {
+		if (autobrackets) {
 			if (roundBracketCounter == 0) {
 				// insert opeining and closing round brackets, but move the cursor only one position
 				charToInsert = "()";
@@ -1429,7 +1457,7 @@ void Editor::assembleString(int key)
 		}
 	}
 	else if (key == 41) { // )
-		if (autocomplete) {
+		if (autobrackets) {
 			if (roundBracketCounter > 0) {
 				charToInsert = "";
 				roundBracketCounter = 0;
@@ -1521,6 +1549,25 @@ bool Editor::isNumber(string str)
 	for (int i = loopStart; i < (int)str.length(); i++) {
 		if (!isdigit(str[i])) {
 			return false;
+		}
+	}
+	return true;
+}
+
+//--------------------------------------------------------------
+bool Editor::isFloat(string str)
+{
+	// first check if there is a hyphen in the beginning
+	int loopStart = 0;
+	int dotCounter = 0;
+	if (str[0] == '-') loopStart = 1;
+	for (int i = loopStart; i < (int)str.length(); i++) {
+		if (!isdigit(str[i])) {
+			if (str[i] == '.') {
+				if (dotCounter == 0) dotCounter++;
+				else return false;
+			}
+			else return false;
 		}
 	}
 	return true;
@@ -1916,6 +1963,22 @@ void Editor::setAltPressed(bool state)
 }
 
 //--------------------------------------------------------------
+void Editor::setInserting(bool insertingBool)
+{
+	inserting = insertingBool;
+	if (inserting && showCommand) {
+		showCommand = false;
+		commandStr = "";
+	}
+}
+
+//--------------------------------------------------------------
+bool Editor::getInserting()
+{
+	return inserting;
+}
+
+//--------------------------------------------------------------
 void Editor::allOtherKeys(int key)
 {
 	bool executing = false;
@@ -1979,16 +2042,16 @@ void Editor::allOtherKeys(int key)
 				saveExistingFile();
 			}
 			else {
-				saveFile();
+				saveDialog();
 			}
 			callAssemble = false;
 		}
 		else if (key == 83 && shiftPressed) { // S with shift pressed
-			saveFile();
+			saveDialog();
 			callAssemble = false;
 		}
 		else if (key == 111) { // o for open
-			loadFile();
+			loadDialog();
 			callAssemble = false;
 		}
 	}
@@ -2016,6 +2079,118 @@ void Editor::allOtherKeys(int key)
 }
 
 //--------------------------------------------------------------
+void Editor::typeCommand(int key)
+{
+	if (key == 13) {
+		executeCommand();
+		typingCommand = false;
+	}
+	else if (key == 8 && typingCommand) {
+		commandStr = commandStr.substr(0, commandStr.size()-1);
+	}
+	else if (key == 105 && commandStr.size() == 0 && typingCommand) {
+		typingCommand = false;
+		showCommand = false;
+		inserting = true;
+		resetMaxNumLines();
+	}
+	else {
+		if (key == 58) commandStr = "";
+		commandStr += char(key);
+		typingCommand = true;
+		showCommand = true;
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::executeCommand()
+{
+	commandStrColor.r = 255 * ((ofApp*)ofGetAppPtr())->brightnessCoeff;
+	commandStrColor.g = 255 * ((ofApp*)ofGetAppPtr())->brightnessCoeff;
+	commandStrColor.b = 255 * ((ofApp*)ofGetAppPtr())->brightnessCoeff;
+	if (startsWith(commandStr, ":save ")) {
+		saveFile(commandStr.substr(6));	
+	}
+	else if (commandStr.compare(":w") == 0) {
+		saveExistingFile();
+	}
+	else if (startsWith(commandStr, ":load ")) {
+		string filePath = commandStr.substr(6);
+		if (!startsWith(filePath, "/")) {
+			if (startsWith(filePath, ".")) {
+				filePath = filePath.substr(1);
+			}
+			else {
+				filePath = "/data/" + filePath;
+			}
+			string pwdStr = ofSystem("pwd");
+			// there's a newline character at the end of ofSystem("pwd"), so we remove it below
+			filePath = pwdStr.substr(0, pwdStr.size()-1) + filePath;
+		}
+		loadFile(filePath);
+	}
+	else if (commandStr.compare(":load") == 0) {
+		commandStr = "Load command called without an argument";
+		commandStrColor = ofColor::red;
+	}
+	else if (startsWith(commandStr, ":ls")) {
+		string pwdStr = ofSystem("pwd");
+		if (commandStr.compare(":ls") == 0) {
+			pwdStr = pwdStr.substr(0, pwdStr.size()-1) + "/data";
+		}
+		else {
+			// change pwdStr to enable relative paths
+			if (!startsWith(commandStr.substr(4), "/")) {
+				if (startsWith(commandStr.substr(4), ".")) {
+					
+				}
+				else {
+					pwdStr = pwdStr.substr(0, pwdStr.size()-1) + "/data/" + commandStr.substr(4);
+				}
+			}
+		}
+		commandStr = ofSystem("ls -p " + pwdStr);
+	}
+	else if (commandStr.compare(":q") == 0) {
+		((ofApp*)ofGetAppPtr())->removePane();
+	}
+	else if (commandStr.compare(":qa") == 0) {
+		((ofApp*)ofGetAppPtr())->exit();
+	}
+	else {
+		commandStr = "Not an editor command: " + commandStr;
+		commandStrColor = ofColor::red;
+	}
+}
+
+//--------------------------------------------------------------
+bool Editor::showingCommand()
+{
+	return showCommand;
+}
+
+//--------------------------------------------------------------
+bool Editor::isTypingCommand()
+{
+	return typingCommand;
+}
+
+//--------------------------------------------------------------
+ofColor Editor::getCommandStrColor()
+{
+	ofColor color(commandStrColor.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+				  commandStrColor.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+				  commandStrColor.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+	return color;
+}
+
+//--------------------------------------------------------------
+string Editor::getCommandStr()
+{
+	return commandStr;
+}
+
+//--------------------------------------------------------------
 void Editor::setExecutingLine()
 {
 	executingLine = cursorLineIndex;
@@ -2037,7 +2212,7 @@ vector<int> Editor::setSelectedStrStartPosAndSize(int i)
 			else {
 				v[0] = cursorPos;
 			}
-			v[1] = allStrings[i].size();
+			v[1] = (int)allStrings[i].size() - v[0];
 		}
 	}
 	else if (i == bottomLine) {
@@ -2077,6 +2252,25 @@ void Editor::copyString()
 }
 
 //--------------------------------------------------------------
+void Editor::yankString()
+{
+	yankedStr = "";
+	if (highlightManyChars) {
+		for (int i = topLine; i <= bottomLine; i++) {
+			vector<int> posAndSize = setSelectedStrStartPosAndSize(i);
+			// apply the offset of the string, in case it's too long to fit in a pane
+			posAndSize[0] += allStringStartPos[i];
+			strForClipBoard += allStrings[i].substr(posAndSize[0], posAndSize[1]);
+			if (i < bottomLine) strForClipBoard += "\n";
+		}
+		yankedStr = replaceCharInStr(strForClipBoard, tabStr, "\t");
+	}
+	else {
+		yankedStr = "";
+	}
+}
+
+//--------------------------------------------------------------
 void Editor::pasteString()
 {
 	strFromClipBoard = ofGetWindowPtr()->getClipboardString();
@@ -2085,7 +2279,85 @@ void Editor::pasteString()
 	// the last line must concatenate the pasted string with the remainding string
 	// of the line we broke in the middle
 	string remainingStr = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
+	cout << "remaining string is \"" << remainingStr << "\"\n";
+	// first create as many new lines as there are in what we're pasting
 	unsigned i = 0;
+	// cursorLineIndex increments by one in postIncrementOnNewLine()
+	// so we temporarily save it and restore it below
+	int tempCursorLineIndex = cursorLineIndex;
+	int tempCursorPos = cursorPos;
+	cursorLineIndex = lineCount - 1;
+	cursorPos = maxCursorPos();
+	for (i = 0; i < tokens.size()-1; i++) {
+		createNewLine("", 1);
+		postIncrementOnNewLine();
+	}
+	i = 0;
+	cursorLineIndex = tempCursorLineIndex;
+	cursorPos = tempCursorPos;
+	// then change the keys of the lines below where we are pasting
+	moveLineNumbers((int)tokens.size());
+	for (string originalToken : tokens) {
+		string token = replaceCharInStr(originalToken, "\t", tabStr);
+		if (i == 0) {
+			allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]);
+			cout << "string is split at pos " << cursorPos+allStringStartPos[cursorLineIndex] << endl;
+			cout << "first part of string is \"" << allStrings[cursorLineIndex] << "\"\n";
+			allStrings[cursorLineIndex] += token;
+			cout << "1: string in line " << cursorLineIndex + 1 << " is \"" << allStrings[cursorLineIndex] << "\"\n";
+		}
+		if (i == (tokens.size()-1)) {
+			// if we're pasting one line only just append the remaining string
+			if (i == 0) {
+				allStrings[cursorLineIndex] += remainingStr;
+				cout << "2: string in line " << cursorLineIndex + 1 << " is \"" << allStrings[cursorLineIndex] << "\"\n";
+			}
+			// otherwise concatenate the token with the remaining
+			else {
+				//createNewLine(token+remainingStr, 1);
+				//postIncrementOnNewLine();
+				allStrings[cursorLineIndex] = token + remainingStr;
+				cout << "3: string in line " << cursorLineIndex + 1 << " is \"" << allStrings[cursorLineIndex] << "\"\n";
+			}
+		}
+		if ((i > 0) && (i < (tokens.size()-1))) {
+			//createNewLine(token, 1);
+			//postIncrementOnNewLine();
+			allStrings[cursorLineIndex] = token;
+			cout << "4: string in line " << cursorLineIndex + 1 << " is \"" << allStrings[cursorLineIndex] << "\"\n";
+		}
+		i++;
+		cursorLineIndex++;
+	}
+	cursorPos += tokens[tokens.size()-1].size();
+	fileEdited = true;
+}
+
+//--------------------------------------------------------------
+void Editor::pasteYankedString()
+{
+	vector<string> tokens = tokenizeString(yankedStr, "\n");
+	// if we paste in the middle of a string
+	// the last line must concatenate the pasted string with the remainding string
+	// of the line we broke in the middle
+	string remainingStr = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
+	// first create as many new lines as there are in what we're pasting
+	unsigned i = 0;
+	// cursorLineIndex increments by one in postIncrementOnNewLine()
+	// so we temporarily save it and restore it below
+	int tempCursorLineIndex = cursorLineIndex;
+	int tempCursorPos = cursorPos;
+	cursorLineIndex = lineCount - 1;
+	cursorPos = maxCursorPos();
+	for (i = 0; i < tokens.size()-1; i++) {
+		createNewLine("", 1);
+		postIncrementOnNewLine();
+	}
+	i = 0;
+	cursorLineIndex = tempCursorLineIndex;
+	cursorPos = tempCursorPos;
+	// then change the keys of the lines below where we are pasting
+	moveLineNumbers((int)tokens.size());
 	for (string originalToken : tokens) {
 		string token = replaceCharInStr(originalToken, "\t", tabStr);
 		if (i == 0) {
@@ -2099,15 +2371,18 @@ void Editor::pasteString()
 			}
 			// otherwise concatenate the token with the remaining
 			else {
-				createNewLine(token+remainingStr, 1);
-				postIncrementOnNewLine();
+				//createNewLine(token+remainingStr, 1);
+				//postIncrementOnNewLine();
+				allStrings[cursorLineIndex] = token + remainingStr;
 			}
 		}
 		if ((i > 0) && (i < (tokens.size()-1))) {
-			createNewLine(token, 1);
-			postIncrementOnNewLine();
+			//createNewLine(token, 1);
+			//postIncrementOnNewLine();
+			allStrings[cursorLineIndex] = token;
 		}
 		i++;
+		cursorLineIndex++;
 	}
 	cursorPos += tokens[tokens.size()-1].size();
 	fileEdited = true;
@@ -2117,6 +2392,7 @@ void Editor::pasteString()
 void Editor::deleteString()
 {
 	lineCount -= (bottomLine - topLine);
+	int numLinesToDelete = bottomLine - topLine;
 	for (int i = topLine; i <= bottomLine; i++) {
 		if ((i > topLine) && (i < bottomLine)) {
 			eraseMapKeys(i);
@@ -2127,6 +2403,12 @@ void Editor::deleteString()
 				allStrings[i].erase(posAndSize[0], posAndSize[1]);
 				if (allStrings[i].size() == 0) {
 					releaseTraceback(i);
+				}
+				else {
+					// if the first line is not deleted entirely, get one line back in the count
+					lineCount++;
+					// and one line less to delete
+					numLinesToDelete--;
 				}
 			}
 			else if (i == bottomLine) {
@@ -2139,6 +2421,8 @@ void Editor::deleteString()
 					allStringStartPos[i] = 0;
 					// if the last line is not deleted entirely, get one line back in the count
 					lineCount++;
+					// and one line less to delete
+					numLinesToDelete--;
 				}
 			}
 		}
@@ -2146,6 +2430,9 @@ void Editor::deleteString()
 	if (cursorLineIndex > highlightManyCharsLineIndex) {
 		cursorLineIndex = highlightManyCharsLineIndex;
 		cursorPos = highlightManyCharsStart;
+	}
+	if (numLinesToDelete > 0) {
+		moveLineNumbers(-numLinesToDelete);
 	}
 	fileEdited = true;
 }
@@ -2251,57 +2538,68 @@ void Editor::fromOscRelease(int ascii)
 }
 
 //--------------------------------------------------------------
-void Editor::saveFile()
+void Editor::saveDialog()
 {
 	ofFileDialogResult saveFileResult = ofSystemSaveDialog("LiveLily_session.lyv", "Save file");
 	if (saveFileResult.bSuccess) {
-		string fileName = saveFileResult.filePath + ".lyv";
-		ofstream file(fileName.c_str());
-		if (!file.is_open()) {
-			// if for some reason the file can't be opened
-			// instead of the file name, the string "could not open file"
-			// will be displayed for 2 seconds and then it will return to untitled.lyv
-			couldNotSaveFile = true;
-			fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
-			return;
-		}
-		for (unsigned i = 0; i < allStrings.size(); i++) {
-			file << allStrings[i] << "\n";
-		}
-		file.close();
-		fileLoaded = true;
-		string fullPath = fileName.c_str();
-		size_t lastBackSlash = fullPath.find_last_of("/");
-		loadedFileStr = fullPath.substr(lastBackSlash+1);
-		if (endsWith(loadedFileStr, ".lyv")) thisLang = 0;
-		else if (endsWith(loadedFileStr, ".py")) thisLang = 1;
-		else if (endsWith(loadedFileStr, ".lua")) thisLang = 2;
-		else thisLang = 0;
-		fileEdited = false;
+		string fileName = saveFileResult.filePath;
+		cout << "save file name: \"" << fileName << "\"\n";
+		saveFile(fileName);
 	}
 }
 
 //--------------------------------------------------------------
-void Editor::saveExistingFile()
+void Editor::saveFile(string fileName)
 {
-	fstream file(loadedFileStr);
+	if (!endsWith(fileName, ".lyv") || !endsWith(fileName, ".py") || !endsWith(fileName, ".lua")) {
+		fileName += ".lyv";
+	}
+	ofstream file(fileName.c_str());
 	if (!file.is_open()) {
 		// if for some reason the file can't be opened
 		// instead of the file name, the string "could not open file"
 		// will be displayed for 2 seconds and then it will return to untitled.lyv
 		couldNotSaveFile = true;
+		fileName = "could not save file";
 		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
 		return;
 	}
-	file.seekp(0, std::ios_base::beg);
-	string allStrConcat = "";
 	for (unsigned i = 0; i < allStrings.size(); i++) {
-		//file << allStrings[i] << "\n";
-		allStrConcat += allStrings[i] + "\n";
+		file << allStrings[i] << "\n";
 	}
-	file.write(allStrConcat.c_str(), allStrConcat.size());
 	file.close();
+	fileLoaded = true;
+	string fullPath = fileName.c_str();
+	size_t lastBackSlash = fullPath.find_last_of("/");
+	loadedFileStr = fullPath.substr(lastBackSlash+1);
+	if (endsWith(loadedFileStr, ".lyv")) thisLang = 0;
+	else if (endsWith(loadedFileStr, ".py")) thisLang = 1;
+	else if (endsWith(loadedFileStr, ".lua")) thisLang = 2;
+	else thisLang = 0;
 	fileEdited = false;
+}
+
+//--------------------------------------------------------------
+void Editor::saveExistingFile()
+{
+	//fstream file(loadedFileStr);
+	//if (!file.is_open()) {
+	//	// if for some reason the file can't be opened
+	//	// instead of the file name, the string "could not open file"
+	//	// will be displayed for 2 seconds and then it will return to untitled.lyv
+	//	couldNotSaveFile = true;
+	//	fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+	//	return;
+	//}
+	//file.seekp(0, std::ios_base::beg);
+	//string allStrConcat = "";
+	//for (unsigned i = 0; i < allStrings.size(); i++) {
+	//	//file << allStrings[i] << "\n";
+	//	allStrConcat += allStrings[i] + "\n";
+	//}
+	//file.write(allStrConcat.c_str(), allStrConcat.size());
+	//file.close();
+	//fileEdited = false;
 }
 
 //--------------------------------------------------------------
@@ -2342,6 +2640,10 @@ size_t Editor::findChordStart(string str)
 	}
 	return ndx;
 }
+
+/************************ loading files ***********************/
+
+/////////////////// loading MusicXML files /////////////////////
 
 //--------------------------------------------------------------
 void Editor::loadXMLFile(string filePath)
@@ -2986,6 +3288,250 @@ void Editor::loadXMLFile(string filePath)
 	}
 }
 
+////////////////////// loading MIDI files ///////////////////////
+
+//--------------------------------------------------------------
+//std::pair<int, int> Editor::getMidiDur(long ticks, int ppqn)
+//{
+//	float floatDur = (float)ticks / (float)ppqn;
+//	floatDur *= 16; // 64 / 4 (64th is the shortest note and PPQN is Pulses Per Quarter Note, therefore 4)
+//	int intDur = (int)(floatDur + 0.5);
+//	int duration = 4;
+//	int numDots = 0;
+//	int powCoef = 0;
+//	bool found = false;
+//	while (!found) {
+//		if (pow(2, powCoef) > intDur) {
+//			int thisDur = pow(2, powCoef-1);
+//			int remaining = intDur - thisDur;
+//			float div = (float)remaining / (float)thisDur;
+//			while (true) {
+//				div *= 2;
+//				int intDiv = (int)div;
+//				numDots++;
+//				if (div - (float)intDiv == 0) break;
+//				else div -= intDiv;
+//			}
+//			found = true;
+//			duration = 64 / thisDur;
+//		}
+//		powCoef++;
+//	}
+//	return std::make_pair(duration, numDots);
+//}
+//
+////--------------------------------------------------------------
+//long Editor::roundMidiTicks(long ticks, int ppqn)
+//{
+//	long base = (long)ppqn / 16; // for a 64th note
+//	// array of mutliplication coefficients to include dotted notes too
+//	long mutlCoefs[13] = {1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96};
+//	for (int i = 0; i < 13; i++) {
+//		long compare = base * multCoefs[i];
+//		if (compare - ticks > 0) {
+//			return compare;
+//		}
+//	}
+//	return base;
+//}
+//
+////--------------------------------------------------------------
+//string Editor::getMidiPitch(int pitch, string *notes)
+//{
+//	string midiPitchStr = notes[pitch % 12];
+//	int octaves = pitch - 48;
+//	string octaveStr;
+//	if (octaves >= 0) octaveStr = "'";
+//	else octaveStr = ",";
+//	octaves /= 12;
+//	if (octaves == 0 && octaveStr == ",") midiPitchStr += ",";
+//	for (int i = 0; i < (abs)octaves; i++) midiPitchStr += octaveStr;
+//	return midiPitchStr;
+//}
+//
+////--------------------------------------------------------------
+//void Editor::loadMIDIFile(string filePath)
+//{
+//	MIDIFileLoader readMidi;
+//	readMidi.loadFile(filePath);
+//	int tempo = readMidi.getTempo();
+//	int ppqn = readMidi.getPPQM();
+//	vector<vector<noteData>> midiEvents = readMidi.getMidiEvents();
+//	bool hasNoteOffs = false;
+//	for (unsigned i = 0; i < midiEvents.size(); i++) {
+//		for (unsigned j = 0; j < midiEvents[i].size(); j++) {
+//			if (midiEvents[i][j].velocity == 0) {
+//				hasNoteOffs = true;
+//				break;
+//			}
+//		}
+//		if (hasNoteOffs) break;
+//	}
+//	vector<long> prevTicks (midiEvents.size(), 0);
+//	vector<int> prevMidiEventsNdx (midiEvents.size(), 0);
+//	vector<int> leftOversSixtyfours (midiEvents.size(), 0);
+//	vector<string> leftOversString (midiEvents.size(), "");
+//	string notes[12] = {"c", "cis", "d", "dis", "e", "f", "fis", "g", "gis", "a", "bes", "b"};
+//
+//	createNewLine("\\score show", 0);
+//	cursorLineIndex++;
+//	createNewLine("\\score animate", 0);
+//	cursorLineIndex++;
+//	createNewLine("", 0);
+//	cursorLineIndex++;
+//	string insts = "\\insts";
+//	for (auto it = readMidi.instNames.begin(); it != readMidi.instNames.end(); ++it) {
+//		insts += " ";
+//		insts += *it;
+//	}
+//	createNewLine(insts, 0);
+//	cursorLineIndex++;
+//	createNewLine("", 0);
+//	cursorLineIndex++;
+//
+//	vector<unsigned> timeSignaturesTimeStamps;
+//	for (auto it = readMidi.timeSignatures.begin(); it != readMidi.timeSignatures.end(); ++it) {
+//		timeSignaturesTimeStamps.push_back(it->first);
+//	}
+//
+//	vector<unsigned> tempoTimeStamps;
+//	for (auto it = readMidi.tempoMap.begin(); it != readMidi.tempoMap.end(); ++it) {
+//		tempoTimeStamps.push_back(it->first);
+//	}
+//	
+//	int barCount = 1;
+//	bool hasMoreData = true;
+//	int dataDoneCounter = 0;
+//	long totalPulses = 0;
+//	int numerator = 4, denominator = 4;
+//	int tempo = 120;
+//	while (hasMoreData) {
+//		createNewLine("\\bar " + to_string(barCount++) + " {", 0);
+//		cursorLineIndex++;
+//		if (timeSignaturesTimeStamps.size() > 0) {
+//			if (*timeSignaturesTimeStamps.begin() == totalPulses) {
+//				numerator = readMidi.timeSignatures[totalPulses].first;
+//				denominator = readMidi.timeSignatures[totalPulses].second;
+//				timeSignaturesTimeStamps.erase(timeSignaturesTimeStamps.begin());
+//			}
+//		}
+//		if (tempoTimeStamps.size() > 0) {
+//			if (*tempoTimeStamps.begin() == totalPulses) {
+//				tempo = readMidi.tempoMap[totalPulses];
+//				tempoTimeStamps.erase(tempoTimeStamps.begin());
+//			}
+//		}
+//		long pulsesPerBar = numerator * (ppqn / (denominator / 4));
+//		int numSixtyfoursPerBar = numerator * (64 / denominator);
+//		string timeStampStr = tabStr + "\\time " + to_string(numerator) + "/" + to_string(denominator);
+//		createNewLine(timeStampStr, 0);
+//		cursorLineIndex++;
+//		string tempoStr = tabStr + "\\tempo " + to_string(denominator) + " = " + to_string(tempo);
+//		createNewLine(tempoStr, 0);
+//		cursorLineIndex++;
+//		for (unsigned i = 0; i < midiEvents.size(); i++) {
+//			long barDur = 0;
+//			int totalBarDur = numerator * (64 / denominator);
+//			std::pair<int, int> duration;
+//			bool barDone = false;
+//			bool leftOverTakesWholeBar = false;
+//			string line = tabStr + "\\" + readMidi.instNames[i] + " ";
+//			string note;
+//			for (unsigned j = prevMidiEventsNdx[i]; j < midiEvents[i].size(); j++) {
+//				long ticks = midiEvents[i][j].ticks;
+//				long roundedDurationTicks = roundMidiTicks(midiEvents[i][j].durationTicks, ppqn);
+//				long nextTicks;
+//				if (j < midiEvents[i].size() - 1) {
+//					nextTicks = midiEvents[i][j+1].ticks;
+//				}
+//				else {
+//					nextTicks = totalPulses + pulsesPerBar - midiEvents[i][j].ticks;
+//				}
+//				if (leftOvers[i] > 0) {
+//					line = note;
+//					if (leftOvers[i] > numSixtyfoursPerBar) {
+//						duration = getMidiDur(pulsesPerBar, ppqn);
+//						leftOversSixtyfours[i] = leftOversSixtyfours[i] - numSixtyfoursPerBar;
+//						leftOversString[i] = note;
+//						leftOverTakesWholeBar = true;
+//					}
+//					else {
+//						duration = getMidiDur(leftOversSixtyfours[i], ppqn);
+//						leftOversSixtyfours[i] = 0;
+//					}
+//					line += to_string(duration.first);
+//					barDur += (64 / duration.first);
+//					int halfDur = duration.first / 2;
+//					for (int k = 0; k < duration.second; k++) {
+//						line += ".";
+//						barDur += (64 / halfDur);
+//						halfDur /= 2;
+//					}
+//					if (leftOverTakesWholeBar) {
+//						line += "~";
+//					}
+//					else {
+//						line += " ";
+//					}
+//				}
+//				if (leftOverTakesWholeBar) {
+//					break;
+//				}
+//				else {
+//					if (nextTicks - ticks > roundedDurationTicks) {
+//						std::pair<int, int> restDur = getMidiDur(nextTicks - ticks - roundedDurationTicks, ppqn);
+//						line += ("r" + to_string(restDur.first));
+//						barDur += (64 / restDur.first);
+//						int halfDur = restDur.first / 2;
+//						for (int k = 0; k < restDur.second; k++) {
+//							line += ".";
+//							barDur += (64 / halfDur);
+//							halfDur /= 2;
+//						}
+//						note = "r";
+//						if (nextTicks - ticks < pulsesPerBar) {
+//							line += " ";
+//						}
+//					}
+//					if (nextTicks - ticks <= pulsesPerBar) {
+//						note += getMidiPitch(midiEvents[i][j].pitch, notes);
+//						line += note;
+//						duration = getMidiDur(roundedDurationTicks, ppqn);
+//						line += to_string(duration.first);
+//						barDur += (64 / duration.first);
+//						int halfDur = duration.first / 2;
+//						for (int k = 0; k < duration.second; k++) {
+//							line += ".";
+//							barDur += (64 / halfDur);
+//							halfDur /= 2;
+//						}
+//						if (barDur >= numSixtyfoursPerBar) {
+//							if (barDur > numSixtyfoursPerBar) {
+//								leftOvers[i] = barDur - numSixtyfoursPerBar;
+//								line += "~";
+//							}
+//							prevMidiEventsNdx[i] = j;
+//							barDone = true;
+//						}
+//						else {
+//							line += " ";
+//						}
+//					}
+//				}
+//				if (barDone) {
+//					leftOversString[i] = note;
+//					break;
+//				}
+//			}
+//			createNewLine(line, 0);
+//			cursorLineIndex++;
+//		}
+//		totalPulses += pulsesPerBar;
+//	}
+//}
+
+//////////////////// loading LiveLily files ////////////////////
+
 //--------------------------------------------------------------
 void Editor::loadLyvFile(string filePath)
 {
@@ -2999,66 +3545,82 @@ void Editor::loadLyvFile(string filePath)
 	file.close();
 }
 
+///////////////// load files graphic interface /////////////////
+
 //--------------------------------------------------------------
-void Editor::loadFile()
+void Editor::loadDialog()
 {
 	//Open the Open File Dialog
 	ofFileDialogResult openFileResult = ofSystemLoadDialog("Select a .lyv or .xml file");
 	//Check if the user opened a file
 	if (openFileResult.bSuccess){
-		lineCount = 1;
-		cursorPos = 0;
-		ifstream file(openFileResult.filePath.c_str());
-		if (!file.is_open()) {
-			// if for some reason the file can't be opened
-			// instead of the file name, the string "could not open file"
-			// will be displayed for 2 seconds and then it will return to untitled.lyv
-			couldNotLoadFile = true;
-			fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
-			return;
-		}
-		file.close();
-		allStrings.clear();
-		allStringStartPos.clear();
-		tracebackStr.clear();
-		tracebackColor.clear();
-		tracebackNumLines.clear();
-		cursorLineIndex = cursorPos = 0;
-		// determine what type of file we're opeining
-		string fullPath = openFileResult.filePath.c_str();
-		size_t lastBackSlash = fullPath.find_last_of("/");
-		loadedFileStr = fullPath.substr(lastBackSlash+1);
-		bool openingXML = false;
-		if (endsWith(loadedFileStr, ".mxl") || endsWith(loadedFileStr, ".xml") || endsWith(loadedFileStr, ".musicxml")) {
-			thisLang = 0;
-			openingXML = true;
-		}
-		if (endsWith(loadedFileStr, ".lyv")) {
-			thisLang = 0;
-		}
-		else if (endsWith(loadedFileStr, ".py")) {
-			thisLang = 1;
-		}
-		else if (endsWith(loadedFileStr, ".lua")) {
-			thisLang = 2;
-		}
-		else {
-			thisLang = 0;
-		}
-		file.close();
-		if (openingXML) {
-			loadXMLFile(openFileResult.filePath);
-		}
-		else {
-			loadLyvFile(openFileResult.filePath);
-		}
-		lineCount = (int)allStrings.size();
-		cursorLineIndex = 0;
-		cursorPos = arrowCursorPos = 0;
-		fileLoaded = true;
-		fileEdited = false;
+		loadFile(openFileResult.filePath);
 	}
 }
+
+/////////////////// main load file function ////////////////////
+
+//--------------------------------------------------------------
+void Editor::loadFile(string fileName)
+{
+	lineCount = 1;
+	cursorPos = 0;
+	if (!endsWith(fileName, ".lyv") && !endsWith(fileName, ".xml") && !endsWith(fileName, "musicxml")) {
+		fileName += ".lyv";
+	}
+	ifstream file(fileName.c_str());
+	if (!file.is_open()) {
+		// if for some reason the file can't be opened
+		// instead of the file name, the string "could not open file"
+		// will be displayed for 2 seconds and then it will return to untitled.lyv
+		couldNotLoadFile = true;
+		fileName = "could not load file";
+		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+		return;
+	}
+	file.close();
+	allStrings.clear();
+	allStringStartPos.clear();
+	tracebackStr.clear();
+	tracebackColor.clear();
+	tracebackNumLines.clear();
+	cursorLineIndex = cursorPos = 0;
+	// determine what type of file we're opeining
+	string fullPath = fileName.c_str();
+	size_t lastBackSlash = fullPath.find_last_of("/");
+	loadedFileStr = fullPath.substr(lastBackSlash+1);
+	bool openingXML = false;
+	if (endsWith(loadedFileStr, ".mxl") || endsWith(loadedFileStr, ".xml") || endsWith(loadedFileStr, ".musicxml")) {
+		thisLang = 0;
+		openingXML = true;
+	}
+	if (endsWith(loadedFileStr, ".lyv")) {
+		thisLang = 0;
+	}
+	else if (endsWith(loadedFileStr, ".py")) {
+		thisLang = 1;
+	}
+	else if (endsWith(loadedFileStr, ".lua")) {
+		thisLang = 2;
+	}
+	else {
+		thisLang = 0;
+	}
+	file.close();
+	if (openingXML) {
+		loadXMLFile(fileName);
+	}
+	else {
+		loadLyvFile(fileName);
+	}
+	lineCount = (int)allStrings.size();
+	cursorLineIndex = 0;
+	cursorPos = arrowCursorPos = 0;
+	fileLoaded = true;
+	fileEdited = false;
+}
+
+/********************* loading files done *********************/
 
 //--------------------------------------------------------------
 float Editor::getCursorHeight()

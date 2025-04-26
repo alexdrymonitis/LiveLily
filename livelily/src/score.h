@@ -106,7 +106,8 @@ class Notes
 				vector<vector<int>> octaves,
 				vector<int> ottavas,
 				vector<int> durs,
-				vector<int> dots,
+				vector<int> dotNdxs,
+				vector<unsigned> dotsCntr,
 				vector<int> gliss,
 				vector<vector<int>>articul,
 				vector<int> dyns,
@@ -120,7 +121,7 @@ class Notes
 				map<int, std::pair<int, int>> tupletRatios,
 				map<int, std::pair<unsigned, unsigned>> tupletStartStop,
 				vector<string> texts,
-				vector<int> textIndexes,
+				vector<vector<int>> textIndexes,
 				int BPMMult);
 		void changeNotesBasedOnClef(int bar);
 		void correctDynamics(int bar, vector<int> dyns);
@@ -202,6 +203,7 @@ class Notes
 		map<int, vector<int>> grouppedStemDirsCoeff;
 		map<int, vector<int>> durations;
 		map<int, vector<int>> dotIndexes;
+		map<int, vector<unsigned>> dotsCounter;
 		map<int, vector<int>> dynamics;
 		map<int, vector<int>> dynamicsIndexes;
 		map<int, vector<int>> dynamicsRampStart;
@@ -231,9 +233,9 @@ class Notes
 		map<int, vector<float>> allOttavasYCoords;
 		map<int, vector<int>> allOttavasChangedAt;
 		map<int, vector<string>> allTexts;
-		map<int, vector<int>> allTextsIndexes;
+		map<int, vector<vector<int>>> allTextsIndexes;
 		map<int, vector<float>> allTextsXCoords;
-		map<int, vector<float>> allTextsYCoords;
+		map<int, vector<vector<float>>> allTextsYCoords;
 		map<int, vector<int>> numBeams;
 		map<int, vector<vector<float>>> beamYCoords1;
 		map<int, vector<vector<float>>> beamYCoords2;
