@@ -61,6 +61,7 @@ class ofApp : public ofBaseApp
 		vector<int> findIndexesOfCharInStr(string str, string charToFind);
 		string replaceCharInStr(string str, string a, string b);
 		vector<string> tokenizeString(string str, string delimiter);
+		void parseStrings();
 		void parseString(string str);
 		void fillInMissingInsts(int barIndex);
 		int storeNewBar(string barName);
@@ -172,26 +173,13 @@ class ofApp : public ofBaseApp
 		int lastInstrumentIndex;
 		int tempNumInstruments;
 
+		// for determing the position of single bars in horizontal view
+		int prevSingleBarPos;
+
 		// variables for receiving bar data over OSC
 		int thisBarIndex;
 		int instNdx;
 		int lastBarIndex;
-		// the keys of the map below are the bar indexes
-		// and the values hold the count of instruments that receive bar data without errors
-		map<int, int> instrumentCounterPerBar;
-		string barName;
-		int errorCounter;
-		// variable to notify main program that an error occurred while transferring bar data
-		bool barDataError;
-		// and an int  that will hold the number of incoming data so we can check if everything arrived as it should
-		int numBarData;
-		// the keys of the map below are the instrument indexes and the values are
-		// vectors with the bar indexes where errors occured
-		map<int, vector<int>> barDataErrorsMap;
-		// a map of int and pair of a bool and int, to notify the main program that all instruments in this server
-		// have received the data of a bar without errors
-		// keys are instrument indexes and values are the pair
-		map<int, std::pair<bool, int>> sendBarDataOKMap;
 
 		map<int, int> instrumentIndexMap;
 

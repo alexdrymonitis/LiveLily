@@ -120,7 +120,7 @@ float Staff::getXLength()
 	// but we don't change their font size, so we have to compansate for this
 	// unchanged dimension combined with the the other changed lengths
 	float len = xLength; // - getClefXOffset() - getMeterXOffset(); // - clefLength - meterLength;
-	if (scoreOrientation == 1) len *= xCoef;
+	if (scoreOrientation > 0) len *= xCoef;
 	return len; // + getClefXOffset() + getMeterXOffset() + clefLength + meterLength;
 }
 
@@ -128,7 +128,7 @@ float Staff::getXLength()
 float Staff::getClefXOffset()
 {
 	float y = yDist / 2;
-	if (scoreOrientation == 1) y *= xCoef;
+	if (scoreOrientation > 0) y *= xCoef;
 	return y + clefLength;
 }
 
@@ -136,7 +136,7 @@ float Staff::getClefXOffset()
 float Staff::getMeterXOffset()
 {
 	float y = yDist / 2;
-	if (scoreOrientation == 1) y *= xCoef;
+	if (scoreOrientation > 0) y *= xCoef;
 	return y + meterLength; 
 }
 
@@ -158,13 +158,13 @@ void Staff::drawStaff(int bar, float xStartPnt, float yStartPnt, float yOffset, 
 {
 	ofSetColor(0);
 	float xCoefLocal = xCoef;
-	if (scoreOrientation == 0) xCoefLocal = 1;
+	if (scoreOrientation > 0) xCoefLocal = 1;
 	float xStartLocal = xStartPnt;
 	float xEndLocal = getXLength() + xStartPnt;
 	//if (!drawClef) xEndLocal -= getClefXOffset();
-	//else if (scoreOrientation == 1) xEndLocal += getClefXOffset();
+	//else if (scoreOrientation > 0) xEndLocal += getClefXOffset();
 	//if (!(drawMeter && drawMeterInsideBar)) xEndLocal -= getMeterXOffset();
-	//else if (scoreOrientation == 1) xEndLocal += getMeterXOffset();
+	//else if (scoreOrientation > 0) xEndLocal += getMeterXOffset();
 	float yStart = yStartPnt - (lineWidth / 2) + yOffset;
 	float yEnd = (yStartPnt + (4 * yDist)) + (lineWidth / 2) + yOffset;
 	ofDrawLine(xStartLocal, yStart, xStartLocal, yEnd);
@@ -464,7 +464,8 @@ void Notes::setNotes(int bar,
 		vector<vector<int>> octaves,
 		vector<int> ottavas,
 		vector<int> durs,
-		vector<int> dots,
+		vector<int> dotNdxs,
+		vector<unsigned> dotsCntr,
 		vector<int> gliss,
 		vector<vector<int>> articul,
 		vector<int> dyns,
@@ -478,7 +479,7 @@ void Notes::setNotes(int bar,
 		map<int, std::pair<int, int>> tupletRatios,
 		map<int, std::pair<unsigned, unsigned>> tupletStartStop,
 		vector<string> texts,
-		vector<int> textIndexes,
+		vector<vector<int>> textIndexes,
 		int BPMMult)
 {
 	// if we have copied the bar by writing a bar name instead of an actual melodic line
@@ -491,7 +492,8 @@ void Notes::setNotes(int bar,
 	allOctaves[bar] = std::move(octaves);
 	allOttavas[bar] = std::move(ottavas);
 	durations[bar] = std::move(durs);
-	dotIndexes[bar] = std::move(dots);
+	dotIndexes[bar] = std::move(dotNdxs);
+	dotsCounter[bar] = std::move(dotsCntr);
 	allGlissandi[bar] = std::move(gliss);
 	allArticulations[bar] = std::move(articul);
 	dynamics[bar] = std::move(dyns);
@@ -1991,52 +1993,61 @@ void Notes::storeOttavaCoords(int bar)
 //--------------------------------------------------------------
 void Notes::storeTextCoords(int bar)
 {
-	size_t size = 0;
-	for (unsigned i = 0; i < allTextsIndexes[bar].size(); i++) {
-		if (allTextsIndexes[bar][i] != 0) {
-			size++;
+	size_t size1 = 0;
+	size_t size2;
+	unsigned i, j;
+	vector<vector<float>> v;
+	for (i = 0; i < allTextsIndexes.at(bar).size(); i++) {
+		v.push_back({0.0});
+		for (j = 1; j < allTextsIndexes.at(bar).at(i).size(); j++) {
+			v.back().push_back(0.0);
 		}
+		//if (allTextsIndexes[bar][i] != 0) {
+		//	size++;
+		//}
 	}
-	allTextsXCoords[bar] = vector<float>(size);
-	allTextsYCoords[bar] = vector<float>(size);
+	//allTextsXCoords[bar] = vector<float>(size);
+	//allTextsYCoords[bar] = vector<float>(size);
+	allTextsYCoords[bar] = v;
+	allTextsXCoords[bar] = vector<float>(allTextsIndexes.at(bar).size(), (float)0.0);
 	int index = 0;
-	for (unsigned i = 0; i < allTextsIndexes[bar].size(); i++) {
-		if (allTextsIndexes[bar][i] != 0) {
-			allTextsXCoords[bar][index] = allNoteCoordsX[bar][i][allChordsBaseIndexes[bar][i]]-(noteWidth/2.0);
-			float yPos;
-			float textHalfHeight = textFont.stringHeight(allTexts[bar][index]) / 2;
-			if (allTextsIndexes[bar][i] > 0) {
-				// the compiler complains if I just compare with 0.0
-				// so I create a float here
-				float zero = 0.0;
-				if (stemDirections[bar][i] > 0) {
-					yPos = min(allNotesMinYPos[bar][i], min(allNoteStemCoordsY[bar][i], zero));
-				}
+	for (i = 0; i < allTextsIndexes.at(bar).size(); i++) {
+		for (j = 0; j < allTextsIndexes.at(bar).at(i).size(); j++) {
+			if (allTextsIndexes.at(bar).at(i).at(j) != 0) {
+				allTextsXCoords.at(bar).at(i) = allNoteCoordsX.at(bar).at(i).at(allChordsBaseIndexes.at(bar).at(i))-(noteWidth/2.0);
+				float yPos;
+				float textHalfHeight = textFont.stringHeight(allTexts[bar][index]) / 2;
+				if (allTextsIndexes.at(bar).at(i).at(j) > 0) {
+					allTextsYCoords.at(bar).at(i).at(j) = 0;
+					if (stemDirections.at(bar).at(i) > 0) {
+						yPos = min(allNotesMinYPos[bar][i], min(allNoteStemCoordsY[bar][i], allTextsYCoords.at(bar).at(i).at(j)));
+					}
 
-				else {
-					yPos = min(allNotesMinYPos[bar][i], min(allNoteHeadCoordsY[bar][i][0], zero));
-				}
-				yPos -= (noteHeight + halfStaffDist);
-				if (yPos - textHalfHeight < allNotesMinYPos[bar][i] && yPos > -FLT_MAX) {
-					allNotesMinYPos[bar][i] = yPos; // - textHalfHeight;
-				}
-			}
-			else {
-				if (stemDirections[bar][i] > 0) {
-					yPos =  max(allNotesMaxYPos[bar][i], max(allNoteHeadCoordsY[bar][i][0],
-								(halfStaffDist*9)));
+					else {
+						yPos = min(allNotesMinYPos[bar][i], min(allNoteHeadCoordsY[bar][i][0], allTextsYCoords.at(bar).at(i).at(j)));
+					}
+					yPos -= (noteHeight + halfStaffDist);
+					allTextsYCoords.at(bar).at(i).at(j) = yPos;
+					if (yPos - textHalfHeight < allNotesMinYPos[bar][i] && yPos > -FLT_MAX) {
+						allNotesMinYPos[bar][i] = yPos; // - textHalfHeight;
+					}
 				}
 				else {
-					yPos =  max(allNotesMaxYPos[bar][i], max(allNoteStemCoordsY[bar][i],
-								(halfStaffDist*9)));
+					allTextsYCoords.at(bar).at(i).at(j) = halfStaffDist*9;
+					if (stemDirections[bar][i] > 0) {
+						yPos =  max(allNotesMaxYPos[bar][i], max(allNoteHeadCoordsY[bar][i][0], allTextsYCoords.at(bar).at(i).at(j)));
+					}
+					else {
+						yPos =  max(allNotesMaxYPos[bar][i], max(allNoteStemCoordsY[bar][i], allTextsYCoords.at(bar).at(i).at(j)));
+					}
+					yPos += (noteHeight + halfStaffDist);
+					allTextsYCoords.at(bar).at(i).at(j) = yPos;
+					if (yPos + textHalfHeight > allNotesMaxYPos[bar][i] && yPos < FLT_MAX) {
+						allNotesMaxYPos[bar][i] = yPos; // + textHalfHeight;
+					}
 				}
-				yPos += (noteHeight + halfStaffDist);
-				if (yPos + textHalfHeight > allNotesMaxYPos[bar][i] && yPos < FLT_MAX) {
-					allNotesMaxYPos[bar][i] = yPos; // + textHalfHeight;
-				}
+				index++;
 			}
-			allTextsYCoords[bar][index] = yPos;
-			index++;
 		}
 	}
 }
@@ -2257,6 +2268,7 @@ void Notes::copyMelodicLine(int barIndex, int barToCopy)
 	allChordsEdgeIndexes[barIndex] = allChordsEdgeIndexes.at(barToCopy);
 	allChordsChangeXCoef[barIndex] = allChordsChangeXCoef.at(barToCopy);
 	dotIndexes[barIndex] = dotIndexes.at(barToCopy);
+	dotsCounter[barIndex] = dotsCounter.at(barToCopy);
 	hasStem[barIndex] = hasStem.at(barToCopy);
 	stemDirections[barIndex] = stemDirections.at(barToCopy);
 	numTails[barIndex] = numTails.at(barToCopy);
@@ -2356,7 +2368,7 @@ void Notes::drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, flo
 {
 	if (allNotes.find(bar) == allNotes.end()) return;
 	float xCoefLocal = xCoef;
-	//if (scoreOrientation == 0) xCoefLocal = 1;
+	//if (scoreOrientation > 0) xCoefLocal = 1;
 	// each bar must store its xStartPnt dynamically when drawn
 	// so this can be used in linked items, like slurs, glissandi and crescendi that span over one bar
 	xOffsets[bar] = xStartPnt;
@@ -2397,7 +2409,10 @@ void Notes::drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, flo
 							// add a small offset to the dot
 							y -= halfStaffDist;
 						}
-						ofDrawCircle(x+(noteWidth/1.5), y, staffDist*0.2);
+						for (unsigned j = 0; j < dotsCounter.at(bar).at(i); j++) {
+							ofDrawCircle(x+(noteWidth/1.5), y, staffDist*0.2);
+							x += (staffDist * 0.5);
+						}
 					}
 				}
 			}
@@ -2405,7 +2420,10 @@ void Notes::drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, flo
 				float x = xStartPnt + (allNoteCoordsX.at(bar).at(i)[allChordsBaseIndexes.at(bar).at(i)] * xCoefLocal);
 				int restIndex = drawRest(bar, actualDurs.at(bar).at(i), x, yStartPnt, restsColor, yOffset);
 				if (dotIndexes.at(bar).at(i) == 1) {
-					ofDrawCircle(x+(notationFont.stringWidth(restsSyms[restIndex])*1.2), middleOfStaff+yStartPnt+yOffset-halfStaffDist, staffDist*0.2);
+					for (unsigned j = 0; j < dotsCounter.at(bar).at(i); j++) {
+						ofDrawCircle(x+(notationFont.stringWidth(restsSyms[restIndex])*1.2), middleOfStaff+yStartPnt+yOffset-halfStaffDist, staffDist*0.2);
+						x += (staffDist * 0.5);
+					}
 				}
 			}
 			// then draw the stems
@@ -2611,7 +2629,7 @@ void Notes::drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOf
 	if (tacet[bar]) return;
 	float xCoefLocal = xCoef;
 	float prevX = FLT_MIN, prevY = FLT_MIN;
-	//if (scoreOrientation == 0) xCoefLocal = 1;
+	//if (scoreOrientation > 0) xCoefLocal = 1;
 	for (unsigned i = 0; i < allAccidentals[bar].size(); i++) {
 		for (unsigned j = 0; j < allAccidentals[bar][i].size(); j++) {
 			float x = allNoteCoordsX[bar][i][allChordsBaseIndexes[bar][i]];
@@ -2656,7 +2674,7 @@ void Notes::drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOf
 void Notes::drawGlissandi(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
 {
 	float xCoefLocal = xCoef;
-	//if (scoreOrientation == 0) xCoefLocal = 1;
+	//if (scoreOrientation > 0) xCoefLocal = 1;
 	float xStart, xEnd;
 	float yStart, yEnd;
 	for (unsigned i = 0; i < allGlissandi[bar].size(); i++) {
@@ -2734,7 +2752,7 @@ void Notes::drawTuplets(int bar, float xStartPnt, float yStartPnt, float yOffset
 void Notes::drawArticulations(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
 {
 	float xCoefLocal = xCoef;
-	//if (scoreOrientation == 0) xCoefLocal = 1;
+	//if (scoreOrientation > 0) xCoefLocal = 1;
 	for (unsigned i = 0; i < allArticulations[bar].size(); i++) {
 		for (unsigned j = 0; j < allArticulations[bar][i].size(); j++) {
 			if (allArticulations[bar][i][j] > 0) {
@@ -2773,7 +2791,7 @@ void Notes::drawArticulations(int bar, float xStartPnt, float yStartPnt, float y
 void Notes::drawOttavas(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
 {
 	float xCoefLocal = xCoef;
-	//if (scoreOrientation == 0) xCoefLocal = 1;
+	//if (scoreOrientation > 0) xCoefLocal = 1;
 	int prevOttava = 0;
 	for (unsigned i = 0; i < allOttavas[bar].size(); i++) {
 		if (allOttavas[bar][i] != prevOttava && allOttavas[bar][i] != 0) {
@@ -2815,7 +2833,7 @@ void Notes::drawOttavas(int bar, float xStartPnt, float yStartPnt, float yOffset
 void Notes::drawOttavaLine(int bar, unsigned startNdx, unsigned endNdx, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
 {
 	float xCoefLocal = xCoef;
-	//if (scoreOrientation == 0) xCoefLocal = 1;
+	//if (scoreOrientation > 0) xCoefLocal = 1;
 	float xStart = (allNoteCoordsX[bar][startNdx][0] * xCoefLocal) + xStartPnt;
 	float xEnd = (allNoteCoordsX[bar][endNdx][0] * xCoefLocal) + xStartPnt;
 	float y = allOttavasYCoords[bar][startNdx] + yStartPnt + yOffset;
@@ -2834,9 +2852,14 @@ void Notes::drawOttavaLine(int bar, unsigned startNdx, unsigned endNdx, float xS
 void Notes::drawText(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
 {
 	float xCoefLocal = xCoef;
-	//if (scoreOrientation == 0) xCoefLocal = 1;
-	for (unsigned i = 0; i < allTextsXCoords[bar].size(); i++) {
-		textFont.drawString(allTexts[bar][i], (allTextsXCoords[bar][i]*xCoefLocal)+xStartPnt, allTextsYCoords[bar][i]+yStartPnt+yOffset);
+	//if (scoreOrientation > 0) xCoefLocal = 1;
+	int index = 0;
+	for (unsigned i = 0; i < allTextsIndexes.at(bar).size(); i++) {
+		for (unsigned j = 0; j < allTextsIndexes.at(bar).at(i).size(); j++) {
+			if (allTextsIndexes.at(bar).at(i).at(j) != 0) {
+				textFont.drawString(allTexts.at(bar).at(index++), (allTextsXCoords.at(bar).at(i)*xCoefLocal)+xStartPnt, allTextsYCoords.at(bar).at(i).at(j)+yStartPnt+yOffset);
+			}
+		}
 	}
 }
 
@@ -2844,11 +2867,11 @@ void Notes::drawText(int bar, float xStartPnt, float yStartPnt, float yOffset, f
 void Notes::drawSlurs(int bar, int loopNdx, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
 {
 	float xCoefLocal = xCoef;
-	//if (scoreOrientation == 0) xCoefLocal = 1;
+	//if (scoreOrientation > 0) xCoefLocal = 1;
 	ofNoFill();
 	for (unsigned i = 0; i < slurStartX[bar].size(); i++) {
 		// slurs that span over more than one bar are drawn only when we draw the bar of the end of the slur
-		if (slurLinks[bar][i].second > 0 && scoreOrientation == 1) continue;
+		if (slurLinks[bar][i].second > 0 && scoreOrientation > 0) continue;
 		float x0 = 0.0;
 		float y0 = slurStartY[bar][i] + yStartPnt + yOffset;
 		float x1;
@@ -2857,7 +2880,7 @@ void Notes::drawSlurs(int bar, int loopNdx, float xStartPnt, float yStartPnt, fl
 		float y2 = slurMiddleY2[bar][i] + yStartPnt + yOffset;
 		float x3 = (slurStopX[bar][i]*xCoefLocal) + xStartPnt;
 		float y3 = slurStopY[bar][i] + yStartPnt + yOffset;
-		if (slurLinks[bar][i].first > 0 && scoreOrientation == 1) {
+		if (slurLinks[bar][i].first > 0 && scoreOrientation > 0) {
 			if (loopNdx >= slurLinks[bar][i].first) {
 				for (unsigned j = slurStopX[bar-slurLinks[bar][i].first].size()-1; j >=0; j--) {
 					if (slurStopX[bar-slurLinks[bar][i].first][j] > -1) {
@@ -2940,7 +2963,7 @@ void Notes::drawTie(int thisBar, unsigned i, unsigned j, float xStartPnt, float 
 void Notes::drawDynamics(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
 {
 	float xCoefLocal = xCoef;
-	//if (scoreOrientation == 0) xCoefLocal = 1;
+	//if (scoreOrientation > 0) xCoefLocal = 1;
 	for (unsigned i = 0; i < dynamics[bar].size(); i++) {
 		if (dynamics[bar][i] > -1) {
 			notationFont.drawString(dynSyms[dynamics[bar][i]], (dynsXCoords[bar][i]*xCoefLocal)+xStartPnt, dynsYCoords[bar][i]+yStartPnt+yOffset);

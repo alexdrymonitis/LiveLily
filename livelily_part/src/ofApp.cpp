@@ -7,7 +7,6 @@ void ofApp::setup()
 {
 	backgroundColor = ofColor::black;
 	ofBackground(backgroundColor);
-	errorCounter = 0;
 	unsigned int framerate = 60;
 	
 	brightnessCoeff = 0.85;
@@ -98,7 +97,6 @@ void ofApp::setup()
 
 	thisBarIndex = 0;
 	lastBarIndex = 0;
-	barDataError = false;
 	//instNdx = 0;
 	
 	// set the notes chars
@@ -132,77 +130,10 @@ void ofApp::update()
 			beatCounter = m.getArgAsInt32(0);
 		}
 		else if (m.getAddress() == "/line") {
-			int numArgs = m.getArgAsInt32(0);
-			for (int i = 1; i <= numArgs; i++) {
+			for (size_t i = 0; i < m.getNumArgs(); i++) {
 				linesToParse.push_back(m.getArgAsString(i));
 			}
-			for (int i = 0; i < numArgs; i++) {
-				parseString(linesToParse.at(i));
-			}
-			int updateLoopIndex = m.getArgAsInt32(numArgs+1);
-			if (parsingBar || parsingLoop) {
-				// the bar index has already been stored with the \bar command
-				int barIndex = getLastLoopIndex();
-				if (!parsingLoop) {
-					// first add a rest for any instrument that is not included in the bar
-					fillInMissingInsts(barIndex);
-					// then store the number of beats for this bar
-					// if we create a bar, create a loop with this bar only
-					loopData[barIndex] = {barIndex};
-					// check if no time has been specified and set the default 4/4
-					if (numerator.find(barIndex) == numerator.end()) {
-						numerator[barIndex] = 4;
-						denominator[barIndex] = 4;
-					}
-					setScoreNotes(barIndex);
-					if (!parsingBars) {
-						setNotePositions(barIndex);
-						calculateStaffPositions(barIndex, false);
-					}
-					for (auto it = instruments.begin(); it != instruments.end(); ++it) {
-						it->second.setPassed(false);
-					}
-				}
-				if (updateLoopIndex) {
-					loopIndex = tempBarLoopIndex;
-				}
-				parsingBar = false;
-				parsingLoop = false;
-			}
-			if (parsingBars) {
-				// check if all instruments are done parsing all their bars
-				bool parsingBarsDone = true;
-				for (auto it = instruments.begin(); it != instruments.end(); ++it) {
-					if (!it->second.getMultiBarsDone()) {
-						parsingBarsDone = false;
-						break;
-					}
-				}
-				while (!parsingBarsDone) {
-					for (int i = 0; i < numArgs; i++) {
-						parseString(linesToParse.at(i));
-					}
-				}
-				int barIndex = barsIndexes["\\"+multiBarsName+"-1"];
-				setNotePositions(barIndex, barsIterCounter);
-				for (int i = 0; i < barsIterCounter; i++) {
-					int barIndex = barsIndexes["\\"+multiBarsName+"-"+to_string(i+1)];
-					calculateStaffPositions(barIndex, false);
-				}
-				parsingBars = false;
-				firstInstForBarsSet = false;
-				// once done, create a string to create a loop with all the separate bars
-				string multiBarsLoop = "\\loop " + multiBarsName + " {";
-				for (int i = 0; i < barsIterCounter-1; i++) {
-					multiBarsLoop += ("\\" + multiBarsName + "-" + to_string(i+1) + " ");
-				}
-				// last iteration outside of the loop so that we don't add the extra white space
-				// and we close the curly brackets
-				multiBarsLoop += ("\\" + multiBarsName + "-" + to_string(barsIterCounter) + "}");
-				parseCommand(multiBarsLoop);
-				barsIterCounter = 0;
-			}
-			linesToParse.clear();
+			parseStrings();
 		}
 		else if (m.getAddress() == "/update") {
 			tempBarLoopIndex = m.getArgAsInt32(0);
@@ -222,6 +153,13 @@ void ofApp::update()
 			int ndx = m.getArgAsInt32(0);
 			string name = m.getArgAsString(1);
 			initializeInstrument(ndx, "\\" + name);
+		}
+		else if (m.getAddress() == "/group") {
+			for (size_t i = 0; i < m.getNumArgs(); i++) {
+				if (i > 0) {
+					instruments[instrumentIndexes[m.getArgAsString(i)]].setGroup(instruments[instrumentIndexes[m.getArgAsString(i-1)]].getID());
+				}
+			}
 		}
 		else if (m.getAddress() == "/numbars") {
 			numBarsToDisplay = m.getArgAsInt32(0);
@@ -300,8 +238,18 @@ void ofApp::draw()
 	bool drawLoopStartEnd = false;
 	int bar;
 	int ndx = ((thisLoopIndex - (thisLoopIndex % numBars)) / numBars) * numBars;
+	// ndx takes the index of the first visible bar
+	// this is useful in horizontal view, where with a four-bar maximum view and a loop with more than four bars
+	// ndx will take 0 first, then, after the first four bars have been played
+	// it will take 4
+	// in the if test below we set the number of bars to be displayed to fit the remaining bars
+	// e.g. in a six-bar loop, when the first four bars have been played, we need to display two bars only
+	// not four bars which is the maximum number of bars to display (these numbers are hypothetical)
+	if (ndx > 0) {
+		numBars -= ((int)loopData[loopIndex].size() - ndx);
+	}
 	//--------------- end of horizontal score view variables --------------
-	//------------------ variables for the beat visualization -------------
+	//---------------- variables for the beat visualization ---------------
 	float beatPulseStartX = 0, beatPulseEndX = 0, noteSize, beatPulseSizeX;
 	float beatPulsePosX = 0;
 	float beatPulseMaxPosY = 0;
@@ -371,6 +319,8 @@ void ofApp::draw()
 			bool drawClef = false, drawMeter = false, animate = false;
 			bool drawTempo = false;
 			bool showBar = true;
+			bool iVarAugmented = false;
+			int iVarTemp = i;
 			if (loopData.find(loopIndex) == loopData.end()) return;
 			if (loopData.at(loopIndex).size() == 0) return;
 			int barNdx = (ndx + i) % (int)loopData[loopIndex].size();
@@ -432,17 +382,40 @@ void ofApp::draw()
 				else {
 					bar = loopData[tempBarLoopIndex][i];
 					insertNaturalsNdx = tempBarLoopIndex;
+					if (loopData[tempBarLoopIndex].size() == 1) {
+						i = ((prevSingleBarPos + 1) % 2) + 1;
+						iVarAugmented = true;
+					}
 				}
 				scoreUpdated = true;
 				showUpdatePulseColor = true;
 			}
 			else if (mustUpdateScore && scoreUpdated && thisLoopIndex == 0) {
 				mustUpdateScore = scoreUpdated = showUpdatePulseColor = false;
+				prevSingleBarPos++;
+				if (prevSingleBarPos > 1) prevSingleBarPos = 0;
 			}
 			// if we're staying in the same loop, when the currently playing bar is displayed at the right-most staff
 			// all the other bars must display the next bars of the loop (if there are any)
 			else if (((int)thisLoopIndex % numBars) == numBars - 1 && i < numBars - 1) {
 				bar = loopData[loopIndex][(barNdx+numBars)%(int)loopData[loopIndex].size()];
+				// the calculations below determine whether the remaining bars are less than numBars - 1
+				// (we subtract one because in the last slot, we display the bar of the current loop chunk)
+				// in which case, we should leave the remaining slots empty
+				// for example, in a 6-bar loop with numBars = 4, when we enter the second chunk of the loop
+				// we need to display two bars
+				// when at the last bar of the first chunk, we display the 5th and 6th bar on the left side
+				// and the 4th bar on the right side, with the 3rd slot being blank
+				int loopIndexLocal = thisLoopIndex + 1;
+				if (loopIndexLocal >= (int)loopData[loopIndex].size()) loopIndexLocal = 0;
+				int ndxLocal = (((loopIndexLocal) - ((loopIndexLocal) % numBars)) / numBars) * numBars;
+				int numBarsLocal = (ndxLocal > 0 ? numBars - ((int)loopData[loopIndex].size() - ndxLocal) : numBars);
+				if (i >= numBarsLocal) showBar = false;
+				else showBar = true;
+			}
+			if (loopData[loopIndex].size() == 1) {
+				i = (prevSingleBarPos % 2) + 1;
+				iVarAugmented = true;
 			}
 			// like with the beat visualization, accumulate X offsets for all bars but the first
 			if (i > 0) {
@@ -450,6 +423,10 @@ void ofApp::draw()
 				// so we use a separate value for the X coordinate
 				staffOffsetX += instruments.begin()->second.getStaffXLength();
 				notesOffsetX += instruments.begin()->second.getStaffXLength();
+			}
+			if (iVarAugmented) {
+				i = iVarTemp;
+				iVarAugmented = false;
 			}
 			if (prevDrawClef != drawClef) {
 				if (drawClef) notesOffsetX += instruments.begin()->second.getClefXOffset();
@@ -1035,6 +1012,77 @@ vector<string> ofApp::tokenizeString(string str, string delimiter)
 	// so we extract it here by simply passing a substring from the last start point to the end
 	tokens.push_back(str.substr(start));
 	return tokens;
+}
+
+void ofApp::parseStrings()
+{
+	for (unsigned i = 0; i < linesToParse.size(); i++) {
+		parseString(linesToParse.at(i));
+	}
+	if (parsingBar || parsingLoop) {
+		// the bar index has already been stored with the \bar command
+		int barIndex = getLastLoopIndex();
+		if (!parsingLoop) {
+			// first add a rest for any instrument that is not included in the bar
+			fillInMissingInsts(barIndex);
+			// then store the number of beats for this bar
+			// if we create a bar, create a loop with this bar only
+			loopData[barIndex] = {barIndex};
+			// check if no time has been specified and set the default 4/4
+			if (numerator.find(barIndex) == numerator.end()) {
+				numerator[barIndex] = 4;
+				denominator[barIndex] = 4;
+			}
+			setScoreNotes(barIndex);
+			if (!parsingBars) {
+				setNotePositions(barIndex);
+				calculateStaffPositions(barIndex, false);
+			}
+			for (auto it = instruments.begin(); it != instruments.end(); ++it) {
+				it->second.setPassed(false);
+			}
+		}
+		if (!seqState) {
+			loopIndex = tempBarLoopIndex;
+		}
+		parsingBar = false;
+		parsingLoop = false;
+	}
+	if (parsingBars) {
+		// check if all instruments are done parsing all their bars
+		bool parsingBarsDone = true;
+		for (auto it = instruments.begin(); it != instruments.end(); ++it) {
+			if (!it->second.getMultiBarsDone()) {
+				parsingBarsDone = false;
+				break;
+			}
+		}
+		// call this function recursively, until all instruments are done parsing their bars
+		if (!parsingBarsDone) {
+			parseStrings();
+		}
+		else {
+			int barIndex = barsIndexes["\\"+multiBarsName+"-1"];
+			setNotePositions(barIndex, barsIterCounter);
+			for (int i = 0; i < barsIterCounter; i++) {
+				int barIndex = barsIndexes["\\"+multiBarsName+"-"+to_string(i+1)];
+				calculateStaffPositions(barIndex, false);
+			}
+			parsingBars = false;
+			firstInstForBarsSet = false;
+			// once done, create a string to create a loop with all the separate bars
+			string multiBarsLoop = "\\loop " + multiBarsName + " {";
+			for (int i = 0; i < barsIterCounter-1; i++) {
+				multiBarsLoop += ("\\" + multiBarsName + "-" + to_string(i+1) + " ");
+			}
+			// last iteration outside of the loop so that we don't add the extra white space
+			// and we close the curly brackets
+			multiBarsLoop += ("\\" + multiBarsName + "-" + to_string(barsIterCounter) + "}");
+			parseCommand(multiBarsLoop);
+			barsIterCounter = 0;
+		}
+	}
+	linesToParse.clear();
 }
 
 //--------------------------------------------------------------
@@ -1874,12 +1922,13 @@ void ofApp::parseMelodicLine(string str)
 	// so here we store the microtones only
 	vector<int> pitchBendVals(numNotesVertical, 0);
 	vector<int> dotIndexes(numNotesVertical, 0);
+	vector<unsigned> dotsCounter(numNotesVertical, 0);
 	vector<int> dynamicsData(numNotesVertical, 0);
 	vector<int> dynamicsRampData(numNotesVertical, 0);
 	vector<int> slurBeginningsIndexes(numNotesVertical, -1);
 	vector<int> slurEndingsIndexes(numNotesVertical, -1);
 	vector<int> tieIndexes(numNotesVertical, -1);
-	vector<int> textIndexesLocal(numNotesVertical, 0);
+	//vector<int> textIndexesLocal(numNotesVertical, 0);
 	vector<int> dursForScore(numNotesVertical, 0);
 	vector<int> dynamicsForScore(numNotesVertical, -1);
 	vector<int> dynamicsForScoreIndexes(numNotesVertical, -1);
@@ -2022,7 +2071,7 @@ void ofApp::parseMelodicLine(string str)
 					midiGlissDurs.at(index2) = 0;
 					midiDynamicsRampDurs.at(index2) = 0;
 					pitchBendVals.at(index2) = 0;
-					textIndexesLocal.at(index2) = 0;
+					//textIndexesLocal.at(index2) = 0;
 					ottavas.at(index2) = ottava;
 					index2++;
 					if (firstChordNote) firstChordNote = false;
@@ -2152,8 +2201,73 @@ void ofApp::parseMelodicLine(string str)
 
 	// before we move on to the rest of the data, we need to store the texts
 	// because this is dynamically allocated memory too
+	int textsCounter;
+	vector<vector<int>> textIndexesLocal;
+	for (i = 0; i < (int)tokens.size(); i++) {
+		// check if we have a comment, so we exit the loop
+		if (startsWith(tokens.at(i), "%")) break;
+		verticalNoteIndex = 0;
+		for (int k = 0; k <= i; k++) {
+			// loop till we find a -1, which means that this token is a chord note, but not the first one
+			if (verticalNotesIndexes.at(k) < 0) continue;
+			verticalNoteIndex = k;
+		}
+		// create an empty entry for every note/chord
+		if (textIndexesLocal.size() <= verticalNoteIndex) {
+			textIndexesLocal.push_back({0});
+		}
+		textsCounter = 0;
+		// then check for carrets or underscores
+		for (j = 0; j < tokens.at(i).size(); j++) {
+			if (tokens.at(i).at(j) == (94)) {
+				if (j > 0) {
+					// a carret is also used for articulations, so we must check if the previous character is not a hyphen
+					if (tokens.at(i).at(j-1) != '-') {
+						if (textsCounter == 0) {
+							textIndexesLocal.back().back() = 1;
+						}
+						else {
+							textIndexesLocal.back().push_back(1);
+						}
+						textsCounter++;
+					}
+				}
+				else {
+					if (textsCounter == 0) {
+						textIndexesLocal.back().back() = 1;
+					}
+					else {
+						textIndexesLocal.back().push_back(1);
+					}
+					textsCounter++;
+				}
+			}
+			else if (tokens.at(i).at(j) == 95) {
+				if (tokens.at(i).at(j-1) != '-') {
+					if (textsCounter == 0) {
+						textIndexesLocal.back().back() = -1;
+					}
+					else {
+						textIndexesLocal.back().push_back(-1);
+					}
+					textsCounter++;
+				}
+			}
+		}
+	}
+	// once we have sorted out the indexes of the texts, we can sort out the actual texts
 	unsigned openQuote, closeQuote;
 	vector<string> texts;
+	for (i = 0; i < (int)tokens.size(); i++) {
+		// again, check if we have a comment, so we exit the loop
+		if (startsWith(tokens.at(i), "%")) break;
+		verticalNoteIndex = 0;
+		for (int k = 0; k <= i; k++) {
+			// loop till we find a -1, which means that this token is a chord note, but not the first one
+			if (verticalNotesIndexes.at(k) < 0) continue;
+			verticalNoteIndex = k;
+		}
+	}
 	for (i = 0; i < (int)tokens.size(); i++) {
 		// again, check if we have a comment, so we exit the loop
 		if (startsWith(tokens.at(i), "%")) break;
@@ -2181,12 +2295,12 @@ void ofApp::parseMelodicLine(string str)
 						index2++;
 					}
 					texts.push_back(tokens.at(i).substr(openQuote, closeQuote-openQuote));
-					if (tokens.at(i).at(j) == char(94)) {
-						textIndexesLocal.at(verticalNoteIndex) = 1;
-					}
-					else if (tokens.at(i).at(j) == char(95)) {
-						textIndexesLocal.at(verticalNoteIndex) = -1;
-					}
+					//if (tokens.at(i).at(j) == char(94)) {
+					//	textIndexesLocal.at(verticalNoteIndex) = 1;
+					//}
+					//else if (tokens.at(i).at(j) == char(95)) {
+					//	textIndexesLocal.at(verticalNoteIndex) = -1;
+					//}
 					j = closeQuote;
 				}
 			}
@@ -2281,7 +2395,6 @@ void ofApp::parseMelodicLine(string str)
 	unsigned numDynamics = 0;
 	unsigned dynamicsRampCounter = 0;
 	unsigned slursCounter = 0;
-	unsigned dotsCounter = 0;
 	for (i = 0; i < (int)tokens.size(); i++) {
 		verticalNoteIndex = -1;
 		for (j = 0; j <= i; j++) {
@@ -2484,6 +2597,10 @@ void ofApp::parseMelodicLine(string str)
 						//	dynamicsRampEnd.at(verticalNoteIndex) = verticalNoteIndex;
 						//	dynamicsRampEndForScore.at(verticalNoteIndex) = verticalNoteIndex;
 						//	dynamicsRampIndexes.at(dynamicsRampCounter-1).second = verticalNoteIndex;
+						//	if (dynamicsRampStart.at(verticalNoteIndex) == dynamicsRampEnd.at(verticalNoteIndex)) {
+						//		std::pair<int, string> p = std::make_pair(3, "can't start and end a crescendo/diminuendo on the same note");
+						//		return p;
+						//	}
 						//}
 					}
 					else if (tokens.at(i).at(index2+1) == char(60)) { // <
@@ -2563,7 +2680,7 @@ void ofApp::parseMelodicLine(string str)
 			// . for dotted note, which is also used for staccato, hence the second test against 45 (hyphen)
 			else if (tokens.at(i).at(j) == char(46) && tokens.at(i).at(j-1) != char(45)) {
 				dotIndexes.at(verticalNoteIndex) = 1;
-				dotsCounter++;
+				dotsCounter.at(verticalNoteIndex)++;
 			}
 
 			else if (tokens.at(i).at(j) == char(40)) { // ( for beginning of slur
@@ -2732,11 +2849,16 @@ void ofApp::parseMelodicLine(string str)
 	int dursAccum = 0;
 	int diff = 0; // this is the difference between the expected and the actual sum of tuplets
 	int scoreDur; // durations for score should not be affected by tuplet calculations
+	int halfDur; // for halving for every dot
 	// convert durations to number of beats with respect to minimum duration
 	for (i = 0; i < numNotesVertical; i++) {
 		dursData.at(i) = MINDUR / dursData.at(i);
+		halfDur = dursData.at(i) / 2;
 		if (dotIndexes.at(i) == 1) {
-			dursData.at(i) += (dursData.at(i) / 2);
+			for (j = 0; j < dotsCounter.at(i); j++) {
+				dursData.at(i) += halfDur;
+				halfDur /= 2;
+			}
 		}
 		scoreDur = dursData.at(i);
 		for (auto it = tupStartStop.begin(); it != tupStartStop.end(); ++it) {
@@ -2801,6 +2923,7 @@ void ofApp::parseMelodicLine(string str)
 	instruments.at(thisInstIndex).scoreNotes[barIndex] = std::move(notesForScore);
 	instruments.at(thisInstIndex).scoreDurs[barIndex] = std::move(dursForScore);
 	instruments.at(thisInstIndex).scoreDotIndexes[barIndex] = std::move(dotIndexes);
+	instruments.at(thisInstIndex).scoreDotsCounter[barIndex] = std::move(dotsCounter);
 	instruments.at(thisInstIndex).scoreAccidentals[barIndex] = std::move(accidentalsForScore);
 	instruments.at(thisInstIndex).scoreNaturalSignsNotWritten[barIndex] = std::move(naturalSignsNotWrittenForScore);
 	instruments.at(thisInstIndex).scoreOctaves[barIndex] = std::move(octavesForScore);
@@ -2847,8 +2970,6 @@ void ofApp::initializeInstrument(int index, string instName)
 	instruments[maxIndex].setNotesFontSize(scoreFontSize, staffLinesDist);
 	instruments[maxIndex].setNumBarsToDisplay(numBarsToDisplay);
 	instruments[maxIndex].setScoreOrientation(1);
-	barDataErrorsMap[maxIndex] = vector<int>();
-	sendBarDataOKMap[maxIndex] = std::make_pair(false, 0);
 	numInstruments++;
 	setScoreCoords();
 	createFirstBar(maxIndex);
@@ -2857,13 +2978,16 @@ void ofApp::initializeInstrument(int index, string instName)
 //--------------------------------------------------------------
 void ofApp::createFirstBar(int instNdx)
 {
-	numerator[0] = denominator[0] = numBeats[0] = 4;
-	BPMTempi[0] = 120;
-	tempoBaseForScore[0] = 1;
-	BPMDisplayHasDot[0] = false;
-	BPMMultiplier[0] = 1;
-	tempoMs[0] = 500;
-	int barIndex = storeNewBar("-1");
+	int barIndex = 0;
+	if (instruments.size() == 1) {
+		numerator[0] = denominator[0] = numBeats[0] = 4;
+		BPMTempi[0] = 120;
+		tempoBaseForScore[0] = 1;
+		BPMDisplayHasDot[0] = false;
+		BPMMultiplier[0] = 1;
+		tempoMs[0] = 500;
+		barIndex = storeNewBar("-1");
+	}
 	instruments[instNdx].createEmptyMelody(barIndex);
 	instruments[instNdx].setScoreNotes(barIndex, denominator[0], numerator[0], numBeats[0],
 			BPMTempi[0], tempoBaseForScore[0], BPMDisplayHasDot[0], BPMMultiplier[0]);
