@@ -286,6 +286,10 @@ typedef struct _SharedData
 	unsigned thisLoopIndex;
 	int loopIndex;
 	int tempBarLoopIndex;
+	int numBars;
+	int thisPosition;
+	int prevNumBars;
+	int prevPosition;
 	int barCounter; // used for visualization on the score
 	map<int, vector<int>> loopData;
 	// a boolean if we call a pattern while the sequencer is running
@@ -483,7 +487,10 @@ class ofApp : public ofBaseApp
 		vector<int> findIndexesOfCharInStr(string str, string charToFind);
 		string replaceCharInStr(string str, string a, string b);
 		vector<string> tokenizeString(string str, string delimiter);
+		map<size_t, string> tokenizeStringWithNdxs(string str, string delimiter);
 		void resetEditorStrings(int index, int numLines);
+		int findMatchingBrace(const std::string& s, int openPos);
+		std::pair<int, string> replaceCommandsWithOutput(const string& str, vector<string>& output, int lineNum);
 		void parseStrings(int index, int numLines);
 		std::pair<int, string> parseString(string str, int lineNum, int numLines);
 		void storeList(string str);
@@ -521,7 +528,7 @@ class ofApp : public ofBaseApp
 		// set the global font size to calculate dimensions
 		void setFontSize();
 		// various commands for the score
-		std::pair<int, string> scoreCommands(vector<string>& commands, int lineNum, int numLines);
+		std::pair<int, string> scoreCommands(vector<string>& originalCommands, int lineNum, int numLines);
 		std::pair<int, string> maestroCommands(vector<string>& commands, int lineNum, int numLines);
 		// initialize an instrument
 		void initializeInstrument(string instName);

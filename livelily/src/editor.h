@@ -113,7 +113,7 @@ class Editor
 		bool isFloat(string str);
 		// string handling
 		string replaceCharInStr(string str, string a, string b);
-		vector<string> tokenizeString(string str, string delimiter);
+		vector<string> tokenizeString(string str, string delimiter, bool addDelimiter);
 		vector<int> findIndexesOfCharInStr(string str, string charToFind);
 		vector<int> setSelectedStrStartPosAndSize(int i);
 		// set cursor and line indexes and line count offset

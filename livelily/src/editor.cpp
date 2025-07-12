@@ -459,7 +459,8 @@ void Editor::drawText()
 		// draw all strings that are not empty
 		if (allStrings[i].size() > 0) {
 			// iterate through each word to check for keywords
-			vector<string> tokens = tokenizeString(allStrings[i], " ");
+			// set last argument to tokenizeString to true to include white spaces
+			vector<string> tokens = tokenizeString(allStrings[i], " ", true);
 			int xOffset = strXOffset;
 			if (cursorLineIndex == i) xOffset -= (allStringStartPos[i] * oneCharacterWidth);
 			bool isComment = false;
@@ -470,26 +471,51 @@ void Editor::drawText()
 				isComment = false;
 			}
 			for (string token : tokens) {
-				if (i == cursorLineIndex && cursorX >= xOffset && cursorX <= xOffset + font.stringWidth(token)) {
-					isCursorInsideKeyword = true;
-				}
-				if (tracebackStr[i].size() > 0 && tracebackColor[i] > 0) {
-					ofSetColor(((ofApp*)ofGetAppPtr())->backgroundColor);
-					if (cursorLineIndex == i) cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
-				}
-				else if (startsWith(token, "%")) {
-					ofSetColor(ofColor::gray.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-							ofColor::gray.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-							ofColor::gray.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-					isComment = true;
-					if (isCursorInsideKeyword) {
-						cursorColor = ofColor::gray;
+				// to properly highlight commands with their subcommands that are separated by a dot
+				// we need to further tokenize the tokens of the string based on the dot
+				// we add a true argument to tokenizeString to add the dot character to the resulting vector
+				vector<string> subtokens = tokenizeString(token, ".", true);
+				for (string subtoken : subtokens) {
+					if (i == cursorLineIndex && cursorX >= xOffset && cursorX <= xOffset + font.stringWidth(subtoken)) {
+						isCursorInsideKeyword = true;
 					}
-				}
-				else {
-					if (startsWith(token, "\\") && !isComment) {
-						if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang].find(token) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang].end()) {
-							ofColor color = ((ofApp*)ofGetAppPtr())->commandsMap[thisLang][token];
+					if (tracebackStr[i].size() > 0 && tracebackColor[i] > 0) {
+						ofSetColor(((ofApp*)ofGetAppPtr())->backgroundColor);
+						if (cursorLineIndex == i) cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
+					}
+					else if (startsWith(subtoken, "%")) {
+						ofSetColor(ofColor::gray.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+								ofColor::gray.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+								ofColor::gray.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						isComment = true;
+						if (isCursorInsideKeyword) {
+							cursorColor = ofColor::gray;
+						}
+					}
+					else {
+						if (startsWith(subtoken, "\\") && !isComment) {
+							if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang].find(subtoken) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang].end()) {
+								ofColor color = ((ofApp*)ofGetAppPtr())->commandsMap[thisLang][subtoken];
+								ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+										color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+										color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+								if (isCursorInsideKeyword) {
+									cursorColor = color;
+								}
+							}
+							else {
+								ofColor color = ((ofApp*)ofGetAppPtr())->brightness;
+								ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+										color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+										color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+								if (isCursorInsideKeyword) {
+									cursorColor = color;
+								}
+							}
+						}
+						else if (((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang].find(subtoken) != ((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang].end() \
+								&& !isComment) {
+							ofColor color = ((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang][subtoken];
 							ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 									color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 									color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
@@ -497,65 +523,46 @@ void Editor::drawText()
 								cursorColor = color;
 							}
 						}
-						else {
-							ofColor color = ((ofApp*)ofGetAppPtr())->brightness;
-							ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-									color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-									color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						else if (subtoken.size() == 0 && !isComment) {
+							ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
 							if (isCursorInsideKeyword) {
-								cursorColor = color;
+								cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
 							}
 						}
-					}
-					else if (((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang].find(token) != ((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang].end() \
-							&& !isComment) {
-						ofColor color = ((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang][token];
-						ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-								color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-								color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-						if (isCursorInsideKeyword) {
-							cursorColor = color;
+						else if ((isNumber(subtoken) || isFloat(subtoken)) && !isComment) {
+							ofSetColor(ofColor::gold.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+									ofColor::gold.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+									ofColor::gold.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+							if (isCursorInsideKeyword) {
+								cursorColor = ofColor::gold;
+							}
 						}
-					}
-					else if (token.size() == 0 && !isComment) {
-						ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
-						if (isCursorInsideKeyword) {
-							cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
+						else if (!isComment) {
+							ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
+							if (isCursorInsideKeyword) {
+								cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
+							}
 						}
+						else if (isComment) cursorColor = ofColor::gray;
 					}
-					else if ((isNumber(token) || isFloat(token)) && !isComment) {
-						ofSetColor(ofColor::gold.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-								ofColor::gold.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-								ofColor::gold.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-						if (isCursorInsideKeyword) {
-							cursorColor = ofColor::gold;
-						}
+					size_t numCharsToRemove = 0;
+					size_t firstCharToDisplay = 0;
+					int xOffsetModified = xOffset;
+					int startPos = 0;
+					if (i == cursorLineIndex) startPos = allStringStartPos[i];
+					if (charAccum < startPos) {
+						firstCharToDisplay = (size_t)(startPos - charAccum);
+						xOffsetModified += (firstCharToDisplay * oneCharacterWidth);
 					}
-					else if (!isComment) {
-						ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
-						if (isCursorInsideKeyword) {
-							cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
-						}
+					if ((charAccum + (int)subtoken.size() - startPos) > maxCharactersPerString) {
+						numCharsToRemove = ((size_t)charAccum + subtoken.size()) - (size_t)startPos - (size_t)maxCharactersPerString - 1;
 					}
-					else if (isComment) cursorColor = ofColor::gray;
+					if (firstCharToDisplay < subtoken.size() && numCharsToRemove < subtoken.size()) {
+						font.drawString(subtoken.substr(firstCharToDisplay, subtoken.size()-numCharsToRemove), xOffsetModified, strYOffset);
+					}
+					xOffset += (subtoken.size() * oneCharacterWidth); // + 1 for the white space
+					charAccum += ((int)subtoken.size() + 1);
 				}
-				size_t numCharsToRemove = 0;
-				size_t firstCharToDisplay = 0;
-				int xOffsetModified = xOffset;
-				int startPos = 0;
-				if (i == cursorLineIndex) startPos = allStringStartPos[i];
-				if (charAccum < startPos) {
-					firstCharToDisplay = (size_t)(startPos - charAccum);
-					xOffsetModified += (firstCharToDisplay * oneCharacterWidth);
-				}
-				if ((charAccum + (int)token.size() - startPos) > maxCharactersPerString) {
-					numCharsToRemove = ((size_t)charAccum + token.size()) - (size_t)startPos - (size_t)maxCharactersPerString - 1;
-				}
-				if (firstCharToDisplay < token.size() && numCharsToRemove < token.size()) {
-					font.drawString(token.substr(firstCharToDisplay, token.size()-numCharsToRemove), xOffsetModified, strYOffset);
-				}
-				xOffset += ((token.size() + 1) * oneCharacterWidth); // + 1 for the white space
-				charAccum += ((int)token.size() + 1);
 			}
 		}
 		else if (i == cursorLineIndex) {
@@ -1585,13 +1592,14 @@ string Editor::replaceCharInStr(string str, string a, string b)
 }
 
 //---------------------------------------------------------------
-vector<string> Editor::tokenizeString(string str, string delimiter)
+vector<string> Editor::tokenizeString(string str, string delimiter, bool addDelimiter)
 {
 	size_t start = 0;
 	size_t end = str.find(delimiter);
 	vector<string> tokens;
 	while (end != string::npos) {
 		tokens.push_back(str.substr(start, end));
+		if (addDelimiter) tokens.push_back(delimiter);
 		start += end + 1;
 		end = str.substr(start).find(delimiter);
 	}
@@ -2274,7 +2282,7 @@ void Editor::yankString()
 void Editor::pasteString()
 {
 	strFromClipBoard = ofGetWindowPtr()->getClipboardString();
-	vector<string> tokens = tokenizeString(strFromClipBoard, "\n");
+	vector<string> tokens = tokenizeString(strFromClipBoard, "\n", false);
 	// if we paste in the middle of a string
 	// the last line must concatenate the pasted string with the remainding string
 	// of the line we broke in the middle
@@ -2336,7 +2344,7 @@ void Editor::pasteString()
 //--------------------------------------------------------------
 void Editor::pasteYankedString()
 {
-	vector<string> tokens = tokenizeString(yankedStr, "\n");
+	vector<string> tokens = tokenizeString(yankedStr, "\n", false);
 	// if we paste in the middle of a string
 	// the last line must concatenate the pasted string with the remainding string
 	// of the line we broke in the middle

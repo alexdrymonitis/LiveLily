@@ -368,6 +368,9 @@ void Sequencer::threadedFunction()
 						updateSequencer = false;
 						sharedData->drawLoopStartEnd = true;
 						sharedData->barCounter = 0;
+						// update the previous number of bars displayed and the previous position to properly display single bars in horizontal view
+						sharedData->prevNumBars = sharedData->numBars;
+						sharedData->prevPosition = sharedData->thisPosition;
 					}
 					// after checking if we must update the indexes, increment them
 					if (!countdown) {
@@ -754,6 +757,8 @@ void ofApp::setup()
 	sharedData.thisLoopIndex = 0;
 	sharedData.beatCounter = 0; // this is controlled by the sequencer
 	sharedData.barCounter = 0; // also controlled by the sequencer
+	sharedData.numBars = sharedData.prevNumBars = 1;
+	sharedData.thisPosition = sharedData.prevPosition = 0;
 	showBarCount = false;
 	showTempo = false;
 	
@@ -1389,24 +1394,29 @@ void ofApp::drawScore()
 	// safety test to avoid crashes when changing the window size before creating any bars
 	if (sharedData.loopIndex >= (int)sharedData.loopData.size()) return;
 	//------------- variables for horizontal score view ------------------
-	int numBars = 1;
+	//int numBars = 1;
 	bool drawLoopStartEnd = true;
 	int bar; //, prevBar = 0;
 	int ndx = sharedData.thisLoopIndex;
 	if (scoreOrientation > 0) {
-		numBars = min(numBarsToDisplay, (int)sharedData.loopData[sharedData.loopIndex].size());
+		// numBars is part of the ofApp class and it's used to be compared to the previous number of bars displayed
+		// which is necessary to properly position single bars in horizontal view
+		sharedData.numBars = min(numBarsToDisplay, (int)sharedData.loopData[sharedData.loopIndex].size());
 		drawLoopStartEnd = false;
 		// the equation below yields the first bar to display
 		// the rest will be calculated by adding the loop variable i
 		// e.g. for an 8-bar loop with two bars being displayed
 		// the line below yields 0, 2, 4, 6, every other index (it actually ignores the odd indexes)
-		ndx = ((sharedData.thisLoopIndex - (sharedData.thisLoopIndex % numBars)) / numBars) * numBars;
+		ndx = ((sharedData.thisLoopIndex - (sharedData.thisLoopIndex % sharedData.numBars)) / sharedData.numBars) * sharedData.numBars;
 		// in the if test below we set the number of bars to be displayed to fit the remaining bars
 		// e.g. in a six-bar loop, when the first four bars have been played, we need to display two bars only
 		// not four bars which is the maximum number of bars to display (these numbers are hypothetical)
 		if (ndx > 0) {
-			numBars -= ((int)sharedData.loopData[sharedData.loopIndex].size() - ndx);
+			sharedData.numBars -= ((int)sharedData.loopData[sharedData.loopIndex].size() - ndx);
 		}
+	}
+	else {
+		sharedData.numBars = 1;
 	}
 	//--------------- end of horizontal score view variables --------------
 	//---------------- variables for the beat visualization ---------------
@@ -1433,9 +1443,9 @@ void ofApp::drawScore()
 						beatPulseStartX = scoreXStartPnt + scoreXOffset;
 						beatPulseEndX = scoreXStartPnt + scoreXOffset + sharedData.instruments.begin()->second.getStaffXLength();
 						if (scoreOrientation == 1) {
-							beatPulseEndX += (sharedData.instruments.begin()->second.getStaffXLength() * (numBars-1));
-							beatPulseEndX -= (sharedData.instruments.begin()->second.getClefXOffset() * (numBars-1));
-							beatPulseEndX -= (sharedData.instruments.begin()->second.getMeterXOffset() * (numBars-1));
+							beatPulseEndX += (sharedData.instruments.begin()->second.getStaffXLength() * (sharedData.numBars-1));
+							beatPulseEndX -= (sharedData.instruments.begin()->second.getClefXOffset() * (sharedData.numBars-1));
+							beatPulseEndX -= (sharedData.instruments.begin()->second.getMeterXOffset() * (sharedData.numBars-1));
 						}
 						beatPulsePosX = beatPulseStartX - sharedData.staffLinesDist;
 						beatPulseSizeX = beatPulseEndX - beatPulseStartX;
@@ -1480,7 +1490,7 @@ void ofApp::drawScore()
 		std::pair prevTempo = std::make_pair(0, 0);
 		vector<int> prevClefs (sharedData.instruments.size(), 0); 
 		bool prevDrawClef = false, prevDrawMeter = false;
-		for (int i = 0; i < numBars; i++) {
+		for (int i = 0; i < sharedData.numBars; i++) {
 			bool drawClef = false, drawMeter = false, animate = false;
 			bool drawTempo = false;
 			bool showBar = true;
@@ -1537,9 +1547,9 @@ void ofApp::drawScore()
 			// if we are calling a new loop, all bars but the last should display the first bars of the next loop
 			// unless we set scoreChangeOnLast to false, where on the last run (e.g. an eight-bar loop will run twice with four bars being display)
 			// every bar that finishes playing must display the respective bar of the upcoming loop
-			int threshold = (int)sharedData.loopData[sharedData.loopIndex].size() - numBars + i;
+			int threshold = (int)sharedData.loopData[sharedData.loopIndex].size() - sharedData.numBars + i;
 			if (scoreChangeOnLastBar) threshold = (int)sharedData.loopData[sharedData.loopIndex].size() - 2;
-			if (mustUpdateScore && (int)sharedData.thisLoopIndex > threshold && i < numBars - 1) {
+			if (mustUpdateScore && (int)sharedData.thisLoopIndex > threshold && i < sharedData.numBars - 1) {
 				if (i >= (int)sharedData.loopData[sharedData.tempBarLoopIndex].size()) {
 					showBar = false;
 				}
@@ -1554,19 +1564,19 @@ void ofApp::drawScore()
 			}
 			// if we're staying in the same loop, when the currently playing bar is displayed at the right-most staff
 			// all the other bars must display the next bars of the loop (if there are any)
-			else if (((int)sharedData.thisLoopIndex % numBars) == numBars - 1 && i < numBars - 1) {
-				bar = sharedData.loopData[sharedData.loopIndex][(barNdx+numBars)%(int)sharedData.loopData[sharedData.loopIndex].size()];
-				// the calculations below determine whether the remaining bars are less than numBars - 1
+			else if (((int)sharedData.thisLoopIndex % sharedData.numBars) == sharedData.numBars - 1 && i < sharedData.numBars - 1) {
+				bar = sharedData.loopData[sharedData.loopIndex][(barNdx+sharedData.numBars)%(int)sharedData.loopData[sharedData.loopIndex].size()];
+				// the calculations below determine whether the remaining bars are less than sharedData.numBars - 1
 				// (we subtract one because in the last slot, we display the bar of the current loop chunk)
 				// in which case, we should leave the remaining slots empty
-				// for example, in a 6-bar loop with numBars = 4, when we enter the second chunk of the loop
+				// for example, in a 6-bar loop with sharedData.numBars = 4, when we enter the second chunk of the loop
 				// we need to display two bars
 				// when at the last bar of the first chunk, we display the 5th and 6th bar on the left side
 				// and the 4th bar on the right side, with the 3rd slot being blank
 				int loopIndexLocal = sharedData.thisLoopIndex + 1;
 				if (loopIndexLocal >= (int)sharedData.loopData[sharedData.loopIndex].size()) loopIndexLocal = 0;
-				int ndxLocal = (((loopIndexLocal) - ((loopIndexLocal) % numBars)) / numBars) * numBars;
-				int numBarsLocal = (ndxLocal > 0 ? numBars - ((int)sharedData.loopData[sharedData.loopIndex].size() - ndxLocal) : numBars);
+				int ndxLocal = (((loopIndexLocal) - ((loopIndexLocal) % sharedData.numBars)) / sharedData.numBars) * sharedData.numBars;
+				int numBarsLocal = (ndxLocal > 0 ? sharedData.numBars - ((int)sharedData.loopData[sharedData.loopIndex].size() - ndxLocal) : sharedData.numBars);
 				if (i >= numBarsLocal) showBar = false;
 				else showBar = true;
 			}
@@ -1585,9 +1595,20 @@ void ofApp::drawScore()
 				if (drawMeter) notesOffsetX += sharedData.instruments.begin()->second.getMeterXOffset();
 				else notesOffsetX -= sharedData.instruments.begin()->second.getMeterXOffset();
 			}
-			if (numBars == 1 && scoreOrientation > 0) {
+			// set position of single bars based on the position of the bars of the previous loop
+			if (sharedData.numBars == 1 && scoreOrientation > 0) {
+				// initially display the signle bar at the second position
 				staffOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
 				notesOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
+				if ((sharedData.prevNumBars > 1 || (sharedData.prevNumBars == 1 && sharedData.prevPosition == 0)) && sequencer.isThreadRunning()) {
+					// but the previous loop was a single bar at the second position, display the current single bar at the third position
+					staffOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
+					notesOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
+					sharedData.thisPosition = 1;
+				}
+				else {
+					sharedData.thisPosition = 0;
+				}
 			}
 			float notesXCoef = notesLength * sharedData.instruments.begin()->second.getXCoef(); // sharedData.instruments.begin()->second.getStaffXLength();
 			if (drawClef) notesXCoef -= sharedData.instruments.begin()->second.getClefXOffset();
@@ -1660,9 +1681,6 @@ void ofApp::drawScore()
 			//prevNotesOffsetX = notesOffsetX;
 			//prevBar = bar;
 		}
-		ofSetColor(255, 0, 255);
-		ofDrawLine(staffOffsetX, 0, staffOffsetX, 1000);
-		ofSetColor(brightness);
 	}
 }
 
@@ -2255,7 +2273,8 @@ void ofApp::printVector(vector<float> v)
 //--------------------------------------------------------------
 bool ofApp::startsWith(string a, string b)
 {
-	string aLocal(1, a[0]);
+	if (a.size() < b.size()) return false;
+	string aLocal = a.substr(0, b.size());
 	if (aLocal.compare(b) == 0) return true;
 	return false;
 }
@@ -2263,7 +2282,8 @@ bool ofApp::startsWith(string a, string b)
 //--------------------------------------------------------------
 bool ofApp::endsWith(string a, string b)
 {
-	string aLocal(1, a[a.size()-1]);
+	if (a.size() < b.size()) return false;
+	string aLocal = a.substr(a.size() - b.size(), b.size());
 	if (aLocal.compare(b) == 0) return true;
 	return false;
 }
@@ -2683,6 +2703,93 @@ vector<string> ofApp::tokenizeString(string str, string delimiter)
 	return tokens;
 }
 
+//---------------------------------------------------------------
+map<size_t, string> ofApp::tokenizeStringWithNdxs(string str, string delimiter)
+{
+	size_t start = 0;
+	size_t end = str.find(delimiter);
+	map<size_t, string> m;
+	vector<string> tokens;
+	vector<size_t> ndxs;
+	while (end != string::npos) {
+		m[start] = str.substr(start,end);
+		start += end + 1;
+		end = str.substr(start).find(delimiter);
+	}
+	// the last token is not extracted in the loop above because end has reached string::npos
+	// so we extract it here by simply passing a substring from the last start point to the end
+	m[start] = str.substr(start);
+	return m;
+}
+
+//--------------------------------------------------------------
+int ofApp::findMatchingBrace(const std::string& s, int openPos)
+{
+	int depth = 0;
+	for (int i = openPos; i < s.length(); ++i) {
+		if (s[i] == '{') ++depth;
+		else if (s[i] == '}') {
+			--depth;
+			if (depth == 0) return i;
+		}
+	}
+	return -1;
+}
+
+//--------------------------------------------------------------
+std::pair<int, string> ofApp::replaceCommandsWithOutput(const string& input, vector<string>& output, int lineNum)
+{
+	if (!areBracketsBalanced(input)) return std::make_pair(3, "unbalanced brackets");
+	map<size_t, string> tokenizedBasedOnNdxs = tokenizeStringWithNdxs(input, " ");
+	string result;
+	for (size_t i = 0; i < input.length(); ++i) {
+		// if the current character is a backslash and its token is a command
+		if (input[i] == '\\' && tokenizedBasedOnNdxs.find(i) != tokenizedBasedOnNdxs.end()) {
+			if (commandsMap[livelily].find(tokenizedBasedOnNdxs[i]) != commandsMap[livelily].end()) {
+				size_t cmdStart = i;
+				size_t cmdEnd = i + 1;
+
+				while (cmdEnd < input.length() && input[cmdEnd] != ' ') ++cmdEnd;
+				string command = input.substr(cmdStart, cmdEnd - cmdStart);
+
+				while (cmdEnd < input.length() && input[cmdEnd] != '{') ++cmdEnd;
+
+				if (cmdEnd < input.length() && input[cmdEnd] == '{') {
+					int openBrace = cmdEnd;
+					int closeBrace = findMatchingBrace(input, openBrace);
+					string inside = input.substr(openBrace + 1, closeBrace - openBrace - 1);
+					std::pair<int, string> processedInside = replaceCommandsWithOutput(inside, output, lineNum);
+
+					vector<string> args = tokenizeString(processedInside.second, " ");
+					string commandWithArgs = command;
+					for (const string& arg : args) {
+						commandWithArgs += " " + arg;
+					}
+					std::pair<int, string> commandOutput = parseCommand(commandWithArgs, 1, lineNum);
+					if (commandOutput.first == 3) return commandOutput;
+
+					output.push_back(commandWithArgs);
+					// the line below must add the output of the command() function instead of adding "output_of_" + command
+					result += commandOutput.second;
+					i = closeBrace;
+				}
+				else {
+					// Not a valid command with brace
+					result += command;
+					i = cmdEnd - 1;
+				}
+			}
+			else {
+				result += input[i];
+			}
+		}
+		else {
+			result += input[i];
+		}
+	}
+	return std::make_pair(0, result);
+}
+
 //--------------------------------------------------------------
 void ofApp::parseStrings(int index, int numLines)
 {
@@ -2693,6 +2800,8 @@ void ofApp::parseStrings(int index, int numLines)
 		// parseString() returns a pair of int and string, where the int determines the error type
 		// 0 for nothing, 1 for note, 2 for warning, and 3 for error
 		if (editors[whichPane].getSessionActivity()) {
+			// first replace any command inside the string with the actual output of the command
+			//string stringToParse = replaceCommandsWithOutput(editors[whichPane].allStrings[i]);
 			errors.push_back(parseString(editors[whichPane].allStrings[i], i, numLines));
 			if (editors[whichPane].getSendLines()) {
 				ofxOscMessage m;
@@ -3242,6 +3351,23 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		sharedData.beatAtDifferentThanDivisor[bar] = true;
 	}
 
+	else if (commands[0].compare("\\tuplet") == 0 || commands[0].compare("\\tup") == 0) {
+		//if (tokens.size() < i+3) {
+		//	return std::make_pair(3, "\\tuplet must be followed by ratio and the actual tuplet");
+		//}
+		//if (tokens.at(i+1).find("/") == string::npos) {
+		//	return std::make_pair(3, "\\tuplet ratio formatted wrong");
+		//}
+		//size_t divisionNdx = tokens.at(i+1).find("/");
+		//size_t remainingStr = tokens.at(i+1).size() - divisionNdx - 1;
+		//if (!isNumber(tokens.at(i+1).substr(0, divisionNdx)) || !isNumber(tokens.at(i+1).substr(divisionNdx+1, remainingStr))) {
+		//	return std::make_pair(3, "numerator or denominator of tuplet ratio is not a number");
+		//}
+		//if (!startsWith(tokens.at(i+2), "{")) {
+		//	return std::make_pair(3, "tuplet notes must be placed in curly brackets");
+		//}
+	}
+
 	else if (commands[0].compare("\\ppqn") == 0) {
 		if (commands.size() < 2) {
 			return std::make_pair(3, "\\ppqn command needs the PPQN number as an argument");
@@ -3446,17 +3572,12 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		sendToParts(m, false);
 	}
 
-	else if (commands[0].compare("\\score") == 0) {
-		if (commands.size() < 2) {
-			return std::make_pair(3, "\\score command takes at least one argument");
+	else if (commands[0].compare("\\score") == 0 || startsWith(commands[0], "\\score.")) {
+		if (commands[0].compare("\\score") == 0 && commands.size() < 2) {
+			return std::make_pair(3, "the \\score command does nothing by itself, you must call one of its second level commands");
 		}
-		if (commands[1].compare("show") == 0) {
-			sharedData.showScore = true;
-			editors[whichPane].setMaxCharactersPerString();
-		}
-		else if (commands[1].compare("hide") == 0) {
-			sharedData.showScore = false;
-			editors[whichPane].setMaxCharactersPerString();
+		else if (commands[0].compare("\\score") == 0 && commands.size() >= 2) {
+			return std::make_pair(3, "the \\score command takes only second level commands, not arguments");
 		}
 		else {
 			return scoreCommands(commands, lineNum, numLines);
@@ -3602,24 +3723,6 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		}
 		else {
 			return std::make_pair(0, to_string(randVal));
-		}
-	}
-
-	else if (commands[0].compare("\\barcount") == 0) {
-		if (commands.size() < 2) {
-			return std::make_pair(3, "\"\\barcount\" command takes one argument, \"show\" or \"hide\"");
-		}
-		if (commands.size() > 2) {
-			return std::make_pair(3, "\"\\barcount\" command takes one argument only, \"show\" or \"hide\"");
-		}
-		if (commands[1].compare("show") == 0) {
-			showBarCount = true;
-		}
-		else if (commands[1].compare("hide") == 0) {
-			showBarCount = false;
-		}
-		else {
-			return std::make_pair(3, commands[1] + (string)"unknown argument to \\barcount");
 		}
 	}
 
@@ -3772,10 +3875,10 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 
 	else if (commands[0].compare("\\solonow") == 0) {
 		if (commands.size() < 2) {
-			return std::make_pair(3, "\\solo commands takes at least one argument");
+			return std::make_pair(3, "\\solonow commands takes at least one argument");
 		}
 		// below we test if the number of tokens is greater than the number of instruments
-		// and not greater than or equal to, because the first token in the \solo command
+		// and not greater than or equal to, because the first token in the \solonow command
 		if (commands.size() > sharedData.instrumentIndexes.size()) {
 			return std::make_pair(3, "too many arguments for \\solonow command");
 		}
@@ -4079,6 +4182,43 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 	}
 	
 	else if (commands[0].compare("\\pgmchange") == 0) {
+		// first scan all the arguments to see if we're calling a command as an argument to pgmchange
+		for (unsigned i = 1; i < commands.size(); i++) {
+			if (startsWith(commands[i], "{") || commands[i].compare("{") == 0) {
+				unsigned commandStart = i;
+				bool curlyConcatStart = true;
+				bool curlyConcatEnd = true;
+				if (commands[i].compare("{") == 0) {
+					commandStart = i + 1;
+					curlyConcatStart = false;
+				}
+				unsigned commandEnd = i + 1;
+				for (unsigned j = i + 1; j < commands.size(); j++) {
+					if (startsWith(commands[j], "}") || commands[j].compare("}") == 0) {
+						commandEnd = j;
+						if (commands[j].compare("}") == 0) {
+							commandEnd = j - 1;
+							curlyConcatEnd = false;
+						}
+						break;
+					}
+				}
+				string restOfCommand;
+				for (unsigned j = commandStart; j <= commandEnd; j++) {
+					restOfCommand += commands[j];
+					restOfCommand += " ";
+				}
+				std::pair<int, string> p = parseCommand(restOfCommand, lineNum, numLines);
+				if (p.first == 3) return p;
+				cout << p.second << endl;
+				if (!curlyConcatStart) commandStart--;
+				if (!curlyConcatEnd) commandEnd++;
+				for (unsigned j = commandEnd; j >= commandStart; j--) commands.erase(commands.begin()+j);
+				commands.insert(commands.begin() + commandStart, p.second);
+				printVector(commands);
+				break;
+			}
+		}
 		if (commands.size() != 4) {
 			return std::make_pair(3, "\\pgmchange takes three arguments, port, channel, and value");
 		}
@@ -4470,8 +4610,26 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 }
 
 //--------------------------------------------------------------
-std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& commands, int lineNum, int numLines)
+std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& originalCommands, int lineNum, int numLines)
 {
+	// the initial command is \instname which might be followed by a second level command
+	// to separate the second level command we create a new vector that will copy the originalCommands vector
+	// except from the first item where we trim the \instname. part
+	bool hasDot = false;
+	vector<string> commands;
+	for (unsigned i = 0; i < originalCommands.size(); i++) {
+		if (!i) {
+			// separate the name of the isntrument from a possible second level command
+			vector<string> tokens = tokenizeString(originalCommands[i], ".");
+			for (unsigned j = 0; j < tokens.size(); j++) {
+				commands.push_back(tokens[j]);
+			}
+			if (tokens.size() > 1) hasDot = true;
+		}
+		else {
+			commands.push_back(originalCommands[i]);
+		}
+	}
 	bool instrumentExists = false;
 	unsigned commandNdxOffset = 1;
 	std::pair<int, string> error = std::make_pair(0, "");
@@ -4481,13 +4639,17 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 			lastInstrument = commands[0];
 			lastInstrumentIndex = sharedData.instrumentIndexes[commands[0]];
 			if (commands.size() > 1) {
-				if (commands[1].compare("clef") == 0) {
+				if (commands[1].compare("\\clef") == 0) {
+					if (hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\\clef is a first level command, should not be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (commands.size() < 3) {
-						std::pair<int, string> p = std::make_pair(3, "clef command takes a clef name as an argument");
+						std::pair<int, string> p = std::make_pair(3, "\\clef command takes a clef name as an argument");
 						return std::make_pair(instrumentExists, p);
 					}
 					else if (commands.size() > 3 && !(parsingBar || parsingBars)) {
-						std::pair<int, string> p = std::make_pair(3, "clef command takes one argument only");
+						std::pair<int, string> p = std::make_pair(3, "\\clef command takes one argument only");
 						return std::make_pair(instrumentExists, p);
 					}
 					if (commands[2].compare("treble") == 0) {
@@ -4513,13 +4675,21 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					return std::make_pair(instrumentExists, error);
 				}
 				else if (commands[1].compare("rhythm") == 0) {
+					if (hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"rhythm\" is an arguement, not a second level command, should not be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (commands.size() > 2) {
-						std::pair<int, string> p = std::make_pair(3, "\"rhythm\" command takes no arguments");
+						std::pair<int, string> p = std::make_pair(3, "\"rhythm\" argument takes no further arguments");
 						return std::make_pair(instrumentExists, p);
 					}
 					sharedData.instruments[lastInstrumentIndex].setRhythm(true);
 				}
 				else if (commands[1].compare("transpose") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"transpose\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (commands.size() != 3) {
 						std::pair<int, string> p = std::make_pair(3, "\"transpose\" command takes one argument");
 						return std::make_pair(instrumentExists, p);
@@ -4540,6 +4710,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					}
 				}
 				else if (commands[1].compare("sendmidi") == 0) {
+					if (hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"sendmidi\" is an arguement, not a second level command, should not be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (commands.size() > 2) {
 						std::pair<int, string> p = std::make_pair(3, "\"sendmidi\" takes no arguments");
 						return std::make_pair(instrumentExists, p);
@@ -4547,6 +4721,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					sharedData.instruments[lastInstrumentIndex].setSendMIDI(true);
 				}
 				else if (commands[1].compare("sendto") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"sendto\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					int sendNotice = 0;
 					if (commands.size() > 4) {
 						std::pair<int, string> p = std::make_pair(3, "\"sendto\" takes zero to two arguments, remote IP and/or port");
@@ -4624,6 +4802,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					}
 				}
 				else if (commands[1].compare("fullscreen") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"fullscreen\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
 						std::pair<int, string> p = std::make_pair(3, "instrument doesn't have OSC set");
 						return std::make_pair(instrumentExists, p);
@@ -4648,6 +4830,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					}
 				}
 				else if (commands[1].compare("cursor") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"cursor\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
 						std::pair<int, string> p = std::make_pair(3, "instrument doesn't have OSC set");
 						return std::make_pair(instrumentExists, p);
@@ -4672,6 +4858,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					}
 				}
 				else if (commands[1].compare("update") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"update\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (commands.size() < 3) {
 						std::pair<int, string> p = std::make_pair(3, "\"update\" takes one argument, \"onlast\" or \"immediately\"");
 						return std::make_pair(instrumentExists, p);
@@ -4688,6 +4878,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					}
 				}
 				else if (commands[1].compare("beatcolor") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"beatcolor\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (commands.size() < 3) {
 						std::pair<int, string> p = std::make_pair(3, "\"beatcolor\" takes one argument, \"change\" or \"keep\"");
 						return std::make_pair(instrumentExists, p);
@@ -4704,6 +4898,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					}
 				}
 				else if (commands[1].compare("midiport") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"midiport\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (commands.size() != 3) {
 						std::pair<int, string> p = std::make_pair(3, "\"midiport\"  takes one argument, the MIDI port to open");
 						return std::make_pair(instrumentExists, p);
@@ -4736,6 +4934,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					}
 				}
 				else if (commands[1].compare("midichan") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"midichan\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (commands.size() == 2) {
 						std::pair<int, string> p = std::make_pair(3, "no MIDI channel set");
 						return std::make_pair(instrumentExists, p);
@@ -4761,6 +4963,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					sharedData.instruments[lastInstrumentIndex].setMidi(true);
 				}
 				else if (commands[1].compare("size") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"size\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
 						std::pair<int, string> p = std::make_pair(3, "instrument doesn't have OSC set");
 						return std::make_pair(instrumentExists, p);
@@ -4776,6 +4982,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					sendSizeToPart(lastInstrumentIndex, stoi(commands[2]));
 				}
 				else if (commands[1].compare("numbars") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"numbars\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
 						std::pair<int, string> p = std::make_pair(3, "instrument doesn't have OSC set");
 						return std::make_pair(instrumentExists, p);
@@ -4791,6 +5001,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					sendNumBarsToPart(lastInstrumentIndex, stoi(commands[2]));
 				}
 				else if (commands[1].compare("accoffset") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"accoffset\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
 						std::pair<int, string> p = std::make_pair(3, "instrument doesn't have OSC set");
 						return std::make_pair(instrumentExists, p);
@@ -4807,6 +5021,10 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& comm
 					
 				}
 				else if (commands[1].compare("delay") == 0) {
+					if (!hasDot) {
+						std::pair<int, string> p = std::make_pair(3, "\"delay\" is a second level command, must be concatenated to instrument name with a dot");
+						return std::make_pair(instrumentExists, p);
+					}
 					if (commands.size() != 3) {
 						std::pair<int, string> p = std::make_pair(3, "\"delay\" command takes one argument, the delay to send messages in milliseconds");
 						return std::make_pair(instrumentExists, p);
@@ -4907,6 +5125,7 @@ std::pair<bool, std::pair<int, string>> ofApp::isBarLoop(vector<string>& command
 				}
 			}
 			else {
+				// without any arguments we're calling a loop to be played
 				sharedData.tempBarLoopIndex = sharedData.loopsIndexes[commands[0]];
 				if (sequencer.isThreadRunning()) {
 					sequencer.update();
@@ -4920,6 +5139,9 @@ std::pair<bool, std::pair<int, string>> ofApp::isBarLoop(vector<string>& command
 				else {
 					sharedData.loopIndex = sharedData.tempBarLoopIndex;
 					sendLoopIndexToParts();
+					// update the previous number of bars displayed and the previous position to properly display single bars in horizontal view
+					sharedData.prevNumBars = sharedData.numBars;
+					sharedData.prevPosition = sharedData.thisPosition;
 				}
 			}
 		}
@@ -4934,10 +5156,13 @@ std::pair<bool, std::pair<int, string>> ofApp::isFunction(vector<string>& comman
 	bool executeFunction = false;
 	std::pair<int, string> error = std::make_pair(0, "");
 	if (functionIndexes.size() > 0) {
-		if (functionIndexes.find(commands[0]) != functionIndexes.end()) {
+		string functionName;
+		if (commands[0].find(".") != string::npos) functionName = commands[0].substr(0, commands[0].find("."));
+		else functionName = commands[0];
+		if (functionIndexes.find(functionName) != functionIndexes.end()) {
 			functionExists = true;
 			executeFunction = true;
-			lastFunctionIndex = functionIndexes[commands[0]];
+			lastFunctionIndex = functionIndexes[functionName];
 			std::pair<int, string> p = functionFuncs(commands);
 			if (p.first > 0) return std::make_pair(functionExists, p);
 			if (p.second.compare("noexec") == 0) executeFunction = false;
@@ -5062,16 +5287,41 @@ std::pair<int, string> ofApp::listItemExists(int listItemNdx)
 }
 
 //--------------------------------------------------------------
-std::pair<bool, std::pair<int, string>> ofApp::isOscClient(vector<string>& commands, int lineNum, int numLines)
+std::pair<bool, std::pair<int, string>> ofApp::isOscClient(vector<string>& originalCommands, int lineNum, int numLines)
 {
 	bool oscClientExists = false;
 	std::pair<int, string> error = std::make_pair(0, "");
 	if (oscClients.size() > 0) {
-		if (oscClients.find(commands[0]) != oscClients.end()) {
+		string oscClientName;
+		if (originalCommands[0].find(".") != string::npos) oscClientName = originalCommands[0].substr(0, originalCommands[0].find("."));
+		else oscClientName = originalCommands[0];
+		if (oscClients.find(oscClientName) != oscClients.end()) {
 			oscClientExists = true;
+			// the initial command is \oscclientname which might be followed by a second level command
+			// to separate the second level command we create a new vector that will copy the originalCommands vector
+			// except from the first item where we trim the \oscclintname. part
+			bool hasDot = false;
+			vector<string> commands;
+			for (unsigned i = 0; i < originalCommands.size(); i++) {
+				if (!i) {
+					// separate the name of the OSC client from the second level command
+					vector<string> tokens = tokenizeString(originalCommands[i], ".");
+					for (unsigned j = 0; j < tokens.size(); j++) {
+						commands.push_back(tokens[j]);
+					}
+					if (tokens.size() > 1) hasDot = true;
+				}
+				else {
+					commands.push_back(originalCommands[i]);
+				}
+			}
+			if (!hasDot) {
+				std::pair <int, string> p = std::make_pair(3, "OSC client name and second level command must be concatenated with a dot");
+				return std::make_pair(oscClientExists, p);
+			}
 			if (commands.size() < 2) {
 				error.first = 2;
-				error.second = "no arguments provided";
+				error.second = "no second level commands provided";
 				return std::make_pair(oscClientExists, error);
 			}
 			for (unsigned i = 1; i < commands.size(); i++) {
@@ -5166,8 +5416,27 @@ std::pair<bool, std::pair<int, string>> ofApp::isOscClient(vector<string>& comma
 }
 
 //--------------------------------------------------------------
-std::pair<int, string> ofApp::functionFuncs(vector<string>& commands)
+std::pair<int, string> ofApp::functionFuncs(vector<string>& originalCommands)
 {
+	// the initial command is \funcname which might be followed by a second level command
+	// to separate the second level command we create a new vector that will copy the originalCommands vector
+	// except from the first item where we trim the \instname. part
+	bool hasDot = false;
+	vector<string> commands;
+	for (unsigned i = 0; i < originalCommands.size(); i++) {
+		if (!i) {
+			// separate the name of the isntrument from a possible second level command
+			vector<string> tokens = tokenizeString(originalCommands[i], ".");
+			for (unsigned j = 0; j < tokens.size(); j++) {
+				commands.push_back(tokens[j]);
+			}
+			if (tokens.size() > 1) hasDot = true;
+		}
+		else {
+			commands.push_back(originalCommands[i]);
+		}
+	}
+	if (!hasDot) return std::make_pair(3, "function name and second level command must be concatenated with a dot");
 	for (unsigned i = 1; i < commands.size(); i++) {
 		if (commands[i].compare("setargs") == 0) {
 			sharedData.functions[lastFunctionIndex].resetArgumentIndex();
@@ -7242,10 +7511,32 @@ void ofApp::setFontSize()
 }
 
 //--------------------------------------------------------------
-std::pair<int, string> ofApp::scoreCommands(vector<string>& commands, int lineNum, int numLines)
+std::pair<int, string> ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, int numLines)
 {
-	for (unsigned i = 1; i < commands.size(); i++) {
-		if (commands[i].compare("animate") == 0) {
+	// the initial command is \score. followed by a second level command
+	// to separate the second level command we create a new vector that will copy the originalCommands vector
+	// except from the first item where we trim the \score. part
+	vector<string> commands;
+	for (unsigned i = 0; i < originalCommands.size(); i++) {
+		if (!i) {
+			// remove the "\score." part of the command so we isolate the second level command
+			string thisCommand = originalCommands[i].substr(originalCommands[i].find(".")+1);
+			commands.push_back(thisCommand);
+		}
+		else {
+			commands.push_back(originalCommands[i]);
+		}
+	}
+	for (unsigned i = 0; i < commands.size(); i++) {
+		if (commands[i].compare("show") == 0) {
+			sharedData.showScore = true;
+			editors[whichPane].setMaxCharactersPerString();
+		}
+		else if (commands[i].compare("hide") == 0) {
+			sharedData.showScore = false;
+			editors[whichPane].setMaxCharactersPerString();
+		}
+		else if (commands[i].compare("animate") == 0) {
 			if (sequencer.isThreadRunning()) {
 				for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 					it->second.setAnimation(true);
@@ -7422,6 +7713,21 @@ std::pair<int, string> ofApp::scoreCommands(vector<string>& commands, int lineNu
 			}
 			else {
 				return std::make_pair(3, commands[i+1] + (string)": unknown argument to \"tempo\"");
+			}
+			i += 2;
+		}
+		else if (commands[i].compare("barcount") == 0) {
+			if (commands.size() < i+2) {
+				return std::make_pair(3, "\"barcount\" takes one argument, \"show\" or \"hide\"");
+			}
+			if (commands[i+1].compare("show") == 0) {
+				showBarCount = true;
+			}
+			else if (commands[i+1].compare("hide") == 0) {
+				showBarCount = false;
+			}
+			else {
+				return std::make_pair(3, commands[i+1] + (string)": unknown argument to \"barcount\"");
 			}
 			i += 2;
 		}
