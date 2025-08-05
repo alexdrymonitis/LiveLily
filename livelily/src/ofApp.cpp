@@ -834,21 +834,24 @@ void ofApp::setup()
 	}
 
 	/* Colors used for syntax highlighting
-	   basic commands - fuchsia
-	   secondary commands - pink 
-	   instruments - greenYellow
-	   bars - orchid
-	   loops - lightSeaGreen
-	   functions - turqoise
-	   command execution - cyan
-	   errors - red
-	   warnings - orange
-	   brackets pairing - magenta
-	   comments - gray
-	   digits - gold
-	   text highlight box - goldenRod
+	   first level commands -- fuchsia
+	   second level commands - pink
+	   arguments ------------- aqua
+	   instruments ----------- greenYellow
+	   bars ------------------ orchid
+	   loops ----------------- lightSeaGreen
+	   functions ------------- turqoise
+	   command execution ----- cyan
+	   errors ---------------- red
+	   warnings -------------- orange
+	   brackets pairing ------ magenta
+	   comments -------------- gray
+	   digits ---------------- gold
+	   text highlight box ---- goldenRod
+	   strings --------------- darkOrange
 	   -- paleGreen is used for the pulse of the beat
 	*/
+	// first level commands
 	commandsMap[livelily]["\\bar"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\loop"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\bars"] = ofColor::fuchsia;
@@ -894,7 +897,6 @@ void ofApp::setup()
 	commandsMap[livelily]["\\list"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\ottava"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\ott"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\barcount"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\beatsin"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\instorder"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\miditune"] = ofColor::fuchsia;
@@ -912,56 +914,69 @@ void ofApp::setup()
 	commandsMap[livelily]["\\maestro"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\framerate"] = ofColor::fuchsia;
 	commandsMap[livelily]["\\barlines"] = ofColor::fuchsia;
-	
-	commandsMapSecond[livelily]["clef"] = ofColor::pink;
-	commandsMapSecond[livelily]["rhythm"] = ofColor::pink;
-	commandsMapSecond[livelily]["bind"] = ofColor::pink;
-	commandsMapSecond[livelily]["unbind"] = ofColor::pink;
-	commandsMapSecond[livelily]["onrelease"] = ofColor::pink;
-	commandsMapSecond[livelily]["release"] = ofColor::pink;
-	commandsMapSecond[livelily]["beat"] = ofColor::pink;
-	commandsMapSecond[livelily]["barstart"] = ofColor::pink;
-	commandsMapSecond[livelily]["loopstart"] = ofColor::pink;
-	commandsMapSecond[livelily]["sendto"] = ofColor::pink;
-	commandsMapSecond[livelily]["midiport"] = ofColor::pink;
-	commandsMapSecond[livelily]["midichan"] = ofColor::pink;
-	commandsMapSecond[livelily]["show"] = ofColor::pink;
-	commandsMapSecond[livelily]["hide"] = ofColor::pink;
-	commandsMapSecond[livelily]["animate"] = ofColor::pink;
-	commandsMapSecond[livelily]["inanimate"] = ofColor::pink;
-	commandsMapSecond[livelily]["showbeat"] = ofColor::pink;
-	commandsMapSecond[livelily]["hidebeat"] = ofColor::pink;
-	commandsMapSecond[livelily]["beattype"] = ofColor::pink;
-	commandsMapSecond[livelily]["recenter"] = ofColor::pink;
-	commandsMapSecond[livelily]["numbars"] = ofColor::pink;
-	commandsMapSecond[livelily]["all"] = ofColor::pink;
-	commandsMapSecond[livelily]["framerate"] = ofColor::pink;
-	commandsMapSecond[livelily]["fr"] = ofColor::pink;
-	commandsMapSecond[livelily]["traverse"] = ofColor::pink;
-	commandsMapSecond[livelily]["fullscreen"] = ofColor::pink;
-	commandsMapSecond[livelily]["cursor"] = ofColor::pink;
-	commandsMapSecond[livelily]["transpose"] = ofColor::pink;
-	commandsMapSecond[livelily]["update"] = ofColor::pink;
-	commandsMapSecond[livelily]["onlast"] = ofColor::pink;
-	commandsMapSecond[livelily]["immediately"] = ofColor::pink;
-	commandsMapSecond[livelily]["correct"] = ofColor::pink;
-	commandsMapSecond[livelily]["onoctave"] = ofColor::pink;
-	commandsMapSecond[livelily]["tempo"] = ofColor::pink;
-	commandsMapSecond[livelily]["goto"] = ofColor::pink;
-	commandsMapSecond[livelily]["locate"] = ofColor::pink;
-	commandsMapSecond[livelily]["sendmidi"] = ofColor::pink;
-	commandsMapSecond[livelily]["accoffset"] = ofColor::pink;
-	commandsMapSecond[livelily]["delay"] = ofColor::pink;
-	commandsMapSecond[livelily]["setargs"] = ofColor::pink;
-	commandsMapSecond[livelily]["send"] = ofColor::pink;
-	commandsMapSecond[livelily]["setup"] = ofColor::pink;
-	commandsMapSecond[livelily]["on"] = ofColor::pink;
-	commandsMapSecond[livelily]["off"] = ofColor::pink;
-	commandsMapSecond[livelily]["address"] = ofColor::pink;
-	commandsMapSecond[livelily]["valndx"] = ofColor::pink;
-	commandsMapSecond[livelily]["toggle"] = ofColor::pink;
-	commandsMapSecond[livelily]["reset"] = ofColor::pink;
-	commandsMapSecond[livelily]["valthresh"] = ofColor::pink;
+	commandsMap[livelily]["\\clef"] = ofColor::fuchsia;
+
+	// second leve commands
+	commandsMap[livelily]["rhythm"] = ofColor::pink;
+	commandsMap[livelily]["bind"] = ofColor::pink;
+	commandsMap[livelily]["unbind"] = ofColor::pink;
+	commandsMap[livelily]["onrelease"] = ofColor::pink;
+	commandsMap[livelily]["release"] = ofColor::pink;
+	commandsMap[livelily]["sendto"] = ofColor::pink;
+	commandsMap[livelily]["midiport"] = ofColor::pink;
+	commandsMap[livelily]["midichan"] = ofColor::pink;
+	commandsMap[livelily]["show"] = ofColor::pink;
+	commandsMap[livelily]["hide"] = ofColor::pink;
+	commandsMap[livelily]["animate"] = ofColor::pink;
+	commandsMap[livelily]["inanimate"] = ofColor::pink;
+	commandsMap[livelily]["showbeat"] = ofColor::pink;
+	commandsMap[livelily]["hidebeat"] = ofColor::pink;
+	commandsMap[livelily]["beattype"] = ofColor::pink;
+	commandsMap[livelily]["recenter"] = ofColor::pink;
+	commandsMap[livelily]["numbars"] = ofColor::pink;
+	commandsMap[livelily]["traverse"] = ofColor::pink;
+	commandsMap[livelily]["fullscreen"] = ofColor::pink;
+	commandsMap[livelily]["cursor"] = ofColor::pink;
+	commandsMap[livelily]["transpose"] = ofColor::pink;
+	commandsMap[livelily]["update"] = ofColor::pink;
+	commandsMap[livelily]["correct"] = ofColor::pink;
+	commandsMap[livelily]["goto"] = ofColor::pink;
+	commandsMap[livelily]["locate"] = ofColor::pink;
+	commandsMap[livelily]["sendmidi"] = ofColor::pink;
+	commandsMap[livelily]["accoffset"] = ofColor::pink;
+	commandsMap[livelily]["delay"] = ofColor::pink;
+	commandsMap[livelily]["setargs"] = ofColor::pink;
+	commandsMap[livelily]["send"] = ofColor::pink;
+	commandsMap[livelily]["setup"] = ofColor::pink;
+	commandsMap[livelily]["address"] = ofColor::pink;
+	commandsMap[livelily]["valndx"] = ofColor::pink;
+	commandsMap[livelily]["toggle"] = ofColor::pink;
+	commandsMap[livelily]["reset"] = ofColor::pink;
+	commandsMap[livelily]["valthresh"] = ofColor::pink;
+
+	// arguments
+	commandsMap[livelily]["barcount"] = ofColor::aqua;
+	commandsMap[livelily]["tempo"] = ofColor::aqua;
+	commandsMap[livelily]["beat"] = ofColor::aqua;
+	commandsMap[livelily]["barstart"] = ofColor::aqua;
+	commandsMap[livelily]["loopstart"] = ofColor::aqua;
+	commandsMap[livelily]["all"] = ofColor::aqua;
+	commandsMap[livelily]["framerate"] = ofColor::aqua;
+	commandsMap[livelily]["fr"] = ofColor::aqua;
+	commandsMap[livelily]["onlast"] = ofColor::aqua;
+	commandsMap[livelily]["immediately"] = ofColor::aqua;
+	commandsMap[livelily]["onoctave"] = ofColor::aqua;
+	commandsMap[livelily]["on"] = ofColor::aqua;
+	commandsMap[livelily]["off"] = ofColor::aqua;
+
+	// push commands that won't let the editor tokenize based on digits
+	commandsToNotTokenize.push_back("\\insts");
+	commandsToNotTokenize.push_back("\\bar");
+	commandsToNotTokenize.push_back("\\bars");
+	commandsToNotTokenize.push_back("\\loop");
+	commandsToNotTokenize.push_back("\\function");
+	commandsToNotTokenize.push_back("\\list");
+	commandsToNotTokenize.push_back("\\group");
 }
 
 //--------------------------------------------------------------
@@ -1150,6 +1165,11 @@ void ofApp::draw()
 	//sharedData.mutex.lock();
 	for (map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 		it->second.drawText();
+		// draw the pane separator for panes that do not touch the traceback printing area
+		if ((paneSplitOrientation == 0 && numPanes.find(it->second.getPaneRow()+1) != numPanes.end()) || \
+				(paneSplitOrientation == 1 && it->second.getPaneCol() < numPanes[it->second.getPaneRow()])) {
+			it->second.drawPaneSeparator();
+		}
 	}
 	ofSetColor(brightness);
 	// draw the lines that separate the different editors
@@ -1183,6 +1203,32 @@ void ofApp::draw()
 	if (sharedData.showScore) {
 		drawScore();
 	}
+	// draw the pane separator for panes that do touch the traceback printing area
+	for (map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
+		if ((paneSplitOrientation == 0 && numPanes.find(it->second.getPaneRow()+1) == numPanes.end()) || \
+				(paneSplitOrientation == 1 && it->second.getPaneCol() >= numPanes[it->second.getPaneRow()])) {
+			it->second.drawPaneSeparator();
+		}
+	}
+	// fill the traceback printing area with the background color
+	float tracebackBackgroundYCoord;
+	int paneNdx;
+	// first determine the index of the pane we need to get the correct Y coordinates from
+	if (paneSplitOrientation == 0) {
+		// with a 0 pane split orientation, the index is the last row
+		auto lastRowPane = prev(numPanes.end());
+		paneNdx = lastRowPane->first;
+	}
+	else {
+		// with a 1 pane split orientation, it's the column that matters, so we just use the first index
+		paneNdx = 0;
+	}
+	// the line below is copied from Editor::drawPaneSeparator() where we calculate the Y coord
+	tracebackBackgroundYCoord = (editors[paneNdx].getMaxNumLines() * editors[paneNdx].getCursorHeight()) + editors[paneNdx].getFrameYOffset();
+	// in this case though we need an extra offset equal to the height of the cursor
+	tracebackBackgroundYCoord += editors[paneNdx].getCursorHeight();
+	ofSetColor(backgroundColor);
+	ofDrawRectangle(0, tracebackBackgroundYCoord, sharedData.screenWidth, sharedData.screenHeight-tracebackBackgroundYCoord);
 	if (editors[whichPane].showingCommand()) {
 		drawCommand();
 	}
@@ -2723,10 +2769,10 @@ map<size_t, string> ofApp::tokenizeStringWithNdxs(string str, string delimiter)
 }
 
 //--------------------------------------------------------------
-int ofApp::findMatchingBrace(const std::string& s, int openPos)
+int ofApp::findMatchingBrace(const std::string& s, size_t openPos)
 {
 	int depth = 0;
-	for (int i = openPos; i < s.length(); ++i) {
+	for (size_t i = openPos; i < s.length(); ++i) {
 		if (s[i] == '{') ++depth;
 		else if (s[i] == '}') {
 			--depth;
@@ -2755,7 +2801,7 @@ std::pair<int, string> ofApp::replaceCommandsWithOutput(const string& input, vec
 				while (cmdEnd < input.length() && input[cmdEnd] != '{') ++cmdEnd;
 
 				if (cmdEnd < input.length() && input[cmdEnd] == '{') {
-					int openBrace = cmdEnd;
+					size_t openBrace = cmdEnd;
 					int closeBrace = findMatchingBrace(input, openBrace);
 					string inside = input.substr(openBrace + 1, closeBrace - openBrace - 1);
 					std::pair<int, string> processedInside = replaceCommandsWithOutput(inside, output, lineNum);
@@ -3161,6 +3207,7 @@ int ofApp::storeNewBar(string barName)
 		it->second.setMeter(barIndex, sharedData.numerator[barIndex],
 				sharedData.denominator[barIndex], sharedData.numBeats[barIndex]);
 	}
+	keywords.push_back(barName);
 	return barIndex;
 }
 
@@ -3173,6 +3220,7 @@ void ofApp::storeNewLoop(string loopName)
 	sharedData.loopsVariants[loopIndex] = 0;
 	sharedData.tempBarLoopIndex = loopIndex;
 	partsReceivedOKCounters[loopIndex] = 0;
+	keywords.push_back(loopName);
 }
 
 //--------------------------------------------------------------
@@ -3752,6 +3800,7 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 			storingList = false;
 			return error;
 		}
+		keywords.push_back(listName);
 	}
 
 	else if (commands[0].compare("\\fromosc") == 0) {
@@ -4049,20 +4098,22 @@ std::pair<int, string> ofApp::parseCommand(string str, int lineNum, int numLines
 		}
 		else {
 			int functionNdx = 0;
+			string functionName = "\\"+commands[1];
 			if (functionIndexes.size() > 0) {
 				map<string, int>::reverse_iterator it = functionIndexes.rbegin();
 				functionNdx = it->second + 1;
 			}
-			functionIndexes["\\"+commands[1]] = functionNdx;
+			functionIndexes[functionName] = functionNdx;
 			Function function;
 			sharedData.functions[functionNdx] = function;
-			sharedData.functions[functionNdx].setName("\\"+commands[1]);
+			sharedData.functions[functionNdx].setName(functionName);
 			if (sharedData.functions[functionNdx].getNameError()) {
 				return std::make_pair(3, "function name too long");
 			}
-			commandsMap[livelily]["\\"+commands[1]] = ofColor::turquoise;
+			commandsMap[livelily][functionName] = ofColor::turquoise;
 			storingFunction = true;
 			lastFunctionIndex = functionNdx;
+			keywords.push_back(functionName);
 		}
 		// check if there are more characters in this line
 		// and then get all the strings in all executing lines
@@ -4619,7 +4670,7 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& orig
 	vector<string> commands;
 	for (unsigned i = 0; i < originalCommands.size(); i++) {
 		if (!i) {
-			// separate the name of the isntrument from a possible second level command
+			// separate the name of the instrument from a possible second level command
 			vector<string> tokens = tokenizeString(originalCommands[i], ".");
 			for (unsigned j = 0; j < tokens.size(); j++) {
 				commands.push_back(tokens[j]);
@@ -5053,15 +5104,41 @@ std::pair<bool, std::pair<int, string>> ofApp::isInstrument(vector<string>& orig
 }
 
 //--------------------------------------------------------------
-std::pair<bool, std::pair<int, string>> ofApp::isBarLoop(vector<string>& commands, int lineNum, int numLines)
+std::pair<bool, std::pair<int, string>> ofApp::isBarLoop(vector<string>& originalCommands, int lineNum, int numLines)
 {
 	bool barLoopExists = false;
 	std::pair<int, string> err = std::make_pair(0, "");
 	if (sharedData.loopsIndexes.size() > 0) {
-		if (sharedData.loopsIndexes.find(commands[0]) != sharedData.loopsIndexes.end()) {
+		string barLoopName;
+		if (originalCommands[0].find(".") != string::npos) barLoopName = originalCommands[0].substr(0, originalCommands[0].find("."));
+		else barLoopName = originalCommands[0];
+		if (sharedData.loopsIndexes.find(barLoopName) != sharedData.loopsIndexes.end()) {
 			barLoopExists = true;
-			int indexLocal = sharedData.loopsIndexes[commands[0]];
+			int indexLocal = sharedData.loopsIndexes[barLoopName];
+			// the initial command is \barloopname which might be followed by a second level command
+			// to separate the second level command we create a new vector that will copy the originalCommands vector
+			// except from the first item where we trim the \barloopname. part
+			bool hasDot = false;
+			vector<string> commands;
+			for (unsigned i = 0; i < originalCommands.size(); i++) {
+				if (!i) {
+					// separate the name of the bar/loop from the second level command
+					vector<string> tokens = tokenizeString(originalCommands[i], ".");
+					for (unsigned j = 0; j < tokens.size(); j++) {
+						commands.push_back(tokens[j]);
+					}
+					if (tokens.size() > 1) hasDot = true;
+				}
+				else {
+					commands.push_back(originalCommands[i]);
+				}
+			}
 			if (commands.size() > 1) {
+				if (!hasDot) {
+					err.first = 3;
+					err.second = "second level commands must be concatenated to the bar/loop name with a dot";
+					return std::make_pair(barLoopExists, err);
+				}
 				if (commands.size() > 3) {
 					err.first = 3;
 					err.second = "if arguments are provided to a loop, these are two, either \"locate [bar/loop-name]\" or \"goto bar/loop-name/index\"";
@@ -5082,7 +5159,7 @@ std::pair<bool, std::pair<int, string>> ofApp::isBarLoop(vector<string>& command
 					int gotoIndexOrBarName = 0;
 					if (it == sharedData.loopData[indexLocal].end()) {
 						if (isNumber(commands[2])) {
-							int indexToGoto = stoi(commands[2]);
+							size_t indexToGoto = stoi(commands[2]);
 							if (indexToGoto < 1) {
 								err.first = 3;
 								err.second = "index to \"goto\" must be greater than 0";
@@ -5113,13 +5190,13 @@ std::pair<bool, std::pair<int, string>> ofApp::isBarLoop(vector<string>& command
 						m.clear();
 					}
 					else {
-						err.first = 1;
+						err.first = 0;
 						err.second = to_string(it - sharedData.loopData[indexLocal].begin() + 1);
 						return std::make_pair(barLoopExists, err);
 					}
 				}
 				else {
-					err.first = 1;
+					err.first = 0;
 					err.second = sharedData.loopsOrdered[indexLocal][sharedData.loopData[indexLocal][sharedData.thisLoopIndex]];
 					return std::make_pair(barLoopExists, err);
 				}
@@ -5226,18 +5303,44 @@ std::pair<bool, std::pair<int, string>> ofApp::isFunction(vector<string>& comman
 }
 
 //--------------------------------------------------------------
-std::pair<bool, std::pair<int, string>> ofApp::isList(vector<string>& commands, int lineNum, int numLines)
+std::pair<bool, std::pair<int, string>> ofApp::isList(vector<string>& originalCommands, int lineNum, int numLines)
 {
 	bool listExists = false;
-	std::pair<int, string> error = std::make_pair(0, "");
+	std::pair<int, string> err = std::make_pair(0, "");
 	if (listIndexes.size() > 0) {
-		if (listIndexes.find(commands[0]) != listIndexes.end()) {
+		string listName;
+		if (originalCommands[0].find(".") != string::npos) listName = originalCommands[0].substr(0, originalCommands[0].find("."));
+		else listName = originalCommands[0];
+		if (listIndexes.find(listName) != listIndexes.end()) {
 			listExists = true;
-			lastListIndex = listIndexes[commands[0]];
+			lastListIndex = listIndexes[listName];
+			// the initial command is \listname which might be followed by a second level command
+			// to separate the second level command we create a new vector that will copy the originalCommands vector
+			// except from the first item where we trim the \listname. part
+			bool hasDot = false;
+			vector<string> commands;
+			for (unsigned i = 0; i < originalCommands.size(); i++) {
+				if (!i) {
+					// separate the name of the list from the second level command
+					vector<string> tokens = tokenizeString(originalCommands[i], ".");
+					for (unsigned j = 0; j < tokens.size(); j++) {
+						commands.push_back(tokens[j]);
+					}
+					if (tokens.size() > 1) hasDot = true;
+				}
+				else {
+					commands.push_back(originalCommands[i]);
+				}
+			}
 			if (commands.size() < 2) {
-				return std::make_pair(listExists, error);
+				return std::make_pair(listExists, err);
 			}
 			if (commands[1].compare("traverse") == 0) {
+				if (!hasDot) {
+					err.first = 3;
+					err.second = "second level commands must be concatenated to the list name with a dot";
+					return std::make_pair(listExists, err);
+				}
 				traversingList = true;
 				listIndexCounter = 0;
 				string restOfCommand = getRestOfCommand(commands, 2);
@@ -5261,18 +5364,18 @@ std::pair<bool, std::pair<int, string>> ofApp::isList(vector<string>& commands, 
 					if (!isNumber(p.second)) {
 						return std::make_pair(listExists, std::make_pair(3, "list can only be indexed with an integer"));
 					}
-					int listItemNdx = stoi(p.second);
+					size_t listItemNdx = stoi(p.second);
 					std::pair<int, string> p = listItemExists(listItemNdx);
 					return std::make_pair(listExists, p);
 				}
 			}
 		}
 	}
-	return std::make_pair(listExists, error);
+	return std::make_pair(listExists, err);
 }
 
 //--------------------------------------------------------------
-std::pair<int, string> ofApp::listItemExists(int listItemNdx)
+std::pair<int, string> ofApp::listItemExists(size_t listItemNdx)
 {
 	if (listItemNdx < 1) {
 		return std::make_pair(3, "lists are 1-base indexed");
@@ -5299,7 +5402,7 @@ std::pair<bool, std::pair<int, string>> ofApp::isOscClient(vector<string>& origi
 			oscClientExists = true;
 			// the initial command is \oscclientname which might be followed by a second level command
 			// to separate the second level command we create a new vector that will copy the originalCommands vector
-			// except from the first item where we trim the \oscclintname. part
+			// except from the first item where we trim the \oscclientname. part
 			bool hasDot = false;
 			vector<string> commands;
 			for (unsigned i = 0; i < originalCommands.size(); i++) {
@@ -5418,14 +5521,14 @@ std::pair<bool, std::pair<int, string>> ofApp::isOscClient(vector<string>& origi
 //--------------------------------------------------------------
 std::pair<int, string> ofApp::functionFuncs(vector<string>& originalCommands)
 {
-	// the initial command is \funcname which might be followed by a second level command
+	// the initial command is \functionname which might be followed by a second level command
 	// to separate the second level command we create a new vector that will copy the originalCommands vector
-	// except from the first item where we trim the \instname. part
+	// except from the first item where we trim the \functionname. part
 	bool hasDot = false;
 	vector<string> commands;
 	for (unsigned i = 0; i < originalCommands.size(); i++) {
 		if (!i) {
-			// separate the name of the isntrument from a possible second level command
+			// separate the name of the function from a possible second level command
 			vector<string> tokens = tokenizeString(originalCommands[i], ".");
 			for (unsigned j = 0; j < tokens.size(); j++) {
 				commands.push_back(tokens[j]);
@@ -6019,10 +6122,10 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	bool mezzo = false;
 	vector<string> tokens = tokenizeString(strToProcess, " ");
 	// index variables for loop so that they are initialized before vectors with unkown size
-	int i = 0, j = 0; //  initialize to avoid compiler warnings
+	unsigned i = 0, j = 0; //  initialize to avoid compiler warnings
 	// first detect if there are any quotes, which might include one or more white spaces
 	bool closedQuote = true;
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		// first determine if we have both quotes in the same token
 		vector<int> quoteNdx = findIndexesOfCharInStr(tokens.at(i), "\"");
 		if (quoteNdx.size() > 1) {
@@ -6057,7 +6160,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// characters that are not permitted inside a chord are
 	// open/close parenthesis, hyphen, dot, backslash, carret, underscore, open/close curly brackets
 	vector<int> forbiddenCharsInChord{40, 41, 45, 46, 92, 94, 95, 123, 125};
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		if (tokens.at(i).compare("\\ottava") == 0 || tokens.at(i).compare("\\ott") == 0) {
 			if (tokens.size() < i+2) {
 				return std::make_pair(3, "\\ottava must be followed by (-)1 or (-)2");
@@ -6104,7 +6207,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 					return std::make_pair(3, char(forbiddenCharsInChord.at(j)) + (string)" can't be included within a chord, only outside of it");
 				}
 			}
-			for (j = 0; j < (int)tokens.at(i).size(); j++) {
+			for (j = 0; j < tokens.at(i).size(); j++) {
 				if (tokens.at(i).at(j) == '>') chordEnded = true;
 				else if (isdigit(tokens.at(i).at(j)) && !chordEnded) {
 					return std::make_pair(3, "durations can't be included within a chord, only outside of it");
@@ -6158,7 +6261,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// check for tuplets
 	int tupMapNdx = 0;
 	map<int, std::pair<int, int>> tupRatios;
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		if (tokens.at(i).compare("\\tuplet") == 0 || tokens.at(i).compare("\\tup") == 0) {
 			// tests whether the tuplet format is correct have been made above
 			// so we can safely query tokens.at(i+1) etc
@@ -6177,7 +6280,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	bool tupStartInsideChord = false, tupStopInsideChord = false;
 	tupMapNdx = 0;
 	map<int, std::pair<unsigned, unsigned>> tupStartStop;
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		if (startsWith(tokens.at(i), "<")) {
 			tupStartInsideChord = true;
 		}
@@ -6313,7 +6416,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	//vector<vector<std::pair<int, int>>> notePairs;
 	vector<vector<intPair>> notePairs;
 	// then iterate over all the tokens and parse them to store the notes
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		if (tokens.at(i).compare("\\ottava") == 0 || tokens.at(i).compare("\\ott") == 0) {
 			// tests whether a digit follows \ottava have been made above
 			// so we can now safely query tokens.at(i+1) and extract the digit that follows
@@ -6566,17 +6669,17 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// because this is dynamically allocated memory too
 	int textsCounter;
 	vector<vector<int>> textIndexesLocal;
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		// check if we have a comment, so we exit the loop
 		if (startsWith(tokens.at(i), "%")) break;
 		verticalNoteIndex = 0;
-		for (int k = 0; k <= i; k++) {
+		for (unsigned k = 0; k <= i; k++) {
 			// loop till we find a -1, which means that this token is a chord note, but not the first one
 			if (verticalNotesIndexes.at(k) < 0) continue;
 			verticalNoteIndex = k;
 		}
 		// create an empty entry for every note/chord
-		if (textIndexesLocal.size() <= verticalNoteIndex) {
+		if ((int)textIndexesLocal.size() <= verticalNoteIndex) {
 			textIndexesLocal.push_back({0});
 		}
 		textsCounter = 0;
@@ -6621,26 +6724,26 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	// once we have sorted out the indexes of the texts, we can sort out the actual texts
 	unsigned openQuote, closeQuote;
 	vector<string> texts;
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		// again, check if we have a comment, so we exit the loop
 		if (startsWith(tokens.at(i), "%")) break;
 		verticalNoteIndex = 0;
-		for (int k = 0; k <= i; k++) {
+		for (unsigned k = 0; k <= i; k++) {
 			// loop till we find a -1, which means that this token is a chord note, but not the first one
 			if (verticalNotesIndexes.at(k) < 0) continue;
 			verticalNoteIndex = k;
 		}
 	}
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		// again, check if we have a comment, so we exit the loop
 		if (startsWith(tokens.at(i), "%")) break;
 		verticalNoteIndex = 0;
-		for (int k = 0; k <= i; k++) {
+		for (unsigned k = 0; k <= i; k++) {
 			// loop till we find a -1, which means that this token is a chord note, but not the first one
 			if (verticalNotesIndexes.at(k) < 0) continue;
 			verticalNoteIndex = k;
 		}
-		for (j = 0; j < (int)tokens.at(i).size(); j++) {
+		for (j = 0; j < tokens.at(i).size(); j++) {
 			// ^ or _ for adding text above or below the note
 			if ((tokens.at(i).at(j) == char(94)) || (tokens.at(i).at(j) == char(95))) {
 				if (j > 0) {
@@ -6698,7 +6801,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	}
 	// lastly, store articulation symbols, as these have to be allocated dynamically too
 	vector<vector<int>> articulationIndexes;
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		foundArticulation = false;
 		unsigned firstArticulIndex = 0;
 		verticalNoteIndex = -1;
@@ -6710,7 +6813,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		if ((int)articulationIndexes.size() <= verticalNoteIndex) {
 			articulationIndexes.push_back({0});
 		}
-		for (j = 0; j < (int)tokens.at(i).size(); j++) {
+		for (j = 0; j < tokens.at(i).size(); j++) {
 			if (tokens.at(i).at(j) == char(45)) { // - for articulation symbols
 				if (j > (tokens.at(i).size()-1)) {
 					return std::make_pair(3, "a hyphen must be followed by an articulation symbol");
@@ -6784,7 +6887,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	unsigned numDynamics = 0;
 	unsigned dynamicsRampCounter = 0;
 	unsigned slursCounter = 0;
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		verticalNoteIndex = -1;
 		for (j = 0; j <= i; j++) {
 			// loop till we find a -1, which means that this token is a chord note, but not the first one
@@ -6893,7 +6996,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 	int prevScoreDynamic = -1;
 	int quotesCounter = 0; // so we can ignore anything that is passed as text
 	// now check for the rest of the characters of the token, so start with j = accIndex
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		foundArticulation = false;
 		verticalNoteIndex = -1;
 		for (j = 0; j <= i; j++) {
@@ -6906,7 +7009,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			tokenInsideChord = true;
 		}
 		// first check for octaves
-		for (j = (int)accidentalIndexes.at(i); j < (int)tokens.at(i).size(); j++) {
+		for (j = accidentalIndexes.at(i); j < tokens.at(i).size(); j++) {
 			if (int(tokens.at(i).at(j)) == 39) {
 				if (!sharedData.instruments.at(lastInstrumentIndex).isRhythm()) {
 					notesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += 12;
@@ -6925,7 +7028,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 			}
 		}
 		// then check for the rest of the characters
-		for (j = (int)accidentalIndexes.at(i); j < (int)tokens.at(i).size(); j++) {
+		for (j = accidentalIndexes.at(i); j < tokens.at(i).size(); j++) {
 			// we don't check inside chords, as the characters we look for in this loop
 			// are not permitted inside chords, so we check only at the last chord note
 			// verticalNotesIndexes is tokens.size() + 1 so it's safe to test against i + 1 here
@@ -7218,7 +7321,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 
 	// fill in possible empty slots of durations
 	for (i = 0; i < numNotesVertical; i++) {
-		if (i != durIndexes.at(i)) {
+		if ((int)i != durIndexes.at(i)) {
 			dursData.at(i) = dursData.at(i-1);
 		}
 	}
@@ -7245,7 +7348,7 @@ std::pair<int, string> ofApp::parseMelodicLine(string str)
 		for (i = 0; i < numNotesVertical; i++) {
 			// if a dynamic has not been stored, fill in the last
 			// stored dynamic in this empty slot
-			if (i != dynamicsIndexes.at(i)) {
+			if ((int)i != dynamicsIndexes.at(i)) {
 				// we don't want to add data for the score, only for the sequencer
 				if (i > 0) {
 					dynamicsData.at(i) =  dynamicsData.at(i-1);
@@ -7527,218 +7630,224 @@ std::pair<int, string> ofApp::scoreCommands(vector<string>& originalCommands, in
 			commands.push_back(originalCommands[i]);
 		}
 	}
-	for (unsigned i = 0; i < commands.size(); i++) {
-		if (commands[i].compare("show") == 0) {
+	if (commands[0].compare("show") == 0) {
+		if (commands.size() > 1) {
+			if (commands.size() > 2) {
+				return std::make_pair(3, "second level command \"show\" takes up to one argument, not more");
+			}
+			if (commands[1].compare("barcount") == 0) {
+				showBarCount = true;
+			}
+			else if (commands[1].compare("tempo") == 0) {
+				showTempo = true;
+			}
+			else if (commands[1].compare("beat") == 0) {
+				if (sequencer.isThreadRunning()) {
+					sharedData.beatAnimate = true;
+				}
+				else {
+					sharedData.setBeatAnimation = true;
+				}
+			}
+			else {
+				return std::make_pair(3, "unkown argument");
+			}
+		}
+		else {
 			sharedData.showScore = true;
 			editors[whichPane].setMaxCharactersPerString();
 		}
-		else if (commands[i].compare("hide") == 0) {
+	}
+	else if (commands[0].compare("hide") == 0) {
+		if (commands.size() > 1) {
+			if (commands.size() > 2) {
+				return std::make_pair(3, "second level command \"hide\" takes up to one argument, not more");
+			}
+			if (commands[1].compare("barcount") == 0) {
+				showBarCount = false;
+			}
+			else if (commands[1].compare("tempo") == 0) {
+				showTempo = false;
+			}
+			else if (commands[1].compare("beat") == 0) {
+				sharedData.beatAnimate = false;
+				sharedData.setBeatAnimation = false;
+			}
+			else {
+				return std::make_pair(3, "unkown argument");
+			}
+		}
+		else {
 			sharedData.showScore = false;
 			editors[whichPane].setMaxCharactersPerString();
 		}
-		else if (commands[i].compare("animate") == 0) {
-			if (sequencer.isThreadRunning()) {
-				for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-					it->second.setAnimation(true);
-				}
-				sharedData.animate = true;
-			}
-			else {
-				sharedData.setAnimation = true;
-			}
+	}
+	else if (commands[0].compare("animate") == 0) {
+		if (commands.size() > 1) {
+			return std::make_pair(3, "second level command \"animate\" takes no arguments");
 		}
-		else if (commands[i].compare("inanimate") == 0) {
+		if (sequencer.isThreadRunning()) {
 			for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				it->second.setAnimation(false);
+				it->second.setAnimation(true);
 			}
-			sharedData.animate = false;
-			sharedData.setAnimation = false;
-		}
-		else if (commands[i].compare("showbeat") == 0) {
-			if (sequencer.isThreadRunning()) {
-				sharedData.beatAnimate = true;
-			}
-			else {
-				sharedData.setBeatAnimation = true;
-			}
-		}
-		else if (commands[i].compare("hidebeat") == 0) {
-			sharedData.beatAnimate = false;
-			sharedData.setBeatAnimation = false;
-		}
-		else if (commands[i].compare("beattype") == 0) {
-			if (commands.size() < i + 2) {
-				return std::make_pair(3, "\"beattype\" takes a 1 or a 2 as an argument");
-			}
-			if (!isNumber(commands[i+1])) {
-				return std::make_pair(3, "\"beattype\" takes a 1 or a 2 as an argument");
-			}
-			int beattype;
-			unsigned iIncrement = 1;
-			if (!isNumber(commands[i+1])) {
-				string restOfCommands = "";
-				for (unsigned j = i+1; j < commands.size(); j++) {
-					if (j > i+1) restOfCommands += " ";
-					restOfCommands += commands[j];
-				}
-				std::pair<int, string> p = parseCommand(restOfCommands, lineNum, numLines);
-				if (p.first > 0) return p;
-				if (!isNumber(p.second)) return std::make_pair(3, "\"beattype\" takes a number as an argument");
-				beattype = stoi(p.second);
-				iIncrement = commands.size();
-			}
-			else {
-				beattype = stoi(commands[i+1]);
-			}
-			if (beattype < 1 || beattype > 2) {
-				return std::make_pair(3, "unknown beat vizualization type");
-			}
-			sharedData.beatVizType = beattype;
-			i += iIncrement; // move i so we check the command after the argument
-		}
-		else if (commands[i].compare("movex") == 0) {
-			if (commands.size() < i + 2) {
-				return std::make_pair(3, "movex takes a number as an argument");
-			}
-			int numPixels;
-			unsigned iIncrement = 1;
-			if (!isNumber(commands[i+1])) {
-				string restOfCommands = "";
-				for (unsigned j = i+1; j < commands.size(); j++) {
-					if (j > i+1) restOfCommands += " ";
-					restOfCommands += commands[j];
-				}
-				std::pair<int, string> p = parseCommand(restOfCommands, lineNum, numLines);
-				if (p.first > 0) return p;
-				if (!isNumber(p.second)) return std::make_pair(3, "movex takes a number as an argument");
-				numPixels = stoi(p.second);
-				iIncrement = commands.size();
-			}
-			else {
-				numPixels = stoi(commands[i+1]);
-			}
-			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				it->second.moveScoreX(numPixels);
-			}
-			i += iIncrement; // move i so we check the command after the argument
-		}
-		else if (commands[i].compare("movey") == 0) {
-			if (commands.size() < i + 2) {
-				return std::make_pair(3, "movey takes a number as an argument");
-			}
-			int numPixels;
-			unsigned iIncrement = 1;
-			if (!isNumber(commands[i+1])) {
-				string restOfCommands = "";
-				for (unsigned j = i+1; j < commands.size(); j++) {
-					if (j > i+1) restOfCommands += " ";
-					restOfCommands += commands[j];
-				}
-				std::pair<int, string> p = parseCommand(restOfCommands, lineNum, numLines);
-				if (p.first > 0) return p;
-				if (!isNumber(p.second)) return std::make_pair(3, "movey takes a number as an argument");
-				numPixels = stoi(p.second);
-				iIncrement = commands.size();
-			}
-			else {
-				numPixels = stoi(commands[i+1]);
-			}
-			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				it->second.moveScoreY(numPixels);
-			}
-			i += iIncrement; // move i so we check the command after the argument
-		}
-		//else if (commands[i].compare("recenter") == 0) {
-		//	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		//		it->second.recenterScore();
-		//	}
-		//	return std::make_pair(0, "");
-		//}
-		else if (commands[i].compare("numbars") == 0) {
-			if (commands.size() < i+2) {
-				return std::make_pair(3, "\"numbars\" takes a number as an argument");
-			}
-			if (!isNumber(commands[i+1])) {
-				return std::make_pair(3, "\"numbars\" takes a number as an argument");
-			}
-			int numBarsLocal = stoi(commands[i+1]);
-			if (numBarsLocal < 1) {
-				return std::make_pair(3, "number of bars to display must be 1 or greater");
-			}
-			numBarsToDisplay = numBarsLocal;
-			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				it->second.setNumBarsToDisplay(numBarsToDisplay);
-			}
-			i += 2;
-		}
-		else if (commands[i].compare("update") == 0) {
-			if (commands.size() < i+2) {
-				return std::make_pair(3, "\"update\" takes one argument, onlast or immediately");
-			}
-			if (commands[i+1].compare("onlast") == 0) {
-				scoreChangeOnLastBar = true;
-			}
-			else if (commands[i+1].compare("immediately") == 0) {
-				scoreChangeOnLastBar = false;
-			}
-			else {
-				return std::make_pair(3, commands[i+1] + (string)"unknown argument to \"update\", must be onlast or immediately");
-			}
-			i += 2;
-		}
-		else if (commands[i].compare("correct") == 0) {
-			if (commands.size() < i+2) {
-				return std::make_pair(3, "\"correct\" takes one argument, \"onoctave\" or \"all\"");
-			}
-			if (commands[i+1].compare("onoctave") == 0) {
-				correctOnSameOctaveOnly = true;
-			}
-			else if (commands[i+1].compare("all") == 0) {
-				correctOnSameOctaveOnly = false;
-			}
-			else {
-				return std::make_pair(3, commands[i+1] + (string)": unknown argument to \"correct\"");
-			}
-			i += 2;
-		}
-		else if (commands[i].compare("tempo") == 0) {
-			if (commands.size() < i+2) {
-				return std::make_pair(3, "\"tempo\" takes one argument, \"show\" or \"hide\"");
-			}
-			if (commands[i+1].compare("show") == 0) {
-				showTempo = true;
-			}
-			else if (commands[i+1].compare("hide") == 0) {
-				showTempo = false;
-			}
-			else {
-				return std::make_pair(3, commands[i+1] + (string)": unknown argument to \"tempo\"");
-			}
-			i += 2;
-		}
-		else if (commands[i].compare("barcount") == 0) {
-			if (commands.size() < i+2) {
-				return std::make_pair(3, "\"barcount\" takes one argument, \"show\" or \"hide\"");
-			}
-			if (commands[i+1].compare("show") == 0) {
-				showBarCount = true;
-			}
-			else if (commands[i+1].compare("hide") == 0) {
-				showBarCount = false;
-			}
-			else {
-				return std::make_pair(3, commands[i+1] + (string)": unknown argument to \"barcount\"");
-			}
-			i += 2;
+			sharedData.animate = true;
 		}
 		else {
-			string restOfCommands = "";
-			for (unsigned j = i; j < commands.size(); j++) {
-				if (j > i) restOfCommands += " ";
-				restOfCommands += commands[j];
-			}
-			return parseCommand(restOfCommands, lineNum, numLines);
+			sharedData.setAnimation = true;
 		}
+	}
+	else if (commands[0].compare("inanimate") == 0) {
+		if (commands.size() > 1) {
+			return std::make_pair(3, "second level command \"inanimate\" takes no arguments");
+		}
+		for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			it->second.setAnimation(false);
+		}
+		sharedData.animate = false;
+		sharedData.setAnimation = false;
+	}
+	else if (commands[0].compare("beattype") == 0) {
+		if (commands.size() < 2) {
+			return std::make_pair(3, "\"beattype\" takes a 1 or a 2 as an argument");
+		}
+		if (!isNumber(commands[1])) {
+			return std::make_pair(3, "\"beattype\" takes a 1 or a 2 as an argument");
+		}
+		int beattype;
+		if (!isNumber(commands[1])) {
+			string restOfCommands = "";
+			for (unsigned i = 1; i < commands.size(); i++) {
+				if (i > 1) restOfCommands += " ";
+				restOfCommands += commands[i];
+			}
+			std::pair<int, string> p = parseCommand(restOfCommands, lineNum, numLines);
+			if (p.first > 0) return p;
+			if (!isNumber(p.second)) return std::make_pair(3, "\"beattype\" takes a number as an argument");
+			beattype = stoi(p.second);
+		}
+		else {
+			beattype = stoi(commands[1]);
+		}
+		if (beattype < 1 || beattype > 2) {
+			return std::make_pair(3, "unknown beat vizualization type");
+		}
+		sharedData.beatVizType = beattype;
+	}
+	else if (commands[0].compare("movex") == 0) {
+		if (commands.size() < 2) {
+			return std::make_pair(3, "\"movex\" takes a number as an argument");
+		}
+		int numPixels;
+		if (!isNumber(commands[1])) {
+			string restOfCommands = "";
+			for (unsigned i = 1; i < commands.size(); i++) {
+				if (i > 1) restOfCommands += " ";
+				restOfCommands += commands[i];
+			}
+			std::pair<int, string> p = parseCommand(restOfCommands, lineNum, numLines);
+			if (p.first > 0) return p;
+			if (!isNumber(p.second)) return std::make_pair(3, "\"movex\" takes a number as an argument");
+			numPixels = stoi(p.second);
+		}
+		else {
+			numPixels = stoi(commands[1]);
+		}
+		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			it->second.moveScoreX(numPixels);
+		}
+	}
+	else if (commands[0].compare("movey") == 0) {
+		if (commands.size() < 2) {
+			return std::make_pair(3, "\"movey\" takes a number as an argument");
+		}
+		int numPixels;
+		if (!isNumber(commands[1])) {
+			string restOfCommands = "";
+			for (unsigned i = 1; i < commands.size(); i++) {
+				if (i > 1) restOfCommands += " ";
+				restOfCommands += commands[i];
+			}
+			std::pair<int, string> p = parseCommand(restOfCommands, lineNum, numLines);
+			if (p.first > 0) return p;
+			if (!isNumber(p.second)) return std::make_pair(3, "\"movey\" takes a number as an argument");
+			numPixels = stoi(p.second);
+		}
+		else {
+			numPixels = stoi(commands[1]);
+		}
+		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			it->second.moveScoreY(numPixels);
+		}
+	}
+	//else if (commands[0].compare("recenter") == 0) {
+	//	if (commands.size() > 1) {
+	//		return std::make_pair(3, "\"recenter\" takes no arguments");
+	//	}
+	//	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+	//		it->second.recenterScore();
+	//	}
+	//	return std::make_pair(0, "");
+	//}
+	else if (commands[0].compare("numbars") == 0) {
+		if (commands.size() < 2) {
+			return std::make_pair(3, "\"numbars\" takes a number as an argument");
+		}
+		int numBarsLocal;
+		if (!isNumber(commands[1])) {
+			return std::make_pair(3, "\"numbars\" takes a number as an argument");
+			if (!isNumber(commands[1])) {
+				string restOfCommands = "";
+				for (unsigned i = 1; i < commands.size(); i++) {
+					if (i > 1) restOfCommands += " ";
+					restOfCommands += commands[i];
+				}
+				std::pair<int, string> p = parseCommand(restOfCommands, lineNum, numLines);
+				if (p.first > 0) return p;
+				if (!isNumber(p.second)) return std::make_pair(3, "\"numbars\" takes a number as an argument");
+				numBarsLocal = stoi(p.second);
+			}
+		}
+		else {
+			numBarsLocal = stoi(commands[1]);
+		}
+		if (numBarsLocal < 1) {
+			return std::make_pair(3, "number of bars to display must be 1 or greater");
+		}
+		numBarsToDisplay = numBarsLocal;
+		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			it->second.setNumBarsToDisplay(numBarsToDisplay);
+		}
+	}
+	else if (commands[0].compare("update") == 0) {
+		if (commands.size() != 2) {
+			return std::make_pair(3, "\"update\" takes one argument, \"onlast\" or \"immediately\"");
+		}
+		if (commands[1].compare("onlast") == 0) {
+			scoreChangeOnLastBar = true;
+		}
+		else if (commands[1].compare("immediately") == 0) {
+			scoreChangeOnLastBar = false;
+		}
+		else {
+			return std::make_pair(3, commands[1] + (string)"unknown argument to \"update\", must be onlast or immediately");
+		}
+	}
+	else if (commands[0].compare("correct") == 0) {
+		if (commands.size() != 2) {
+			return std::make_pair(3, "\"correct\" takes one argument, \"onoctave\" or \"all\"");
+		}
+		if (commands[1].compare("onoctave") == 0) {
+			correctOnSameOctaveOnly = true;
+		}
+		else if (commands[1].compare("all") == 0) {
+			correctOnSameOctaveOnly = false;
+		}
+		else {
+			return std::make_pair(3, commands[1] + (string)": unknown argument to \"correct\"");
+		}
+	}
+	else {
+		return std::make_pair(3, "unkown second level command");
 	}
 	return std::make_pair(0, "");
 }
@@ -7831,6 +7940,7 @@ void ofApp::initializeInstrument(string instName)
 	sharedData.instruments[maxInstIndex].setNotesFontSize(sharedData.scoreFontSize, sharedData.staffLinesDist);
 	sharedData.instrumentIndexesOrdered[maxInstIndex] = maxInstIndex;
 	sharedData.numInstruments++;
+	keywords.push_back(instName);
 	setScoreCoords();
 }
 
