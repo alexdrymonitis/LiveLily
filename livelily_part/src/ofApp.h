@@ -24,12 +24,6 @@
 #define WINDOW_RESIZE_GAP 50
 #define NOTESXOFFSETCOEF 3
 
-typedef struct _intPair
-{
-	int first;
-	int second;
-} intPair;
-
 class ofApp : public ofBaseApp
 {
 	public:
@@ -62,6 +56,8 @@ class ofApp : public ofBaseApp
 		string replaceCharInStr(string str, string a, string b);
 		vector<string> tokenizeString(string str, string delimiter);
 		void parseStrings();
+		void parseBar();
+		void parseLoop();
 		void parseString(string str);
 		void fillInMissingInsts(int barIndex);
 		int storeNewBar(string barName);
@@ -76,7 +72,8 @@ class ofApp : public ofBaseApp
 		int getPlayingBarIndex();
 		void stripLineFromBar(string str);
 		void parseBarLoop(string str);
-		void parseMelodicLine(string str);
+		vector<string> tokenizeChord(string input, bool includeAngleBrackets = false);
+		std::pair<int, string> parseMelodicLine(string str);
 		// initialize an instrument
 		void initializeInstrument(int index, string instName);
 		void createFirstBar(int instNdx);

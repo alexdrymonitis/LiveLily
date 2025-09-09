@@ -18,7 +18,6 @@ void ofApp::setup()
 	changeBeatColorOnUpdate = false;
 	
 	parsingBar = false;
-	parsingBars = false;
 	parsingLoop = false;
 	barsIterCounter = 0;
 	numBarsParsed = 0;
@@ -130,10 +129,32 @@ void ofApp::update()
 			beatCounter = m.getArgAsInt32(0);
 		}
 		else if (m.getAddress() == "/line") {
-			for (size_t i = 0; i < m.getNumArgs(); i++) {
-				linesToParse.push_back(m.getArgAsString(i));
-			}
+			linesToParse = {m.getArgAsString(0)};
 			parseStrings();
+		}
+		else if (m.getAddress() == "/bar") {
+			if (m.getArgType(0) == OFXOSC_TYPE_STRING) {
+				parseCommand("\\bar " + m.getArgAsString(0));
+			}
+			else if (m.getArgType(0) == OFXOSC_TYPE_INT32) {
+				parseBar();
+			}
+		}
+		else if (m.getAddress() == "/loop") {
+			string loopName = m.getArgAsString(0);
+			storeNewLoop(loopName);
+			int loopNdx = m.getArgAsInt32(1);
+			loopData[loopNdx] = vector<int>();
+			for (size_t i = 2; i < m.getNumArgs(); i++) {
+				loopData[loopNdx].push_back(m.getArgAsInt32(i));
+			}
+			if (!seqState) {
+				loopIndex = tempBarLoopIndex;
+			}
+		}
+		else if (m.getAddress() == "/clef") {
+			int instNdx = instrumentIndexes[m.getArgAsString(0)];
+			instruments[instNdx].setClef(getLastBarIndex(), m.getArgAsInt32(1));
 		}
 		else if (m.getAddress() == "/update") {
 			tempBarLoopIndex = m.getArgAsInt32(0);
@@ -163,7 +184,6 @@ void ofApp::update()
 		}
 		else if (m.getAddress() == "/numbars") {
 			numBarsToDisplay = m.getArgAsInt32(0);
-			cout << "num bars: " << numBarsToDisplay << endl;
 			for (auto it = instruments.begin(); it != instruments.end(); ++it) {
 				it->second.setNumBarsToDisplay(numBarsToDisplay);
 			}
@@ -319,7 +339,7 @@ void ofApp::draw()
 			bool drawClef = false, drawMeter = false, animate = false;
 			bool drawTempo = false;
 			bool showBar = true;
-			bool iVarAugmented = false;
+			//bool iVarAugmented = false;
 			int iVarTemp = i;
 			if (loopData.find(loopIndex) == loopData.end()) return;
 			if (loopData.at(loopIndex).size() == 0) return;
@@ -382,18 +402,18 @@ void ofApp::draw()
 				else {
 					bar = loopData[tempBarLoopIndex][i];
 					insertNaturalsNdx = tempBarLoopIndex;
-					if (loopData[tempBarLoopIndex].size() == 1) {
-						i = ((prevSingleBarPos + 1) % 2) + 1;
-						iVarAugmented = true;
-					}
+					//if (loopData[tempBarLoopIndex].size() == 1) {
+					//	i = ((prevSingleBarPos + 1) % 2) + 1;
+					//	iVarAugmented = true;
+					//}
 				}
 				scoreUpdated = true;
 				showUpdatePulseColor = true;
 			}
 			else if (mustUpdateScore && scoreUpdated && thisLoopIndex == 0) {
 				mustUpdateScore = scoreUpdated = showUpdatePulseColor = false;
-				prevSingleBarPos++;
-				if (prevSingleBarPos > 1) prevSingleBarPos = 0;
+				//prevSingleBarPos++;
+				//if (prevSingleBarPos > 1) prevSingleBarPos = 0;
 			}
 			// if we're staying in the same loop, when the currently playing bar is displayed at the right-most staff
 			// all the other bars must display the next bars of the loop (if there are any)
@@ -413,10 +433,10 @@ void ofApp::draw()
 				if (i >= numBarsLocal) showBar = false;
 				else showBar = true;
 			}
-			if (loopData[loopIndex].size() == 1) {
-				i = (prevSingleBarPos % 2) + 1;
-				iVarAugmented = true;
-			}
+			//if (loopData[loopIndex].size() == 1) {
+			//	i = (prevSingleBarPos % 2) + 1;
+			//	iVarAugmented = true;
+			//}
 			// like with the beat visualization, accumulate X offsets for all bars but the first
 			if (i > 0) {
 				// only the notes need to go back some pixels, in case the clef or meter is not drawn
@@ -424,10 +444,10 @@ void ofApp::draw()
 				staffOffsetX += instruments.begin()->second.getStaffXLength();
 				notesOffsetX += instruments.begin()->second.getStaffXLength();
 			}
-			if (iVarAugmented) {
-				i = iVarTemp;
-				iVarAugmented = false;
-			}
+			//if (iVarAugmented) {
+			//	i = iVarTemp;
+			//	iVarAugmented = false;
+			//}
 			if (prevDrawClef != drawClef) {
 				if (drawClef) notesOffsetX += instruments.begin()->second.getClefXOffset();
 				else notesOffsetX -= instruments.begin()->second.getClefXOffset();
@@ -546,6 +566,7 @@ void ofApp::draw()
 			prevTempo.second = thisTempo.second;
 			prevDrawClef = drawClef;
 			prevDrawMeter = drawMeter;
+			//if (counter == 0) cout << "score: " << staffXOffset << ", notes: " << notesOffsetX << endl;
 		}
 	}
 }
@@ -1014,75 +1035,49 @@ vector<string> ofApp::tokenizeString(string str, string delimiter)
 	return tokens;
 }
 
+//--------------------------------------------------------------
 void ofApp::parseStrings()
 {
 	for (unsigned i = 0; i < linesToParse.size(); i++) {
 		parseString(linesToParse.at(i));
 	}
-	if (parsingBar || parsingLoop) {
-		// the bar index has already been stored with the \bar command
-		int barIndex = getLastLoopIndex();
-		if (!parsingLoop) {
-			// first add a rest for any instrument that is not included in the bar
-			fillInMissingInsts(barIndex);
-			// then store the number of beats for this bar
-			// if we create a bar, create a loop with this bar only
-			loopData[barIndex] = {barIndex};
-			// check if no time has been specified and set the default 4/4
-			if (numerator.find(barIndex) == numerator.end()) {
-				numerator[barIndex] = 4;
-				denominator[barIndex] = 4;
-			}
-			setScoreNotes(barIndex);
-			if (!parsingBars) {
-				setNotePositions(barIndex);
-				calculateStaffPositions(barIndex, false);
-			}
-			for (auto it = instruments.begin(); it != instruments.end(); ++it) {
-				it->second.setPassed(false);
-			}
-		}
-		if (!seqState) {
-			loopIndex = tempBarLoopIndex;
-		}
-		parsingBar = false;
-		parsingLoop = false;
-	}
-	if (parsingBars) {
-		// check if all instruments are done parsing all their bars
-		bool parsingBarsDone = true;
-		for (auto it = instruments.begin(); it != instruments.end(); ++it) {
-			if (!it->second.getMultiBarsDone()) {
-				parsingBarsDone = false;
-				break;
-			}
-		}
-		// call this function recursively, until all instruments are done parsing their bars
-		if (!parsingBarsDone) {
-			parseStrings();
-		}
-		else {
-			int barIndex = barsIndexes["\\"+multiBarsName+"-1"];
-			setNotePositions(barIndex, barsIterCounter);
-			for (int i = 0; i < barsIterCounter; i++) {
-				int barIndex = barsIndexes["\\"+multiBarsName+"-"+to_string(i+1)];
-				calculateStaffPositions(barIndex, false);
-			}
-			parsingBars = false;
-			firstInstForBarsSet = false;
-			// once done, create a string to create a loop with all the separate bars
-			string multiBarsLoop = "\\loop " + multiBarsName + " {";
-			for (int i = 0; i < barsIterCounter-1; i++) {
-				multiBarsLoop += ("\\" + multiBarsName + "-" + to_string(i+1) + " ");
-			}
-			// last iteration outside of the loop so that we don't add the extra white space
-			// and we close the curly brackets
-			multiBarsLoop += ("\\" + multiBarsName + "-" + to_string(barsIterCounter) + "}");
-			parseCommand(multiBarsLoop);
-			barsIterCounter = 0;
-		}
-	}
 	linesToParse.clear();
+}
+
+//--------------------------------------------------------------
+void ofApp::parseBar()
+{
+	// the bar index has already been stored with the \bar command
+	int barIndex = getLastLoopIndex();
+	// first add a rest for any instrument that is not included in the bar
+	fillInMissingInsts(barIndex);
+	// then store the number of beats for this bar
+	// if we create a bar, create a loop with this bar only
+	loopData[barIndex] = {barIndex};
+	// check if no time has been specified and set the default 4/4
+	if (numerator.find(barIndex) == numerator.end()) {
+		numerator[barIndex] = 4;
+		denominator[barIndex] = 4;
+	}
+	setScoreNotes(barIndex);
+	setNotePositions(barIndex);
+	calculateStaffPositions(barIndex, false);
+	for (auto it = instruments.begin(); it != instruments.end(); ++it) {
+		it->second.setPassed(false);
+	}
+	if (!seqState) {
+		loopIndex = tempBarLoopIndex;
+	}
+	parsingBar = false;
+}
+
+//--------------------------------------------------------------
+void ofApp::parseLoop()
+{
+	if (!seqState) {
+		loopIndex = tempBarLoopIndex;
+	}
+	parsingLoop = false;
 }
 
 //--------------------------------------------------------------
@@ -1141,10 +1136,6 @@ void ofApp::fillInMissingInsts(int barIndex)
 		if (!it->second.hasPassed()) {
 			it->second.createEmptyMelody(barIndex);
 			it->second.setPassed(true);
-			// since all instruments need to set the boolean below to true
-			// for parseStrings() to know that ;all bars of a \bars commands have finished
-			// it's ok to set it to true for missing instruments right from the start
-			if (parsingBars) it->second.setMultiBarsDone(true);
 		}
 	}
 }
@@ -1340,52 +1331,7 @@ void ofApp::parseCommand(string str)
 		}
 	}
 
-	else if (commands[0].compare("\\bars") == 0) {
-		if (barsIterCounter == 0) {
-			for (auto it = instruments.begin(); it != instruments.end(); ++it) {
-				it->second.setMultiBarsDone(false);
-				it->second.setMultiBarsStrBegin(0);
-			}
-			parsingBars = true;
-		}
-		multiBarsName = commands[1];
-		barsIterCounter++;
-		// store each bar separately with the "-x" suffix, where x is the counter
-		// of the iterations, until all instruments have had all their separate bars parsed
-		parseCommand("\\bar "+multiBarsName+"-"+to_string(barsIterCounter));
-	}
-
-	else if (commands[0].compare("\\rest") == 0) {
-		int numFoundInsts = 0;
-		if (commands.size() == 2) {
-			auto barToCopyIt = barsIndexes.find(commands[1]);
-			barToCopy = barToCopyIt->second;
-		}
-		for (map<int, Instrument>::iterator it = instruments.begin(); it != instruments.end(); ++it) {
-			if (!it->second.passed) { // if an instrument hasn't passed
-				numFoundInsts++;
-				// turn this instrument to passed
-				// so we don't find it in the next iteration
-				it->second.passed = true;
-				break;
-			}
-		}
-		if (numFoundInsts != 0) {
-			for (map<int, Instrument>::iterator it = instruments.begin(); it != instruments.end(); ++it) {
-				if (!it->second.passed) {
-					// store the bar passed to the "\rest" command
-					// for undefined instruments in the current bar
-					// we need to define lastInstrumentIndex because it is used
-					// in copyMelodicLine() which is called by strinLineFromPattern()
-					lastInstrumentIndex = it->first;
-					// once we store the current instrument, we parse the string
-					// with the rest of the command, which is the bar to copy from
-					// so the melodic line can be copied with stringLineFromPattern()
-					string restOfCommand = commands[1];
-					parseString(restOfCommand);
-				}
-			}
-		}
+	else if (commands[0].compare("\\clef") == 0) {
 	}
 
 	else {
@@ -1441,10 +1387,6 @@ bool ofApp::isInstrument(vector<string>& commands)
 						// add a white space only after the first token has been added
 						if (i > commandNdxOffset) restOfCommand += " ";
 						restOfCommand += commands[i];
-					}
-					if (parsingBars && barsIterCounter == 1 && !firstInstForBarsSet) {
-						firstInstForBarsIndex = lastInstrumentIndex;
-						firstInstForBarsSet = true;
 					}
 					parseMelodicLine(restOfCommand);
 					return instrumentExists;
@@ -1650,6 +1592,9 @@ void ofApp::parseBarLoop(string str)
 			if (endsWith(name.substr(0, nameLength), "}")) {
 				thisBarLoopIndexIt = loopsIndexes.find(name.substr(0, nameLength-1));
 			}
+			else {
+				thisBarLoopIndexIt = loopsIndexes.find(name);
+			}
 		}
 		// find the map of the loop with the vector that contains indexes of bars
 		thisBarLoopDataIt = loopData.find(thisBarLoopIndexIt->second);
@@ -1676,64 +1621,77 @@ void ofApp::parseBarLoop(string str)
 }
 
 //--------------------------------------------------------------
-void ofApp::parseMelodicLine(string str)
+vector<string> ofApp::tokenizeChord(string input, bool includeAngleBrackets)
 {
-	bool parsingBarsFromLoop = false;
-	int ndx;
-	string parsingBarsFromLoopName;
-	if (parsingBars && startsWith(str, "\\") && \
-			(str.substr(0, str.find(" ")).compare("\\ottava") != 0 && str.substr(0, str.find(" ")).compare("\\ott") != 0) && \
-			(str.substr(0, str.find(" ")).compare("\\tuplet") != 0 && str.substr(0, str.find(" ")).compare("\\tup") != 0) && \
-			str.find("|") == string::npos) {
-		if (barsIndexes.find(str) == barsIndexes.end()) {
-			if (loopsIndexes.find(str) != loopsIndexes.end()) {
-				parsingBarsFromLoop = true;
-				parsingBarsFromLoopName = str;
-			}
-		}
-	}
-	size_t strBegin, strLen;
-	string strToProcess = detectRepetitions(str);
-	if (parsingBars) {
-		if (parsingBarsFromLoop) {
-			if (lastInstrumentIndex == firstInstForBarsIndex) {
-				numBarsParsed = (int)loopData[loopsIndexes[parsingBarsFromLoopName]].size();
+	bool isString = false;
+	int quotesCounter = 0;
+	vector<string> tokens;
+	string token;
+	for (size_t i = 0; i < input.size(); i++) {
+		if (isspace(input[i])) {
+			if (!token.empty() && !isString) {
+				tokens.push_back(token);
+				token.clear();
 			}
 			else {
-				// left operand of if below was barsIterCounter
-				int size = (int)loopData[loopsIndexes[parsingBarsFromLoopName]].size();
+				token += input[i];
 			}
-			if (barsIterCounter-1 >= (int)loopData[loopsIndexes[parsingBarsFromLoopName]].size()-1) {
-				instruments.at(lastInstrumentIndex).setMultiBarsDone(true);
-			}
-			ndx = loopData[loopsIndexes[parsingBarsFromLoopName]][barsIterCounter-1];
-			strToProcess = loopsOrdered[ndx];
+		}
+		// we continue when we run into the chord opening and closing characters
+		// so that they are not concatenated to the token
+		else if (input[i] == '<' && ((i < input.size()-1 && !isspace(input[i+1])) || (i > 0 && input[i-1] != '\\'))) {
+			if (includeAngleBrackets) token += input[i];
+			continue;
+		}
+		else if (input[i] == '>' && (i > 0 && input[i-1] != '\\' && input[i-1] != '-')) {
+			if (includeAngleBrackets) token += input[i];
+			continue;
 		}
 		else {
-			strBegin = instruments.at(lastInstrumentIndex).getMultiBarsStrBegin();
-			strLen = strToProcess.substr(strBegin).find("|");
-			vector<string> bars = tokenizeString(strToProcess, "|"); // to get the number of bars
-			if (lastInstrumentIndex == firstInstForBarsIndex) {
-				numBarsParsed = (int)bars.size();
-			}
-			if (strLen != string::npos) {
-				strToProcess = strToProcess.substr(strBegin, strLen-1);
-				instruments.at(lastInstrumentIndex).setMultiBarsStrBegin(strBegin+strLen+2);
-			}
-			else {
-				strToProcess = strToProcess.substr(strBegin);
-				instruments.at(lastInstrumentIndex).setMultiBarsDone(true);
+			token += input[i];
+			if (input[i] == '"') {
+				quotesCounter++;
+				if (quotesCounter == 1) {
+					isString = true;
+				}
+				else {
+					isString = false;
+					quotesCounter = 0;
+				}
 			}
 		}
 	}
-	if (startsWith(strToProcess, "\\") && \
-			(strToProcess.substr(0, strToProcess.find(" ")).compare("\\ottava") != 0 && strToProcess.substr(0, strToProcess.find(" ")).compare("\\ott") != 0) && \
-			(strToProcess.substr(0, strToProcess.find(" ")).compare("\\tuplet") != 0 && strToProcess.substr(0, strToProcess.find(" ")).compare("\\tup") != 0)) {
-		if (barsIndexes.find(strToProcess) != barsIndexes.end()) {
-			stripLineFromBar(strToProcess);
-			return;
-		}
-	}
+	if (!token.empty()) tokens.push_back(token);
+	return tokens;
+}
+
+//--------------------------------------------------------------
+std::pair<int, string> ofApp::parseMelodicLine(string str)
+{
+	//if (!areBracketsBalanced(str)) {
+	//	return std::make_pair(3, "brackets are not balanced");
+	//}
+	//if (!areParenthesesBalanced(str)) {
+	//	return std::make_pair(3, "parentheses are not balanced");
+	//}
+	//bool parsingBarsFromLoop = false;
+	//int ndx;
+	//string parsingBarsFromLoopName;
+	//if (parsingBars && startsWith(str, "\\") && str.find("|") == string::npos) {
+	//	if (barsIndexes.find(str) == barsIndexes.end()) {
+	//		if (loopsIndexes.find(str) != loopsIndexes.end()) {
+	//			parsingBarsFromLoop = true;
+	//			parsingBarsFromLoopName = str;
+	//		}
+	//		else {
+	//			return std::make_pair(3, (string)"bar/loop " + str + (string)" doesn't exist");
+	//		}
+	//	}
+	//}
+	//size_t strBegin, strLen;
+	//string strToProcess = detectRepetitions(str);
+	vector<string> tokens = tokenizeString(str, " ");
+	int barIndex = getLastLoopIndex();
 	int tempDur = 0;
 	// the following array is used to map the dynamic values
 	// to the corresponding MIDI velocity values
@@ -1744,392 +1702,258 @@ void ofApp::parseMelodicLine(string str)
 	int midiNotes[7] = {0, 2, 4, 5, 7, 9, 11};
 	bool dynamicsRampStarted = false;
 	// booleans to determine whether we're writing a chord or not
-	bool chordStarted = false;
+	//bool chordStarted = false;
 	bool firstChordNote = false;
 	
 	bool foundArticulation = false;
 	// boolean for dynamics, whether it's a mezzo forte or mezzo piano
 	bool mezzo = false;
-	vector<string> tokens = tokenizeString(strToProcess, " ");
 	// index variables for loop so that they are initialized before vectors with unkown size
-	int i = 0, j = 0; //  initialize to avoid compiler warnings
-	// first detect if there are any quotes, which might include one or more white spaces
-	bool closedQuote = true;
-	for (i = 0; i < (int)tokens.size(); i++) {
-		// first determine if we have both quotes in the same token
-		vector<int> quoteNdx = findIndexesOfCharInStr(tokens.at(i), "\"");
-		if (quoteNdx.size() > 1) {
-			continue;
-		}
-		// if we find a quote and we're not at the last token
-		if (tokens.at(i).find("\"") != string::npos && i < (tokens.size()-1)) {
-			unsigned ndxLocal = i+1;
-			closedQuote = false;
-			while (ndxLocal < tokens.size()) {
-				// if we find the pairing quote, concatenate the strings into one token
-				if (tokens.at(ndxLocal).find("\"") != string::npos) {
-					tokens.at(i) += (" " + tokens.at(ndxLocal));
-					tokens.erase(tokens.begin()+ndxLocal);
-					closedQuote = true;
-					break;
-				}
-				ndxLocal++;
-			}
-		}
-	}
+	unsigned i = 0, j = 0, k = 0; //  initialize to avoid compiler warnings
 	// then detect any chords, as the size of most vectors equals the number of notes vertically
 	// and not single notes within chords
 	unsigned numNotesVertical = tokens.size();
-	unsigned chordNotesCounter = 0;
-	unsigned numErasedOttTokens = 0;
-	unsigned chordOpeningNdx;
-	unsigned chordClosingNdx;
-	// characters that are not permitted inside a chord are
-	// open/close parenthesis, hyphen, dot, backslash, carret, underscore, open/close curly brackets
-	vector<int> forbiddenCharsInChord{40, 41, 45, 46, 92, 94, 95, 123, 125};
-	for (i = 0; i < (int)tokens.size(); i++) {
-		if (tokens.at(i).compare("\\ottava") == 0 || tokens.at(i).compare("\\ott") == 0) {
-			numErasedOttTokens += 2;
-			i += 1;
-			continue;
-		}
-		if (chordStarted) {
-			bool chordEnded = false;
-			chordNotesCounter++;
-		}
-		// if we find a quote and we're not at the last token
-		chordOpeningNdx = tokens.at(i).find("<");
-		chordClosingNdx = tokens.at(i).find(">");
-		// an opening angle brace is also used for crescendi, but when used to start a chord
-		// it must be at the beginning of the token, so we test if its index is 0
-		if (chordOpeningNdx != string::npos && chordOpeningNdx == 0 && i < tokens.size()) {
-			chordStarted = true;
-		}
-		else if (chordClosingNdx != string::npos && chordClosingNdx < tokens.at(i).size()) {
-			chordStarted = false;
-		}
-	}
-	if (tokens.size() == numErasedOttTokens) return; // in case we only provide the ottava
-	numNotesVertical -= (chordNotesCounter + numErasedOttTokens);
 
-	// check for tuplets
-	int tupMapNdx = 0;
-	map<int, std::pair<int, int>> tupRatios;
-	for (i = 0; i < (int)tokens.size(); i++) {
-		if (tokens.at(i).compare("\\tuplet") == 0 || tokens.at(i).compare("\\tup") == 0) {
-			// tests whether the tuplet format is correct have been made above
-			// so we can safely query tokens.at(i+1) etc
-			size_t divisionNdx = tokens.at(i+1).find("/");
-			size_t remainingStr = tokens.at(i+1).size() - divisionNdx - 1;
-			tupRatios[tupMapNdx++] = std::make_pair(stoi(tokens.at(i+1).substr(0, divisionNdx)), stoi(tokens.at(i+1).substr(divisionNdx+1, remainingStr)));
-		}
-	}
-
-	// store the indexes of the tuplets beginnings and endings so we can erase all the unnessacary tokens
-	unsigned tupStart, tupStop = 0; // assign 0 to tupStop to stop the compiler from throwing a warning message
-	unsigned tupStartNoChords, tupStopNoChords = 0; // indexes for erasing items from tokens vector
-	int tupStartHasNoBracket = 0, tupStopHasNoBracket = 0;
-	int numErasedTupTokens = 0;
-	unsigned tupStartNdx = 0, tupStopNdx = 0;
-	bool tupStartInsideChord = false, tupStopInsideChord = false;
-	tupMapNdx = 0;
-	map<int, std::pair<unsigned, unsigned>> tupStartStop;
-	for (i = 0; i < (int)tokens.size(); i++) {
-		if (startsWith(tokens.at(i), "<")) {
-			tupStartInsideChord = true;
-		}
-		else if (startsWith(tokens.at(i), "{") && tokens.at(i).size() > 1) {
-			if (tokens.at(i).at(1) == char(60)) { // <
-				tupStartInsideChord = true;
-			}
-		}
-		if (tokens.at(i).compare("\\tuplet") == 0 || tokens.at(i).compare("\\tup") == 0) {
-			if (tokens.at(i+2).compare("{") == 0) {
-				tupStart = tupStartNdx+3;
-				tupStartNoChords = i+3;
-				tupStartHasNoBracket = 1;
-			}
-			else {
-				tupStart = tupStartNdx+2;
-				tupStartNoChords = (unsigned)i+2;
-			}
-			tupStopInsideChord = false;
-			tupStopNdx = tupStartNdx + 2 + tupStartHasNoBracket;
-			for (j = i+2+tupStartHasNoBracket; j < tokens.size(); j++) {
-				if (startsWith(tokens.at(j), "<")) {
-					tupStopInsideChord = true;
-				}
-				else if (startsWith(tokens.at(j), "{") && tokens.at(j).size() > 1) {
-					if (tokens.at(j).at(1) == char(60)) { // <
-						tupStopInsideChord = true;
-					}
-				}
-				if (tokens.at(j).find("}") != string::npos) {
-					if (tokens.at(j).compare("}") == 0) {
-						tupStop = tupStopNdx-1;
-						tupStopNoChords = (unsigned)j-1;
-						tupStopHasNoBracket = 1;
-					}
-					else {
-						tupStop = tupStopNdx;
-						tupStopNoChords = (unsigned)j;
-					}
-					break;
-				}
-				if (tupStopInsideChord && tokens.at(j).find(">") != string::npos) {
-					tupStopInsideChord = false;
-				}
-				if (!tupStopInsideChord) tupStopNdx++;
-			}
-			// offset the start and stop of the tuplet
-			tupStart -= (2 + tupStartHasNoBracket);
-			tupStartNoChords -= (2 + tupStartHasNoBracket);
-			tupStop -= (2 + tupStartHasNoBracket);
-			tupStopNoChords -= (2 + tupStartHasNoBracket);
-			// now that we have temporarily stored the start and end of this tuplet
-			// we can erase it from the tokens vector and correct the stored indexes
-			// before we store them to the vector of pairs
-			// erase \tuplet and ratio
-			tokens.erase(tokens.begin() + i);
-			tokens.erase(tokens.begin() + i);
-			// check if the opening and closing curly bracket is isolated from the tuplet body
-			if (tupStartHasNoBracket) tokens.erase(tokens.begin() + tupStartNoChords);
-			if (tupStopHasNoBracket) tokens.erase(tokens.begin() + tupStopNoChords + 1);
-			tupStartStop[tupMapNdx++] = std::make_pair(tupStart, tupStop);
-			numErasedTupTokens += (2 + tupStartHasNoBracket + tupStopHasNoBracket);
-			i = (int)tupStopNoChords;
-			tupStartNdx = tupStopNdx - 2 - tupStartHasNoBracket;
-			tupStartHasNoBracket = tupStopHasNoBracket = 0;
-		}
-		else {
-			if (tupStartInsideChord && tokens.at(i).find(">") != string::npos) {
-				tupStartInsideChord = false;
-			}
-			if (!tupStartInsideChord) tupStartNdx++;
-		}
-	}
-	numNotesVertical -= numErasedTupTokens;
+	map<int, std::pair<int, int>> tupletRatios;
+	map<int, std::pair<unsigned, unsigned>> tupletStartStop;
 
 	// once we define the number of tokens and vertical notes, we can create the vectors with known size
-	vector<int> durIndexes(numNotesVertical, -1);
-	vector<int> dynamicsIndexes(numNotesVertical, -1);
-	vector<int> midiVels(numNotesVertical, 0);
-	vector<int> midiPitchBendVals(numNotesVertical, 0);
-	vector<int> dursData(numNotesVertical, 0);
-	vector<int> dursDataWithoutSlurs(numNotesVertical, 0);
-	vector<int> midiDursDataWithoutSlurs(numNotesVertical, 0);
+	vector<int> durIndexes(tokens.size(), -1);
+	vector<int> dynamicsIndexes(tokens.size(), -1);
+	vector<int> midiVels(tokens.size(), 0);
+	vector<int> midiPitchBendVals(tokens.size(), 0);
+	vector<int> dursData(tokens.size(), 0);
+	vector<int> dursDataWithoutSlurs(tokens.size(), 0);
+	vector<int> midiDursDataWithoutSlurs(tokens.size(), 0);
 	// pitch bend values are calculated by the sequencer
 	// so here we store the microtones only
-	vector<int> pitchBendVals(numNotesVertical, 0);
-	vector<int> dotIndexes(numNotesVertical, 0);
-	vector<unsigned> dotsCounter(numNotesVertical, 0);
-	vector<int> dynamicsData(numNotesVertical, 0);
-	vector<int> dynamicsRampData(numNotesVertical, 0);
-	vector<int> slurBeginningsIndexes(numNotesVertical, -1);
-	vector<int> slurEndingsIndexes(numNotesVertical, -1);
-	vector<int> tieIndexes(numNotesVertical, -1);
-	//vector<int> textIndexesLocal(numNotesVertical, 0);
-	vector<int> dursForScore(numNotesVertical, 0);
-	vector<int> dynamicsForScore(numNotesVertical, -1);
-	vector<int> dynamicsForScoreIndexes(numNotesVertical, -1);
-	vector<int> dynamicsRampStart(numNotesVertical, 0);
-	vector<int> dynamicsRampEnd(numNotesVertical, 0);
-	vector<pair<unsigned, unsigned>> dynamicsRampIndexes(numNotesVertical);
-	vector<int> midiDynamicsRampDurs(numNotesVertical, 0);
-	vector<int> glissandiIndexes(numNotesVertical, 0);
-	vector<int> midiGlissDurs(numNotesVertical, 0);
-	vector<int> dynamicsRampStartForScore(numNotesVertical, -1);
-	vector<int> dynamicsRampEndForScore(numNotesVertical, -1);
-	vector<int> dynamicsRampDirForScore(numNotesVertical, -1);
-	vector<bool> isSlurred (numNotesVertical, false);
-	vector<int> notesCounter(tokens.size()-numErasedOttTokens, 0);
-	vector<int> verticalNotesIndexes(tokens.size()-numErasedOttTokens+1, 0); // plus one to easily break out of loops in case of chords
-	vector<int> beginningOfChords(tokens.size()-numErasedOttTokens, 0);
-	vector<int> endingOfChords(tokens.size()-numErasedOttTokens, 0);
-	vector<unsigned> accidentalIndexes(tokens.size()-numErasedOttTokens);
-	vector<unsigned> chordNotesIndexes(tokens.size()-numErasedOttTokens, 0);
-	vector<int> ottavas(numNotesVertical, 0);
-	int verticalNoteIndex;
-	vector<bool> foundNotes(i-numErasedOttTokens);
-	vector<int> transposedOctaves(i-numErasedOttTokens, 0);
-	vector<int> transposedAccidentals(i-numErasedOttTokens, 0);
+	vector<int> pitchBendVals(tokens.size(), 0);
+	vector<int> dotIndexes(tokens.size(), 0);
+	vector<unsigned> dotsCounter(tokens.size(), 0);
+	vector<int> dynamicsData(tokens.size(), 0);
+	vector<int> dynamicsRampData(tokens.size(), 0);
+	vector<int> slurBeginningsIndexes(tokens.size(), -1);
+	vector<int> slurEndingsIndexes(tokens.size(), -1);
+	vector<int> tieIndexes(tokens.size(), -1);
+	//vector<int> textIndexesLocal(tokens.size(), 0);
+	vector<int> dursForScore(tokens.size(), 0);
+	vector<int> dynamicsForScore(tokens.size(), -1);
+	vector<int> dynamicsForScoreIndexes(tokens.size(), -1);
+	vector<int> dynamicsRampStart(tokens.size(), 0);
+	vector<int> dynamicsRampEnd(tokens.size(), 0);
+	vector<pair<unsigned, unsigned>> dynamicsRampIndexes(tokens.size());
+	vector<int> midiDynamicsRampDurs(tokens.size(), 0);
+	vector<int> glissandiIndexes(tokens.size(), 0);
+	vector<int> glissandiIndexesForScore(tokens.size(), 0);
+	vector<int> midiGlissDurs(tokens.size(), 0);
+	vector<int> dynamicsRampStartForScore(tokens.size(), -1);
+	vector<int> dynamicsRampEndForScore(tokens.size(), -1);
+	vector<int> dynamicsRampDirForScore(tokens.size(), -1);
+	vector<bool> isSlurred (tokens.size(), false);
+	vector<int> notesCounter(tokens.size(), 0);
+	vector<int> verticalNotesIndexes(tokens.size()+1, 0); // plus one to easily break out of loops in case of chords
+	vector<int> beginningOfChords(tokens.size(), 0);
+	vector<int> endingOfChords(tokens.size(), 0);
+	vector<unsigned> accidentalIndexes(tokens.size());
+	vector<unsigned> chordNotesIndexes(tokens.size(), 0);
+	vector<int> ottavas(tokens.size(), 0);
+	vector<bool> foundNotes(tokens.size());
+	size_t transposedVecSize = 0;
+	for (i = 0; i < tokens.size(); i++) {
+		vector<string> subtokens = tokenizeChord(tokens[i]);
+		transposedVecSize += subtokens.size();
+	}
+	vector<int> transposedOctaves(transposedVecSize, 0);
+	vector<int> transposedAccidentals(transposedVecSize, 0);
 	// variable to determine which character we start looking at
 	// useful in case we start a bar with a chord
-	vector<unsigned> firstChar(tokens.size()-numErasedOttTokens, 0);
-	vector<unsigned> firstCharOffset(tokens.size()-numErasedOttTokens, 1); // this is zeroed in case of a rhythm staff with durations only
-	int midiNote, naturalScaleNote; // the second is for the score
-	int ottava = 0;
+	vector<unsigned> firstChar(tokens.size(), 0);
+	vector<unsigned> firstCharOffset(tokens.size(), 1); // this is zeroed in case of a rhythm staff with durations only
+	int lastMidiNote = -1, lastNaturalScaleNote = -1; // these are used for tied notes
 	// boolean used to set the values to isSlurred vector
 	bool slurStarted = false;
+	bool isLastNoteTied = false;
 	// a counter for the number of notes in each chord
-	chordNotesCounter = 0;
 	unsigned index1 = 0, index2 = 0; // variables to index various data
 	// create an unpopullated vector of vector of pairs of the notes as MIDI and natural scale
 	// after all vectors with known size and all single variables have been created
-	//vector<vector<std::pair<int, int>>> notePairs;
-	vector<vector<intPair>> notePairs;
+	vector<vector<std::pair<int, int>>> notePairs;
+	//vector<vector<intPair>> notePairs;
 	// then iterate over all the tokens and parse them to store the notes
-	for (i = 0; i < (int)tokens.size(); i++) {
-		if (tokens.at(i).compare("\\ottava") == 0 || tokens.at(i).compare("\\ott") == 0) {
-			// tests whether a digit follows \ottava have been made above
-			// so we can now safely query tokens.at(i+1) and extract the digit that follows
-			ottava = stoi(tokens.at(i+1));
-			// erase the \ottava val tokens from the tokens vector
-			tokens.erase(tokens.begin() + i);
-			tokens.erase(tokens.begin() + i);
-			// check if we need to change any tuplet indexes
-			for (auto it = tupStartStop.begin(); it != tupStartStop.end(); ++it) {
-				if (i >= it->second.first && i <= it->second.second) {
-					it->second.first -= 2;
-					it->second.second -= 2;
-					// store the current position of the iterator
-					auto it2 = it;
-					// then increment and check for the rest of the tuplets
-					++it2;
-					// check for any possible remaining tuplets after this one
-					while (it2 != tupStartStop.end()) {
-						it2->second.first -= 2;
-						it2->second.second -= 2;
-						++it2;
-					}
-				}
-			}
-			i--;
-			continue;
-		}
-		// ignore curly brackets that belong to \tuplets
-		if (startsWith(tokens.at(i), "{")) tokens.at(i) = tokens.at(i).substr(1);
-		if (endsWith(tokens.at(i), "}")) tokens.at(i) = tokens.at(i).substr(0, tokens.at(i).size()-1);
+	for (i = 0; i < tokens.size(); i++) {
 		firstChar.at(i) = 0;
 		// first check if the token is a comment so we exit the loop
 		if (startsWith(tokens.at(i), "%")) continue;
+		// further tokenize the token to detect chords
+		vector<string> subtokens = tokenizeChord(tokens.at(i));
 		foundNotes.at(i) = false;
 		transposedOctaves.at(index1) = 0;
 		transposedAccidentals.at(index1) = 0;
 		// the first element of each token is the note
 		// so we first check for it in a separate loop
 		// and then we check for the rest of the stuff
-		for (j = 0; j < 8; j++) {
-			if (tokens.at(i).at(firstChar.at(i)) == char(60)) { // <
-				chordStarted = true;
-				beginningOfChords.at(i) = 1;
-				firstChordNote = true;
-				firstChar.at(i) = 1;
-			}
-			if (tokens.at(i).at(firstChar.at(i)) == noteChars[j]) {
-				midiNote = -1;
-				if (j < 7) {
-					midiNote = midiNotes[j];
-					// we start one octave below the middle C
-					midiNote += 48;
-					naturalScaleNote = j;
-					if (instruments.at(lastInstrumentIndex).isRhythm()) {
-						midiNote = 59;
-						naturalScaleNote = 6;
+		for (j = 0; j < subtokens.size(); j++) {
+			int midiNote = -1, naturalScaleNote = -1; // the second is for the score
+			for (k = 0; k < 8; k++) {
+				if (subtokens.at(j).at(0) == noteChars[k]) {
+					midiNote = -1;
+					if (k < 7) {
+						midiNote = midiNotes[k];
+						// we start one octave below the middle C
+						midiNote += 48;
+						naturalScaleNote = k;
+						if (instruments.at(lastInstrumentIndex).isRhythm()) {
+							if (j > 0) return std::make_pair(3, "chords are not allowed in rhythm staffs");
+							midiNote = 59;
+							naturalScaleNote = 6;
+						}
+						//else if (instruments.at(lastInstrumentIndex).getTransposition() != 0) {
+						//	int transposedMidiNote = midiNotes[k] + instruments.at(lastInstrumentIndex).getTransposition();
+						//	// testing against the midiNote it is easier to determine whether we need to add an accidental
+						//	if (transposedMidiNote < 0) {
+						//		transposedMidiNote = 12 + midiNotes[k] + instruments.at(lastInstrumentIndex).getTransposition();
+						//	}
+						//	else if (transposedMidiNote > 11) {
+						//		transposedMidiNote %= 12;
+						//	}
+						//	if (midiNotes[k] < 4) {
+						//		transposedOctaves.at(index1) -= 1;
+						//	}
+						//	if (transposedMidiNote > 4 && (transposedMidiNote % 2) == 0) {
+						//		transposedAccidentals.at(index1) = 2;
+						//	}
+						//	else if (transposedMidiNote <= 4 && (transposedMidiNote % 2) == 1) {
+						//		transposedAccidentals.at(index1) = 2;
+						//	}
+						//	naturalScaleNote = distance(midiNotes, find(begin(midiNotes), end(midiNotes), (transposedMidiNote-(transposedAccidentals.at(index1)/2))));
+						//}
 					}
-					else if (instruments.at(lastInstrumentIndex).getTransposition() != 0) {
-						int transposedMidiNote = midiNotes[j] + instruments.at(lastInstrumentIndex).getTransposition();
-						// testing against the midiNote it is easier to determine whether we need to add an accidental
-						if (transposedMidiNote < 0) {
-							transposedMidiNote = 12 + midiNotes[j] + instruments.at(lastInstrumentIndex).getTransposition();
+					else {
+						// the last element of the noteChars array is the rest
+						if (j > 0) return std::make_pair(3, "rests can't be included in chords");
+						midiNote = naturalScaleNote = -1;
+					}
+				storeNote:
+					lastMidiNote = midiNote;
+					lastNaturalScaleNote = naturalScaleNote;
+					if (j == 0) {
+						// create a new vector for each single note or a group of notes of a chord
+						std::pair p = std::make_pair(midiNote, naturalScaleNote);
+						std::vector<std::pair<int, int>> aVector(1, p);
+						notePairs.push_back(std::move(aVector));
+						chordNotesIndexes.at(i) = 0;
+        	            notesCounter.at(i)++;
+						dotIndexes.at(i) = 0;
+						glissandiIndexes.at(i) = 0;
+						glissandiIndexesForScore.at(i) = 0;
+						midiGlissDurs.at(i) = 0;
+						midiDynamicsRampDurs.at(i) = 0;
+						pitchBendVals.at(i) = 0;
+						//textIndexesLocal.at(index2) = 0;
+						index2++;
+						if (firstChordNote) firstChordNote = false;
+					}
+					else {
+						// if we have a chord, push this note to the current vector
+						notePairs.back().push_back(std::make_pair(midiNote, naturalScaleNote));
+						// increment the counter of the chord notes
+						// so we can set the index for each note in a chord properly
+						chordNotesIndexes.at(i)++;
+        	            notesCounter.at(i)++;
+					}
+					foundNotes.at(i) = true;
+					break;
+				}
+			}
+			if (!foundNotes.at(i)) {
+				if (instruments.at(lastInstrumentIndex).isRhythm() || isLastNoteTied) {
+					// to be able to write a duration without a note, for rhythm staffs
+					// we need to check if the first character is a number
+					int dur = 0;
+					if (subtokens.at(j).size() > 1) {
+						if (isdigit(subtokens.at(j).at(0)) && isdigit(subtokens.at(j).at(1))) {
+							dur = int(subtokens.at(j).at(0)+subtokens.at(j).at(1));
 						}
-						else if (transposedMidiNote > 11) {
-							transposedMidiNote %= 12;
+						else if (isdigit(subtokens.at(j).at(0))) {
+							dur = int(subtokens.at(j).at(0));
 						}
-						if (midiNotes[j] < 4) {
-							transposedOctaves.at(index1) -= 1;
+						else {
+							return std::make_pair(3, (string)"first character must be a note or a chord opening symbol (<), not \"" + subtokens.at(j).at(0) + (string)"\"");
 						}
-						if (transposedMidiNote > 4 && (transposedMidiNote % 2) == 0) {
-							transposedAccidentals.at(index1) = 2;
+					}
+					else if (isdigit(subtokens.at(j).at(0))) {
+						dur = int(subtokens.at(j).at(0));
+					}
+					else {
+						return std::make_pair(3, (string)"first character must be a note or a chord opening symbol (<), not \"" + subtokens.at(j).at(0) +(string)"\"");
+					}
+					if (std::find(std::begin(dursArr), std::end(dursArr), dur) == std::end(dursArr)) {
+						if (isLastNoteTied) {
+							midiNote = lastMidiNote;
+							naturalScaleNote = lastNaturalScaleNote;
 						}
-						else if (transposedMidiNote <= 4 && (transposedMidiNote % 2) == 1) {
-							transposedAccidentals.at(index1) = 2;
+						else {
+							midiNote = 59;
+							naturalScaleNote = 6;
 						}
-						naturalScaleNote = distance(midiNotes, find(begin(midiNotes), end(midiNotes), (transposedMidiNote-(transposedAccidentals.at(index1)/2))));
+						// we need to assign 0 to firstCharOffset which defaults to 1
+						// because further down it is added to firstChar
+						// but, in this case, we want to check the token from its beginning, index 0
+						firstCharOffset.at(i) = 0;
+						goto storeNote;
+					}
+					else {
+						return std::make_pair(3, to_string(dur) + ": wrong duration");
 					}
 				}
 				else {
-					// the last element of the noteChars array is the rest
-					midiNote = naturalScaleNote = -1;
-				}
-			storeNote:
-				if (!chordStarted || (chordStarted && firstChordNote)) {
-					// create a new vector for each single note or a group of notes of a chord
-					//std::pair p = std::make_pair(midiNote, naturalScaleNote);
-					intPair p;
-					p.first = midiNote;
-					p.second = naturalScaleNote;
-					//std::vector<std::pair<int, int>> aVector(1, p);
-					std::vector<intPair> aVector(1, p);
-					notePairs.push_back(std::move(aVector));
-					verticalNotesIndexes.at(i) = i;
-					chordNotesIndexes.at(i) = 0;
-					chordNotesCounter = 0;
-                    notesCounter.at(i)++;
-					dotIndexes.at(index2) = 0;
-					glissandiIndexes.at(index2) = 0;
-					midiGlissDurs.at(index2) = 0;
-					midiDynamicsRampDurs.at(index2) = 0;
-					pitchBendVals.at(index2) = 0;
-					//textIndexesLocal.at(index2) = 0;
-					ottavas.at(index2) = ottava;
-					index2++;
-					if (firstChordNote) firstChordNote = false;
-				}
-				else if (chordStarted && !firstChordNote) {
-					// if we have a chord, push this note to the current vector
-					intPair p;
-					p.first = midiNote;
-					p.second = naturalScaleNote;
-					//notePairs.back().push_back(std::make_pair(midiNote, naturalScaleNote));
-					notePairs.back().push_back(p);
-					// a -1 will be filtered out further down in the code
-					verticalNotesIndexes.at(index1) = -1;
-					// increment the counter of the chord notes
-					// so we can set the index for each note in a chord properly
-					chordNotesCounter++;
-					chordNotesIndexes.at(index1) += chordNotesCounter;
-                    notesCounter.at(index1)++;
-				}
-				foundNotes.at(i) = true;
-				break;
-			}
-		}
-		if (!foundNotes.at(i)) {
-			if (instruments.at(lastInstrumentIndex).isRhythm()) {
-				// to be able to write a duration without a note, for rhythm staffs
-				// we need to check if the first character is a number
-				int dur = 0;
-				if (tokens.at(i).size() > 1) {
-					if (isdigit(tokens.at(i).at(0)) && isdigit(tokens.at(i).at(1))) {
-						dur = int(tokens.at(i).at(0)+tokens.at(i).at(1));
-					}
-					else if (isdigit(tokens.at(i).at(0))) {
-						dur = int(tokens.at(i).at(0));
-					}
-				}
-				else if (isdigit(tokens.at(i).at(0))) {
-					dur = int(tokens.at(i).at(0));
-				}
-				if (std::find(std::begin(dursArr), std::end(dursArr), dur) == std::end(dursArr)) {
-					midiNote = 59;
-					naturalScaleNote = 6;
-					// we need to assign 0 to firstCharOffset which defaults to 1
-					// because further down it is added to firstChar
-					// but, in this case, we want to check the token from its beginning, index 0
-					firstCharOffset.at(i) = 0;
-					goto storeNote;
+					return std::make_pair(3, (string)"first character must be a note or a chord opening symbol (<), not \"" + subtokens.at(j).at(0) + (string)"\"");
 				}
 			}
-		}
-		else {
-			if (chordStarted && tokens.at(i).find(">") != string::npos) {
-				chordStarted = false;
-				firstChordNote = false;
-				endingOfChords.at(i) = 1;
+			for (k = 0; k < subtokens.at(j).size(); k++) {
+				// if we have a tilde, it means that this note is tide to the next one
+				if (subtokens.at(j).at(k) == 126) {
+					isLastNoteTied = true;
+					break;
+				}
 			}
 		}
 		index1++;
+	}
+
+	// now run through the entire subtoken to check if we have a character that is forbidden inside a chord
+	for (i = 0; i < tokens.size(); i++) {
+		// here we need to include the angle brackets to make sure we check for invalid characters inside a chord and not outside of it
+		vector<string> subtokens = tokenizeChord(tokens.at(i), true);
+		vector<char> forbiddenCharsInChord{'(', ')', '-', '.', '\\', '^', '_', '{', '}'};
+		bool outsideChord = true;
+		for (j = 0; j < subtokens.size(); j++) {
+			if (subtokens.at(j).size() == 0) break;
+			if (j == 0 && subtokens.at(j).at(0) == '<') outsideChord = false;
+			for (k = 0; k < subtokens.at(j).size(); k++) {
+				if (j == subtokens.size()-1 && subtokens.at(j).at(k) == '>') {
+					outsideChord = true;
+					break;
+				}
+				if (j > 0 && find(forbiddenCharsInChord.begin(), forbiddenCharsInChord.end(), subtokens.at(j).at(k)) != forbiddenCharsInChord.end()) {
+					// first check if we have a backslash, in which case we should check if it's actually a dynamic
+					if (subtokens.at(j).at(k) == 92) {
+						if (k < subtokens.at(j).size()) {
+							// compare with "m", "p", "f", "<", ">", and "!"
+							if (subtokens.at(j).at(k+1) == char(109) || subtokens.at(j).at(k+1) == char(112) || subtokens.at(j).at(k+1) == char(102) || \
+									subtokens.at(j).at(k+1) == char(60) || subtokens.at(j).at(k+1) == char(62) || subtokens.at(j).at(k+1) == char(33)) {
+								return std::make_pair(3, "dynamic can't be included within a chord, only outside of it");
+							}
+							return std::make_pair(3, char(subtokens.at(j).at(k)) + (string)" can't be included within a chord, only outside of it");
+						}
+						return std::make_pair(3, char(subtokens.at(j).at(k)) + (string)" can't be included within a chord, only outside of it");
+					}
+					return std::make_pair(3, char(subtokens.at(j).at(k)) + (string)" can't be included within a chord, only outside of it");
+				}
+			}
+			// stop checking after exiting the chord
+			if (outsideChord) break;
+		}
 	}
 	
 	// reset the indexes
@@ -2203,17 +2027,11 @@ void ofApp::parseMelodicLine(string str)
 	// because this is dynamically allocated memory too
 	int textsCounter;
 	vector<vector<int>> textIndexesLocal;
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		// check if we have a comment, so we exit the loop
 		if (startsWith(tokens.at(i), "%")) break;
-		verticalNoteIndex = 0;
-		for (int k = 0; k <= i; k++) {
-			// loop till we find a -1, which means that this token is a chord note, but not the first one
-			if (verticalNotesIndexes.at(k) < 0) continue;
-			verticalNoteIndex = k;
-		}
 		// create an empty entry for every note/chord
-		if (textIndexesLocal.size() <= verticalNoteIndex) {
+		if (textIndexesLocal.size() <= i) {
 			textIndexesLocal.push_back({0});
 		}
 		textsCounter = 0;
@@ -2258,30 +2076,32 @@ void ofApp::parseMelodicLine(string str)
 	// once we have sorted out the indexes of the texts, we can sort out the actual texts
 	unsigned openQuote, closeQuote;
 	vector<string> texts;
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		// again, check if we have a comment, so we exit the loop
 		if (startsWith(tokens.at(i), "%")) break;
-		verticalNoteIndex = 0;
-		for (int k = 0; k <= i; k++) {
-			// loop till we find a -1, which means that this token is a chord note, but not the first one
-			if (verticalNotesIndexes.at(k) < 0) continue;
-			verticalNoteIndex = k;
-		}
-	}
-	for (i = 0; i < (int)tokens.size(); i++) {
-		// again, check if we have a comment, so we exit the loop
-		if (startsWith(tokens.at(i), "%")) break;
-		verticalNoteIndex = 0;
-		for (int k = 0; k <= i; k++) {
-			// loop till we find a -1, which means that this token is a chord note, but not the first one
-			if (verticalNotesIndexes.at(k) < 0) continue;
-			verticalNoteIndex = k;
-		}
-		for (j = 0; j < (int)tokens.at(i).size(); j++) {
+		for (j = 0; j < tokens.at(i).size(); j++) {
 			// ^ or _ for adding text above or below the note
 			if ((tokens.at(i).at(j) == char(94)) || (tokens.at(i).at(j) == char(95))) {
 				if (j > 0) {
 					if (tokens.at(i).at(j-1) == '-') foundArticulation = true;
+				}
+				if (j >= (tokens.at(i).size()-1) && !foundArticulation) {
+					if (tokens.at(i).at(j) == char(94)) {
+						return std::make_pair(3, "a carret must be followed by text in quotes");
+					}
+					else {
+						return std::make_pair(3, "an undescore must be followed by text in quotes");
+					}
+				}
+				if (j < tokens.at(i).size()-1) {
+					if (tokens.at(i).at(j+1) != char(34) && !foundArticulation) { // "
+						if (tokens.at(i).at(j) == char(94)) {
+							return std::make_pair(3, "a carret must be followed by a bouble quote sign");
+						}
+						else {
+							return std::make_pair(3, "an underscore must be followed by a bouble quote sign");
+						}
+					}
 				}
 				if (!foundArticulation) {
 					openQuote = j+2;
@@ -2294,12 +2114,15 @@ void ofApp::parseMelodicLine(string str)
 						}
 						index2++;
 					}
+					if (closeQuote <= openQuote) {
+						return std::make_pair(3, "text must be between two double quote signs");
+					}
 					texts.push_back(tokens.at(i).substr(openQuote, closeQuote-openQuote));
 					//if (tokens.at(i).at(j) == char(94)) {
-					//	textIndexesLocal.at(verticalNoteIndex) = 1;
+					//	textIndexesLocal.at(i) = 1;
 					//}
 					//else if (tokens.at(i).at(j) == char(95)) {
-					//	textIndexesLocal.at(verticalNoteIndex) = -1;
+					//	textIndexesLocal.at(i) = -1;
 					//}
 					j = closeQuote;
 				}
@@ -2312,22 +2135,26 @@ void ofApp::parseMelodicLine(string str)
 	for (i = 0; i < texts.size(); i++) {
 		textsForScore.push_back(texts.at(i));
 	}
-	// lastly, store articulation symbols, as these have to be allocated dynamically too
+	// store articulation symbols, as these have to be allocated dynamically too
+	int quotesCounter = 0; // so we can ignore anything that is passed as text
 	vector<vector<int>> articulationIndexes;
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		foundArticulation = false;
 		unsigned firstArticulIndex = 0;
-		verticalNoteIndex = -1;
-		for (j = 0; j <= i; j++) {
-			// loop till we find a -1, which means that this token is a chord note, but not the first one
-			if (verticalNotesIndexes.at(j) < 0) continue;
-			verticalNoteIndex++;
-		}
-		if ((int)articulationIndexes.size() <= verticalNoteIndex) {
+		if (articulationIndexes.size() <= i) {
 			articulationIndexes.push_back({0});
 		}
-		for (j = 0; j < (int)tokens.at(i).size(); j++) {
-			if (tokens.at(i).at(j) == char(45)) { // - for articulation symbols
+		vector<string> subtokens = tokenizeChord(tokens.at(i));
+		for (j = 0; j < subtokens.back().size(); j++) {
+			if (int(subtokens.back().at(j)) == 34 && quotesCounter >= 1) {
+				quotesCounter++;
+				if (quotesCounter > 2) quotesCounter = 0;
+			}
+			if (quotesCounter > 0) continue; // if we're inside text, ignore
+			if (subtokens.back().at(j) == char(45) && (j > 0 && subtokens.back().at(j-1) != 'o')) { // - for articulation symbols
+				if (j >= (subtokens.back().size()-1)) {
+					return std::make_pair(3, "a hyphen must be followed by an articulation symbol");
+				}
 				if (!foundArticulation) {
 					firstArticulIndex = j;
 				}
@@ -2339,7 +2166,7 @@ void ofApp::parseMelodicLine(string str)
 					continue;
 				}
 				foundArticulation = true;
-				int articulChar = char(tokens.at(i).at(j+1));
+				int articulChar = char(subtokens.back().at(j+1));
 				int articulIndex = 0;
 				switch (articulChar) {
 					// articulation symbol indexes start from 1 because 0 is reserved for no articulation
@@ -2364,12 +2191,14 @@ void ofApp::parseMelodicLine(string str)
 					case 95: // _ for portando
 						articulIndex = 7;
 						break;
+					default:
+						return std::make_pair(3, "unknown articulation symbol");
 				}
-				if (articulationIndexes.at(verticalNoteIndex).size() == 1 && articulationIndexes.at(verticalNoteIndex).at(0) == 0) {
-					articulationIndexes.at(verticalNoteIndex).at(0) = articulIndex;
+				if (articulationIndexes.at(i).size() == 1 && articulationIndexes.at(i).at(0) == 0) {
+					articulationIndexes.at(i).at(0) = articulIndex;
 				}
 				else {
-					articulationIndexes.at(verticalNoteIndex).push_back(articulIndex);
+					articulationIndexes.at(i).push_back(articulIndex);
 				}
 				j++;
 				continue;
@@ -2386,8 +2215,79 @@ void ofApp::parseMelodicLine(string str)
 		}
 	}
 
+	// now check for tuplets
+	int tupletNdx = 0;
+	int tupletNumerator = 1, tupletDenominator = 1;
+	vector<char> allowedChars = {'c', 'd', 'e', 'f', 'g', 'a', 'b', 'r', 'i', 's', 'h', '\'', ',', 'o', '-'};
+	for (i = 0; i < tokens.size(); i++) {
+		vector<string> subtokens = tokenizeChord(tokens.at(i));
+		bool isTuplet = true;
+		// tuplets are converted to a forward slash and the tuplet ration after it
+		// for example, \tuplet 3/2 {c''8 d'' e''} is converted to c''8/3/2 d''/3/2 e''/3/2
+		// so we need to look for digits after a note character, an octave symbol (, or ') or a duration digit
+		size_t slashNdx = subtokens.back().find('/');
+		if (slashNdx != string::npos) {
+			for (j = 0; j < slashNdx; j++) {
+				// if we find a character that is not allowed
+				if (find(allowedChars.begin(), allowedChars.end(), subtokens.back().at(j)) == allowedChars.end() && !isdigit(subtokens.back().at(j))) {
+					// this is not a tuplet, move on
+					isTuplet = false;
+					break;
+				}
+			}
+			if (isTuplet) {
+				size_t secondSlashNdx = subtokens.back().substr(slashNdx+1).find('/');
+				if (secondSlashNdx != string::npos) {
+					if (isNumber(subtokens.back().substr(slashNdx+1, secondSlashNdx))) {
+						tupletNumerator = stoi(subtokens.back().substr(slashNdx+1, secondSlashNdx));
+						k = slashNdx + secondSlashNdx + 2;
+						bool foundDenominator = false;
+						while (k < subtokens.back().size()) {
+							if (!isdigit(subtokens.back().at(k))) {
+								if (isNumber(subtokens.back().substr(slashNdx+secondSlashNdx+1, k-slashNdx-secondSlashNdx-1))) {
+									tupletDenominator = stoi(subtokens.back().substr(slashNdx+secondSlashNdx+1, k-slashNdx-secondSlashNdx-1));
+									foundDenominator = true;
+								}
+								else {
+									isTuplet = false;
+								}
+								break;
+							}
+							k++;
+						}
+						if (!foundDenominator && isdigit(subtokens.back().at(k-1))) {
+							tupletDenominator = stoi(subtokens.back().substr(k-1, 1));
+							isTuplet = true;
+						}
+						else {
+							isTuplet = false;
+						}
+					}
+					else {
+						isTuplet = false;
+					}
+				}
+				else {
+					isTuplet = false;
+				}
+			}
+		}
+		else {
+			isTuplet = false;
+		}
+		if (isTuplet) {
+			tupletStartStop[tupletNdx] = std::make_pair(i, i+tupletNumerator-1);
+			tupletRatios[tupletNdx++] = std::make_pair(tupletNumerator, tupletDenominator);
+			// move the i index to test notes beyond the tuplet we just stored
+			i += tupletNumerator;
+			i--; // because i is incremented before testing if the loop must continue
+		}
+	}
+
 	// we are now done with dynamically allocating memory, so we can move on to the rest of the data
 	// we can now create more variables without worrying about memory
+
+	// the vector below is used later to check if we encounter some unkown character
 	vector<int> foundAccidentals(tokens.size(), 0);
 	float accidental = 0.0;
 	// various counters
@@ -2395,93 +2295,107 @@ void ofApp::parseMelodicLine(string str)
 	unsigned numDynamics = 0;
 	unsigned dynamicsRampCounter = 0;
 	unsigned slursCounter = 0;
-	for (i = 0; i < (int)tokens.size(); i++) {
-		verticalNoteIndex = -1;
-		for (j = 0; j <= i; j++) {
-			// loop till we find a -1, which means that this token is a chord note, but not the first one
-			if (verticalNotesIndexes.at(j) < 0) continue;
-			verticalNoteIndex++;
-		}
+	for (i = 0; i < tokens.size(); i++) {
 		// first check for accidentals, if any
-		accidentalIndexes.at(i) = firstChar.at(i) + firstCharOffset.at(i);
-		while (accidentalIndexes.at(i) < tokens.at(i).size()) {
-			if (tokens.at(i).at(accidentalIndexes.at(i)) == char(101)) { // 101 is "e"
-				if (accidentalIndexes.at(i) < tokens.at(i).size()-1) {
-					// if the character after "e" is "s" or "h" we have an accidental
-					if (tokens.at(i).at(accidentalIndexes.at(i)+1) == char(115)) { // 115 is "s"
-						accidental -= 1.0; // in which case we subtract one semitone
-						foundAccidentals.at(i) = 1;
+		vector<string> subtokens = tokenizeChord(tokens.at(i));
+		for (j = 0; j < subtokens.size(); j++) {
+			bool foundAccidental = false;
+			// the first character of a note token is the actual note, so we start from 1 in the loop below
+			for (k = 1; k < subtokens.at(j).size(); k++) {
+				if (subtokens.at(j).at(k) == char(101)) { // 101 is "e"
+					if (k < subtokens.at(j).size()-1) {
+						// if the character after "e" is "s" or "h" we have an accidental
+						if (subtokens.at(j).at(k+1) == char(115)) { // 115 is "s"
+							accidental -= 1.0; // in which case we subtract one semitone
+							foundAccidental = true;
+							foundAccidentals.at(i) = 1;
+						}
+						else if (subtokens.at(j).at(k+1) == char(104)) { // 104 is "h"
+							accidental -= 0.5;
+							foundAccidental = true;
+							foundAccidentals.at(i) = 1;
+						}
+						else {
+							return std::make_pair(3, subtokens.at(j).at(k+1) + (string)": unknown accidental character");
+						}
 					}
-					else if (tokens.at(i).at(accidentalIndexes.at(i)+1) == char(104)) { // 104 is "h"
-						accidental -= 0.5;
-						foundAccidentals.at(i) = 1;
+					else {
+						return std::make_pair(3, "\"e\" must be followed by \"s\" or \"h\"");
 					}
 				}
-			}
-			else if (tokens.at(i).at(accidentalIndexes.at(i)) == char(105)) { // 105 is "i"
-				if (accidentalIndexes.at(i) < tokens.at(i).size()-1) {
-					if (tokens.at(i).at(accidentalIndexes.at(i)+1) == char(115)) { // 115 is "s"
-						accidental += 1.0; // in which case we add one semitone
-						foundAccidentals.at(i) = 1;
+				else if (subtokens.at(j).at(k) == char(105)) { // 105 is "i"
+					if (k < subtokens.at(j).size()-1) {
+						if (subtokens.at(j).at(k+1) == char(115)) { // 115 is "s"
+							accidental += 1.0; // in which case we add one semitone
+							foundAccidental = true;
+							foundAccidentals.at(i) = 1;
+						}
+						else if (subtokens.at(j).at(k+1) == char(104)) { // 104 is "h"
+							accidental += 0.5;
+							foundAccidental = true;
+							foundAccidentals.at(i) = 1;
+						}
+						else {
+							return std::make_pair(3, subtokens.at(j).at(k+1) + (string)": unknown accidental character");
+						}
 					}
-					else if (tokens.at(i).at(accidentalIndexes.at(i)+1) == char(104)) { // 104 is "h"
-						accidental += 0.5;
-						foundAccidentals.at(i) = 1;
+					else {
+						return std::make_pair(3, "\"i\" must be followed by \"s\" or \"h\"");
 					}
 				}
-			}
-			// we ignore "s" and "h" as we have checked them above
-			else if (tokens.at(i).at(accidentalIndexes.at(i)) == char(115) || tokens.at(i).at(accidentalIndexes.at(i)) == char(104)) {
+				// we ignore "s" and "h" as we have checked them above
+				else if (subtokens.at(j).at(k) == char(115) || subtokens.at(j).at(k) == char(104)) {
+					accidentalIndexes.at(i)++;
+					continue;
+				}
+				// when the accidentals characters are over we move on
+				else {
+					break;
+				}
 				accidentalIndexes.at(i)++;
-				continue;
 			}
-			// when the accidentals characters are over we move on
+			if (foundAccidental) {
+				notesData.at(i).at(j) += accidental;
+				midiNotesData.at(i).at(j) += (int)accidental;
+				// accidentals can go up to a whole tone, which is accidental=2.0
+				// but in case it's one and a half tone, one tone is already added above
+				// so we need the half tone only, which we get with accidental-(int)accidental
+				pitchBendVals.at(i) = (abs(accidental)-abs((int)accidental));
+				if (accidental < 0.0) pitchBendVals.at(i) *= -1.0;
+				// store accidentals in the following order with the following indexes
+				// 0 - double flat, 1 - one and half flat, 2 - flat, 3 - half flat,
+				// 4 - natural, 5 - half sharp, 6 - sharp, 7 - one and half sharp, 8 - double sharp
+				// to map the -2 to 2 range of the accidental float variable to a 0 to 8 range
+				// we use the map function below
+				// this is subtracting the fromLow value (-2) which results in adding 2
+				// and mutliplying by the division between the difference between toHigh - toLow and fromHigh - fromLow
+				// which again results to 2, since (8 - 0) / (2 - -2) = 8 / 4 = 2
+				// a proper mapping function then adds the toLow value, but here it's 0 so we omit it
+				int mapped = (accidental + 2) * 2; 
+				accidentalsForScore.at(i).at(j) = mapped;
+				//accidentalsForScore.at(i).at(j) += transposedAccidentals.at(i);
+				// go back one character because of the last accidentalIndexes.at(i)++ above this if chunk
+				accidentalIndexes.at(i)--;
+			}
 			else {
-				break;
+				accidentalsForScore.at(i).at(j) = -1;
 			}
-			accidentalIndexes.at(i)++;
+			// add the accidentals based on transposition (if set)
+			if (accidentalsForScore.at(i).at(j) == -1) {
+				// if we have no accidental, add the transposition to the natural sign indexes with 4
+				accidentalsForScore.at(i).at(j) = 4 + transposedAccidentals.at(i);
+			}
+			else {
+				accidentalsForScore.at(i).at(j) += transposedAccidentals.at(i);
+			}
+			// if the transposed accidental results in natural, assign -1 instead of 4 so as to not display the natural sign
+			// if the natural sign is needed to be displayed, this will be taken care of at the end of the last loop
+			// that iterates through the tokens of the string we parse in this function
+			if (accidentalsForScore.at(i).at(j) == 4) {
+				accidentalsForScore.at(i).at(j) = -1;
+			}
+			accidental = 0;
 		}
-		if (foundAccidentals.at(i)) {
-			notesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += accidental;
-			midiNotesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += (int)accidental;
-			// accidentals can go up to a whole tone, which is accidental=2.0
-			// but in case it's one and a half tone, one tone is already added above
-			// so we need the half tone only, which we get with accidental-(int)accidental
-			pitchBendVals.at(verticalNoteIndex) = (abs(accidental)-abs((int)accidental));
-			if (accidental < 0.0) pitchBendVals.at(verticalNoteIndex) *= -1.0;
-			// store accidentals in the following order with the following indexes
-			// 0 - double flat, 1 - one and half flat, 2 - flat, 3 - half flat,
-			// 4 - natural, 5 - half sharp, 6 - sharp, 7 - one and half sharp, 8 - double sharp
-			// to map the -2 to 2 range of the accidental float variable to a 0 to 8 range
-			// we use the map function below
-			// this is subtracting the fromLow value (-2) which results in adding 2
-			// and mutliplying by the division between the difference between toHigh - toLow and fromHigh - fromLow
-			// which again results to 2, since (8 - 0) / (2 - -2) = 8 / 4 = 2
-			// a proper mapping function then adds the toLow value, but here it's 0 so we omit it
-			int mapped = (accidental + 2) * 2; 
-			accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) = mapped;
-			//accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += transposedAccidentals.at(i);
-			// go back one character because of the last accidentalIndexes.at(i)++ above this if chunk
-			accidentalIndexes.at(i)--;
-		}
-		else {
-			accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) = -1;
-		}
-		// add the accidentals based on transposition (if set)
-		if (accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) == -1) {
-			// if we have no accidental, add the transposition to the natural sign indexes with 4
-			accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) = 4 + transposedAccidentals.at(i);
-		}
-		else {
-			accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += transposedAccidentals.at(i);
-		}
-		// if the transposed accidental results in natural, assign -1 instead of 4 so as to not display the natural sign
-		// if the natural sign is needed to be displayed, this will be taken care of at the end of the last loop
-		// that iterates through the tokens of the string we parse in this function
-		if (accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) == 4) {
-			accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) = -1;
-		}
-		accidental = 0;
 	}
 	
 	vector<int> foundDynamics(tokens.size(), 0);
@@ -2490,69 +2404,100 @@ void ofApp::parseMelodicLine(string str)
 	unsigned beginningOfChordIndex = 0;
 	bool tokenInsideChord = false;
 	int prevScoreDynamic = -1;
-	int quotesCounter = 0; // so we can ignore anything that is passed as text
+	int ottava = 0;
+	quotesCounter = 0;
 	// now check for the rest of the characters of the token, so start with j = accIndex
-	for (i = 0; i < (int)tokens.size(); i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		foundArticulation = false;
-		verticalNoteIndex = -1;
-		for (j = 0; j <= i; j++) {
-			// loop till we find a -1, which means that this token is a chord note, but not the first one
-			if (verticalNotesIndexes.at(j) < 0) continue;
-			verticalNoteIndex++;
-		}
 		if (beginningOfChords.at(i)) {
 			beginningOfChordIndex = i;
 			tokenInsideChord = true;
 		}
-		// first check for octaves
-		for (j = (int)accidentalIndexes.at(i); j < (int)tokens.at(i).size(); j++) {
-			if (int(tokens.at(i).at(j)) == 39) {
-				if (!instruments.at(lastInstrumentIndex).isRhythm()) {
-					notesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += 12;
-					midiNotesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) += 12;
-					octavesForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i))++;
+		vector<string> subtokens = tokenizeChord(tokens.at(i));
+		// first check for octaves and ottavas
+		for (j = 0; j < subtokens.size(); j++) {
+			for (k = 0; k < subtokens.at(j).size(); k++) {
+				if (int(subtokens.at(j).at(k)) == 34 && quotesCounter >= 1) {
+					quotesCounter++;
+					if (quotesCounter > 2) quotesCounter = 0;
 				}
-				foundOctaves.at(i) = 1;
-			}
-			else if (int(tokens.at(i).at(j)) == 44) {
-				if (!instruments.at(lastInstrumentIndex).isRhythm()) {
-					notesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) -= 12;
-					midiNotesData.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) -= 12;
-					octavesForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i))--;
+				if (quotesCounter > 0) continue; // if we're inside text, ignore
+				if (int(subtokens.at(j).at(k)) == 39) {
+					if (!instruments.at(lastInstrumentIndex).isRhythm()) {
+						notesData.at(i).at(j) += 12;
+						midiNotesData.at(i).at(j) += 12;
+						octavesForScore.at(i).at(j)++;
+					}
+					foundOctaves.at(i) = 1;
 				}
-				foundOctaves.at(i) = 1;
+				else if (int(subtokens.at(j).at(k)) == 44) {
+					if (!instruments.at(lastInstrumentIndex).isRhythm()) {
+						notesData.at(i).at(j) -= 12;
+						midiNotesData.at(i).at(j) -= 12;
+						octavesForScore.at(i).at(j)--;
+					}
+					foundOctaves.at(i) = 1;
+				}
+				else if (subtokens.at(j).at(k) == 'o') {
+					if (k < subtokens.at(j).size()-1) {
+						if (isNumber(string(1, subtokens.at(j).at(k+1)))) {
+							int ndxOffset = 1;
+							if (subtokens.at(j).at(k+1) == '-') ndxOffset++;
+							ottava = stoi(string(1, subtokens.at(j).at(k+ndxOffset)));
+							if (ndxOffset == 2) ottava *= -1;
+							// we have already checked the argument to \ottava in parseCommand()
+							// but we need to check here too, in case the user writes in "raw" LiveLily
+							if (ottava < -2 || ottava > 2) {
+								return std::make_pair(3, "argument to \\ottava must be between -2 and 2");
+							}
+						}
+					}
+				}
 			}
 		}
+		ottavas.at(i) = ottava;
 		// then check for the rest of the characters
-		for (j = (int)accidentalIndexes.at(i); j < (int)tokens.at(i).size(); j++) {
-			// we don't check inside chords, as the characters we look for in this loop
-			// are not permitted inside chords, so we check only at the last chord note
-			// verticalNotesIndexes is tokens.size() + 1 so it's safe to test against i + 1 here
-			if (verticalNotesIndexes.at(i+1) == -1) break;
-			if (int(tokens.at(i).at(j)) == 34 && quotesCounter >= 1) {
+		// we don't check inside chords, as the characters we look for in this loop
+		// are not permitted inside chords, so we check only at the last chord note
+		bool tupletDigits = false;
+		for (j = 0; j < subtokens.back().size(); j++) {
+			if (int(subtokens.back().at(j)) == 34 && quotesCounter >= 1) {
 				quotesCounter++;
 				if (quotesCounter > 2) quotesCounter = 0;
 			}
 			if (quotesCounter > 0) continue; // if we're inside text, ignore
-			if (isdigit(tokens.at(i).at(j))) {
-				// assemble the value from its ASCII characters
-				tempDur = tempDur * 10 + int(tokens.at(i).at(j)) - 48;
-				if (verticalNoteIndex == 0) {
-					dynAtFirstNote = true;
+			if (subtokens.back().at(j) == '/') {
+				// a forward slash after duration digits means that the digits that come after it belong to a tuplet definition
+				tupletDigits = true;
+			}
+			if (isdigit(subtokens.back().at(j))) {
+				// make sure this is not an ottava digit or a tuplet
+				if (j > 0 && subtokens.back().at(j-1) != 'o' && subtokens.back().at(j-1) != '-' && !tupletDigits) {
+					// assemble the value from its ASCII characters
+					tempDur = tempDur * 10 + int(subtokens.back().at(j)) - 48;
+					if (i == 0) {
+						dynAtFirstNote = true;
+					}
+					if (i > 0 && !tokenInsideChord && !dynAtFirstNote) {
+						return std::make_pair(3, "first note doesn't have a duration");
+					}
 				}
 			}
 			
-			else if (tokens.at(i).at(j) == char(92)) { // back slash
+			else if (subtokens.back().at(j) == char(92)) { // back slash
 				index2 = j;
 				int dynamic = 0;
 				bool foundDynamicLocal = false;
 				bool foundGlissandoLocal = false;
+				if (index2 > (subtokens.back().size()-1)) {
+					return std::make_pair(3, "a backslash must be followed by a command");
+				}
 				// loop till you find all dynamics or other commands
-				while (index2 < tokens.at(i).size()) {
-					if (index2+1 == tokens.at(i).size()) {
+				while (index2 < subtokens.back().size()) {
+					if (index2+1 == subtokens.back().size()) {
 						goto foundDynamicTest;
 					}
-					if (tokens.at(i).at(index2+1) == char(102)) { // f for forte
+					if (subtokens.back().at(index2+1) == char(102)) { // f for forte
 						if (mezzo) {
 							dynamic++;
 							mezzo = false;
@@ -2560,18 +2505,22 @@ void ofApp::parseMelodicLine(string str)
 						else {
 							dynamic += 3;
 						}
-						dynamicsIndexes.at(verticalNoteIndex) = verticalNoteIndex;
-						dynamicsForScoreIndexes.at(verticalNoteIndex) = verticalNoteIndex;
+						dynamicsIndexes.at(i) = i;
+						dynamicsForScoreIndexes.at(i) = i;
 						if (dynamicsRampStarted) {
 							dynamicsRampStarted = false;
-							dynamicsRampEnd.at(verticalNoteIndex) = verticalNoteIndex;
-							dynamicsRampEndForScore.at(verticalNoteIndex) = verticalNoteIndex;
-							dynamicsRampIndexes.at(dynamicsRampCounter-1).second = verticalNoteIndex;
+							dynamicsRampEnd.at(i) = i;
+							dynamicsRampEndForScore.at(i) = i;
+							dynamicsRampIndexes.at(dynamicsRampCounter-1).second = i;
+							if (dynamicsRampStart.at(i) == dynamicsRampEnd.at(i)) {
+								std::pair<int, string> p = std::make_pair(3, "can't start and end a crescendo/diminuendo on the same note");
+								return p;
+							}
 						}
 						foundDynamics.at(i) = 1;
 						foundDynamicLocal = true;
 					}
-					else if (tokens.at(i).at(index2+1) == char(112)) { // p for piano
+					else if (subtokens.back().at(index2+1) == char(112)) { // p for piano
 						if (mezzo) {
 							dynamic--;
 							mezzo = false;
@@ -2579,62 +2528,74 @@ void ofApp::parseMelodicLine(string str)
 						else {
 							dynamic -= 3;
 						}
-						dynamicsIndexes.at(verticalNoteIndex) = verticalNoteIndex;
-						dynamicsForScoreIndexes.at(verticalNoteIndex) = verticalNoteIndex;
+						dynamicsIndexes.at(i) = i;
+						dynamicsForScoreIndexes.at(i) = i;
 						if (dynamicsRampStarted) {
 							dynamicsRampStarted = false;
-							dynamicsRampEnd.at(verticalNoteIndex) = verticalNoteIndex;
-							dynamicsRampEndForScore.at(verticalNoteIndex) = verticalNoteIndex;
-							dynamicsRampIndexes.at(dynamicsRampCounter-1).second = verticalNoteIndex;
+							dynamicsRampEnd.at(i) = i;
+							dynamicsRampEndForScore.at(i) = i;
+							dynamicsRampIndexes.at(dynamicsRampCounter-1).second = i;
+							if (dynamicsRampStart.at(i) == dynamicsRampEnd.at(i)) {
+								std::pair<int, string> p = std::make_pair(3, "can't start and end a crescendo/diminuendo on the same note");
+								return p;
+							}
 						}
 						foundDynamics.at(i) = 1;
 						foundDynamicLocal = true;
 					}
-					else if (tokens.at(i).at(index2+1) == char(109)) { // m for mezzo
+					else if (subtokens.back().at(index2+1) == char(109)) { // m for mezzo
 						mezzo = true;
 						//if (dynamicsRampStarted) {
 						//	dynamicsRampStarted = false;
-						//	dynamicsRampEnd.at(verticalNoteIndex) = verticalNoteIndex;
-						//	dynamicsRampEndForScore.at(verticalNoteIndex) = verticalNoteIndex;
-						//	dynamicsRampIndexes.at(dynamicsRampCounter-1).second = verticalNoteIndex;
-						//	if (dynamicsRampStart.at(verticalNoteIndex) == dynamicsRampEnd.at(verticalNoteIndex)) {
+						//	dynamicsRampEnd.at(i) = i;
+						//	dynamicsRampEndForScore.at(i) = i;
+						//	dynamicsRampIndexes.at(dynamicsRampCounter-1).second = i;
+						//	if (dynamicsRampStart.at(i) == dynamicsRampEnd.at(i)) {
 						//		std::pair<int, string> p = std::make_pair(3, "can't start and end a crescendo/diminuendo on the same note");
 						//		return p;
 						//	}
 						//}
 					}
-					else if (tokens.at(i).at(index2+1) == char(60)) { // <
+					else if (subtokens.back().at(index2+1) == char(60)) { // <
 						if (!dynamicsRampStarted) {
 							dynamicsRampStarted = true;
-							dynamicsRampStart.at(verticalNoteIndex) = verticalNoteIndex;
-							dynamicsRampStartForScore.at(verticalNoteIndex) = verticalNoteIndex;
-							dynamicsRampDirForScore.at(verticalNoteIndex) = 1;
-							dynamicsRampIndexes.at(dynamicsRampCounter).first = verticalNoteIndex;
+							dynamicsRampStart.at(i) = i;
+							dynamicsRampStartForScore.at(i) = i;
+							dynamicsRampDirForScore.at(i) = 1;
+							dynamicsRampIndexes.at(dynamicsRampCounter).first = i;
 							dynamicsRampCounter++;
 						}
 					}
-					else if (tokens.at(i).at(index2+1) == char(62)) { // >
+					else if (subtokens.back().at(index2+1) == char(62)) { // >
 						if (!dynamicsRampStarted) {
 							dynamicsRampStarted = true;
-							dynamicsRampStart.at(verticalNoteIndex) = verticalNoteIndex;
-							dynamicsRampStartForScore.at(verticalNoteIndex) = verticalNoteIndex;
-							dynamicsRampDirForScore.at(verticalNoteIndex) = 0;
-							dynamicsRampIndexes.at(dynamicsRampCounter).first = verticalNoteIndex;
+							dynamicsRampStart.at(i) = i;
+							dynamicsRampStartForScore.at(i) = i;
+							dynamicsRampDirForScore.at(i) = 0;
+							dynamicsRampIndexes.at(dynamicsRampCounter).first = i;
 							dynamicsRampCounter++;
 						}
 					}
-					else if (tokens.at(i).at(index2+1) == char(33)) { // exclamation mark
+					else if (subtokens.back().at(index2+1) == char(33)) { // exclamation mark
 						if (dynamicsRampStarted) {
 							dynamicsRampStarted = false;
-							dynamicsRampEnd.at(verticalNoteIndex) = verticalNoteIndex;
-							dynamicsRampEndForScore.at(verticalNoteIndex) = verticalNoteIndex;
-							dynamicsRampIndexes.at(dynamicsRampCounter-1).second = verticalNoteIndex;
+							dynamicsRampEnd.at(i) = i;
+							dynamicsRampEndForScore.at(i) = i;
+							dynamicsRampIndexes.at(dynamicsRampCounter-1).second = i;
+							if (dynamicsRampStart.at(i) == dynamicsRampEnd.at(i)) {
+								std::pair<int, string> p = std::make_pair(3, "can't start and end a crescendo/diminuendo on the same note");
+								return p;
+							}
+						}
+						else {
+							return std::make_pair(3, "no crescendo or diminuendo initiated");
 						}
 					}
-					else if (tokens.at(i).at(index2+1) == char(103)) { // g for gliss
-						if ((tokens.at(i).substr(index2+1,5).compare("gliss") == 0) ||
-							(tokens.at(i).substr(index2+1,9).compare("glissando") == 0)) {
-							glissandiIndexes.at(verticalNoteIndex) = 1;
+					else if (subtokens.back().at(index2+1) == char(103)) { // g for gliss
+						if ((subtokens.back().substr(index2+1,5).compare("gliss") == 0) ||
+							(subtokens.back().substr(index2+1,9).compare("glissando") == 0)) {
+							glissandiIndexes.at(i) = 1;
+							glissandiIndexesForScore.at(i) = 1;
 							foundGlissandoLocal = true;
 						}
 					}
@@ -2649,26 +2610,31 @@ void ofApp::parseMelodicLine(string str)
 							if (dynamic < -9) dynamic = -9;
 							else if (dynamic > 9) dynamic = 9;
 							int scaledDynamic = (int)((float)(dynamic + 9) * ((100.0-(float)MINDB) / 18.0)) + MINDB;
-							dynamicsData.at(verticalNoteIndex) = scaledDynamic;
+							dynamicsData.at(i) = scaledDynamic;
 							// convert the range MINDB to 100 to indexes from 0 to 7
 							// subtract the minimum dB value from the dynamic, multipled by (7/dB-range)
 							// add 0.5 and get the int to round the float properly
-							int dynamicForScore = (int)((((float)dynamicsData.at(verticalNoteIndex)-(float)MINDB)*(7.0/(100.0-(float)MINDB)))+0.5);
+							int dynamicForScore = (int)((((float)dynamicsData.at(i)-(float)MINDB)*(7.0/(100.0-(float)MINDB)))+0.5);
 							if (dynamicForScore != prevScoreDynamic) {
-								dynamicsForScore.at(verticalNoteIndex) = dynamicForScore;
+								dynamicsForScore.at(i) = dynamicForScore;
 								prevScoreDynamic = dynamicForScore;
 							}
 							else {
 								// if it's the same dynamic, we must invalidate this index
-								dynamicsForScoreIndexes.at(verticalNoteIndex) = -1;
+								dynamicsForScoreIndexes.at(i) = -1;
 							}
 							numDynamics++;
 							// to get the dynamics in MIDI velocity values, we map ppp to 16, and fff to 127
 							// based on this website https://www.hedsound.com/p/midi-velocity-db-dynamics-db-and.html
 							// first find the index of the dynamic value in the array {-9, -6, -3, -1, 1, 3, 6, 9}
 							int midiVelIndex = std::distance(dynsArr, std::find(dynsArr, dynsArr+8, dynamic));
-							midiVels.at(verticalNoteIndex) = (midiVelIndex+1)*16;
-							if (midiVels.at(verticalNoteIndex) > 127) midiVels.at(verticalNoteIndex) = 127;
+							midiVels.at(i) = (midiVelIndex+1)*16;
+							if (midiVels.at(i) > 127) midiVels.at(i) = 127;
+						}
+						// if we haven't found a dynamic and the ramp vectors are empty
+						// it means that we have received some unknown character
+						else if (dynamicsRampCounter == 0 && !foundGlissandoLocal) {
+							return std::make_pair(3, tokens.at(i).at(index2+1) + (string)": unknown character");
 						}
 						break;
 					}
@@ -2678,42 +2644,58 @@ void ofApp::parseMelodicLine(string str)
 			}
 			
 			// . for dotted note, which is also used for staccato, hence the second test against 45 (hyphen)
-			else if (tokens.at(i).at(j) == char(46) && tokens.at(i).at(j-1) != char(45)) {
-				dotIndexes.at(verticalNoteIndex) = 1;
-				dotsCounter.at(verticalNoteIndex)++;
+			else if (subtokens.back().at(j) == char(46) && subtokens.back().at(j-1) != char(45)) {
+				dotIndexes.at(i) = 1;
+				dotsCounter.at(i)++;
 			}
 
-			else if (tokens.at(i).at(j) == char(40)) { // ( for beginning of slur
+			else if (subtokens.back().at(j) == char(40)) { // ( for beginning of slur
 				slurStarted = true;
-				slurBeginningsIndexes.at(verticalNoteIndex) = verticalNoteIndex;
-				//slurIndexes.at(verticalNoteIndex).first = verticalNoteIndex;
+				slurBeginningsIndexes.at(i) = i;
+				//slurIndexes.at(i).first = i;
 				slursCounter++;
 			}
 
-			else if (tokens.at(i).at(j) == char(41)) { // ) for end of slur
+			else if (subtokens.back().at(j) == char(41)) { // ) for end of slur
 				slurStarted = false;
-				slurEndingsIndexes.at(verticalNoteIndex) = verticalNoteIndex;
-				//slurIndexes.at(verticalNoteIndex).second = verticalNoteIndex;
+				slurEndingsIndexes.at(i) = i;
+				//slurIndexes.at(i).second = i;
 			}
 
-			else if (tokens.at(i).at(j) == char(126)) { // ~ for tie
-				tieIndexes.at(verticalNoteIndex) = verticalNoteIndex;
+			else if (subtokens.back().at(j) == char(126)) { // ~ for tie
+				tieIndexes.at(i) = i;
 			}
 
 			// check for _ or ^ and make sure that the previous character is not -
-			else if ((int(tokens.at(i).at(j)) == 94 || int(tokens.at(i).at(j)) == 95) && int(tokens.at(i).at(j-1)) != 45) {
-				quotesCounter++;
+			else if ((int(subtokens.back().at(j)) == 94 || int(subtokens.back().at(j)) == 95) && int(subtokens.back().at(j-1)) != 45) {
+				if (textIndexesLocal.at(i).at(0) == 0) {
+					return std::make_pair(3, (string)"stray " + subtokens.back().at(j));
+				}
+				if (subtokens.back().size() < j+3) {
+					return std::make_pair(3, "incorrect text notation");
+				}
+				if (int(subtokens.back().at(j+1)) != 34) {
+					return std::make_pair(3, "a text symbol must be followed by quote signs");
+				}
+				else {
+					quotesCounter++;
+				}
 			}
 		}
 		// add the extracted octave with \ottava
-		octavesForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) -= ottavas.at(verticalNoteIndex);
+		for (j = 0; j <= chordNotesIndexes.at(i); j++) {
+			octavesForScore.at(i).at(j) -= ottavas.at(i);
+		}
 		// store durations at the end of each token only if tempDur is greater than 0
 		if (tempDur > 0) {
-			dursData.at(verticalNoteIndex) = tempDur;
-			durIndexes.at(verticalNoteIndex) = verticalNoteIndex;
+			if (std::find(std::begin(dursArr), std::end(dursArr), tempDur) == std::end(dursArr)) {
+				return std::make_pair(3, to_string(tempDur) + " is not a valid duration");
+			}
+			dursData.at(i) = tempDur;
+			durIndexes.at(i) = i;
 			numDurs++;
 			if (tokenInsideChord) {
-				for (int k = (int)beginningOfChordIndex; k < verticalNoteIndex; k++) {
+				for (unsigned k = beginningOfChordIndex; k < i; k++) {
 					dursData.at(k) = tempDur;
 				}
 			}
@@ -2724,22 +2706,22 @@ void ofApp::parseMelodicLine(string str)
 		}
 		// once done parsing everything, check if we need to change an accidental by placing the natural sign
 		// in case the same note has already been used in this bar with an accidental and now without
-		int thisNote = notesForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i));
-		int thisOctave = octavesForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i));
+		int thisNote = notesForScore.at(i).at(chordNotesIndexes.at(i));
+		int thisOctave = octavesForScore.at(i).at(chordNotesIndexes.at(i));
 		// do a reverse loop to see if the last same note had its accidental corrected
 		bool foundSameNote = false;
 		// use ints instead of j (we are inside a loop using i) because j is unsigned
 		// and a backwards loop won't work as it will wrap around instead of going below 0
-		if (accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) == -1) {
-			for (int k = (int)verticalNoteIndex-1; k >= 0; k--) {
+		if (accidentalsForScore.at(i).at(chordNotesIndexes.at(i)) == -1) {
+			for (int k = (int)i-1; k >= 0; k--) {
 				for (int l = (int)notesForScore.at(k).size()-1; l >= 0; l--) {
 					if (notesForScore.at(k).at(l) == thisNote && ((correctOnSameOctaveOnly && octavesForScore.at(k).at(l) == thisOctave) || !correctOnSameOctaveOnly)) {
 						if (accidentalsForScore.at(k).at(l) > -1 && accidentalsForScore.at(k).at(l) != 4) {
-							accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) = 4;
+							accidentalsForScore.at(i).at(chordNotesIndexes.at(i)) = 4;
 							foundSameNote = true;
 						}
 						else {
-							accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) = -1;
+							accidentalsForScore.at(i).at(chordNotesIndexes.at(i)) = -1;
 							foundSameNote = true;
 						}
 						break;
@@ -2747,63 +2729,76 @@ void ofApp::parseMelodicLine(string str)
 				}
 				if (foundSameNote) break;
 			}
-			if (!foundSameNote) accidentalsForScore.at(verticalNoteIndex).at(chordNotesIndexes.at(i)) = -1;
+			if (!foundSameNote) accidentalsForScore.at(i).at(chordNotesIndexes.at(i)) = -1;
 		}
 		if (slurStarted) {
-			isSlurred.at(verticalNoteIndex) = true;
+			isSlurred.at(i) = true;
 		}
 	}
 
 	if (dynamicsRampStarted) {
-		dynamicsRampIndexes.at(dynamicsRampCounter-1).second = verticalNoteIndex;
+		dynamicsRampIndexes.at(dynamicsRampCounter-1).second = i;
+	}
+
+	// check if there are any unmatched quote signs
+	if (quotesCounter > 0) {
+		return std::make_pair(3, "unmatched quote sign");
+	}
+
+	// once all elements have been parsed we can determine whether we're fine to go on
+	for (i = 0; i < tokens.size(); i++) {
+		if (!foundNotes.at(i) && !foundDynamics.at(i) && !foundAccidentals.at(i) && !foundOctaves.at(i)) {
+			return std::make_pair(3, tokens.at(i) + (string)": unknown token");
+		}
+	}
+
+	if (numDurs == 0) {
+		return std::make_pair(3, "no durations added");
 	}
 
 	// fill in possible empty slots of durations
-	for (i = 0; i < numNotesVertical; i++) {
-		if (i != durIndexes.at(i)) {
+	for (i = 0; i < tokens.size(); i++) {
+		if ((int)i != durIndexes.at(i)) {
 			dursData.at(i) = dursData.at(i-1);
 		}
 	}
 
 	// fill in possible empty slots of dynamics
-	//if (numDynamics == 0) {
-	//	for (i = 0; i < numNotesVertical; i++) {
-	//		// if this is not the very first bar get the last value of the previous bar
-	//		if (loopData.size() > 0) {
-	//			int prevBar = getPrevBarIndex();
-	//			// get the last stored dynamic
-	//			cout << "trying to access " << i << " while dyns data and midiVels have " << numNotesVertical << " elements\n";
-	//			dynamicsData.at(i) = instruments.at(lastInstrumentIndex).dynamics.at(prevBar).back();
-	//			// do the same for the MIDI velocities
-	//			midiVels.at(i) = instruments.at(lastInstrumentIndex).midiVels.at(prevBar).back();
-	//		}
-	//		else {
-	//			// fill in a default value of halfway from min to max dB
-	//			dynamicsData.at(i) = 100-((100-MINDB)/2);
-	//			midiVels.at(i) = 72; // half way between mp and mf in MIDI velocity
-	//		}
-	//	}
-	//	cout << "if in dyns done\n";
-	//}
-	//else {
-	//	for (i = 0; i < numNotesVertical; i++) {
-	//		// if a dynamic has not been stored, fill in the last
-	//		// stored dynamic in this empty slot
-	//		if (i != dynamicsIndexes.at(i)) {
-	//			// we don't want to add data for the score, only for the sequencer
-	//			if (i > 0) {
-	//				dynamicsData.at(i) =  dynamicsData.at(i-1);
-	//				midiVels.at(i) = midiVels.at(i-1);
-	//			}
-	//			else {
-	//				// fill in a default value of halfway from min to max dB
-	//				dynamicsData.at(i) = 100-((100-MINDB)/2);
-	//				midiVels.at(i) = 72; // half way between mp and mf in MIDI velocity
-	//			}
-	//		}
-	//	}
-	//	cout << "else in dyns done\n";
-	//}
+	if (numDynamics == 0) {
+		for (i = 0; i < tokens.size(); i++) {
+			// if this is not the very first bar get the last value of the previous bar
+			if (loopData.size() > 0) {
+				int prevBar = getPrevBarIndex();
+				// get the last stored dynamic
+				dynamicsData.at(i) = instruments.at(lastInstrumentIndex).dynamics.at(prevBar).back();
+				// do the same for the MIDI velocities
+				midiVels.at(i) = instruments.at(lastInstrumentIndex).midiVels.at(prevBar).back();
+			}
+			else {
+				// fill in a default value of halfway from min to max dB
+				dynamicsData.at(i) = 100-((100-MINDB)/2);
+				midiVels.at(i) = 72; // half way between mp and mf in MIDI velocity
+			}
+		}
+	}
+	else {
+		for (i = 0; i < tokens.size(); i++) {
+			// if a dynamic has not been stored, fill in the last
+			// stored dynamic in this empty slot
+			if ((int)i != dynamicsIndexes.at(i)) {
+				// we don't want to add data for the score, only for the sequencer
+				if (i > 0) {
+					dynamicsData.at(i) =  dynamicsData.at(i-1);
+					midiVels.at(i) = midiVels.at(i-1);
+				}
+				else {
+					// fill in a default value of halfway from min to max dB
+					dynamicsData.at(i) = 100-((100-MINDB)/2);
+					midiVels.at(i) = 72; // half way between mp and mf in MIDI velocity
+				}
+			}
+		}
+	}
 	// correct dynamics in case of crescendi or decrescendi
 	for (i = 0; i < dynamicsRampCounter; i++) {
 		int numSteps = dynamicsRampIndexes.at(i).second - dynamicsRampIndexes.at(i).first;
@@ -2842,7 +2837,7 @@ void ofApp::parseMelodicLine(string str)
 		}
 	}
 	// get the tempo of the minimum duration
-	int barIndex = getLastBarIndex();
+	// barIndex has been defined at the beginning of parseMelodicLine() after done expanding commands
 	if (numerator.find(barIndex) == numerator.end()) {
 		numerator.at(barIndex) = denominator.at(barIndex) = 4;
 	}
@@ -2851,7 +2846,7 @@ void ofApp::parseMelodicLine(string str)
 	int scoreDur; // durations for score should not be affected by tuplet calculations
 	int halfDur; // for halving for every dot
 	// convert durations to number of beats with respect to minimum duration
-	for (i = 0; i < numNotesVertical; i++) {
+	for (i = 0; i < tokens.size(); i++) {
 		dursData.at(i) = MINDUR / dursData.at(i);
 		halfDur = dursData.at(i) / 2;
 		if (dotIndexes.at(i) == 1) {
@@ -2861,20 +2856,20 @@ void ofApp::parseMelodicLine(string str)
 			}
 		}
 		scoreDur = dursData.at(i);
-		for (auto it = tupStartStop.begin(); it != tupStartStop.end(); ++it) {
+		for (auto it = tupletStartStop.begin(); it != tupletStartStop.end(); ++it) {
 			if (i >= it->second.first && i <= it->second.second) {
 				// check if truncated sum is less than the expected sum
 				if (i == it->second.first) {
-					int tupDurAccum = 0;
+					int tupletDurAccum = 0;
 					int expectedSum = 0;
 					for (j = it->second.first; j <= it->second.second; j++) {
-						tupDurAccum += (dursData.at(i) * tupRatios.at(it->first).second / tupRatios.at(it->first).first);
+						tupletDurAccum += (dursData.at(i) * tupletRatios.at(it->first).second / tupletRatios.at(it->first).first);
 						expectedSum += dursData.at(i);
 					}
-					expectedSum = expectedSum * tupRatios.at(it->first).second / tupRatios.at(it->first).first;
-					diff = expectedSum - tupDurAccum;
+					expectedSum = expectedSum * tupletRatios.at(it->first).second / tupletRatios.at(it->first).first;
+					diff += expectedSum - tupletDurAccum;
 				}
-				dursData.at(i) = dursData.at(i) * tupRatios.at(it->first).second / tupRatios.at(it->first).first;
+				dursData.at(i) = dursData.at(i) * tupletRatios.at(it->first).second / tupletRatios.at(it->first).first;
 				if (diff > 0) {
 					dursData.at(i)++;
 					diff--;
@@ -2882,9 +2877,21 @@ void ofApp::parseMelodicLine(string str)
 			}
 			//break;
 		}
+		// make sure there's no difference left between the expected duration and the modified duration
+		dursData.at(i) += diff;
+		diff = 0;
 		dursAccum += dursData.at(i);
 		dursForScore.at(i) = scoreDur;
 		dursDataWithoutSlurs.at(i) = dursData.at(i);
+	}
+	// if all we have is "r1", then it's a tacet, otherwise, we need to check the durations sum
+	if (!(tokens.size() == 1 && tokens.at(0).compare("r1") == 0)) {
+		if (dursAccum < numBeats.at(barIndex)) {
+			return std::make_pair(3, "durations sum is less than bar duration");
+		}
+		if (dursAccum > numBeats.at(barIndex)) {
+			return std::make_pair(3, "durations sum is greater than bar duration");
+		}
 	}
 	// now we can create a vector of pairs with the indexes of the slurs
 	int numSlurStarts = 0, numSlurStops = 0;
@@ -2900,6 +2907,9 @@ void ofApp::parseMelodicLine(string str)
 	}
 	// once the melodic line has been parsed, we can insert the new data to the maps of the Instrument object
 	map<string, int>::iterator it = instrumentIndexes.find(lastInstrument);
+	if (it == instrumentIndexes.end()) {
+		return std::make_pair(3, "instrument does not exist");
+	}
 	int thisInstIndex = it->second;
 	instruments.at(thisInstIndex).notes[barIndex] = std::move(notesData);
 	instruments.at(thisInstIndex).midiNotes[barIndex] = std::move(midiNotesData);
@@ -2928,15 +2938,15 @@ void ofApp::parseMelodicLine(string str)
 	instruments.at(thisInstIndex).scoreNaturalSignsNotWritten[barIndex] = std::move(naturalSignsNotWrittenForScore);
 	instruments.at(thisInstIndex).scoreOctaves[barIndex] = std::move(octavesForScore);
 	instruments.at(thisInstIndex).scoreOttavas[barIndex] = std::move(ottavas);
-	instruments.at(thisInstIndex).scoreGlissandi[barIndex] = std::move(glissandiIndexes);
+	instruments.at(thisInstIndex).scoreGlissandi[barIndex] = std::move(glissandiIndexesForScore);
 	//instruments.at(thisInstIndex).scoreArticulations[barIndex] = std::move(articulationIndexes);
 	instruments.at(thisInstIndex).scoreDynamics[barIndex] = std::move(dynamicsForScore);
 	instruments.at(thisInstIndex).scoreDynamicsIndexes[barIndex] = std::move(dynamicsForScoreIndexes);
 	instruments.at(thisInstIndex).scoreDynamicsRampStart[barIndex] = std::move(dynamicsRampStartForScore);
 	instruments.at(thisInstIndex).scoreDynamicsRampEnd[barIndex] = std::move(dynamicsRampEndForScore);
 	instruments.at(thisInstIndex).scoreDynamicsRampDir[barIndex] = std::move(dynamicsRampDirForScore);
-	instruments.at(thisInstIndex).scoreTupRatios[barIndex] = std::move(tupRatios);
-	instruments.at(thisInstIndex).scoreTupStartStop[barIndex] = std::move(tupStartStop);
+	instruments.at(thisInstIndex).scoreTupletRatios[barIndex] = std::move(tupletRatios);
+	instruments.at(thisInstIndex).scoreTupletStartStop[barIndex] = std::move(tupletStartStop);
 	instruments.at(thisInstIndex).scoreTexts[barIndex] = std::move(textsForScore);
 	instruments.at(thisInstIndex).isWholeBarSlurred[barIndex] = false;
 	// in case we have no slurs, we must check if there is a slurred that is not closed in the previous bar
@@ -2949,7 +2959,8 @@ void ofApp::parseMelodicLine(string str)
 			instruments.at(thisInstIndex).isWholeBarSlurred.at(barIndex) = true;
 		}
 	}
-	instruments.at(thisInstIndex).passed = true;
+	instruments.at(thisInstIndex).setPassed(true);
+	return std::make_pair(0, "");
 }
 
 //--------------------------------------------------------------

@@ -183,6 +183,28 @@ void Instrument::setTenutoDur(float dur)
 }
 
 //--------------------------------------------------------------
+int Instrument::setDuration(string subcommand, float dur)
+{
+	if (subcommand.compare("normal") == 0) {
+		setDefaultDur(dur);
+		return 0;
+	}
+	else if (subcommand.compare("staccato") == 0) {
+		setStaccatoDur(dur);
+		return 0;
+	}
+	else if (subcommand.compare("staccatissimo") == 0) {
+		setStaccatissimoDur(dur);
+		return 0;
+	}
+	else if (subcommand.compare("tenuro") == 0) {
+		setTenutoDur(dur);
+		return 0;
+	}
+	return 1;
+}
+
+//--------------------------------------------------------------
 void Instrument::setNumBarsToDisplay(int numBars)
 {
 	staff.setNumBarsToDisplay(numBars);
@@ -308,12 +330,14 @@ void Instrument::copyMelodicLine(int barIndex)
 	//slurBeginnings[barIndex] = slurBeginnings[copyNdxs[barIndex]];
 	//slurEndings[barIndex] = slurEndings[copyNdxs[barIndex]];
 	slurIndexes[barIndex] = slurIndexes[copyNdxs[barIndex]];
+	isWholeBarSlurred[barIndex] = isWholeBarSlurred[copyNdxs[barIndex]];
 	tieIndexes[barIndex] = tieIndexes[copyNdxs[barIndex]];
 	scoreNotes[barIndex] = scoreNotes[copyNdxs[barIndex]];
 	scoreDurs[barIndex] = scoreDurs[copyNdxs[barIndex]];
 	scoreDotIndexes[barIndex] = scoreDotIndexes[copyNdxs[barIndex]];
 	scoreDotsCounter[barIndex] = scoreDotsCounter[copyNdxs[barIndex]];
 	scoreAccidentals[barIndex] = scoreAccidentals[copyNdxs[barIndex]];
+	scoreNaturalSignsNotWritten[barIndex] = scoreNaturalSignsNotWritten[copyNdxs[barIndex]];
 	scoreOctaves[barIndex] = scoreOctaves[copyNdxs[barIndex]];
 	scoreOttavas[barIndex] = scoreOttavas[copyNdxs[barIndex]];
 	scoreGlissandi[barIndex] = scoreGlissandi[copyNdxs[barIndex]];
@@ -323,11 +347,11 @@ void Instrument::copyMelodicLine(int barIndex)
 	scoreDynamicsRampStart[barIndex] = scoreDynamicsRampStart[copyNdxs[barIndex]];
 	scoreDynamicsRampEnd[barIndex] = scoreDynamicsRampEnd[copyNdxs[barIndex]];
 	scoreDynamicsRampDir[barIndex] = scoreDynamicsRampDir[copyNdxs[barIndex]];
+	scoreTupletRatios[barIndex] = scoreTupletRatios[copyNdxs[barIndex]];
+	scoreTupletStartStop[barIndex] = scoreTupletStartStop[copyNdxs[barIndex]];
 	//scoreSlurBeginnings[barIndex] = scoreSlurBeginnings[copyNdxs[barIndex]];
 	//scoreSlurEndings[barIndex] = scoreSlurEndings[copyNdxs[barIndex]];
-	isWholeBarSlurred[barIndex] = isWholeBarSlurred[copyNdxs[barIndex]];
 	scoreTexts[barIndex] = scoreTexts[copyNdxs[barIndex]];
-	scoreNaturalSignsNotWritten[barIndex] = scoreNaturalSignsNotWritten[copyNdxs[barIndex]];
 	staff.copyMelodicLine(barIndex, copyNdxs[barIndex]);
 	notesObj.copyMelodicLine(barIndex, copyNdxs[barIndex]);
 }
@@ -351,14 +375,16 @@ void Instrument::createEmptyMelody(int barIndex)
 	midiDynamicsRampDurs[barIndex] = vector<int>(1, 0);
 	articulations[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	midiArticulationVals[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
+	isSlurred[barIndex] = vector<bool>(1, false);
 	text[barIndex] = vector<string>(1, "");
 	textIndexes[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
-	isWholeBarSlurred[barIndex] = false;
 	slurIndexes[barIndex] = vector<std::pair<int, int>>(1, std::make_pair(-1, -1));
+	isWholeBarSlurred[barIndex] = false;
 	tieIndexes[barIndex] = vector<int> (1, -1);
 	scoreNotes[barIndex] = vector<vector<int>>(1, vector<int>(1, -1));
 	scoreDurs[barIndex] = vector<int>(1, MINDUR);
 	scoreDotIndexes[barIndex] = vector<int>(1, 0);
+	scoreDotsCounter[barIndex] = vector<unsigned>(1, 0);
 	scoreAccidentals[barIndex] = vector<vector<int>>(1, vector<int>(1, 4));
 	scoreNaturalSignsNotWritten[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	scoreOctaves[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
@@ -370,9 +396,9 @@ void Instrument::createEmptyMelody(int barIndex)
 	scoreDynamicsRampEnd[barIndex] = vector<int>(1, -1);
 	scoreDynamicsRampDir[barIndex] = vector<int>(1, -1);
 	map<int, std::pair<int, int>> m1;
-	scoreTupRatios[barIndex] = m1;
+	scoreTupletRatios[barIndex] = m1;
 	map<int, std::pair<unsigned, unsigned>> m2;
-	scoreTupStartStop[barIndex] = m2;
+	scoreTupletStartStop[barIndex] = m2;
 	scoreTexts[barIndex] = vector<string>(1, "");
 }
 
@@ -420,8 +446,8 @@ void Instrument::setScoreNotes(int bar, int numerator, int denominator, int numB
 			slurIndexes[bar],
 			tieIndexes[bar],
 			isWholeBarSlurred[bar],
-			scoreTupRatios[bar],
-			scoreTupStartStop[bar],
+			scoreTupletRatios[bar],
+			scoreTupletStartStop[bar],
 			scoreTexts[bar],
 			textIndexes[bar],
 			BPMMultiplier);

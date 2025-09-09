@@ -650,7 +650,7 @@ void Notes::setNotePositions(int bar)
 		actualDurs[bar][i] = (int)(((float)beats[bar] / (float)duration) + 0.5);
 		// detect the beats based on the denominator
 		// so eights and shorter notes are groupped properly
-		float thisDur;
+		float thisDur = 0; // initialize to avoid compiler warnings
 		int durInBeats = durations[bar][i];
 		int whichNdx;
 		for (int j = 0; j < 7; j++) {
@@ -832,7 +832,7 @@ void Notes::setNotePositions(int bar)
 							xCoordChanged = true;
 							// if the base of the stem down chord changes
 							// then the X axis should not take an offset
-							if (k == allChordsBaseIndexes[bar][i] && stemDirections[bar][i] == -1) {
+							if ((int)k == allChordsBaseIndexes[bar][i] && stemDirections[bar][i] == -1) {
 								chordBaseNoteChangeCoef = 0;
 							}
 						}
@@ -842,7 +842,7 @@ void Notes::setNotePositions(int bar)
 							allNoteCoordsX[bar][i][j] += noteWidth;
 							allNoteShiftX[bar][i][j] = true;
 							xCoordChanged = true;
-							if (j == allChordsBaseIndexes[bar][i] && stemDirections[bar][i] == -1) {
+							if ((int)j == allChordsBaseIndexes[bar][i] && stemDirections[bar][i] == -1) {
 								chordBaseNoteChangeCoef = 0;
 							}
 						}
@@ -1030,7 +1030,7 @@ void Notes::setNotePositions(int bar)
 	// the code below calculates the coordinates of the beams
 	if (beamsIndexes[bar].size() > 0) {
 		for (i = 0; i < beamsIndexes[bar].size(); i++) {
-			float averageHeight = 0;
+			//float averageHeight = 0;
 			int stemDir = 1;
 			bool storedGroupStemDir = false;
 			float stemDirDiff = 0;
@@ -1993,8 +1993,8 @@ void Notes::storeOttavaCoords(int bar)
 //--------------------------------------------------------------
 void Notes::storeTextCoords(int bar)
 {
-	size_t size1 = 0;
-	size_t size2;
+	//size_t size1 = 0;
+	//size_t size2;
 	unsigned i, j;
 	vector<vector<float>> v;
 	for (i = 0; i < allTextsIndexes.at(bar).size(); i++) {
@@ -2255,6 +2255,7 @@ void Notes::storeMinMaxY(int bar)
 void Notes::copyMelodicLine(int barIndex, int barToCopy)
 {
 	allNotes[barIndex] = allNotes.at(barToCopy);
+	allOctaves[barIndex] = allOctaves.at(barToCopy);
 	hasExtraLines[barIndex] = hasExtraLines.at(barToCopy);
 	allNoteCoordsX[barIndex] = allNoteCoordsX.at(barToCopy);
 	allNoteCoordsXOffset[barIndex] = allNoteCoordsXOffset.at(barToCopy);
@@ -2282,6 +2283,7 @@ void Notes::copyMelodicLine(int barIndex, int barToCopy)
 	articulXPos[barIndex] = articulXPos.at(barToCopy);
 	articulYPos[barIndex] = articulYPos.at(barToCopy);
 	allTexts[barIndex] = allTexts.at(barToCopy);
+	allTextsIndexes[barIndex] = allTextsIndexes.at(barToCopy);
 	allTextsXCoords[barIndex] = allTextsXCoords.at(barToCopy);
 	allTextsYCoords[barIndex] = allTextsYCoords.at(barToCopy);
 	slurStartX[barIndex] = slurStartX.at(barToCopy);
@@ -2923,7 +2925,7 @@ void Notes::drawTies(int thisBar, int loopNdx, float xStartPnt, float yStartPnt,
 			if (allNotes[thisBar][i].size() > 1) {
 				drawTie(thisBar, i, allChordsEdgeIndexes[thisBar][i], xStartPnt, yStartPnt, yOffset, xCoef, -1);
 			}
-			for (unsigned j = 0; j < allNotes[thisBar][i].size(); j++) {
+			for (int j = 0; j < (int)allNotes[thisBar][i].size(); j++) {
 				if (j == allChordsBaseIndexes[thisBar][i] || j == allChordsEdgeIndexes[thisBar][i]) {
 					continue;
 				}
