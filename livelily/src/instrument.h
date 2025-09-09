@@ -32,6 +32,7 @@ class Instrument
 		void setStaccatoDur(float dur);
 		void setStaccatissimoDur(float dur);
 		void setTenutoDur(float dur);
+		int setDuration(string subcommand, float dur);
 		void setNumBarsToDisplay(int numBars);
 		float getXCoef();
 		void setPassed(bool passed);
@@ -175,8 +176,8 @@ class Instrument
 		//map<int, vector<int>> scoreSlurBeginnings;
 		//map<int, vector<int>> scoreSlurEndings;
 		map<int, bool> isWholeBarSlurred;
-		map<int, map<int, std::pair<int, int>>> scoreTupRatios;
-		map<int, map<int, std::pair<unsigned, unsigned>>> scoreTupStartStop;
+		map<int, map<int, std::pair<int, int>>> scoreTupletRatios;
+		map<int, map<int, std::pair<unsigned, unsigned>>> scoreTupletStartStop;
 		map<int, vector<string>> scoreTexts;
 
 		// score parts OSC handling
@@ -184,6 +185,8 @@ class Instrument
 		ofxOscSender scorePartSender;
 		// map to hold a boolean determining that a part that receives data has received bar data correctly
 		map<int, bool> barDataOKFromParts; // keys are bar indexes
+		// map of instrument index and string to store expanded bar lines to send to parts
+		map<int, string> barLines;
 
 		// the vector below is used in case a connected instrument needs a delay for incoming messages
 		// so we store a pair with the ofxOscMessage object and a time stamp	

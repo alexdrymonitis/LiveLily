@@ -60,11 +60,14 @@ class Editor
 		// get the number of digits of line count, used in the text drawing function
 		int getNumDigitsOfLineCount();
 		void drawText();
+		void drawCursor(int cursorX, ofColor cursorColor);
+		void drawPaneSeparator();
 		void setStringsStartPos();
-		void setFrameWidth(int frameWidth);
-		void setFrameHeight(int frameHeight);
-		void setFrameXOffset(int xOffset);
-		void setFrameYOffset(int yOffset);
+		void setFrameWidth(float frameWidth);
+		void setFrameHeight(float frameHeight);
+		void setFrameXOffset(float xOffset);
+		void setFrameYOffset(float yOffset);
+		float getFrameYOffset();
 		// max number of lines that fit in the window
 		void setMaxCharactersPerString();
 		void setGlobalFontSize(int fontSize);
@@ -148,7 +151,7 @@ class Editor
 		void deleteString();
 		vector<int> sortVec(vector<int> v);
 		// traceback functions
-		void setTraceback(std::pair<int, string> str, int lineNum);
+		void setTraceback(int errorCode, string errorStr, int lineNum);
 		void releaseTraceback(int lineNum);
 		string getTracebackStr(int lineNum);
 		int getTracebackColor(int lineNum);
@@ -182,8 +185,8 @@ class Editor
 		int paneRow;
 		int paneCol;
 
-		int frameWidth;
-		int frameHeight;
+		float frameWidth;
+		float frameHeight;
 
 		bool activity;
 
@@ -238,8 +241,8 @@ class Editor
 
 		int maxNumLines;
 		int maxNumLinesReset;
-		int frameXOffset;
-		int frameYOffset;
+		float frameXOffset;
+		float frameYOffset;
 		int lineNumberWidth;
 		int lineCount;
 		int lineCountOffset;
@@ -247,6 +250,7 @@ class Editor
 		int halfCharacterWidth;
 		int oneAndHalfCharacterWidth;
 		int maxCharactersPerString;
+		size_t maxBacktraceChars;
 		float characterOffset;
 		// store last highlighted char to properly position the cursor when
 		// the string on its line goes from long to fitting

@@ -339,6 +339,7 @@ int Editor::getNumDigitsOfLineCount()
 //--------------------------------------------------------------
 void Editor::drawText()
 {
+	static int prevCursorPos = 0;
 	/*******************************************************************/
 	// get the offset of the line count
 	int loopIter;
@@ -447,9 +448,10 @@ void Editor::drawText()
 	// we'll get the color of the text where the cursor is
 	// for this reason, we need to calculate the X position of the cursor here, and not below
 	// where we draw the cursor
-	ofColor cursorColor;
+	ofColor cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
 	int cursorX = lineNumberWidth + font.stringWidth(allStrings[cursorLineIndex].substr(0, cursorPos)) + \
 				  oneAndHalfCharacterWidth + frameXOffset;
+	bool cursorDrawn = false;
 	for (int i = lineCountOffset; i < loopIter; i++) {
 		int strYOffset = ((count+1)*cursorHeight) + frameYOffset - characterOffset;
 		if (i == cursorLineIndex) {
@@ -459,91 +461,128 @@ void Editor::drawText()
 		// draw all strings that are not empty
 		if (allStrings[i].size() > 0) {
 			// iterate through each word to check for keywords
-			// set last argument to tokenizeString to true to include white spaces
-			vector<string> tokens = tokenizeString(allStrings[i], " ", true);
+			// set last argument to tokenizeString to true to include the delimiters
+			vector<string> tokens = tokenizeString(allStrings[i], "{ }*.\"", true);
 			int xOffset = strXOffset;
 			if (cursorLineIndex == i) xOffset -= (allStringStartPos[i] * oneCharacterWidth);
 			bool isComment = false;
+			bool isString = false;
 			bool isCursorInsideKeyword = false;
 			int charAccum = 0;
+			int quotesCounter = 0;
+			size_t subtokensSizeAccum = 0;
 			if (tokens.size() == 0) {
-				cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
 				isComment = false;
 			}
-			for (string token : tokens) {
-				// to properly highlight commands with their subcommands that are separated by a dot
-				// we need to further tokenize the tokens of the string based on the dot
-				// we add a true argument to tokenizeString to add the dot character to the resulting vector
-				vector<string> subtokens = tokenizeString(token, ".", true);
-				for (string subtoken : subtokens) {
-					if (i == cursorLineIndex && cursorX >= xOffset && cursorX <= xOffset + font.stringWidth(subtoken)) {
-						isCursorInsideKeyword = true;
+			// the main ofApp stores the following commands: \insts, \bar, \bars, \loop, \function, list, and group
+			// we use this to determine if we should further tokenize each token of our string
+			// if a line starts with one of these commands, then we won't tokenize the token further
+			bool tokenizeDigits1 = find(((ofApp*)ofGetAppPtr())->commandsToNotTokenize.begin(), ((ofApp*)ofGetAppPtr())->commandsToNotTokenize.end(), tokens[0]) == ((ofApp*)ofGetAppPtr())->commandsToNotTokenize.end();
+			for (auto it = tokens.begin(); it != tokens.end(); ++it) {
+				// tokenizing has already been done, but to separate digits properly
+				// we need to tokenize these further, as a string like "c''4" won't be tokenized properly
+				vector<string> subtokens;
+				// the main ofApp also stores the all bar, loop, function and list names to the keywords vector
+				bool tokenizeDigits2 = find(((ofApp*)ofGetAppPtr())->keywords.begin(), ((ofApp*)ofGetAppPtr())->keywords.end(), *it) == ((ofApp*)ofGetAppPtr())->keywords.end();
+				// if the token starts with a backslash, then we don't tokenize based on digits
+				if (startsWith(*it, "\\")) tokenizeDigits2 = false;
+				if (tokenizeDigits1 && tokenizeDigits2) {
+					subtokens = tokenizeString(*it, "0123456789", true);
+				}
+				else {
+					subtokens.push_back(*it);
+				}
+				for (auto subit = subtokens.begin(); subit != subtokens.end(); ++subit) {
+					//cout << "cursorX: " << cursorX << ", cursorPos: " << cursorPos << ", xOffset: " << xOffset << ", str width of \"" << subtoken << "\": " << font.stringWidth(subtoken) << ", whole str \"" << allStrings[i] << "\": " << font.stringWidth(allStrings[i]) << endl;
+					//if (i == cursorLineIndex && cursorX >= xOffset && cursorX <= xOffset + font.stringWidth(subtoken)) {
+					//	if ((cursorX == xOffset + font.stringWidth(subtoken) && cursorX == xOffset + (int)allStrings[i].size()-1) || cursorX < xOffset + font.stringWidth(subtoken)) {
+					//		isCursorInsideKeyword = true;
+					//	}
+					//}
+					if (i == cursorLineIndex) {
+						size_t tokenNdx = std::distance(tokens.begin(), it);
+						size_t subtokenNdx = std::distance(subtokens.begin(), subit);
+						bool endOfStr = (tokenNdx == tokens.size()-1 && subtokenNdx == subtokens.size()-1 ? true : false);
+						//if (prevCursorPos != cursorPos)
+						//	cout << "\"" << *subit << "\": cursorPos: " << cursorPos << ", subtokensSizeAccum: " << subtokensSizeAccum << ", subtoken size: " << (*subit).size() << endl;
+						if (cursorPos - (int)subtokensSizeAccum + allStringStartPos[i] < (int)(*subit).size() || (cursorPos + allStringStartPos[i] == (int)allStrings[i].size() && endOfStr)) {
+							isCursorInsideKeyword = true;
+							//if (prevCursorPos != cursorPos)
+							//	cout << "drawing cursor for \"" << *subit << "\"\n";
+						}
 					}
+					subtokensSizeAccum += (*subit).size();
 					if (tracebackStr[i].size() > 0 && tracebackColor[i] > 0) {
 						ofSetColor(((ofApp*)ofGetAppPtr())->backgroundColor);
-						if (cursorLineIndex == i) cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
 					}
-					else if (startsWith(subtoken, "%")) {
+					else if (startsWith(*subit, "%")) {
 						ofSetColor(ofColor::gray.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 								ofColor::gray.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 								ofColor::gray.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
 						isComment = true;
-						if (isCursorInsideKeyword) {
+						if (isCursorInsideKeyword && !cursorDrawn) {
 							cursorColor = ofColor::gray;
+							drawCursor(cursorX, cursorColor);
+							cursorDrawn = true;
+						}
+					}
+					else if (*subit == "\"") {
+						ofSetColor(ofColor::aqua.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+								ofColor::aqua.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
+								ofColor::aqua.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						if (quotesCounter == 0) {
+							isString = true;
+							quotesCounter++;
+						}
+						else {
+							isString = false;
+							quotesCounter = 0;
+						}
+						if (isCursorInsideKeyword && !cursorDrawn) {
+							cursorColor = ofColor::aqua;
+							drawCursor(cursorX, cursorColor);
+							cursorDrawn = true;
 						}
 					}
 					else {
-						if (startsWith(subtoken, "\\") && !isComment) {
-							if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang].find(subtoken) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang].end()) {
-								ofColor color = ((ofApp*)ofGetAppPtr())->commandsMap[thisLang][subtoken];
-								ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-										color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-										color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-								if (isCursorInsideKeyword) {
-									cursorColor = color;
-								}
-							}
-							else {
-								ofColor color = ((ofApp*)ofGetAppPtr())->brightness;
-								ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-										color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-										color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-								if (isCursorInsideKeyword) {
-									cursorColor = color;
-								}
-							}
-						}
-						else if (((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang].find(subtoken) != ((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang].end() \
-								&& !isComment) {
-							ofColor color = ((ofApp*)ofGetAppPtr())->commandsMapSecond[thisLang][subtoken];
+						if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang].find(*subit) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang].end() \
+								&& !isComment && !isString) {
+							ofColor color = ((ofApp*)ofGetAppPtr())->commandsMap[thisLang][*subit];
 							ofSetColor(color.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 									color.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 									color.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-							if (isCursorInsideKeyword) {
+							if (isCursorInsideKeyword && !cursorDrawn) {
 								cursorColor = color;
+								drawCursor(cursorX, cursorColor);
+								cursorDrawn = true;
 							}
 						}
-						else if (subtoken.size() == 0 && !isComment) {
+						else if ((*subit).size() == 0 && !isComment && !isString) {
 							ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
-							if (isCursorInsideKeyword) {
-								cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
-							}
 						}
-						else if ((isNumber(subtoken) || isFloat(subtoken)) && !isComment) {
+						else if (isNumber(*subit) && !isComment && !isString) {
 							ofSetColor(ofColor::gold.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 									ofColor::gold.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 									ofColor::gold.b*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-							if (isCursorInsideKeyword) {
+							if (isCursorInsideKeyword && !cursorDrawn) {
 								cursorColor = ofColor::gold;
+								drawCursor(cursorX, cursorColor);
+								cursorDrawn = true;
 							}
 						}
-						else if (!isComment) {
+						else if (!isComment && !isString) {
 							ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
-							if (isCursorInsideKeyword) {
-								cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
-							}
 						}
-						else if (isComment) cursorColor = ofColor::gray;
+						else if (isComment && (isCursorInsideKeyword && !cursorDrawn)) {
+							cursorColor = ofColor::gray;
+							drawCursor(cursorX, cursorColor);
+							cursorDrawn = true;
+						}
+						else if (isString && (isCursorInsideKeyword && !cursorDrawn)) {
+							cursorColor = ofColor::darkOrange;
+							drawCursor(cursorX, cursorColor);
+							cursorDrawn = true;
+						}
 					}
 					size_t numCharsToRemove = 0;
 					size_t firstCharToDisplay = 0;
@@ -554,19 +593,16 @@ void Editor::drawText()
 						firstCharToDisplay = (size_t)(startPos - charAccum);
 						xOffsetModified += (firstCharToDisplay * oneCharacterWidth);
 					}
-					if ((charAccum + (int)subtoken.size() - startPos) > maxCharactersPerString) {
-						numCharsToRemove = ((size_t)charAccum + subtoken.size()) - (size_t)startPos - (size_t)maxCharactersPerString - 1;
+					if ((charAccum + (int)(*subit).size() - startPos) > maxCharactersPerString) {
+						numCharsToRemove = ((size_t)charAccum + (*subit).size()) - (size_t)startPos - (size_t)maxCharactersPerString - 1;
 					}
-					if (firstCharToDisplay < subtoken.size() && numCharsToRemove < subtoken.size()) {
-						font.drawString(subtoken.substr(firstCharToDisplay, subtoken.size()-numCharsToRemove), xOffsetModified, strYOffset);
+					if (firstCharToDisplay < (*subit).size() && numCharsToRemove < (*subit).size()) {
+						font.drawString((*subit).substr(firstCharToDisplay, (*subit).size()-numCharsToRemove), xOffsetModified, strYOffset);
 					}
-					xOffset += (subtoken.size() * oneCharacterWidth); // + 1 for the white space
-					charAccum += ((int)subtoken.size() + 1);
+					xOffset += ((*subit).size() * oneCharacterWidth); // + 1 for the white space
+					charAccum += ((int)(*subit).size()); // + 1);
 				}
 			}
-		}
-		else if (i == cursorLineIndex) {
-			cursorColor = ((ofApp*)ofGetAppPtr())->brightness;
 		}
 		
 		// then check if we have selected this string so we must highlight it
@@ -595,20 +631,7 @@ void Editor::drawText()
 
 	/*******************************************************************/
 	// then draw the cursor
-	if (!activity) {
-		ofNoFill();
-	}
-	// we have calculated the X position of the cursor before we drew the text
-	int cursorY = ((cursorLineIndex-lineCountOffset) * cursorHeight) + frameYOffset; //+ characterOffset
-	ofSetColor(cursorColor.r * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
-			cursorColor.g * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
-			cursorColor.b * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
-	if ((activity && !typingCommand) || !activity) {
-		ofDrawRectangle(cursorX, cursorY, oneCharacterWidth, cursorHeight);
-	}
-	if (!activity) {
-		ofFill();
-	}
+	if (!cursorDrawn) drawCursor(cursorX, ((ofApp*)ofGetAppPtr())->brightness);
 
 	/*******************************************************************/
 	// then draw the character the cursor is drawn on top of (if this is the case)
@@ -645,9 +668,37 @@ void Editor::drawText()
 		font.drawString(to_string(i+1), xOffset, ((count+1)*cursorHeight)+frameYOffset-characterOffset);
 		count++;
 	}
+	if (prevCursorPos != cursorPos) prevCursorPos = cursorPos;
+}
 
-	/*******************************************************************/
-	// finally draw the rectangle with the pane index, the name of the file, and other info
+//--------------------------------------------------------------
+void Editor::drawCursor(int cursorX, ofColor cursorColor)
+{
+	if (!activity) {
+		ofNoFill();
+	}
+	// we have calculated the X position of the cursor before we drew the text
+	int cursorY = ((cursorLineIndex-lineCountOffset) * cursorHeight) + frameYOffset; //+ characterOffset
+	ofSetColor(cursorColor.r * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+			cursorColor.g * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+			cursorColor.b * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
+	if ((activity && !typingCommand) || !activity) {
+		ofDrawRectangle(cursorX, cursorY, oneCharacterWidth, cursorHeight);
+	}
+	if (!activity) {
+		ofFill();
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::drawPaneSeparator()
+{
+	/*
+	draw the line that separates the panes separately than the rest of the pane
+	so that the panes that are at the bottom of their column (that touch the traceback printing area)
+	are drawn after the score, so that when the traceback printing area grows bigger than its default size
+	it overrides the score
+	*/
 	ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
 	float yCoord = maxNumLines * cursorHeight + frameYOffset;
 	float strYCoord = ((maxNumLines+1)*cursorHeight) + frameYOffset - characterOffset;
@@ -682,7 +733,7 @@ void Editor::drawText()
 				widthOffset = ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX;
 			}
 		}
-		font.drawString("INSERT", frameWidth-widthOffset-font.stringWidth("INSERT")-10, strYCoord);
+		font.drawString("INSERT", frameXOffset+frameWidth-widthOffset-font.stringWidth("INSERT")-10, strYCoord);
 	}
 	ofSetColor(((ofApp*)ofGetAppPtr())->brightness);
 }
@@ -702,27 +753,33 @@ void Editor::setStringsStartPos()
 }
 
 //--------------------------------------------------------------
-void Editor::setFrameWidth(int frameWidth)
+void Editor::setFrameWidth(float frameWidth)
 {
 	Editor::frameWidth = frameWidth;
 }
 
 //--------------------------------------------------------------
-void Editor::setFrameHeight(int frameHeight)
+void Editor::setFrameHeight(float frameHeight)
 {
 	Editor::frameHeight = frameHeight;
 }
 
 //--------------------------------------------------------------
-void Editor::setFrameXOffset(int xOffset)
+void Editor::setFrameXOffset(float xOffset)
 {
 	frameXOffset = xOffset;
 }
 
 //--------------------------------------------------------------
-void Editor::setFrameYOffset(int yOffset)
+void Editor::setFrameYOffset(float yOffset)
 {
 	frameYOffset = yOffset;
+}
+
+//--------------------------------------------------------------
+float Editor::getFrameYOffset()
+{
+	return frameYOffset;
 }
 
 //--------------------------------------------------------------
@@ -737,6 +794,8 @@ void Editor::setMaxCharactersPerString()
 	}
 	maxCharactersPerString = (width-lineNumberWidth-oneAndHalfCharacterWidth) / oneCharacterWidth;
 	maxCharactersPerString -= 1;
+	// the line below concerns the backtrace length
+	maxBacktraceChars = (size_t)(((ofApp*)ofGetAppPtr())->sharedData.screenWidth / oneCharacterWidth);
 	//setStringsStartPos();
 }
 
@@ -1592,20 +1651,39 @@ string Editor::replaceCharInStr(string str, string a, string b)
 }
 
 //---------------------------------------------------------------
+//vector<string> Editor::tokenizeString(string str, string delimiter, bool addDelimiter)
+//{
+//	size_t start = 0;
+//	size_t end = str.find(delimiter);
+//	vector<string> tokens;
+//	while (end != string::npos) {
+//		tokens.push_back(str.substr(start, end));
+//		if (addDelimiter) tokens.push_back(delimiter);
+//		start += end + 1;
+//		end = str.substr(start).find(delimiter);
+//	}
+//	// the last token is not extracted in the loop above because end has reached string::npos
+//	// so we extract it here by simply passing a substring from the last start point to the end
+//	tokens.push_back(str.substr(start));
+//	return tokens;
+//}
+
+//---------------------------------------------------------------
 vector<string> Editor::tokenizeString(string str, string delimiter, bool addDelimiter)
 {
-	size_t start = 0;
-	size_t end = str.find(delimiter);
+	size_t prev = 0, pos;
 	vector<string> tokens;
-	while (end != string::npos) {
-		tokens.push_back(str.substr(start, end));
-		if (addDelimiter) tokens.push_back(delimiter);
-		start += end + 1;
-		end = str.substr(start).find(delimiter);
+	while ((pos = str.find_first_of(delimiter, prev)) != string::npos)
+	{
+	    if (pos > prev) {
+			tokens.push_back(str.substr(prev, pos-prev));
+		}
+		if (addDelimiter) tokens.push_back(str.substr(pos, 1));
+	    prev = pos+1;
 	}
-	// the last token is not extracted in the loop above because end has reached string::npos
-	// so we extract it here by simply passing a substring from the last start point to the end
-	tokens.push_back(str.substr(start));
+	if (prev < str.length()) {
+		tokens.push_back(str.substr(prev, string::npos));
+	}
 	return tokens;
 }
 
@@ -2143,21 +2221,41 @@ void Editor::executeCommand()
 	}
 	else if (startsWith(commandStr, ":ls")) {
 		string pwdStr = ofSystem("pwd");
-		if (commandStr.compare(":ls") == 0) {
+		if (commandStr.compare(":ls") == 0 && endsWith(pwdStr, "livelily/bin\n")) {
 			pwdStr = pwdStr.substr(0, pwdStr.size()-1) + "/data";
 		}
 		else {
-			// change pwdStr to enable relative paths
-			if (!startsWith(commandStr.substr(4), "/")) {
-				if (startsWith(commandStr.substr(4), ".")) {
-					
-				}
-				else {
-					pwdStr = pwdStr.substr(0, pwdStr.size()-1) + "/data/" + commandStr.substr(4);
-				}
-			}
+			//// change pwdStr to enable relative paths
+			//if (!startsWith(commandStr.substr(4), "/")) {
+			//	if (startsWith(commandStr.substr(4), ".")) {
+			//		
+			//	}
+			//	else {
+			//		pwdStr = pwdStr.substr(0, pwdStr.size()-1) + "/data/" + commandStr.substr(4);
+			//	}
+			//}
 		}
 		commandStr = ofSystem("ls -p " + pwdStr);
+		// it is likely that the output is too long, so we split it to show multiple items per line
+		vector<string> commandStrTokens = tokenizeString(commandStr, "\n", false);
+		size_t lengthCounter = 0;
+		commandStr = "";
+		for (string s : commandStrTokens) {
+			lengthCounter += s.size();
+			if (lengthCounter >= maxBacktraceChars) {
+				commandStr += "\n";
+				lengthCounter = s.size();
+			}
+			commandStr += s;
+			commandStr += "  ";
+			lengthCounter += 2; // the two white spaces added above
+		}
+	}
+	else if (commandStr.compare(":pwd") == 0) {
+		commandStr = ofSystem("pwd");
+		if (commandStr.length() >= maxBacktraceChars) {
+			commandStr = commandStr.substr(0, maxBacktraceChars) + "\n" + commandStr.substr(maxBacktraceChars);
+		}
 	}
 	else if (commandStr.compare(":q") == 0) {
 		((ofApp*)ofGetAppPtr())->removePane();
@@ -2453,16 +2551,16 @@ vector<int> Editor::sortVec(vector<int> v)
 }
 
 //--------------------------------------------------------------
-void Editor::setTraceback(std::pair<int, string> error, int lineNum)
+void Editor::setTraceback(int errorCode, string errorStr, int lineNum)
 {
 	// error codes are: 0 - nothing, 1 - note, 2 - warning, 3 - error
-	if (error.first == 0 || error.first == 1) tracebackColor[lineNum] = 0; 
-	else if (error.first == 2) tracebackColor[lineNum] = 1;
-	else if (error.first == 3) tracebackColor[lineNum] = 2;
+	if (errorCode == 0 || errorCode == 1) tracebackColor[lineNum] = 0; 
+	else if (errorCode == 2) tracebackColor[lineNum] = 1;
+	else if (errorCode == 3) tracebackColor[lineNum] = 2;
 	else tracebackColor[lineNum] = 0;
 	// find number of newlines in traceback string
-	int numLines = count(begin(error.second), end(error.second), '\n') + 1;
-	tracebackStr[lineNum] = error.second;
+	int numLines = count(begin(errorStr), end(errorStr), '\n') + 1;
+	tracebackStr[lineNum] = errorStr;
 	tracebackTimeStamps[lineNum] = ofGetElapsedTimeMillis();
 	tracebackNumLines[lineNum] = numLines;
 }
@@ -2811,7 +2909,7 @@ void Editor::loadXMLFile(string filePath)
 			times[barNum] = std::make_pair(beatNumerator, beatDenominator);
 		}
 	}
-	for (unsigned i = 1; i <= barNum; i++) {
+	for (int i = 1; i <= barNum; i++) {
 		if (times.find(i) == times.end()) {
 			times[i] = std::make_pair(beatNumerator, beatDenominator);
 		}
@@ -2847,7 +2945,7 @@ void Editor::loadXMLFile(string filePath)
 			tempi[barNum] = std::make_pair(tempoBase, tempo);
 		}
 	}
-	for (unsigned i = 1; i <= barNum; i++) {
+	for (int i = 1; i <= barNum; i++) {
 		if (tempi.find(i) == tempi.end()) {
 			tempi[i] = std::make_pair(tempoBase, tempo);
 		}
@@ -3278,11 +3376,11 @@ void Editor::loadXMLFile(string filePath)
 		for (auto it2 = insts.begin(); it2 != insts.end(); ++it2) {
 			string instLine = tabStr + "\\" + it2->second.second.second;
 			if (instClefs[it2->first][it->first].first) {
-				instLine += " clef ";
+				instLine += " \\clef ";
 				instLine += clefSymbols[instClefs[it2->first][it->first].second];
 			}
 			else {
-				instLine += " clef ";
+				instLine += " \\clef ";
 				instLine += clefSymbols[prevInstClef[it2->first]];
 			}
 			instLine += notes[it2->first][it->first].second;

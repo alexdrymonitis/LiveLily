@@ -349,11 +349,21 @@ typedef struct _SharedData
 	uint64_t PPQNTimeStamp;
 } SharedData;
 
-typedef struct _intPair
+typedef struct _CmdInput
 {
-	int first;
-	int second;
-} intPair;
+	vector<string> inputVec;
+	vector<string> afterCmdVec;
+	bool hasBrackets;
+	bool isMainCmd;
+} CmdInput;
+
+typedef struct _CmdOutput
+{
+	int errorCode;
+	string errorStr;
+	size_t toPop;
+	vector<string> outputVec;
+} CmdOutput;
 
 class Sequencer : public ofThread
 {
@@ -453,6 +463,8 @@ class ofApp : public ofBaseApp
 		void quickSort(uint64_t arr[], int arr2[], int low, int high);
 		// send data to score parts
 		void sendToParts(ofxOscMessage m, bool delay);
+		void sendBarToParts(int barIndex);
+		void sendLoopToParts();
 		void sendCountdownToParts(int countdown);
 		void sendStopCountdownToParts();
 		void sendSizeToPart(int instNdx, int size);
@@ -482,19 +494,22 @@ class ofApp : public ofBaseApp
 		std::pair<int, string> expandStringBasedOnBrackets(const string& str);
 		std::pair<int, string> expandChordsInString(const string& firstPart, const string& str);
 		std::pair<int, string> expandSingleChars(string str);
-		string detectRepetitions(string str);
+		vector<string> detectRepetitions(vector<string> tokens);
 		// string handling
 		vector<int> findIndexesOfCharInStr(string str, string charToFind);
 		string replaceCharInStr(string str, string a, string b);
 		vector<string> tokenizeString(string str, string delimiter);
 		map<size_t, string> tokenizeStringWithNdxs(string str, string delimiter);
 		void resetEditorStrings(int index, int numLines);
-		int findMatchingBrace(const std::string& s, int openPos);
-		std::pair<int, string> replaceCommandsWithOutput(const string& str, vector<string>& output, int lineNum);
+		int findMatchingBrace(const std::string& s, size_t openPos);
 		void parseStrings(int index, int numLines);
 		std::pair<int, string> parseString(string str, int lineNum, int numLines);
+		CmdOutput expandCommands(const string& input, int lineNum, int numLines);
+		vector<string> tokenizeExpandedCommands(const string& input);
+		CmdOutput parseExpandedCommands(const vector<string>& tokens, int lineNum, int numLines);
+		string genStrFromVec(const vector<string>& vec);
 		void storeList(string str);
-		std::pair<int, string> traverseList(string str, int lineNum, int numLines);
+		CmdOutput traverseList(string str, int lineNum, int numLines);
 		void fillInMissingInsts(int barIndex);
 		void createEmptyMelody(int index);
 		void resizePatternVectors();
@@ -503,14 +518,27 @@ class ofApp : public ofBaseApp
 		void storeNewLoop(string loopName);
 		int getBaseDurValue(string str, int denominator);
 		std::pair<int, string> getBaseDurError(string str);
-		std::pair<int, string> parseCommand(string str, int lineNum, int numLines);
-		std::pair<bool, std::pair<int, string>> isInstrument(vector<string>& commands, int lineNum, int numLines);
-		std::pair<bool, std::pair<int, string>> isBarLoop(vector<string>& commands, int lineNum, int numLines);
-		std::pair<bool, std::pair<int, string>> isFunction(vector<string>& commands, int lineNum, int numLines);
-		std::pair<bool, std::pair<int, string>> isList(vector<string>& commands, int lineNum, int numLines);
-		std::pair<int, string> listItemExists(int listItemNdx);
-		std::pair<bool, std::pair<int, string>> isOscClient(vector<string>& commands, int lineNum, int numLines);
-		std::pair<int, string> functionFuncs(vector<string>& commands);
+		// functions that return I/O for commands
+		CmdOutput genError(string str);
+		CmdOutput genWarning(string str);
+		CmdOutput genNote(string str);
+		CmdOutput genOutput(string str);
+		CmdOutput genOutput(vector<string> v);
+		CmdOutput genOutput(string str, size_t toPop);
+		CmdOutput genOutput(vector<string> v, size_t toPop);
+		CmdOutput genOutputFuncs(std::pair<int, string> p);
+		CmdInput genCmdInput(string str);
+		CmdInput genCmdInput(vector<string> v);
+		// end of command I/O functions
+		CmdOutput parseCommand(CmdInput cmdInput, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isInstrument(vector<string>& commands, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isBarLoop(vector<string>& commands, bool isMainCmd, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isFunction(vector<string>& commands, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isList(vector<string>& commands, int lineNum, int numLines);
+		std::pair<int, string> listItemExists(size_t listItemNdx);
+		std::pair<bool, CmdOutput> isOscClient(vector<string>& commands, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isGroup(vector<string>& commands, int lineNum, int numLines);
+		CmdOutput functionFuncs(vector<string>& commands);
 		string getRestOfCommand(vector<string>& commands, unsigned startNdx);
 		int getLastLoopIndex();
 		int getLastBarIndex();
@@ -522,14 +550,15 @@ class ofApp : public ofBaseApp
 		void copyMelodicLine(int bar);
 		std::pair<int, string> parseBarLoop(string str, int lineNum, int numLines);
 		bool areWeInsideChord(size_t size, unsigned i, unsigned *chordNotesIndexes);
-		std::pair<int, string> parseMelodicLine(string str);
+		vector<string> tokenizeChord(string str, bool includeAngleBrackets = false);
+		std::pair<int, string> parseMelodicLine(vector<string> v, int lineNum, int numLines);
 		// set coordinates for all panes
 		void setPaneCoords();
 		// set the global font size to calculate dimensions
 		void setFontSize();
 		// various commands for the score
-		std::pair<int, string> scoreCommands(vector<string>& originalCommands, int lineNum, int numLines);
-		std::pair<int, string> maestroCommands(vector<string>& commands, int lineNum, int numLines);
+		CmdOutput scoreCommands(vector<string>& originalCommands, int lineNum, int numLines);
+		CmdOutput maestroCommands(vector<string>& commands, int lineNum, int numLines);
 		// initialize an instrument
 		void initializeInstrument(string instName);
 		// the sequencer functions of the system
@@ -596,8 +625,15 @@ class ofApp : public ofBaseApp
 		bool midiPortOpen;
 
 		map<int, map<string, ofColor>> commandsMap;
-		map<int, map<string, ofColor>> commandsMapSecond;
+		// the two vectors below is used to determine if we must tokenize words based on digits
+		vector<string> commandsToNotTokenize;
+		vector<string> keywords;
 		enum languages {livelily, python, lua};
+		// vector of strings of command names that should not be expanded
+		vector<string> nonExpandableCommands = {"\\bar", "\\bars", "\\loop", "\\group"};
+
+		// instrument groups
+		map<string, vector<string>> instGroups;
 
 		// various lists
 		map<int, list<string>> listMap;
@@ -713,6 +749,8 @@ class ofApp : public ofBaseApp
 		bool parsingBars;
 		// and one for parsing loops
 		bool parsingLoop;
+		// a string to hold the loop command to be sent over OSC to connected servers
+		string lastLoopCommand;
 		// a boolean for sending data defined with \bars to score parts one at each frame
 		bool waitToSendBarDataToParts;
 		// and one to denote that all bars have finished parsing so we can start sending to parts
@@ -728,8 +766,9 @@ class ofApp : public ofBaseApp
 		string multiBarsName;
 		// and a counter for the iterations of multiple bars parsing
 		int barsIterCounter;
+		bool numBarsToParseSet;
 		// a variable to check if all instruments parsed the same number of bars
-		int numBarsParsed;
+		int numBarsToParse;
 		char noteChars[8];
 		string lastInstrument;
 		int lastInstrumentIndex;
