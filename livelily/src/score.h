@@ -6,56 +6,41 @@
 
 #define EXTRALINECOEFF 0.7
 #define BEAMDISTCOEFF 0.75
-
-typedef struct _intPair
-{
-	int first;
-	int second;
-} intPair;
-
-typedef struct _uintPair
-{
-	unsigned first;
-	unsigned second;
-} uintPair;
+#define MINDUR 256
 
 class Staff
 {
 	public:
 		Staff();
 		void setID(int id);
+		void setGroup(int id);
 		void setClef(int bar, int clefIdx);
 		int getClef(int bar);
 		void setRhythm(bool isRhythm);
 		void setSize(int fontSize, float staffLinesDist);
 		void setMeter(int bar, int numer, int denom);
-		intPair getMeter(int bar);
+		std::pair<int, int> getMeter(int bar);
 		void setTempo(int bar, int BPMTempo, int beatAtValue, bool hasDot);
 		void setOrientation(int orientation);
 		void setNumBarsToDisplay(int numBars);
 		float getXCoef();
-		void setCoords(float xLen, float y1, float y2, float dist);
-		void correctYAnchor(float y1, float y2);
+		void setCoords(float xLen, float dist);
 		float getXLength();
-		float getYAnchor();
-		void moveScoreX(float numPixels);
-		void moveScoreY(float numPixels);
-		void recenterScore();
 		float getClefXOffset();
 		float getMeterXOffset();
 		void copyMelodicLine(int barIndex, int barToCopy);
-		void drawStaff(int loopIndex, float xStartPnt, float yOffset, bool drawClef,
+		void drawStaff(int loopIndex, float xStartPnt, float yStartPnt, float yOffset, bool drawClef,
 				bool drawMeter, bool drawLoopStartEnd, bool drawTempo);
-		void drawLoopStart(int loopIndex, float xStart, float yOffset);
-		void drawLoopEnd(int loopIndex, float xEnd, float yOffset);
-		void drawScoreEnd(int loopIndex, float xEnd, float yOffset);
+		void drawLoopStart(int loopIndex, float xStart, float yStartPnt, float yOffset);
+		void drawLoopEnd(int loopIndex, float xEnd, float yStartPnt, float yOffset);
+		void drawScoreEnd(int loopIndex, float xEnd, float yStartPnt, float yOffset);
 		void drawThickLine(float x1, float y1, float x2, float y2, float width);
 		bool isLoopStart;
 		bool isLoopEnd;
 		bool isScoreEnd;
-		~Staff();
 	private:
 		int objID;
+		int groupID;
 		float xLength;
 		float xCoef; // multiplied by X coordinates, based on how many bars are displayed in horizontal view
 		float xOffset;
@@ -98,7 +83,7 @@ class Notes
 		void setFontSize(int fontSize, float staffLinesDist);
 		void setNumBarsToDisplay(int numBars);
 		void setXCoef(float coef);
-		void setCoords(float xLen, float yStart1, float yStart2, float staffLinesDist, int fontSize);
+		void setCoords(float xLen, float staffLinesDist, int fontSize);
 		void setLength(int bar, int numBeats);
 		void setNumBeats(int bar, int numBeats);
 		float getMaxYPos(int bar);
@@ -113,6 +98,7 @@ class Notes
 		void setActiveNote(int note);
 		void setMute(bool muteState);
 		void setMeter(int bar, int numer, int denom, int numBeats);
+		void setAccidentalsOffsetCoef(float coef);
 		void setNotes(int bar,
 				vector<vector<int>> notes,
 				vector<vector<int>> accidentals,
@@ -120,7 +106,8 @@ class Notes
 				vector<vector<int>> octaves,
 				vector<int> ottavas,
 				vector<int> durs,
-				vector<int> dots,
+				vector<int> dotNdxs,
+				vector<unsigned> dotsCntr,
 				vector<int> gliss,
 				vector<vector<int>>articul,
 				vector<int> dyns,
@@ -128,19 +115,17 @@ class Notes
 				vector<int> dynRampStart,
 				vector<int> dynRampEnd,
 				vector<int> dynRampDir,
-				vector<intPair> slurIndexes,
+				vector<std::pair<int, int>> slurIndexes,
+				vector<int> tieNdxs,
 				bool isWholeBarSlurred,
-				map<int, intPair> tupletRatios,
-				map<int, uintPair> tupletStartStop,
+				map<int, std::pair<int, int>> tupletRatios,
+				map<int, std::pair<unsigned, unsigned>> tupletStartStop,
 				vector<string> texts,
-				vector<int> textIndexes);
+				vector<vector<int>> textIndexes,
+				int BPMMult);
 		void changeNotesBasedOnClef(int bar);
 		void correctDynamics(int bar, vector<int> dyns);
 		void setNotePositions(int bar);
-		void correctYAnchor(float yAnchor1, float yAnchor2);
-		void moveScoreX(float numPixels);
-		void moveScoreY(float numPixels);
-		void recenterScore();
 		float getXLength();
 		void storeTupletCoords(int bar);
 		void storeArticulationsCoords(int bar);
@@ -150,24 +135,27 @@ class Notes
 		void storeDynamicsCoords(int bar);
 		void storeMinMaxY(int bar);
 		void copyMelodicLine(int barIndex, int barToCopy);
+		void deleteBar(int bar);
 		void insertNaturalSigns(int bar, int loopNdx, vector<int> *v);
-		intPair isBarLinked(int bar);
-		void drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, float yOffset, bool animation, float xCoef);
+		std::pair<int, int> isBarLinked(int bar);
+		void drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, float yStartPnt,
+				float yOffset, bool animation, float xCoef);
 		void drawBeams(float x1, float y1, float x2, float y2);
-		int drawRest(int bar, int restDur, float x, int color, float yOffset);
-		void drawAccidentals(int bar, float xStartPnt, float yOffset, float xCoef);
-		void drawGlissandi(int bar, float xStartPnt, float yOffset, float xCoef);
-		void drawTuplets(int bar, float xStartPnt, float yOffset, float xCoef);
-		void drawArticulations(int bar, float xStartPnt, float yOffset, float xCoef);
-		void drawOttavas(int bar, float xStartPnt, float yOffset, float xCoef);
-		void drawOttavaLine(int bar, unsigned startNdx, unsigned endNdx, float xStartPnt, float yOffset, float xCoef);
-		void drawText(int bar, float xStartPnt, float yOffset, float xCoef);
-		void drawSlurs(int bar, int loopNdx, float xStartPnt, float yOffset, float xCoef);
-		void drawDynamics(int bar, float xStartPnt, float yOffset, float xCoef);
+		int drawRest(int bar, int restDur, float x, float yStartPnt, int color, float yOffset);
+		void drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
+		void drawGlissandi(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
+		void drawTuplets(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
+		void drawArticulations(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
+		void drawOttavas(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
+		void drawOttavaLine(int bar, unsigned startNdx, unsigned endNdx, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
+		void drawText(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
+		void drawSlurs(int bar, int loopNdx, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
+		void drawTies(int thisBar, int loopNdx, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
+		void drawTie(int thisBar, unsigned i, unsigned j, float xStartPnt, float yStartPnt, float yOffset, float xCoef, int stemDirCoef);
+		void drawDynamics(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
 		void printVector(vector<int> v);
 		void printVector(vector<string> v);
 		void printVector(vector<float> v);
-		~Notes();
 		bool mute;
 	private:
 		int objID;
@@ -189,7 +177,7 @@ class Notes
 		map<int, vector<vector<int>>> allArticulations;
 		//map<int, vector<int>> slurBeginnings;
 		//map<int, vector<int>> slurEndings;
-		map<int, vector<intPair>> slurIndexes;
+		map<int, vector<std::pair<int, int>>> slurIndexes;
 		map<int, vector<float>> slurStartX;
 		map<int, vector<float>> slurStopX;
 		map<int, vector<float>> slurStartY;
@@ -198,14 +186,15 @@ class Notes
 		map<int, vector<float>> slurMiddleY1;
 		map<int, vector<float>> slurMiddleX2;
 		map<int, vector<float>> slurMiddleY2;
-		map<int, vector<intPair>> slurLinks;
+		map<int, vector<std::pair<int, int>>> slurLinks;
+		map<int, vector<int>> tieIndexes;
 		map<int, bool> isWholeSlurred;
 		// the map below is queried when creating loops, to determine whether a bar can be included in a loop
 		// if a bar is linked to another bar due to slurs, glissandi, or (de)crescendi spanning over more than one bar
 		// then it will not be able to include this bar in a loop
-		map<int, intPair> isLinked;
-		map<int, map<int, intPair>> tupRatios;
-		map<int, map<int, uintPair>> tupStartStop;
+		map<int, std::pair<int, int>> isLinked;
+		map<int, map<int, std::pair<int, int>>> tupRatios;
+		map<int, map<int, std::pair<unsigned, unsigned>>> tupStartStop;
 		map<int, map<int, vector<float>>> tupXCoords;
 		map<int, map<int, vector<float>>> tupYCoords;
 		map<int, map<int, int>> tupDirs;
@@ -214,6 +203,7 @@ class Notes
 		map<int, vector<int>> grouppedStemDirsCoeff;
 		map<int, vector<int>> durations;
 		map<int, vector<int>> dotIndexes;
+		map<int, vector<unsigned>> dotsCounter;
 		map<int, vector<int>> dynamics;
 		map<int, vector<int>> dynamicsIndexes;
 		map<int, vector<int>> dynamicsRampStart;
@@ -230,6 +220,7 @@ class Notes
 		map<int, vector<int>> maxNumLines;
 		map<int, vector<float>> startPnts;
 		map<int, vector<vector<float>>> allNoteCoordsX;
+		map<int, vector<vector<bool>>> allNoteShiftX;
 		map<int, vector<float>> allNoteCoordsXOffset;
 		map<int, vector<float>> allChordsChangeXCoef;
 		map<int, vector<vector<float>>> allNoteHeadCoordsY;
@@ -242,9 +233,9 @@ class Notes
 		map<int, vector<float>> allOttavasYCoords;
 		map<int, vector<int>> allOttavasChangedAt;
 		map<int, vector<string>> allTexts;
-		map<int, vector<int>> allTextsIndexes;
+		map<int, vector<vector<int>>> allTextsIndexes;
 		map<int, vector<float>> allTextsXCoords;
-		map<int, vector<float>> allTextsYCoords;
+		map<int, vector<vector<float>>> allTextsYCoords;
 		map<int, vector<int>> numBeams;
 		map<int, vector<vector<float>>> beamYCoords1;
 		map<int, vector<vector<float>>> beamYCoords2;
@@ -259,7 +250,7 @@ class Notes
 		map<int, vector<vector<float>>> articulYPos;
 		map<int, float> maxYCoord;
 		map<int, float> minYCoord;
-		float yStartPnt[2];
+		map<int, int> BPMMultiplier;
 		float xCoef; // multiplied by X coordinates, based on how many bars are displayed in horizontal view
 		float xOffset;
 		// a map of xOffsets so that these can be queried for other bars than the one currently drawn
@@ -285,6 +276,7 @@ class Notes
 		// marcato, trill, tenuto, staccatissimo, accent, staccato
 		string articulSyms[6] = {"^", "Ù", "_", "à", ">", "."};
 		string octaveSyms[3] = {"", "8", "15"};
+		int baseDurations[7] = {4, 8, 16, 32, 64, 128, 256};
 		// arrays to hold the widths and heights of strings
 		// since these can be called from a threaded class and calling stringWidth() won't work
 		float dynSymsWidths[8];
@@ -305,6 +297,7 @@ class Notes
 		map<int, int> clefIndex;
 		float restYOffset;
 		float halfStaffDist;
+		float accidentalsOffsetCoef;
 		map<int, int> denominator;
 		map<int, int> numerator;
 		map<int, int> beats;

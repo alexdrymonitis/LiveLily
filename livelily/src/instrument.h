@@ -7,7 +7,6 @@
 #include <vector>
 
 #define MINDUR 256
-#define MINDB 60
 
 class Instrument
 {
@@ -16,14 +15,25 @@ class Instrument
 		void setName(string name);
 		string getName();
 		void setID(int id);
+		int getID();
+		void setGroup(int groupID);
+		int getGroup();
 		void setRhythm(bool isRhythm);
 		bool isRhythm();
+		void setSendToPython(bool b);
+		bool sendToPython();
+		void setDelay(int64_t dur);
+		bool hasDelay();
+		int64_t getDelayTime();
+		void setSendMIDI(bool sendMIDI);
+		bool sendMIDI();
 		void setTransposition(int transpo);
 		int getTransposition();
 		void setDefaultDur(float dur);
 		void setStaccatoDur(float dur);
 		void setStaccatissimoDur(float dur);
 		void setTenutoDur(float dur);
+		int setDuration(string subcommand, float dur);
 		void setNumBarsToDisplay(int numBars);
 		float getXCoef();
 		void setPassed(bool passed);
@@ -33,7 +43,7 @@ class Instrument
 		void setCopyNdx(int barIndex, int barToCopy);
 		int getCopyNdx(int barIndex);
 		bool hasNewStep();
-		intPair isLinked(int bar);
+		std::pair<int, int> isLinked(int bar);
 		void setNewStep(bool stepState);
 		int getNewStep();
 		bool getMultiBarsDone();
@@ -44,23 +54,23 @@ class Instrument
 		int getClef(int bar);
 		void copyMelodicLine(int barIndex);
 		void createEmptyMelody(int barIndex);
+		void deleteNotesBar(int bar);
 		void setMeter(int bar, int numerator, int denominator, int numBeats);
-		intPair getMeter(int bar);
+		std::pair<int, int> getMeter(int bar);
 		void setScoreNotes(int bar, int numerator, int denominator, int numBeats,
-				int BPMValue, int beatAtValue, bool hasDot);
-		void setNoteCoords(float xLen, float yPos1, float yPos2, float staffLineDist, int fontSize);
+				int BPMValue, int beatAtValue, bool hasDot, int BPMMultiplier);
+		void setNoteCoords(float xLen, float staffLineDist, int fontSize);
+		void setAccidentalsOffsetCoef(float coef);
 		void setNotePositions(int bar);
 		void setNotePositions(int bar, int numBars);
-		void correctScoreYAnchor(float yAnchor1, float yAnchor2);
 		void setScoreOrientation(int orientation);
 		void moveScoreX(int numPixels);
 		void moveScoreY(int numPixels);
-		void recenterScore();
 		float getStaffXLength();
 		float getNoteWidth();
 		float getNoteHeight();
 		float getStaffYAnchor();
-		void setStaffCoords(float xStartPnt, float yAnchor1, float yAnchor2, float staffLineDist);
+		void setStaffCoords(float xStartPnt, float staffLineDist);
 		void setNotesFontSize(int fontSize, float staffLinesDist);
 		void setAnimation(bool animationState);
 		void setLoopStart(bool loopStartState);
@@ -84,10 +94,14 @@ class Instrument
 		bool mustFireStep(uint64_t stamp, int bar, float tempo);
 		void setNoteDur(int bar, float tempo);
 		bool isNoteSlurred(int bar, int dataCounter);
+		bool isNoteTied(int bar, int dataCounter);
+		bool isLastNoteTied(int bar);
 		bool mustUpdateTempo();
 		void setUpdateTempo(bool tempoUpdate);
 		bool hasNotesInBar(int bar);
 		bool hasNotesInStep(int bar);
+		void setMidiPort(int port);
+		int getMidiPort();
 		void setMidiChan(int chan);
 		int getMidiChan();
 		void setActiveNote();
@@ -102,15 +116,16 @@ class Instrument
 		int getProgramChangeVal(int bar);
 		int getMidiVel(int bar);
 		int getArticulationIndex(int bar);
-		int getDynamic(int bar);
+		float getDynamic(int bar);
 		float getMinVsAnchor(int bar);
 		float getMaxYPos(int bar);
 		float getMinYPos(int bar);
 		float getClefXOffset();
 		float getMeterXOffset();
-		void drawStaff(int bar, float xOffset, float yOffset, bool drawClef,
+		void drawStaff(int bar, float xOffset, float yStartPnt, float yOffset, bool drawClef,
 				bool drawMeter, bool drawLoopStartEnd, bool drawTempo);
-		void drawNotes(int bar, int loopNdx, vector<int> *v, float xOffset, float yOffset, bool animate, float xCoef);
+		void drawNotes(int bar, int loopNdx, vector<int> *v, float xOffset, float yStartPnt,
+				float yOffset, bool animate, float xCoef);
 		void printVector(vector<int> v);
 		void printVector(vector<string> v);
 		void printVector(vector<float> v);
@@ -130,9 +145,9 @@ class Instrument
 		map<int, vector<int>> pitchBendVals;
 		// vectors not affected by slurs and ties, needed for counting in the sequencer
 		map<int, vector<int>> dursUnchanged;
-		map<int, vector<int>> dynamics;
+		map<int, vector<float>> dynamics;
 		map<int, vector<int>> midiVels;
-		map<int, vector<int>> dynamicsRamps;
+		map<int, vector<float>> dynamicsRamps;
 		map<int, vector<int>> midiDynamicsRampDurs;
 		map<int, vector<int>> glissandi;
 		map<int, vector<int>> midiGlissDurs;
@@ -140,14 +155,14 @@ class Instrument
 		map<int, vector<vector<int>>> midiArticulationVals;
 		map<int, vector<bool>> isSlurred;
 		map<int, vector<string>> text;
-		map<int, vector<int>> textIndexes;
-		//map<int, vector<int>> slurBeginnings;
-		//map<int, vector<int>> slurEndings;
-		map<int, vector<intPair>> slurIndexes;
+		map<int, vector<vector<int>>> textIndexes;
+		map<int, vector<std::pair<int, int>>> slurIndexes;
+		map<int, vector<int>> tieIndexes;
 		// same vectors for sending data to the Notes objects
 		map<int, vector<vector<int>>> scoreNotes; // notes are ints here
 		map<int, vector<int>> scoreDurs;
 		map<int, vector<int>> scoreDotIndexes;
+		map<int, vector<unsigned>> scoreDotsCounter;
 		map<int, vector<vector<int>>> scoreAccidentals;
 		map<int, vector<vector<int>>> scoreNaturalSignsNotWritten;
 		map<int, vector<vector<int>>> scoreOctaves;
@@ -162,8 +177,8 @@ class Instrument
 		//map<int, vector<int>> scoreSlurBeginnings;
 		//map<int, vector<int>> scoreSlurEndings;
 		map<int, bool> isWholeBarSlurred;
-		map<int, map<int, intPair>> scoreTupRatios;
-		map<int, map<int, uintPair>> scoreTupStartStop;
+		map<int, map<int, std::pair<int, int>>> scoreTupletRatios;
+		map<int, map<int, std::pair<unsigned, unsigned>>> scoreTupletStartStop;
 		map<int, vector<string>> scoreTexts;
 
 		// score parts OSC handling
@@ -171,8 +186,18 @@ class Instrument
 		ofxOscSender scorePartSender;
 		// map to hold a boolean determining that a part that receives data has received bar data correctly
 		map<int, bool> barDataOKFromParts; // keys are bar indexes
+		// map of instrument index and string to store expanded bar lines to send to parts
+		map<int, string> barLines;
+
+		// the vector below is used in case a connected instrument needs a delay for incoming messages
+		// so we store a pair with the ofxOscMessage object and a time stamp	
+		vector<std::pair<ofxOscMessage, uint64_t>> oscFifo; 
+		// the boolean below stores the state of the delay
+		bool delayState;
+		int64_t delayTime;
 	
 		// MIDI stuff
+		int midiPort;
 		int midiChan;
 		bool isMidiBool;
 		// duration percentage for various notes
@@ -183,6 +208,7 @@ class Instrument
 		float tenutoDur;
 
 		uint64_t beatCounter;
+		int barCounter;
 		int barDataCounter;
 		bool barDataCounterReset;
 		int seqToggle; // so we can alternate between notes on and notes off
@@ -202,12 +228,15 @@ class Instrument
 		Staff staff;
 		Notes notesObj;
 		int objID;
+		int groupID;
 		bool multiBarsDone;
 		size_t multiBarsStrBegin;
 		bool hasNewStepBool;
 		int newStep;
 		bool updateTempo;
 		bool isRhythmBool;
+		bool sendMIDIBool;
+		bool sendToPythonBool;
 		int transposition;
 
 		map<int, bool> copyStates;

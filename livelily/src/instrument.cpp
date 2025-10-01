@@ -26,6 +26,7 @@ Instrument::Instrument()
 	durPercentages[7] = 0.75;
 
 	beatCounter = 0;
+	barCounter = 0;
 	barDataCounter = 0;
 	barDataCounterReset = false;
 	seqToggle = 0;
@@ -45,7 +46,15 @@ Instrument::Instrument()
 	newStep = 0;
 
 	isRhythmBool = false;
+	sendMIDIBool = false;
+	sendToPythonBool = false;
 	transposition = 0;
+
+	delayState = false;
+	delayTime = 0;
+
+	groupID = -1;
+	midiPort = -1;
 }
 
 //--------------------------------------------------------------
@@ -69,6 +78,25 @@ void Instrument::setID(int id)
 }
 
 //--------------------------------------------------------------
+int Instrument::getID()
+{
+	return objID;
+}
+
+//--------------------------------------------------------------
+void Instrument::setGroup(int groupID)
+{
+	Instrument::groupID = groupID;
+	staff.setGroup(groupID);
+}
+
+//--------------------------------------------------------------
+int Instrument::getGroup()
+{
+	return groupID;
+}
+
+//--------------------------------------------------------------
 void Instrument::setRhythm(bool isRhythm)
 {
 	isRhythmBool = isRhythm;
@@ -81,6 +109,50 @@ void Instrument::setRhythm(bool isRhythm)
 bool Instrument::isRhythm()
 {
 	return isRhythmBool;
+}
+
+//--------------------------------------------------------------
+void Instrument::setSendToPython(bool b)
+{
+	sendToPythonBool = b;
+}
+
+//--------------------------------------------------------------
+bool Instrument::sendToPython()
+{
+	return sendToPythonBool;
+}
+
+//--------------------------------------------------------------
+void Instrument::setDelay(int64_t dur)
+{
+	delayTime = dur * 1000;
+	if (dur > 0) delayState = true;
+	else delayState = false;
+}
+
+//--------------------------------------------------------------
+bool Instrument::hasDelay()
+{
+	return delayState;
+}
+
+//--------------------------------------------------------------
+int64_t Instrument::getDelayTime()
+{
+	return delayTime;
+}
+
+//--------------------------------------------------------------
+void Instrument::setSendMIDI(bool sendMIDI)
+{
+	sendMIDIBool = sendMIDI;
+}
+
+//--------------------------------------------------------------
+bool Instrument::sendMIDI()
+{
+	return sendMIDIBool;
 }
 
 //--------------------------------------------------------------
@@ -121,6 +193,28 @@ void Instrument::setStaccatissimoDur(float dur)
 void Instrument::setTenutoDur(float dur)
 {
 	durPercentages[3] = dur;
+}
+
+//--------------------------------------------------------------
+int Instrument::setDuration(string subcommand, float dur)
+{
+	if (subcommand.compare("normal") == 0) {
+		setDefaultDur(dur);
+		return 0;
+	}
+	else if (subcommand.compare("staccato") == 0) {
+		setStaccatoDur(dur);
+		return 0;
+	}
+	else if (subcommand.compare("staccatissimo") == 0) {
+		setStaccatissimoDur(dur);
+		return 0;
+	}
+	else if (subcommand.compare("tenuro") == 0) {
+		setTenutoDur(dur);
+		return 0;
+	}
+	return 1;
 }
 
 //--------------------------------------------------------------
@@ -178,7 +272,7 @@ bool Instrument::hasNewStep()
 }
 
 //--------------------------------------------------------------
-intPair Instrument::isLinked(int bar)
+std::pair<int, int> Instrument::isLinked(int bar)
 {
 	return notesObj.isBarLinked(bar);
 }
@@ -249,10 +343,14 @@ void Instrument::copyMelodicLine(int barIndex)
 	//slurBeginnings[barIndex] = slurBeginnings[copyNdxs[barIndex]];
 	//slurEndings[barIndex] = slurEndings[copyNdxs[barIndex]];
 	slurIndexes[barIndex] = slurIndexes[copyNdxs[barIndex]];
+	isWholeBarSlurred[barIndex] = isWholeBarSlurred[copyNdxs[barIndex]];
+	tieIndexes[barIndex] = tieIndexes[copyNdxs[barIndex]];
 	scoreNotes[barIndex] = scoreNotes[copyNdxs[barIndex]];
 	scoreDurs[barIndex] = scoreDurs[copyNdxs[barIndex]];
 	scoreDotIndexes[barIndex] = scoreDotIndexes[copyNdxs[barIndex]];
+	scoreDotsCounter[barIndex] = scoreDotsCounter[copyNdxs[barIndex]];
 	scoreAccidentals[barIndex] = scoreAccidentals[copyNdxs[barIndex]];
+	scoreNaturalSignsNotWritten[barIndex] = scoreNaturalSignsNotWritten[copyNdxs[barIndex]];
 	scoreOctaves[barIndex] = scoreOctaves[copyNdxs[barIndex]];
 	scoreOttavas[barIndex] = scoreOttavas[copyNdxs[barIndex]];
 	scoreGlissandi[barIndex] = scoreGlissandi[copyNdxs[barIndex]];
@@ -262,11 +360,11 @@ void Instrument::copyMelodicLine(int barIndex)
 	scoreDynamicsRampStart[barIndex] = scoreDynamicsRampStart[copyNdxs[barIndex]];
 	scoreDynamicsRampEnd[barIndex] = scoreDynamicsRampEnd[copyNdxs[barIndex]];
 	scoreDynamicsRampDir[barIndex] = scoreDynamicsRampDir[copyNdxs[barIndex]];
+	scoreTupletRatios[barIndex] = scoreTupletRatios[copyNdxs[barIndex]];
+	scoreTupletStartStop[barIndex] = scoreTupletStartStop[copyNdxs[barIndex]];
 	//scoreSlurBeginnings[barIndex] = scoreSlurBeginnings[copyNdxs[barIndex]];
 	//scoreSlurEndings[barIndex] = scoreSlurEndings[copyNdxs[barIndex]];
-	isWholeBarSlurred[barIndex] = isWholeBarSlurred[copyNdxs[barIndex]];
 	scoreTexts[barIndex] = scoreTexts[copyNdxs[barIndex]];
-	scoreNaturalSignsNotWritten[barIndex] = scoreNaturalSignsNotWritten[copyNdxs[barIndex]];
 	staff.copyMelodicLine(barIndex, copyNdxs[barIndex]);
 	notesObj.copyMelodicLine(barIndex, copyNdxs[barIndex]);
 }
@@ -282,23 +380,27 @@ void Instrument::createEmptyMelody(int barIndex)
 	pitchBendVals[barIndex] = vector<int>(1, 0);
 	// default dynamics value so if we create a line after an empty one
 	// we'll get the previous dynamic, which should be the default and not 0
-	dynamics[barIndex] = vector<int>(1, (100-((100-MINDB)/2)));
+	// this is half way between min dB (which is 82, equivalent to MIDI velocity 16)
+	// and max dB (which is 100), which is 72
+	// but converted to RMS
+	dynamics[barIndex] = vector<float>(1, 0.567);
 	midiVels[barIndex] = vector<int>(1, 72);
-	dynamicsRamps[barIndex] = vector<int>(1, 0);
+	dynamicsRamps[barIndex] = vector<float>(1, 0);
 	glissandi[barIndex] = vector<int>(1, 0);
 	midiGlissDurs[barIndex] = vector<int>(1, 0);
 	midiDynamicsRampDurs[barIndex] = vector<int>(1, 0);
 	articulations[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	midiArticulationVals[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
+	isSlurred[barIndex] = vector<bool>(1, false);
 	text[barIndex] = vector<string>(1, "");
-	textIndexes[barIndex] = vector<int>(1, 0);
+	textIndexes[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
+	slurIndexes[barIndex] = vector<std::pair<int, int>>(1, std::make_pair(-1, -1));
 	isWholeBarSlurred[barIndex] = false;
-	intPair p;
-	p.first = p.second = -1;
-	slurIndexes[barIndex] = vector<intPair>(1, p);
+	tieIndexes[barIndex] = vector<int> (1, -1);
 	scoreNotes[barIndex] = vector<vector<int>>(1, vector<int>(1, -1));
 	scoreDurs[barIndex] = vector<int>(1, MINDUR);
 	scoreDotIndexes[barIndex] = vector<int>(1, 0);
+	scoreDotsCounter[barIndex] = vector<unsigned>(1, 0);
 	scoreAccidentals[barIndex] = vector<vector<int>>(1, vector<int>(1, 4));
 	scoreNaturalSignsNotWritten[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
 	scoreOctaves[barIndex] = vector<vector<int>>(1, vector<int>(1, 0));
@@ -309,11 +411,17 @@ void Instrument::createEmptyMelody(int barIndex)
 	scoreDynamicsRampStart[barIndex] = vector<int>(1, -1);
 	scoreDynamicsRampEnd[barIndex] = vector<int>(1, -1);
 	scoreDynamicsRampDir[barIndex] = vector<int>(1, -1);
-	map<int, intPair> m1;
-	scoreTupRatios[barIndex] = m1;
-	map<int, uintPair> m2;
-	scoreTupStartStop[barIndex] = m2;
+	map<int, std::pair<int, int>> m1;
+	scoreTupletRatios[barIndex] = m1;
+	map<int, std::pair<unsigned, unsigned>> m2;
+	scoreTupletStartStop[barIndex] = m2;
 	scoreTexts[barIndex] = vector<string>(1, "");
+}
+
+//--------------------------------------------------------------
+void Instrument::deleteNotesBar(int bar)
+{
+	notesObj.deleteBar(bar);
 }
 
 //--------------------------------------------------------------
@@ -324,14 +432,14 @@ void Instrument::setMeter(int bar, int numerator, int denominator, int numBeats)
 }
 
 //--------------------------------------------------------------
-intPair Instrument::getMeter(int bar)
+std::pair<int, int> Instrument::getMeter(int bar)
 {
 	return staff.getMeter(bar);
 }
 
 //--------------------------------------------------------------
 void Instrument::setScoreNotes(int bar, int numerator, int denominator, int numBeats,
-		int BPMTempo, int beatAtValue, bool hasDot)
+		int BPMTempo, int beatAtValue, bool hasDot, int BPMMultiplier)
 {
 	//setMeter(bar, numerator, denominator, numBeats);
 	staff.setTempo(bar, BPMTempo, beatAtValue, hasDot);
@@ -343,19 +451,22 @@ void Instrument::setScoreNotes(int bar, int numerator, int denominator, int numB
 			scoreOttavas[bar],
 			scoreDurs[bar],
 			scoreDotIndexes[bar],
+			scoreDotsCounter[bar],
 			scoreGlissandi[bar],
-			scoreArticulations[bar],
+			articulations[bar],
 			scoreDynamics[bar],
 			scoreDynamicsIndexes[bar],
 			scoreDynamicsRampStart[bar],
 			scoreDynamicsRampEnd[bar],
 			scoreDynamicsRampDir[bar],
 			slurIndexes[bar],
+			tieIndexes[bar],
 			isWholeBarSlurred[bar],
-			scoreTupRatios[bar],
-			scoreTupStartStop[bar],
+			scoreTupletRatios[bar],
+			scoreTupletStartStop[bar],
 			scoreTexts[bar],
-			textIndexes[bar]);
+			textIndexes[bar],
+			BPMMultiplier);
 }
 
 //--------------------------------------------------------------
@@ -405,16 +516,15 @@ void Instrument::setNotePositions(int bar, int numBars)
 }
 	
 //--------------------------------------------------------------
-void Instrument::setNoteCoords(float xLen, float yPos1, float yPos2, float staffLineDist, int fontSize)
+void Instrument::setNoteCoords(float xLen, float staffLineDist, int fontSize)
 {
-	notesObj.setCoords(xLen, yPos1, yPos2, staffLineDist, fontSize);
+	notesObj.setCoords(xLen, staffLineDist, fontSize);
 }
 
 //--------------------------------------------------------------
-void Instrument::correctScoreYAnchor(float yAnchor1, float yAnchor2)
+void Instrument::setAccidentalsOffsetCoef(float coef)
 {
-	staff.correctYAnchor(yAnchor1, yAnchor2);
-	notesObj.correctYAnchor(yAnchor1, yAnchor2);
+	notesObj.setAccidentalsOffsetCoef(coef);
 }
 
 //--------------------------------------------------------------
@@ -435,15 +545,8 @@ void Instrument::moveScoreX(int numPixels)
 //--------------------------------------------------------------
 void Instrument::moveScoreY(int numPixels)
 {
-	staff.moveScoreY(numPixels);
-	notesObj.moveScoreY(numPixels);
-}
-
-//--------------------------------------------------------------
-void Instrument::recenterScore()
-{
-	staff.recenterScore();
-	notesObj.recenterScore();
+	//staff.moveScoreY(numPixels);
+	//notesObj.moveScoreY(numPixels);
 }
 
 //--------------------------------------------------------------
@@ -465,15 +568,9 @@ float Instrument::getNoteHeight()
 }
 
 //--------------------------------------------------------------
-float Instrument::getStaffYAnchor()
+void Instrument::setStaffCoords(float xStartPnt, float staffLineDist)
 {
-	return staff.getYAnchor();
-}
-
-//--------------------------------------------------------------
-void Instrument::setStaffCoords(float xStartPnt, float yAnchor1, float yAnchor2, float staffLineDist)
-{
-	staff.setCoords(xStartPnt, yAnchor1, yAnchor2, staffLineDist);
+	staff.setCoords(xStartPnt, staffLineDist);
 }
 
 //--------------------------------------------------------------
@@ -609,7 +706,7 @@ bool Instrument::mustFireStep(uint64_t stamp, int bar, float tempo)
 		return false;
 	}
 	int64_t diff = (int64_t)((int64_t)stamp - (int64_t)timeStamp);
-	if (diff >= noteDur) {
+	if (diff >= noteDur + delayTime) {
 		if (noteDur == 0) {
 			timeStamp = stamp;
 		}
@@ -659,6 +756,25 @@ bool Instrument::isNoteSlurred(int bar, int dataCounter)
 }
 
 //--------------------------------------------------------------
+bool Instrument::isNoteTied(int bar, int dataCounter)
+{
+	// explicitly query with barDataCounter sent as an argument
+	// so we can test if the previous note was tied
+	// which is useful when handling MIDI, where we send the note off
+	// of the previous note after the note on of the current note is sent
+	// in case the previous note is tied
+	// otherwise, instead of dataCounter we could just use barDataCounter here
+	// without needing the second argument to this function
+	return (tieIndexes[bar][dataCounter] > -1 ? true : false);
+}
+
+//--------------------------------------------------------------
+bool Instrument::isLastNoteTied(int bar)
+{
+	return (tieIndexes[bar].back() > -1 ? true : false);
+}
+
+//--------------------------------------------------------------
 bool Instrument::mustUpdateTempo()
 {
 	return updateTempo;
@@ -682,6 +798,18 @@ bool Instrument::hasNotesInStep(int bar)
 	if (barDataCounter >= (int)midiNotes[bar].size()) return false;
 	// a rest is stored as a -1, so a value from 0 and above is a note
 	return (midiNotes[bar][barDataCounter][0] >= 0 ? true : false); 
+}
+
+//--------------------------------------------------------------
+void Instrument::setMidiPort(int port)
+{
+	midiPort = port;
+}
+
+//--------------------------------------------------------------
+int Instrument::getMidiPort()
+{
+	return midiPort;
 }
 
 //--------------------------------------------------------------
@@ -769,7 +897,7 @@ int Instrument::getMidiVel(int bar)
 //}
 
 //--------------------------------------------------------------
-int Instrument::getDynamic(int bar)
+float Instrument::getDynamic(int bar)
 {
 	return dynamics[bar][barDataCounter];
 }
@@ -805,16 +933,16 @@ float Instrument::getMeterXOffset()
 }
 
 //--------------------------------------------------------------
-void Instrument::drawStaff(int bar, float xOffset, float yOffset, bool drawClef,
+void Instrument::drawStaff(int bar, float xOffset, float yStartPnt, float yOffset, bool drawClef,
 		bool drawMeter, bool drawLoopStartEnd, bool drawTempo)
 {
-	staff.drawStaff(bar, xOffset, yOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempo);
+	staff.drawStaff(bar, xOffset, yStartPnt, yOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempo);
 }
 
 //--------------------------------------------------------------
-void Instrument::drawNotes(int bar, int loopNdx, vector<int> *v, float xOffset, float yOffset, bool animate, float xCoef)
+void Instrument::drawNotes(int bar, int loopNdx,  vector<int> *v, float xOffset, float yStartPnt, float yOffset, bool animate, float xCoef)
 {
-	notesObj.drawNotes(bar, loopNdx, v, xOffset, yOffset, animate, xCoef);
+	notesObj.drawNotes(bar, loopNdx, v, xOffset, yStartPnt, yOffset, animate, xCoef);
 }
 
 void Instrument::printVector(vector<int> v)
