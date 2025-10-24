@@ -638,15 +638,15 @@ void Editor::drawText()
 			}
 		}
 
-		// then check if we have selected this std::string so we must highlight it
+		// then check if we have selected this string so we must highlight it
 		if (highlightManyChars && ((i>=topLine) && (i<=bottomLine))) {
 			std::vector<int> posAndSize = setSelectedStrStartPosAndSize(i);
 			int boxXOffset = lineNumberWidth + oneAndHalfCharacterWidth + \
 							 (posAndSize[0]*oneCharacterWidth) + frameXOffset;
 			int boxYOffset = (count * cursorHeight) + frameYOffset;
-			// the bounding box coordinates of the highlighted std::string don't need the offset
-			// which is greater than 0 if the std::string is too long
-			// but the substd::string that is drawn on top of this box does need it
+			// the bounding box coordinates of the highlighted string don't need the offset
+			// which is greater than 0 if the string is too long
+			// but the substring that is drawn on top of this box does need it
 			posAndSize[0] += allStringStartPos[i];
 			std::string strInBlack = allStrings[i].substr(posAndSize[0], posAndSize[1]);
 			int widthLocal = font.stringWidth(strInBlack);
@@ -1554,6 +1554,7 @@ void Editor::assembleString(int key)
 	std::string charToInsert;
 	int cursorPosIncrement = 1;
 	bool doubleChar = false;
+	if (highlightManyChars) deleteString();
 	// horizontal tab
 	if (key == 9) {
 		charToInsert = tabStr;
@@ -1857,8 +1858,7 @@ void Editor::upArrow(int lineIndex)
 			if (!inserting) highlightManyCharsStart++;
 			highlightManyCharsLineIndex = prevCursorLineIndex;
 		}
-		setHighlightManyChars(highlightManyCharsStart, cursorPos,
-				highlightManyCharsLineIndex, cursorLineIndex);
+		setHighlightManyChars(highlightManyCharsStart, cursorPos, highlightManyCharsLineIndex, cursorLineIndex);
 	}
 	else if (highlightManyChars) {
 		highlightManyChars = false;
@@ -2341,9 +2341,11 @@ void Editor::allOtherKeys(int key)
 		}
 		else if (key == 97) { // a
 			// Ctrl+a selects all text
-			lineCountOffset = lineCount - maxNumLines;
+			lineCountOffset = (lineCount < maxNumLines ? 0 : lineCount - maxNumLines);
 			cursorLineIndex = lineCount - 1;
 			cursorPos = maxCursorPos();
+			highlightManyCharsStart = 0;
+			highlightManyCharsLineIndex = 0;
 			setHighlightManyChars(0, allStrings[lineCount-1].size(), 0, lineCount-1);
 			callAssemble = false;
 		}
