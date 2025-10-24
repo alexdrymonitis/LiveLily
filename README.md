@@ -1,7 +1,7 @@
 # LiveLily
 ![LiveLily logo](images/livelily_logo_scaled.png?raw=true)
    
-version-beta0.1
+version-beta0.2
 
 LiveLily is a live sequencing and live scoring system through live coding with a [Lilypond]-like language. The system includes a text editor, a parser, a sequencer, and an interactive/animated score. The commands are inspired by the Lilypond language, with certain commands that accommodate fast typing and fast coding sequences being added.
 
@@ -11,8 +11,11 @@ LiveLily is written entirely in [openFrameworks], using the ofxOsc and ofxMidi a
 The directories livelily/ (which is the main program) and livelily-score-part/ must be placed in the OF_ROOT/apps/myapps/ directory, so they can compile properly.
    
 ![LiveLily screenshow](images/livelily_screenshot.png?raw=true)
-  
-[Demo video] (including earlier syntax with some quotation symbols that are now removed):
+
+List of videos with LiveLily:
+https://vimeo.com/1041385184?fl=ip&fe=ec
+https://vimeo.com/1130135700?fl=ip&fe=ec
+https://vimeo.com/1040471260?fl=ip&fe=ec (although the code projection is not clear)
 
 If you use this software in an academic context, please cite it as follows:
 ```
@@ -39,8 +42,6 @@ LiveLily can also be used as a live scoring system to write music scores for aco
 TODO:
 - fix positioning of stems and beams on certain rhythms
 - write the documentation of the program
-- work on the livelily-score app to display the pulsating rectangle and to display more than one bar
 
 [openFrameworks]: https://openframeworks.cc/
-[Demo video]: https://vimeo.com/781559305
 [Lilypond]: https://lilypond.org/
