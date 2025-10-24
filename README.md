@@ -9,6 +9,8 @@ LiveLily does not produce any sound. It sends OSC or MIDI messages to control ot
 
 LiveLily is written entirely in [openFrameworks], using the ofxOsc and ofxMidi addons. You will need to use the OF 0.12.0 or higher.
 The directories livelily/ (which is the main program) and livelily-part/ must be placed in the OF_ROOT/apps/myapps/ directory, so they can compile properly.
+The addons/ofxMidi repository should be added to OF_ROOT/addons. To include it, clone with:
+`git clone --recursive https://github.com/alexdrymonitis/LiveLily.git`
 
 This software is under heavy development, so stay tuned as things change, new features are added and bugs are constantly fixed.
    
