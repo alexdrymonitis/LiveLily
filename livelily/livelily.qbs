@@ -18,6 +18,10 @@ Project{
         ]
 
         of.addons: [
+            'ofxMidi',
+            'ofxMidi',
+            'ofxOsc',
+            'ofxOsc',
         ]
 
         // additional flags for the project. the of module sets some
