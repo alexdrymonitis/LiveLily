@@ -12,7 +12,7 @@ The directories livelily/ (which is the main program) and livelily-part/ must be
 
 This software is under heavy development, so stay tuned as things change, new features are added and bugs are constantly fixed.
    
-![LiveLily screenshot](images/LiveLily_session.png?raw=true)
+![LiveLily screenshot](images/LiveLily_screenshot.png?raw=true)
 
 List of videos with LiveLily:
 https://vimeo.com/1041385184?fl=ip&fe=ec
