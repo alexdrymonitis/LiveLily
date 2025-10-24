@@ -13,10 +13,10 @@ Change log:
 - Error, warning, note message handling
 - Nested Commands
 - New Commands
--- \bars
--- Use of the wildcard
--- \function
--- \list
+- - \bars
+- - Use of the wildcard
+- - \function
+- - \list
 - Change in the language design, now commands are split between first and second level
 - Python integration
 - Reading MusicXML files
