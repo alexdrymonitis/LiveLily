@@ -15,9 +15,9 @@ This software is under heavy development, so stay tuned as things change, new fe
 ![LiveLily screenshot](images/LiveLily_screenshot.png?raw=true)
 
 List of videos with LiveLily:
-https://vimeo.com/1041385184?fl=ip&fe=ec
-https://vimeo.com/1130135700?fl=ip&fe=ec
-https://vimeo.com/1040471260?fl=ip&fe=ec (although the code projection is not clear)
+- https://vimeo.com/1041385184?fl=ip&fe=ec
+- https://vimeo.com/1130135700?fl=ip&fe=ec
+- https://vimeo.com/1040471260?fl=ip&fe=ec (although the code projection is not clear)
 
 If you use this software in an academic context, please cite it as follows:
 ```
