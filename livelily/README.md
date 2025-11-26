@@ -8,7 +8,7 @@ These two scenarios can be user either separately, or combined, to control an el
 
 Change log:
 - Syntax highlighting
-- Pane spitting
+- Pane splitting
 - Editor modes (Normal, Insert, Visual, Command) like in Vim
 - Error, warning, note message handling
 - Nested Commands
