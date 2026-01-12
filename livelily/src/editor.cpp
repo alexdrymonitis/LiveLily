@@ -64,11 +64,8 @@ Editor::Editor()
 
 	inserting = true;
 	visualMode = false;
-	typingCommand = false;
-	showCommand = false;
-	commandModeTabCounter = 0;
-	commandStrBroken = false;
-	commandStrCursorPos = 0;
+	typingShell = false;
+	showShell = false;
 
 	fromOscStr = "";
 }
@@ -424,7 +421,7 @@ void Editor::drawText()
 	if (activity) {
 		if (cursorPos < (int)allStrings[cursorLineIndex].size() && cursorPos <= maxCursorPos()) {
 			// if matching brace is found, this vector will be the X and Y coordinates
-			// and nest depth (only from findBraceForward() but findBraceBackward() returns a 3 element std::vector
+			// and nest depth (only from findBraceForward() but findBraceBackward() returns a 3 element vector
 			// for code integrity), which is used elsewhere
 			std::vector<int> pos (3, -1);
 			char bracketChars[7] = {'{', '}', '[', ']', '(', ')'}; // extra array item for null char
@@ -433,7 +430,8 @@ void Editor::drawText()
 			for (int i = 0; i < 6; i++) {
 				if (bracketChars[i] == charOnTopOfCursor) {
 					//direction = i % 2;
-					highlightBracket = true;
+					// make highlightBracket true only if autocompletion of brackets if on
+					if (autobrackets) highlightBracket = true;
 					break;
 				}
 			}
@@ -582,7 +580,7 @@ void Editor::drawText()
 							}
 							ofSetColor(color*((ofApp*)ofGetAppPtr())->brightnessCoeff);
 						}
-						//if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang].find(*subit) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang].end() \
+						//if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang].find(*subit) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang].end()
 						//		&& !isComment && !isString) {
 						//	ofColor color = ((ofApp*)ofGetAppPtr())->commandsMap[thisLang][*subit];
 						//	ofSetColor(color*((ofApp*)ofGetAppPtr())->brightnessCoeff);
@@ -632,8 +630,8 @@ void Editor::drawText()
 					if (firstCharToDisplay < (*subit).size() && numCharsToRemove < (*subit).size()) {
 						font.drawString((*subit).substr(firstCharToDisplay, (*subit).size()-numCharsToRemove), xOffsetModified, strYOffset);
 					}
-					xOffset += ((*subit).size() * oneCharacterWidth); // + 1 for the white space
-					charAccum += ((int)(*subit).size()); // + 1);
+					xOffset += ((*subit).size() * oneCharacterWidth);
+					charAccum += ((int)(*subit).size());
 				}
 			}
 		}
@@ -666,7 +664,7 @@ void Editor::drawText()
 
 	/*******************************************************************/
 	// then draw the character the cursor is drawn on top of (if this is the case)
-	if (activity && !inserting && !typingCommand) {
+	if (activity && !inserting && !typingShell) {
 		if (cursorPos < (int)strOnCursorLine.size() && cursorPos <= maxCursorPos()) {
 			std::string onTopOfCursorStr = strOnCursorLine.substr(cursorPos+allStringStartPos[cursorLineIndex], 1);
 			ofSetColor(0);
@@ -710,10 +708,10 @@ void Editor::drawCursor(int cursorX, ofColor cursorColor)
 	// we have calculated the X position of the cursor before we drew the text
 	int cursorY = ((cursorLineIndex-lineCountOffset) * cursorHeight) + frameYOffset; //+ characterOffset
 	ofSetColor(cursorColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-	if ((activity && !inserting && !typingCommand) || !activity) {
+	if ((activity && !inserting && !typingShell) || !activity) {
 		ofDrawRectangle(cursorX, cursorY, oneCharacterWidth, cursorHeight);
 	}
-	else if (activity && inserting && !typingCommand) {
+	else if (activity && inserting && !typingShell) {
 		ofDrawLine(cursorX, cursorY, cursorX, cursorY+cursorHeight);
 	}
 	if (!activity) {
@@ -754,14 +752,21 @@ void Editor::drawPaneSeparator()
 		if (fileEdited) fileName += "*";
 	}
 	font.drawString(ofToString(objID+1), halfCharacterWidth+frameXOffset, strYCoord);
-	font.drawString(fileName, fileNameXOffset, strYCoord);
+	if (couldNotLoadFile || couldNotSaveFile) {
+		font.drawString(loadedFileStr, fileNameXOffset, strYCoord);
+	}
+	else {
+		font.drawString(fileName, fileNameXOffset, strYCoord);
+	}
 	float widthOffset = 0;
 	if (inserting || visualMode) {
-		if (((ofApp*)ofGetAppPtr())->sharedData.showScore) {
-			if (frameWidth > ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX) {
-				widthOffset = ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX;
-			}
-		}
+		// if we show the score vertically and we have one pane only, show the INSERT string at the middle
+		//if ((((ofApp*)ofGetAppPtr())->sharedData.showScore || ((ofApp*)ofGetAppPtr())->sharedData.showPianoRoll) &&
+		//		((ofApp*)ofGetAppPtr())->scoreOrientation == 0) {
+		//	if (frameWidth > ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX) {
+		//		widthOffset = ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX;
+		//	}
+		//}
 		std::string s;
 		if (inserting) s = "INSERT";
 		else s = "VISUAL";
@@ -796,6 +801,12 @@ void Editor::setFrameHeight(float frameHeight)
 }
 
 //--------------------------------------------------------------
+float Editor::getFrameHeight()
+{
+	return frameHeight;
+}
+
+//--------------------------------------------------------------
 void Editor::setFrameXOffset(float xOffset)
 {
 	frameXOffset = xOffset;
@@ -825,8 +836,6 @@ void Editor::setMaxCharactersPerString()
 	}
 	maxCharactersPerString = (width-lineNumberWidth-oneAndHalfCharacterWidth) / oneCharacterWidth;
 	maxCharactersPerString -= 1;
-	// the line below concerns the backtrace length
-	maxBacktraceChars = (size_t)(((ofApp*)ofGetAppPtr())->sharedData.screenWidth / oneCharacterWidth);
 	//setStringsStartPos();
 }
 
@@ -865,24 +874,24 @@ void Editor::resetCursorPos(int oldMaxCharactersPerString)
 }
 
 //--------------------------------------------------------------
-void Editor::setFontSize(int fontSize, float cursorHeight)
+void Editor::setFontSize(int fontSize, float oneCharacterWidth, float cursorHeight)
 {
-	// store the previous the maximum characters per std::string
+	// store the previous the maximum characters per string
 	int oldMaxCharactersPerString = maxCharactersPerString;
 	if (!fontLoaded || fontSize != Editor::fontSize) {
 		Editor::fontSize = fontSize;
 		font.load("DroidSansMono.ttf", fontSize);
 		// we're using a monospace font, so we get the width of any character
-		oneCharacterWidth = font.stringWidth("a");
+		Editor::oneCharacterWidth = oneCharacterWidth;
 		halfCharacterWidth = oneCharacterWidth / 2;
 		oneAndHalfCharacterWidth = oneCharacterWidth + halfCharacterWidth;
 		// the variable below helps center the cursor at the Y axis with respect to the letters
 		characterOffset = font.stringHeight("j") - font.stringHeight("l");
 		characterOffset /= 2;
+		Editor::cursorHeight = cursorHeight;
 		setMaxCharactersPerString();
 		fontLoaded = true;
 	}
-	Editor::cursorHeight = cursorHeight; // font.stringHeight("q");
 	resetCursorPos(oldMaxCharactersPerString);
 }
 
@@ -1045,7 +1054,7 @@ void Editor::copyOnLineDelete()
 void Editor::newLine()
 {
 	bool stringBreaks = false;
-	// a std::string breaks only if we're at some mid point in the line
+	// a string breaks only if we're at some mid point in the line
 	// and not if we're either at the end or the beginning of it
 	if (cursorPos < ((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex]) &&
 		!(cursorPos == 0 && allStringStartPos[cursorLineIndex] == 0)) {
@@ -1055,9 +1064,9 @@ void Editor::newLine()
 		moveLineNumbers(1);
 	}
 	if (stringBreaks) {
-		// create a new line with the remainder of the std::string
+		// create a new line with the remainder of the string
 		createNewLine(allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]), 1);
-		// and change the std::string where the cursor is (the cursorLineIndex hasn't been updated yet)
+		// and change the string where the cursor is (the cursorLineIndex hasn't been updated yet)
 		allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]);
 	}
 	else {
@@ -1381,7 +1390,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 					break;
 				case 1:
 #ifdef USEPYO
-					// combine all the std::strings to one std::string separated by newline characters
+					// combine all the strings to one string separated by newline characters
 					for (int i = 0; i < numExecutingLines; i++) {
 						if (i > 0) pyStr += "\n";
 						pyStr += allStrings[i+executingLineLocal];
@@ -1455,12 +1464,12 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 		else {
 			if (highlightBracket && cursorPos > 0) {
 				// if we hit return while in between two curly brackets
-				if ((allStrings[cursorLineIndex].substr(cursorPos-1, 1).compare("{") == 0) &&
-						(allStrings[cursorLineIndex].substr(cursorPos, 1).compare("}") == 0)) {
+				if (allStrings[cursorLineIndex].substr(cursorPos-1, 1).compare("{") == 0 &&
+						allStrings[cursorLineIndex].substr(cursorPos, 1).compare("}") == 0) {
 					// we insert two new lines and add a horizontal tab in the middle
 					newLine();
 					lineBreaking = false;
-					// getNestDepth() returns a std::vector with the bottom line of the code chunk
+					// getNestDepth() returns a vector with the bottom line of the code chunk
 					// within the nest of curly brackets and the depth of the nest
 					// the bottom line is used in allOtherKeys()
 					std::vector<int> nestDepth = getNestDepth();
@@ -1486,7 +1495,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 				newLine();
 				lineBreaking = false;
 				int numTabs = getNumTabsInStr(allStrings[cursorLineIndex-1]);
-				// 1 is Python, so we're writing in Python and the last character is a colon, we insert an extra horintal tab
+				// 1 is Python, so if we're writing in Python and the last character is a colon, we insert an extra horintal tab
 				if (thisLang == 1 && cursorLineIndex > 0 && allStrings[cursorLineIndex-1].size() > 0 && allStrings[cursorLineIndex-1].back() == ':') {
 					numTabs++;
 				}
@@ -1678,7 +1687,7 @@ void Editor::assembleString(int key)
 	else {
 		charToInsert = char(key);
 	}
-	// if the cursor is at the end of the std::string just add the character
+	// if the cursor is at the end of the string just add the character
 	int maxStringPos = (int)allStrings[cursorLineIndex].size() - allStringStartPos[cursorLineIndex];
 	if (cursorPos == maxStringPos) {
 		allStrings[cursorLineIndex] += charToInsert;
@@ -1686,10 +1695,11 @@ void Editor::assembleString(int key)
 	else {
 		// otherwise, if it's in some middle position, insert the character
 		if (cursorPos > 0) {
+			//std::cout << cursorPos << " " << allStringStartPos[cursorLineIndex] << " " << allStrings[cursorLineIndex].size() << std::endl;
 			allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]) + \
 										  charToInsert + allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
 			if ((int)allStrings[cursorLineIndex].size() > maxCharactersPerString) {
-				// if the std::string is long don't move the cursor but scroll the std::string
+				// if the string is long don't move the cursor but scroll the string
 				allStringStartPos[cursorLineIndex] += cursorPosIncrement;
 				cursorPosIncrement = 0;
 			}
@@ -1701,7 +1711,7 @@ void Editor::assembleString(int key)
 	}
 	if (cursorPos == maxCharactersPerString) {
 		allStringStartPos[cursorLineIndex] = (int)allStrings[cursorLineIndex].size() - maxCharactersPerString;
-		// if we're placing a double char ({} or [] or "" or ()) at the end of a long std::string
+		// if we're placing a double char ({} or [] or "" or ()) at the end of a long string
 		if (doubleChar && allStringStartPos[cursorLineIndex] == ((int)allStrings[cursorLineIndex].size()-maxCharactersPerString)) {
 			allStringStartPos[cursorLineIndex] -= cursorPosIncrement;
 		}
@@ -1711,6 +1721,33 @@ void Editor::assembleString(int key)
 	}
 	// update the arrowCursorPos when we type
 	arrowCursorPos = cursorPos;
+}
+
+//--------------------------------------------------------------
+void Editor::setString(std::string s)
+{
+	if (s == "\n" || s == "\b") {
+		int ascii = int(s[0]);
+		if (ascii == 10) ascii = 13;
+		int tempPaneNdx = ((ofApp*)ofGetAppPtr())->whichPane;
+		// if we're executing code from another pane that runs Python
+		// we must change the current active pane of the editor to the one receiving the string from Python
+		// because parseStrings() in ofApp.cpp executes lines from the currently active pane
+		if (ascii == 13 && (ctrlPressed || shiftPressed)) {
+			((ofApp*)ofGetAppPtr())->whichPane = ((ofApp*)ofGetAppPtr())->sharedData.whichPyPane;
+		}
+		allOtherKeys(ascii);
+		// if we have executed code, we must reset the active pane
+		if (ascii == 13 && (ctrlPressed || shiftPressed)) {
+			((ofApp*)ofGetAppPtr())->whichPane = tempPaneNdx;
+		}
+	}
+	else {
+		std::string strWithoutTabs = replaceCharInStr(s, "\t", tabStr);
+		allStrings[cursorLineIndex] += strWithoutTabs;
+	}
+	allStringStartPos[cursorLineIndex] = ((int)allStrings[cursorLineIndex].size() > maxCharactersPerString ? (int)allStrings[cursorLineIndex].size() - maxCharactersPerString : 0);
+	cursorPos = maxCursorPos();
 }
 
 //--------------------------------------------------------------
@@ -1833,7 +1870,6 @@ bool Editor::setLineIndexesUpward(int lineIndex)
 //---------------------------------------------------------------
 void Editor::upArrow(int lineIndex)
 {
-	if (typingCommand) return;
 	int prevCursorPos = cursorPos;
 	int prevCursorLineIndex = cursorLineIndex;
 	//if (lineIndex > 0) lineIndex = -(maxNumLines+1);
@@ -1879,7 +1915,7 @@ bool Editor::setLineIndexesDownward(int lineIndex)
 		cursorLineIndex++;
 	}
 	if (lineCount > maxNumLines) {
-		int limit = lineCount-(lineCount-maxNumLines)+lineCountOffset - 1;
+		int limit = lineCount - (lineCount - maxNumLines) + lineCountOffset - 1;
 		if (cursorLineIndex > limit) {
 			if (lineCountOffset < (lineCount-maxNumLines)) {
 				lineCountOffset += diff;
@@ -1905,15 +1941,14 @@ bool Editor::setLineIndexesDownward(int lineIndex)
 //--------------------------------------------------------------
 void Editor::downArrow(int lineIndex)
 {
-	if (typingCommand) return;
 	int prevCursorPos = cursorPos;
 	int prevCursorLineIndex = cursorLineIndex;
 	//if (lineIndex > 0) lineIndex = maxNumLines+1;
 	if (setLineIndexesDownward(lineIndex)) {
 		cursorPos = arrowCursorPos;
-		// test if we arrive at a shorter std::string than the one above
+		// test if we arrive at a shorter string than the one above
 		if (cursorPos >= ((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex])) {
-			// in which case display the cursor right after the std::string
+			// in which case display the cursor right after the string
 			cursorPos = std::min(maxCursorPos(), arrowCursorPos);
 			if (!inserting && cursorPos == maxCursorPos() && cursorPos > 0) cursorPos--;
 		}
@@ -1941,12 +1976,6 @@ void Editor::downArrow(int lineIndex)
 //--------------------------------------------------------------
 void Editor::rightArrow()
 {
-	if (typingCommand) {
-		commandStrCursorPos++;
-		std::string compare = (commandStrBroken ? commandStr.substr(0, commandStr.find("\n")) : commandStr);
-		if (commandStrCursorPos > (int)compare.size()) commandStrCursorPos = (int)compare.size();
-		return;
-	}
 	int numPosToMove = 1;
 	if (isThisATab(cursorPos)) {
 		numPosToMove = TABSIZE;
@@ -2026,11 +2055,6 @@ void Editor::rightArrow()
 //--------------------------------------------------------------
 void Editor::leftArrow()
 {
-	if (typingCommand) {
-		commandStrCursorPos--;
-		if (commandStrCursorPos < 0) commandStrCursorPos = 0;
-		return;
-	}
 	int numPosToMove = 1;
 	if (isThisATab(cursorPos-TABSIZE)) {
 		numPosToMove = TABSIZE;
@@ -2162,7 +2186,7 @@ void Editor::pageDown()
 	cursorPos = arrowCursorPos;
 	// test if we arrive at a shorter std::string than the one above
 	if (cursorPos >= ((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex])) {
-		// in which case display the cursor right after the std::string
+		// in which case display the cursor right after the string
 		cursorPos = std::min(maxCursorPos(), arrowCursorPos);
 	}
 	int tabIndex = didWeLandOnATab();
@@ -2222,9 +2246,8 @@ void Editor::setInserting(bool insertingBool)
 {
 	bool insertingStateChanged = (inserting != insertingBool ? true : false);
 	inserting = insertingBool;
-	if (inserting && showCommand) {
-		showCommand = false;
-		commandStr = "";
+	if (inserting && showShell) {
+		showShell = false;
 	}
 	else if (insertingStateChanged && !inserting && cursorPos > 0) {
 		cursorPos--;
@@ -2296,17 +2319,13 @@ void Editor::allOtherKeys(int key)
 			executing = true;
 		}
 		else if(key == 61) { // + (actually =)
-			if (altPressed) {
-				((ofApp*)ofGetAppPtr())->brightnessCoeff += 0.01;
-				if (((ofApp*)ofGetAppPtr())->brightnessCoeff > 1.0) ((ofApp*)ofGetAppPtr())->brightnessCoeff = 1.0;
-			}
+			// if the alt key is pressed, the brightness of the editor increases
+			// but that is being taken care of in ofApp.cpp
 			callAssemble = false;
 		}
 		else if (key == 45) { // -
-			if (altPressed) {
-				((ofApp*)ofGetAppPtr())->brightnessCoeff -= 0.01;
-				if (((ofApp*)ofGetAppPtr())->brightnessCoeff < 0.0) ((ofApp*)ofGetAppPtr())->brightnessCoeff = 0.0;
-			}
+			// if the alt key is pressed, the brightness of the editor decreases
+			// but that is being taken care of in ofApp.cpp
 			callAssemble = false;
 		}
 		else if (key == 99) { // c for copy
@@ -2366,304 +2385,29 @@ void Editor::allOtherKeys(int key)
 }
 
 //--------------------------------------------------------------
-void Editor::typeCommand(int key)
+bool Editor::showingShell()
 {
-	if (key == 13) {
-		executeCommand();
-		typingCommand = false;
-		commandModeTabCounter = 0;
-	}
-	else if (key == 8 && typingCommand) {
-		if (commandStrCursorPos > 0) {
-			commandStr.erase(commandStrCursorPos-1, 1);
-			if (commandStrBroken && commandStr.substr(0, commandStr.find("\n")).empty()) {
-				commandStr.clear();
-				commandStrBroken = false;
-			}
-		}
-		commandModeTabCounter = 0;
-		commandStrCursorPos--;
-		if (commandStrCursorPos < 0) commandStrCursorPos = 0;
-	}
-	else if (key == 127 && typingCommand) {
-		size_t size = commandStr.size();
-		if (commandStrBroken) size = commandStr.substr(0, commandStr.find("\n")).size();
-		if (commandStrCursorPos < (int)size) {
-			commandStr.erase(commandStrCursorPos, 1);
-			if (commandStrBroken && commandStr.substr(0, commandStr.find("\n")).empty()) {
-				commandStr.clear();
-				commandStrBroken = false;
-			}
-		}
-	}
-	else if (key == 105 && commandStr.size() == 0 && typingCommand) {
-		typingCommand = false;
-		showCommand = false;
-		inserting = true;
-		commandModeTabCounter = 0;
-		resetMaxNumLines();
-	}
-	else if (key == 9) {
-		if (startsWith(commandStr, ":load ") || startsWith(commandStr, ":ls ")) {
-			std::string commandStrLocal = (commandStrBroken ? commandStr.substr(0, commandStr.find("\n")) : commandStr);
-			std::string fullPath;
-			if (startsWith(commandStrLocal.substr(commandStrLocal.find(" ")+1), "/")) {
-				fullPath = commandStrLocal.substr(commandStrLocal.find(" ")+1, commandStrLocal.substr(commandStrLocal.find(" ")+1).find_last_of("/"));
-			}
-			else {
-				std::string pwdStr = ofSystem("pwd");
-				fullPath = pwdStr.substr(0, pwdStr.size()-1) + "/";
-				if (commandStrLocal.find_last_of("/") != std::string::npos) {
-					fullPath += commandStrLocal.substr(commandStrLocal.find(" ")+1, commandStrLocal.substr(commandStrLocal.find(" ")+1).find_last_of("/"));
-				}
-			}
-			std::string lsOutput = ofSystem("ls -p " + fullPath);
-			std::vector<std::string> lsOutputVec = tokenizeString(lsOutput, "\n", false);
-			size_t endNdx;
-			std::string commandSubstr;
-			if (commandStrBroken) {
-				commandSubstr = commandStr.substr(0, commandStr.find("\n"));
-				endNdx = commandStr.find("\n");
-			}
-			else {
-				commandSubstr = commandStr;
-				endNdx = commandStr.size();
-			}
-			size_t startNdx = (commandSubstr.find_last_of("/") != std::string::npos ? commandSubstr.find_last_of("/")+1 : commandSubstr.find(" ")+1);
-			std::string comparisonStr = commandStrLocal.substr(startNdx, endNdx-startNdx);
-			std::vector<std::string> v;
-			for (std::string s : lsOutputVec) {
-				if (s.substr(0, comparisonStr.size()).compare(comparisonStr) == 0) {
-					v.push_back(s);
-				}
-			}
-			if (v.empty()) {
-				return;
-			}
-			if (v.size() == 1) {
-				if (commandStrLocal.find_last_of("/") != std::string::npos) {
-					commandStr = commandStrLocal.substr(0, commandStrLocal.find_last_of("/")+1) + v[0];
-				}
-				else {
-					commandStr = commandStrLocal.substr(0, commandStrLocal.find(" ")+1) + v[0];
-				}
-				commandStrCursorPos = (int)commandStr.size();
-			}
-			else {
-				if (commandModeTabCounter == 0) {
-					// with the first tab key we complete the string up to the common substring within the contained files in the directory we're looking in
-					std::string commonSubStr = v[0];
-					for (size_t i = 1; i < v.size(); ++i) {
-						size_t j = 0;
-						while (j < commonSubStr.size() && j < v[i].size() && commonSubStr[j] == v[i][j]) {
-							++j;
-						}
-						commonSubStr = commonSubStr.substr(0, j);
-						if (commonSubStr.empty()) break;
-					}
-					if (commandStrLocal.find_last_of("/") != std::string::npos) {
-						commandStr = commandStrLocal.substr(0, commandStrLocal.find_last_of("/"));
-					}
-					else if (commandStrLocal.find(" ") != std::string::npos) {
-						commandStr = commandStrLocal.substr(0, commandStrLocal.find(" ")+1);
-					}
-					else {
-						commandStr = commandStrLocal;
-					}
-					if (!commandStr.substr(commandStr.find(" ")+1).empty() && !endsWith(commandStr, "/")) {
-						commandStr += "/";
-					}
-					commandStr += commonSubStr;
-					commandStrCursorPos = (int)commandStr.size();
-				}
-				else {
-					// with the second tab key we format the output to also print all the strings that share the common substring
-					formatCommandStr(v, commandStrLocal);
-				}
-			}
-			commandModeTabCounter++;
-		}
-		else return;
-	}
-	else {
-		if (key == 58) {
-			commandStr = "";
-			commandStrBroken = false;
-		}
-		//if (commandStrBroken) commandStr.insert(commandStr.begin()+commandStr.find("\n"), char(key));
-		if (commandStrCursorPos < (int)commandStr.size()) commandStr.insert(commandStr.begin()+commandStrCursorPos, char(key));
-		else commandStr += char(key);
-		typingCommand = true;
-		showCommand = true;
-		commandModeTabCounter = 0;
-		commandStrCursorPos++;
-	}
+	return showShell;
 }
 
 //--------------------------------------------------------------
-void Editor::executeCommand()
+bool Editor::isTypingShell()
 {
-	commandStrColor = ofColor::white;
-	if (startsWith(commandStr, ":save ")) {
-		saveFile(commandStr.substr(6));
-		commandStr.clear();
-	}
-	else if (commandStr.compare(":w") == 0) {
-		saveExistingFile();
-		commandStr.clear();
-	}
-	else if (startsWith(commandStr, ":load ")) {
-		std::string filePath = commandStr.substr(6);
-		if (!startsWith(filePath, "/")) {
-			if (startsWith(filePath, ".")) {
-				filePath = filePath.substr(1);
-			}
-			else {
-				filePath = "/" + filePath;
-			}
-			std::string pwdStr = ofSystem("pwd");
-			// there's a newline character at the end of ofSystem("pwd"), so we remove it below
-			filePath = pwdStr.substr(0, pwdStr.size()-1) + filePath;
-		}
-		loadFile(filePath);
-		commandStr.clear();
-	}
-	else if (commandStr.compare(":load") == 0) {
-		commandStr = "Load command called without an argument";
-		commandStrColor = ofColor::red;
-	}
-	else if (startsWith(commandStr, ":ls")) {
-		std::string commandStrLocal = (commandStrBroken ? commandStr.substr(0, commandStr.find("\n")) : commandStr);
-		std::string fullPath;
-		if (startsWith(commandStrLocal.substr(commandStrLocal.find(" " +1)), "/")) {
-			fullPath = commandStrLocal.substr(commandStrLocal.find(" ")+1);
-		}
-		else {
-			std::string pwdStr = ofSystem("pwd");
-			fullPath = pwdStr.substr(0, pwdStr.size()-1) + "/" + commandStrLocal.substr(commandStr.find(" ")+1);
-		}
-		commandStr = ofSystem("ls -p " + fullPath);
-		// empty vector and string, as we want to replace the command string entirely
-		formatCommandStr(std::vector<std::string>(), "");
-	}
-	else if (commandStr.compare(":pwd") == 0) {
-		commandStr = ofSystem("pwd");
-		if (commandStr.length() >= maxBacktraceChars) {
-			commandStr = commandStr.substr(0, maxBacktraceChars) + "\n" + commandStr.substr(maxBacktraceChars);
-		}
-	}
-	else if (commandStr.compare(":q") == 0) {
-		((ofApp*)ofGetAppPtr())->removePane();
-	}
-	else if (commandStr.compare(":qa") == 0) {
-		((ofApp*)ofGetAppPtr())->exit();
-	}
-	else {
-		commandStr = "Not an editor command: " + commandStr;
-		commandStrColor = ofColor::red;
-	}
+	return typingShell;
 }
 
 //--------------------------------------------------------------
-void Editor::formatCommandStr(std::vector<std::string> v, std::string cmdStr)
+void Editor::setTypingShell(bool typingShellBool)
 {
-	std::vector<std::string> commandStrTokens;
-	if (!v.empty()) commandStrTokens = v;
-	else commandStrTokens = tokenizeString(commandStr, "\n", false);
-	if (commandStrTokens.size() == 0) return;
-	commandStr.clear();
-	if (v.empty()) {
-		commandStrBroken = false;
-	}
-	else {
-		commandStr = cmdStr;
-		commandStr += "\n";
-		commandStrBroken = true;
-	}
-	// first find the longest string
-	size_t maxStrLength = 0;
-	for (std::string s : commandStrTokens) {
-		if (s.size() > maxStrLength) maxStrLength = s.size();
-	}
-	// then determine how many times such a long string would fit in the traceback area
-	int numColumns = maxBacktraceChars / maxStrLength;
-	// we want to have at least two white spaces in between each print
-	// so we need to add this to all columns but the last
-	int strLenPlusTwo = (numColumns - 1) * (maxStrLength + 2);
-	// we add the maximum string length without the two white spaces, to figure out whether it still fits
-	if (maxStrLength + strLenPlusTwo > maxBacktraceChars) {
-		numColumns--;
-	}
-	int tokensPerColumnCounter = 0;
-	for (std::string s : commandStrTokens) {
-		if (tokensPerColumnCounter == numColumns) {
-			commandStr += "\n";
-			tokensPerColumnCounter = 0;
-		}
-		commandStr += s;
-		tokensPerColumnCounter++;
-		if (tokensPerColumnCounter < numColumns) {
-			if (numColumns > 1) {
-				size_t howManyWhiteSpaces = (maxStrLength + 2) - s.size();
-				for (size_t i = 0; i < howManyWhiteSpaces; i++) {
-					commandStr += " ";
-				}
-			}
-			else {
-				commandStr += "  ";
-			}
-		}
-	}
+	typingShell = typingShellBool;
+
 }
 
 //--------------------------------------------------------------
-bool Editor::showingCommand()
+void Editor::setShowingShell(bool showingShellBool)
 {
-	return showCommand;
-}
+	showShell = showingShellBool;
 
-//--------------------------------------------------------------
-bool Editor::isTypingCommand()
-{
-	return typingCommand;
-}
-
-//--------------------------------------------------------------
-void Editor::setTypingCommand(bool typingCommandBool)
-{
-	typingCommand = typingCommandBool;
-}
-
-//--------------------------------------------------------------
-ofColor Editor::getCommandStrColor()
-{
-	return commandStrColor;
-}
-
-//--------------------------------------------------------------
-std::string Editor::getCommandStr()
-{
-	return commandStr;
-}
-
-//--------------------------------------------------------------
-int Editor::getCommandCursorPos()
-{
-	return commandStrCursorPos;
-}
-
-//--------------------------------------------------------------
-std::pair<bool, std::string> Editor::getCommandStrForCursor()
-{
-	//if (commandStrBroken) return commandStr.substr(0, commandStr.find("\n"));
-	bool isCursorOnTopOfString = false;
-	if (commandStrBroken && commandStrCursorPos < (int)commandStr.substr(0, commandStr.find("\n")).size()) {
-		isCursorOnTopOfString = true;
-	}
-	else if (commandStrCursorPos < (int)commandStr.size()) {
-		isCursorOnTopOfString = true;
-	}
-	return std::make_pair(isCursorOnTopOfString, commandStr.substr(0, commandStrCursorPos));
 }
 
 //--------------------------------------------------------------
@@ -2866,8 +2610,8 @@ void Editor::deleteString()
 			createNewLine("", 0);
 			return;
 		}
-		lineCount -= (bottomLine - topLine);
 		int numLinesToDelete = bottomLine - topLine;
+		lineCount -= numLinesToDelete;
 		for (int i = topLine; i <= bottomLine; i++) {
 			if ((i > topLine) && (i < bottomLine)) {
 				eraseMapKeys(i);
@@ -2903,8 +2647,10 @@ void Editor::deleteString()
 		if (cursorLineIndex > highlightManyCharsLineIndex) {
 			cursorLineIndex = highlightManyCharsLineIndex;
 		}
-		if (numLinesToDelete > 0 && cursorLineIndex < lineCount-1) {
+		if (numLinesToDelete > 0) {
 			moveLineNumbers(-numLinesToDelete);
+			lineCountOffset -= numLinesToDelete;
+			if (lineCountOffset < 0) lineCountOffset = 0;
 		}
 	}
 	fileEdited = true;
@@ -3019,7 +2765,6 @@ void Editor::saveDialog()
 	ofFileDialogResult saveFileResult = ofSystemSaveDialog("LiveLily_session.lyv", "Save file");
 	if (saveFileResult.bSuccess) {
 		std::string fileName = saveFileResult.filePath;
-		std::cout << "save file name: \"" << fileName << "\"\n";
 		saveFile(fileName);
 	}
 }
@@ -3027,16 +2772,17 @@ void Editor::saveDialog()
 //--------------------------------------------------------------
 void Editor::saveFile(std::string fileName)
 {
+	std::cout << "saving \"" << fileName << "\"\n";
 	if (!endsWith(fileName, ".lyv") || !endsWith(fileName, ".py") || !endsWith(fileName, ".lua")) {
 		fileName += ".lyv";
 	}
 	std::ofstream file(fileName.c_str());
 	if (!file.is_open()) {
 		// if for some reason the file can't be opened
-		// instead of the file name, the std::string "could not open file"
+		// instead of the file name, the string "could not open file"
 		// will be displayed for 2 seconds and then it will return to untitled.lyv
 		couldNotSaveFile = true;
-		fileName = "could not save file";
+		loadedFileStr = "could not save file";
 		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
 		return;
 	}
@@ -3045,9 +2791,9 @@ void Editor::saveFile(std::string fileName)
 	}
 	file.close();
 	fileLoaded = true;
-	std::string fullPath = fileName.c_str();
-	size_t lastBackSlash = fullPath.find_last_of("/");
-	loadedFileStr = fullPath.substr(lastBackSlash+1);
+	size_t lastBackSlash = fileName.find_last_of("/");
+	loadedFileStr = fileName.substr(lastBackSlash+1);
+	loadedFileFullPath = fileName;
 	if (endsWith(loadedFileStr, ".lyv")) thisLang = 0;
 	else if (endsWith(loadedFileStr, ".py")) thisLang = 1;
 	else if (endsWith(loadedFileStr, ".lua")) thisLang = 2;
@@ -3058,24 +2804,30 @@ void Editor::saveFile(std::string fileName)
 //--------------------------------------------------------------
 void Editor::saveExistingFile()
 {
-	//fstream file(loadedFileStr);
-	//if (!file.is_open()) {
-	//	// if for some reason the file can't be opened
-	//	// instead of the file name, the std::string "could not open file"
-	//	// will be displayed for 2 seconds and then it will return to untitled.lyv
-	//	couldNotSaveFile = true;
-	//	fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
-	//	return;
-	//}
-	//file.seekp(0, std::ios_base::beg);
-	//std::string allStrConcat = "";
-	//for (unsigned i = 0; i < allStrings.size(); i++) {
-	//	//file << allStrings[i] << "\n";
-	//	allStrConcat += allStrings[i] + "\n";
-	//}
-	//file.write(allStrConcat.c_str(), allStrConcat.size());
-	//file.close();
-	//fileEdited = false;
+	if (!fileLoaded) {
+		// if we try to save a file that doesn't already exist
+		// instead of the file name, the string below
+		// will be displayed for 2 seconds and then it will return to untitled.lyv
+		couldNotSaveFile = true;
+		loadedFileStr = "can't overwrite non-existing file, use :save";
+		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+		return;
+	}
+	std::ofstream file(loadedFileFullPath.c_str());
+	if (!file.is_open()) {
+		// if for some reason the file can't be opened
+		// instead of the file name, the string "could not open file"
+		// will be displayed for 2 seconds and then it will return to untitled.lyv
+		couldNotSaveFile = true;
+		loadedFileStr = "could not open file";
+		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+		return;
+	}
+	for (unsigned i = 0; i < allStrings.size(); i++) {
+		file << allStrings[i] << "\n";
+	}
+	file.close();
+	fileEdited = false;
 }
 
 //--------------------------------------------------------------
@@ -4103,7 +3855,7 @@ void Editor::loadFile(std::string fileName)
 		// instead of the file name, the string "could not open file"
 		// will be displayed for 2 seconds and then it will return to untitled.lyv
 		couldNotLoadFile = true;
-		fileName = "could not load file";
+		loadedFileStr = "could not load file";
 		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
 		std::cout << "can't open file\n";
 		return;
@@ -4111,9 +3863,9 @@ void Editor::loadFile(std::string fileName)
 	file.close();
 	clearText();
 	// determine what type of file we're opeining
-	std::string fullPath = fileName.c_str();
-	size_t lastBackSlash = fullPath.find_last_of("/");
-	loadedFileStr = fullPath.substr(lastBackSlash+1);
+	size_t lastBackSlash = fileName.find_last_of("/");
+	loadedFileStr = fileName.substr(lastBackSlash+1);
+	loadedFileFullPath = fileName;
 	bool openingXML = false, openingMIDI = false;
 	if (endsWith(loadedFileStr, ".mxl") || endsWith(loadedFileStr, ".xml") || endsWith(loadedFileStr, ".musicxml")) {
 		thisLang = 0;
