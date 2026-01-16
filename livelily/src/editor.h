@@ -85,13 +85,14 @@ class Editor
 		void setStringsStartPos();
 		void setFrameWidth(float frameWidth);
 		void setFrameHeight(float frameHeight);
+		float getFrameHeight();
 		void setFrameXOffset(float xOffset);
 		void setFrameYOffset(float yOffset);
 		float getFrameYOffset();
 		// max number of lines that fit in the window
 		void setMaxCharactersPerString();
 		void resetCursorPos(int oldMaxCharactersPerString);
-		void setFontSize(int fontSize, float cursorHeight);
+		void setFontSize(int fontSize, float oneCharacterWidth, float cursorHeight);
 		int getHalfCharacterWidth();
 		void setMaxNumLines(int numLines);
 		int getMaxNumLines();
@@ -114,7 +115,11 @@ class Editor
 		void eraseMapKey(std::map<int, int> *m, int key);
 		void eraseMapKey(std::map<int, uint64_t> *m, int key);
 		void eraseMapKey(std::map<int, bool> *m, int key);
-		void eraseMapKeys(int key); // to erase the keys of nine std::maps with one function call
+		void eraseMapKeys(int key); // to erase the keys of nine maps with one function call
+		void connectLineToBar(int lineNdx, int instNdx, int barNdx);
+		int getLineConnectedToBar(int instNdx, int barNdx);
+		void setActiveLineElement(int lineNdx, int elementNdx);
+		void setAnimation(bool state);
 		// functions to handle horizontal tabs
 		bool isThisATab(int pos);
 		int didWeLandOnATab();
@@ -123,10 +128,12 @@ class Editor
 		void setCursorPos(int pos);
 		bool startsWith(std::string a, std::string b);
 		bool endsWith(std::string a, std::string b);
-		// assemble std::strings from keyboard input
+		// assemble strings from keyboard input
 		void assembleString(int key, bool executing, bool lineBreaking);
 		// overloaded function for all characters except from backspace, return and delete
 		void assembleString(int key);
+		// set entire string to a line (used for remote typing)
+		void setString(std::string s);
 		// set variables for highlighting many characters
 		// for executing multiple lines, copying, pasting, deleting, cutting
 		void setHighlightManyChars(int charPos1, int charPos2, int charLine1, int charLine2);
@@ -161,16 +168,11 @@ class Editor
 		void setInsertingMoveCursor();
 		void detectExecutingChunk();
 		void allOtherKeys(int key);
-		void typeCommand(int key);
-		void executeCommand();
-		void formatCommandStr(std::vector<std::string> v, std::string cmdStr);
-		bool showingCommand();
-		bool isTypingCommand();
-		void setTypingCommand(bool typingCommandBool);
-		ofColor getCommandStrColor();
-		std::string getCommandStr();
-		int getCommandCursorPos();
-		std::pair<bool, std::string> getCommandStrForCursor();
+		void replaceCmdStrNewlines();
+		bool showingShell();
+		bool isTypingShell();
+		void setTypingShell(bool typingShellBool);
+		void setShowingShell(bool showingShellBool);
 		// copying, pasting, deleting std::strings
 		void copyString(int copyTo, bool dehighlight = true);
 		void pasteString(int pasteFrom);
@@ -225,6 +227,7 @@ class Editor
 
 		bool fileLoaded;
 		std::string loadedFileStr;
+		std::string loadedFileFullPath;
 		std::string defaultFileNames[3] = {"untitled.lyv", "untitled.py", "untitled.lua"};
 		bool couldNotLoadFile;
 		bool couldNotSaveFile;
@@ -236,10 +239,8 @@ class Editor
 
 		bool inserting;
 		bool visualMode;
-		bool typingCommand;
-		bool showCommand;
-		ofColor commandStrColor;
-		std::string commandStr;
+		bool typingShell;
+		bool showShell;
 
 		ofTrueTypeFont font;
 		int fontSize;
@@ -249,6 +250,12 @@ class Editor
 		std::map<int, std::vector<int>> allStringTabs;
 		std::map<int, std::vector<int>> bracketIndexes;
 		std::string tabStr; // to not having to write "    " every time
+
+		// variables to connect lines to bars for animating the editor
+		bool animationState;
+		std::map<int, int> linesConnectedToBar;
+		std::map<int, std::map<int, int>> instsConnectedToLine;
+		std::map<int, int> activeLineElements;
 
 		// variables for highlighting pairs of curly brackets
 		bool highlightBracket;
@@ -323,9 +330,6 @@ class Editor
 		int sendKeysPaneNdx;
 		bool sendLines;
 		int sendLinesPaneNdx;
-		int commandModeTabCounter;
-		bool commandStrBroken;
-		int commandStrCursorPos;
 		bool ctrlPressed;
 		bool shiftPressed;
 		bool altPressed;

@@ -6,6 +6,7 @@
 #include "ofxMidi.h"
 #include <map>
 #include <vector>
+#include <utility> // to add pair
 #include "editor.h"
 #include "instrument.h"
 #ifdef USEPYO
@@ -43,6 +44,11 @@
 #define MAESTROTHRESH 100
 
 #define GLISSGRAIN 20 // 20ms grain for glissandi
+
+// for the piano roll
+#define LOWESTKEY 21 // should be 21 // this is an A four octaves below tuning A
+#define HIGHESTKEY 108 // should be 108 // this is a C four octaves above middle C
+#define KEYSWIDTHCOEFF 8
 
 // class for storing data concerning livelily functions
 class Function
@@ -98,16 +104,21 @@ class Function
 		char *str;
 };
 
-// std::vectors and variables that need to be shared between main and threaded classes
+struct pyStdoutStrKeyModifier
+{
+	bool isModifier;
+	int ndxInc;
+	int modifier;
+	int action;
+};
+
+// vectors and variables that need to be shared between main and threaded classes
 struct SharedData
 {
-    // a mutex to avoid accessing the same data by different threads at the same time
-    //ofMutex mutex;
 	// a map of Instruments()
 	std::map<int, Instrument> instruments;
 	// maps of string and int to easily store data based on strings
-	// but iterate over the data in the sequencer and score renderer fast
-	// based on ints
+	// but iterate over the data in the sequencer and score renderer fast based on ints
 	std::map<std::string, int> instrumentIndexes;
 	std::map<int, int> instrumentIndexesOrdered; // for sending to parts in specific order
 	std::map<std::string, int> barsIndexes;
@@ -126,6 +137,9 @@ struct SharedData
 	// the map below keeps track of how many variants of each loop we create so we can use this as a name extension
 	std::map<int, int> loopsVariants;
 
+	// the map below is used to animate the editor
+	std::map<int, int> barsConnectedToPanes;
+
 	// the vector below will store unique OSC clients, one for each server
 	// additional clients that send to the same server will be ignored
 	// as this is intended for generic messages, like storeNotes()
@@ -135,10 +149,18 @@ struct SharedData
 	// the Pyo object is created here so that the sequencer has access to it
 	Pyo pyo;
 #endif
+	// handle strings typed from a Python pane to a LiveLily pane
 	std::string pyStdoutStr;
 	size_t pyStdoutStrNdx;
+	bool typePyStrCharByChar;
+	bool typePyStrLineByLine;
 	int whichPyPane;
 	bool typePyStr;
+	std::vector<std::string> pyStdoutStrVec;
+	int pyStdoutStrVecNdx;
+	std::vector<pyStdoutStrKeyModifier> pyStdoutKeyModifiers;
+	int pyStdoutKeyModNdx;
+	std::vector<int> pyStdoutKeyModNdxs;
 
 	std::map<int, int> distBetweenBeats;
 
@@ -149,9 +171,24 @@ struct SharedData
 	int noteWidth;
 	int noteHeight;
 
-	// articulation std::strings so each program can treat them differently
+	// articulation strings so each program can treat them differently
 	std::string articulSyms[8];
-	bool showScore;
+	bool showNotes;
+	bool showPianoRoll;
+	bool showScope;
+	// from the piano roll variables below, only pianoRollTimeStamp needs to be in SharedData
+	// but we define all of them here for consistency
+	int pianoRollNumWhiteKeys;
+	float pianoRollMinDur;
+	float pianoRollKeysWidth;
+	float pianoRollKeysHeight;
+	uint64_t pianoRollTimeStamp;
+	std::map<int, int> pianoRollAccidentals = {{0, -2}, {2, -1}, {6, 1}, {8, 2}};
+	std::vector<int> pianoRollAccidentalKeys = {1, 3, 6, 8, 10};
+	// a map to map MIDI notes to seven notes only (the white keys) including black keys mapped to the previous white key
+	// to use this with a clavier that starts from A instead of C, we start with A = 0
+	std::map<int, int> pianoRollTwelveToSevenMap = {{0, 0}, {1, 0}, {2, 1}, {3, 2}, {4, 2}, {5, 3}, {6, 3}, {7, 4}, {8, 5}, {9, 5}, {10, 6}, {11, 6}};
+	int pianoRollNaturalNotes[7] = {0, 2, 4, 5, 7, 9, 11};
 	// beat counter used in case we need to send it over OSC or for possible other reasons
 	int beatCounter;
 	// animation variables
@@ -169,9 +206,9 @@ struct SharedData
 	int beatVizType;
 	bool beatUpdated;
 	// the variable below is used by the serquencer to iterate over one loop
-	unsigned thisLoopIndex;
+	unsigned thisBarIndex;
 	int loopIndex;
-	int tempBarLoopIndex;
+	int tempLoopIndex;
 	int numBars;
 	int thisPosition;
 	int prevNumBars;
@@ -260,6 +297,7 @@ class Sequencer : public ofThread
 		void stop();
 		void stopNow();
 		void update();
+		bool isUpdated();
 		void setSequencerRunning(bool seqRun);
 		void setFinish(bool finishState);
 		void setCountdown(int num);
@@ -294,6 +332,7 @@ class Sequencer : public ofThread
 		bool runSequencer;
 		bool sequencerRunning;
 		bool updateSequencer;
+		bool sequencerUpdated;
 		bool updateTempo;
 		bool finish;
 		bool mustStop;
@@ -302,7 +341,7 @@ class Sequencer : public ofThread
 		uint64_t tickCounter;
 		int beatCounter;
 		int sendBeatVizInfoCounter;
-		unsigned thisLoopIndex;
+		unsigned thisBarIndex;
 		bool firstIter;
 		bool endOfBar;
 		int numBeats;
@@ -326,16 +365,20 @@ class ofApp : public ofBaseApp
 {
 	public:
 		// basic OF program structure
+		//---------------------------------
 		void setup();
 		void update();
 		void draw();
-		int msToBPM(unsigned long ms);
-		void sendBeatVizInfo(int bar);
 		void drawTraceback();
-		void drawCommand();
+		void drawShell();
 		void drawScore();
+		void drawPianoRoll();
+		void drawBlackKeysOutline(float xPos, float yPos);
+		void drawScope();
 
+		void sendBeatVizInfo(int bar);
 		void moveCursorOnShiftReturn();
+		//---------------------------------
 		// the following two functions execute key commands
 		// so each can be called from any of the overloaded keyPressed() and keyRelease() below
 		// functions and lock the mutex without creating a dead lock
@@ -348,12 +391,45 @@ class ofApp : public ofBaseApp
 		// OF keyboard input functions
 		void keyPressed(int key);
 		void keyReleased(int key);
+		// the following two functions are used to check for key modifiers received from a Python pane
+		pyStdoutStrKeyModifier checkPyStdoutKeyModifier(int ndx);
+		void handleKeyModifier(pyStdoutStrKeyModifier modifierStruct);
+		//---------------------------------
+		// adding/removing editor panes
 		void addPane(int key);
 		void removePane();
+		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);
+		//---------------------------------
+		// parsing functions
+		void parseStrings(int index, int numLines);
+		std::pair<int, std::string> parseString(std::string str, int lineNum, int numLines);
+		CmdOutput expandCommands(const std::string& input, int lineNum, int numLines);
+		std::vector<std::string> tokenizeExpandedCommands(const std::string& input);
+		CmdOutput parseExpandedCommands(const std::vector<std::string>& tokens, int lineNum, int numLines);
+		CmdOutput parseCommand(CmdInput cmdInput, int lineNum, int numLines);
+		std::pair<int, std::string> parseMelodicLine(std::vector<std::string> v, int lineNum, int numLines);
+		std::pair<int, std::string> parseBarLoop(std::string str, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isInstrument(std::vector<std::string>& commands, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isBarLoop(std::vector<std::string>& commands, bool isMainCmd, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isFunction(std::vector<std::string>& commands, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isList(std::vector<std::string>& commands, int lineNum, int numLines);
+		std::pair<int, std::string> listItemExists(size_t listItemNdx);
+		std::pair<bool, CmdOutput> isOscClient(std::vector<std::string>& commands, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isGroup(std::vector<std::string>& commands, int lineNum, int numLines);
+		//---------------------------------
+		// command typing/executing funcitons
+		void typeShellCommand(int key);
+		void replaceShellStrNewlines();
+		void executeShellCommand();
+		void formatShellLsOutput(std::vector<std::string> lsOutputTokens);
+		//---------------------------------
+		// miscellaneous functions
+		int msToBPM(unsigned long ms);
 		// the following two functions are used in drawTraceback to sort the indexes based on the
 		// time stamps. it is copied from https://www.geeksforgeeks.org/quick-sort/
 		int partition(uint64_t arr[], int arr2[], int low, int high);
 		void quickSort(uint64_t arr[], int arr2[], int low, int high);
+		//---------------------------------
 		// send data to score parts
 		void sendToParts(ofxOscMessage m, bool delay);
 		void sendBarToParts(int barIndex);
@@ -369,43 +445,49 @@ class ofApp : public ofBaseApp
 		void sendChangeBeatColorToPart(int instNdx, bool changeBeatColor);
 		void sendFullscreenToPart(int instNdx, bool fullscreen);
 		void sendCursorToPart(int instNdx, bool cursor);
+		//---------------------------------
 		// debugging
 		void printVector(std::vector<int> v);
 		void printVector(std::vector<std::string> v);
 		void printVector(std::vector<float> v);
-		// functions for parsing std::strings
+		//---------------------------------
+		// string/char state query functions
 		bool startsWith(std::string a, std::string b);
 		bool endsWith(std::string a, std::string b);
 		bool isNumber(std::string str);
 		bool isFloat(std::string str);
+		//---------------------------------
+		// index/char location functinos
 		std::vector<int> findRepetitionInt(std::string str, int multIndex);
 		int findNextStrCharIdx(std::string str, std::string compareStr, int index);
 		bool areBracketsBalanced(std::string str);
 		bool areBracketsBalanced(std::vector<std::string> v);
+		//---------------------------------
 		// string handling
 		std::vector<int> findIndexesOfCharInStr(std::string str, std::string charToFind);
-		std::string replaceCharInStr(std::string str, std::string a, std::string b);
-		std::vector<std::string> tokenizeString(std::string str, std::string delimiter);
+		std::vector<std::string> tokenizeString(std::string str, std::string delimiter, bool addDelimiter=false);
 		std::map<size_t, std::string> tokenizeStringWithNdxs(std::string str, std::string delimiter);
 		void resetEditorStrings(int index, int numLines);
 		int findMatchingBrace(const std::string& s, size_t openPos);
-		void parseStrings(int index, int numLines);
-		std::pair<int, std::string> parseString(std::string str, int lineNum, int numLines);
-		CmdOutput expandCommands(const std::string& input, int lineNum, int numLines);
-		std::vector<std::string> tokenizeExpandedCommands(const std::string& input);
-		CmdOutput parseExpandedCommands(const std::vector<std::string>& tokens, int lineNum, int numLines);
 		std::string genStrFromVec(const std::vector<std::string>& vec);
+		std::string replaceCharInStr(std::string str, std::string a, std::string b);
+		//---------------------------------
+		// list functions
 		void storeList(std::string str);
 		CmdOutput traverseList(std::string str, int lineNum, int numLines);
-		void fillInMissingInsts(int barIndex);
 		void createEmptyMelody(int index);
 		void resizePatternVectors();
 		void sendPushPopPattern();
+		//---------------------------------
+		// new bar/loop functions
 		int storeNewBar(std::string barName);
 		void storeNewLoop(std::string loopName);
+		void deleteLastBar();
+		void deleteLastLoop();
 		int getBaseDurValue(std::string str, int denominator);
 		std::pair<int, std::string> getBaseDurError(std::string str);
-		// functions that return I/O for commands
+		//---------------------------------
+		// functions that return API I/O for commands
 		CmdOutput genError(std::string str);
 		CmdOutput genWarning(std::string str);
 		CmdOutput genNote(std::string str);
@@ -416,15 +498,7 @@ class ofApp : public ofBaseApp
 		CmdOutput genOutputFuncs(std::pair<int, std::string> p);
 		CmdInput genCmdInput(std::string str);
 		CmdInput genCmdInput(std::vector<std::string> v);
-		// end of command I/O functions
-		CmdOutput parseCommand(CmdInput cmdInput, int lineNum, int numLines);
-		std::pair<bool, CmdOutput> isInstrument(std::vector<std::string>& commands, int lineNum, int numLines);
-		std::pair<bool, CmdOutput> isBarLoop(std::vector<std::string>& commands, bool isMainCmd, int lineNum, int numLines);
-		std::pair<bool, CmdOutput> isFunction(std::vector<std::string>& commands, int lineNum, int numLines);
-		std::pair<bool, CmdOutput> isList(std::vector<std::string>& commands, int lineNum, int numLines);
-		std::pair<int, std::string> listItemExists(size_t listItemNdx);
-		std::pair<bool, CmdOutput> isOscClient(std::vector<std::string>& commands, int lineNum, int numLines);
-		std::pair<bool, CmdOutput> isGroup(std::vector<std::string>& commands, int lineNum, int numLines);
+		// end of command API I/O functions
 		void initPyo();
 		CmdOutput functionFuncs(std::vector<std::string>& commands);
 		int getLastLoopIndex();
@@ -432,39 +506,45 @@ class ofApp : public ofBaseApp
 		int getPrevBarIndex();
 		int getPlayingBarIndex();
 		CmdOutput stripLineFromBar(std::vector<std::string> tokens, int lineNum, int numLines);
-		void deleteLastBar();
-		void deleteLastLoop();
-		void copyMelodicLine(int bar);
-		std::pair<int, std::string> parseBarLoop(std::string str, int lineNum, int numLines);
 		bool areWeInsideChord(size_t size, unsigned i, unsigned *chordNotesIndexes);
 		std::vector<std::string> tokenizeChord(std::string str, bool includeAngleBrackets = false);
 		std::vector<std::string> detectRepetitions(std::vector<std::string> tokens);
-		std::pair<int, std::string> parseMelodicLine(std::vector<std::string> v, int lineNum, int numLines);
-		// set coordinates for all panes
+		//---------------------------------
+		// coordinates/positions/sizes functions
 		void setPaneCoords();
 		// set the global font size to calculate dimensions
 		void setFontSize(bool calculateCoords);
+		void setScoreCoords();
+		void resetScoreYOffset();
+		void setScoreNotes(int barIndex);
+		void setNotePositions(int bar);
+		void setNotePositions(int bar, int numBars);
+		void swapScorePosition(int orientation);
+		void setScoreSizes();
+		void calculateStaffPositions(int bar, bool windowChanged);
+		//---------------------------------
 		// various commands for the score
 		CmdOutput scoreCommands(std::vector<std::string>& originalCommands, int lineNum, int numLines);
+		void showScore(int ndx);
 		CmdOutput maestroCommands(std::vector<std::string>& commands, int lineNum, int numLines);
-		// initialize an instrument
+		bool isScoreVisible();
+		//---------------------------------
+		// instrument functions
 		void initializeInstrument(std::string instName);
+		void fillInMissingInsts(int barIndex);
+		//---------------------------------
 		// the sequencer functions of the system
 		int setPatternIndex(bool increment);
 		unsigned setLoopIter(int ptrnIdx);
 		int setInstIndex(int ptrnIdx, int i);
 		int setBar(int ptrnIdx, int idx, int i);
+		//---------------------------------
 		// staff and notes handling
-		void setScoreCoords();
-		void setScoreNotes(int barIndex);
-		void setNotePositions(int bar);
-		void setNotePositions(int bar, int numBars);
 		void setActivePane(int activePane);
-		void swapScorePosition(int orientation);
-		void setScoreSizes();
-		void calculateStaffPositions(int bar, bool windowChanged);
+		//---------------------------------
 		// release memory on exit
 		void exit();
+		//---------------------------------
 		// rest of OF functions
 		void mouseMoved(int x, int y );
 		void mouseDragged(int x, int y, int button);
@@ -476,16 +556,21 @@ class ofApp : public ofBaseApp
 		void windowResized(int w, int h);
 		void gotMessage(ofMessage msg);
 		void dragEvent(ofDragInfo dragInfo);
-
+		//---------------------------------
+		// audio functions
 		void audioIn(ofSoundBuffer & input);
 		void audioOut(ofSoundBuffer & buffer);
 
+		// a mutex to avoid accessing the same data by different threads at the same time
+    	ofMutex mutex;
+
 		std::map<int, Editor> editors; // keys are panes indexes
-		int whichPane; // this variable indexes the keys of the std::map above
-		// rows and pair of number of columns in each row and line width between panes horizontally
-		std::map<int, int> numPanes;
+		int whichPane; // this variable indexes the keys of the editors map above
+		std::map<int, int> numPanes; // rows and columns of panes
 		int paneSplitOrientation;
 		float screenSplitHorizontal;
+		float oneCharacterWidth;
+		int halfCharacterWidth;
 
 		SharedData sharedData;
 		Sequencer sequencer;
@@ -500,7 +585,24 @@ class ofApp : public ofBaseApp
 		ofSoundDevice outSoundDevice;
 		bool inSoundDeviceSet;
 		bool outSoundDeviceSet;
+		// oscilloscope drawing stuff
+		ofSoundBuffer scopeBuffer;
+		ofPolyline scopeWaveformLeft;
+		ofPolyline scopeWaveformRight;
+		float scopeRms;
 
+		// shell commands stuff
+		std::string shellStr;
+		std::string shellLsOutputStr;
+		int numShellLines;
+		int numShellLsOutputLines;
+		int shellTabCounter;
+		int shellStrCursorPos;
+		size_t maxShellChars;
+		ofColor shellStrColor;
+		std::vector<std::string> shellCommands = {":save", ":w", ":load", ":ls", ":pwd", ":q"};
+
+		// interfacing stuff
 		std::map<std::string, ofxOscSender> oscClients;
 		ofSerial serial;
 		std::vector<ofSerialDeviceInfo> serialDeviceList;
@@ -554,11 +656,12 @@ class ofApp : public ofBaseApp
 		// variables for controlling LiveLily with an accelerometer
 		std::string maestroAddress;
 		std::string maestroToggleAddress;
-		std::string maestroResetAddress;
+		std::string maestroLevareAddress;
 		int maestroValNdx;
 		bool maestroToggleSet;
 		bool receivingMaestro;
 		bool maestroInitialized;
+		int maestroBeatsIn;
 		unsigned long maestroTimeStamp;
 		float maestroValThresh;
 		std::vector<float> maestroVec;
@@ -647,7 +750,8 @@ class ofApp : public ofBaseApp
 		bool mustUpdateScore;
 		bool scoreUpdated;
 		bool scoreChangeOnLastBar;
-
+		// a vector of colors to appear in order of instrument creation for the piano roll
+		std::vector<std::string> instrumentColors = {"magenta", "green", "yellow", "cyan", "violet", "orchid", "orange"};
 		// map that stores which editors can receive data from OSC
 		std::map<int, bool> fromOsc;
 		// and a map with the OSC address for each editor

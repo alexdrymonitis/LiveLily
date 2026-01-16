@@ -66,6 +66,7 @@ Editor::Editor()
 	visualMode = false;
 	typingShell = false;
 	showShell = false;
+	animationState = false;
 
 	fromOscStr = "";
 }
@@ -489,18 +490,51 @@ void Editor::drawText()
 			}
 			bool tokenizeDigits1 = false;
 			if (thisLang == 0) {
-				// the main ofApp stores the following LiveLily commands: \insts, \bar, \bars, \loop, \function, \list, and \group
+				// the main ofApp stores the following LiveLily commands: \insts, \bar, \bars, \loop, \function, \list and \group
 				// we use this to determine if we should further tokenize each token of our string
 				// if a line starts with one of these commands, then we won't tokenize the token further
 				tokenizeDigits1 = find(((ofApp*)ofGetAppPtr())->commandsToNotTokenize.begin(), ((ofApp*)ofGetAppPtr())->commandsToNotTokenize.end(), tokens[0]) == ((ofApp*)ofGetAppPtr())->commandsToNotTokenize.end();
 			}
+			int activeElementCounter = 0;
+			int activeElementXPos = 0;
+			int chordCounter = 0;
+			bool isChord = false;
+			std::string strForAnimationRect;
 			for (auto it = tokens.begin(); it != tokens.end(); ++it) {
+				strForAnimationRect += *it;
+				int firstCharAscii = int((*it)[0]);
+				bool isNoteElement = false;
+				if (isChord) chordCounter++;
+				// check for characters from 'a' to 'g'
+				if (firstCharAscii >= 97 && firstCharAscii <= 103 && !isChord) {
+					if ((firstCharAscii == 98 && *it != "bass" && *it != "alto") || firstCharAscii != 98) {
+						activeElementCounter++;
+						isNoteElement = true;
+					}
+				}
+				// we first check for > to close a chord because we test against isChord
+				// which is set to true in the else if below
+				else if (isChord) {
+					size_t chordClosePos = (*it).find(">");
+					if (chordClosePos != std::string::npos && chordClosePos > 0) {
+						// > is also used for dynamics and articulations so we have to make sure it's used to close a chord
+						if ((*it)[chordClosePos-1] != '\\' && (*it)[chordClosePos-1] != '-') {
+							isChord = false;
+							isNoteElement = true;
+						}
+					}
+				}
+				// if the current token is not a note, check if it is a chord by testing against ASCII 60 which is <
+				else if (firstCharAscii == 60) {
+					isChord = true;
+					activeElementCounter++;
+				}
 				// tokenizing has already been done, but to separate digits properly
 				// we need to tokenize these further, as a string like "c''4" won't be tokenized properly
 				std::vector<std::string> subtokens;
 				bool tokenizeDigits2 = false;
 				if (thisLang == 0) {
-					// the main ofApp also stores the all bar, loop, function and list names to the keywords vector
+					// the main ofApp also stores all the bar, loop, function and list names to the keywords vector
 					tokenizeDigits2 = find(((ofApp*)ofGetAppPtr())->keywords.begin(), ((ofApp*)ofGetAppPtr())->keywords.end(), *it) == ((ofApp*)ofGetAppPtr())->keywords.end();
 				}
 				// if the token starts with a backslash, then we don't tokenize based on digits
@@ -511,6 +545,7 @@ void Editor::drawText()
 				else {
 					subtokens.push_back(*it);
 				}
+				int subtokCounter = 0;
 				for (auto subit = subtokens.begin(); subit != subtokens.end(); ++subit) {
 					//std::cout << "cursorX: " << cursorX << ", cursorPos: " << cursorPos << ", xOffset: " << xOffset << ", str width of \"" << subtoken << "\": " << font.stringWidth(subtoken) << ", whole str \"" << allStrings[i] << "\": " << font.stringWidth(allStrings[i]) << endl;
 					//if (i == cursorLineIndex && cursorX >= xOffset && cursorX <= xOffset + font.stringWidth(subtoken)) {
@@ -630,8 +665,24 @@ void Editor::drawText()
 					if (firstCharToDisplay < (*subit).size() && numCharsToRemove < (*subit).size()) {
 						font.drawString((*subit).substr(firstCharToDisplay, (*subit).size()-numCharsToRemove), xOffsetModified, strYOffset);
 					}
+					if (subtokCounter == 0 && chordCounter == 0) {
+						activeElementXPos = xOffsetModified;
+					}
 					xOffset += ((*subit).size() * oneCharacterWidth);
-					charAccum += ((int)(*subit).size());
+					charAccum += (int)(*subit).size();
+					subtokCounter++;
+				}
+				if (thisLang == 0 && animationState && linesConnectedToBar[i] > -1 && isNoteElement && activeLineElements[i] > -1 && activeLineElements[i] == activeElementCounter - 1) {
+					float strWidth = font.stringWidth(strForAnimationRect);
+					int yPos = (i * cursorHeight) + frameYOffset;
+					ofSetColor(((ofApp*)ofGetAppPtr())->foregroundColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+					ofNoFill();
+					ofDrawRectangle(activeElementXPos, yPos, strWidth, cursorHeight);
+					ofFill();
+				}
+				if (!isChord) {
+					chordCounter = 0;
+					strForAnimationRect.clear();
 				}
 			}
 		}
@@ -660,7 +711,7 @@ void Editor::drawText()
 
 	/*******************************************************************/
 	// then draw the cursor
-	if (!cursorDrawn) drawCursor(cursorX, ofColor::white);
+	if (!cursorDrawn) drawCursor(cursorX, ((ofApp*)ofGetAppPtr())->foregroundColor);
 
 	/*******************************************************************/
 	// then draw the character the cursor is drawn on top of (if this is the case)
@@ -761,7 +812,7 @@ void Editor::drawPaneSeparator()
 	float widthOffset = 0;
 	if (inserting || visualMode) {
 		// if we show the score vertically and we have one pane only, show the INSERT string at the middle
-		//if ((((ofApp*)ofGetAppPtr())->sharedData.showScore || ((ofApp*)ofGetAppPtr())->sharedData.showPianoRoll) &&
+		//if (((ofApp*)ofGetAppPtr())->isScoreVisible() &&
 		//		((ofApp*)ofGetAppPtr())->scoreOrientation == 0) {
 		//	if (frameWidth > ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX) {
 		//		widthOffset = ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX;
@@ -829,7 +880,7 @@ void Editor::setMaxCharactersPerString()
 {
 	lineNumberWidth = getNumDigitsOfLineCount() * oneCharacterWidth;
 	int width = frameWidth;
-	if (((ofApp*)ofGetAppPtr())->sharedData.showScore) {
+	if (((ofApp*)ofGetAppPtr())->isScoreVisible()) {
 		if (frameWidth > ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX) {
 			width = ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX;
 		}
@@ -958,6 +1009,8 @@ void Editor::createNewLine(std::string str, int increment)
 	executingLines[cursorLineIndex+increment] = false;
 	executionDegrade[cursorLineIndex+increment] = 0;
 	executionTimeStamp[cursorLineIndex+increment] = 0;
+	linesConnectedToBar[cursorLineIndex+increment] = -1;
+	activeLineElements[cursorLineIndex+increment] = -1;
 }
 
 //--------------------------------------------------------------
@@ -1166,7 +1219,7 @@ void Editor::changeMapKeys(int key, int increment)
 {
 	// since all maps below are created with every new line
 	// we can safely make all the calls below inside the same loop
-	// and need to create a separate loop for each
+	// and not need to create a separate loop for each
 	bool createNonExisting = changeMapKey(&allStrings, key, increment, false);
 	// if the string map key exists, then create entries for all other maps
 	// in case any of them doesn't have the current key (which should not be the case)
@@ -1179,6 +1232,19 @@ void Editor::changeMapKeys(int key, int increment)
 	changeMapKey(&executingLines, key, increment, createNonExisting);
 	changeMapKey(&executionDegrade, key, increment, createNonExisting);
 	changeMapKey(&executionTimeStamp, key, increment, createNonExisting);
+	changeMapKey(&linesConnectedToBar, key, increment, createNonExisting);
+	changeMapKey(&activeLineElements, key, increment, createNonExisting);
+	// get the bar number the current line is connected to
+	int barNdx = linesConnectedToBar[key+increment];
+	// scroll through all instruments to see which one is connected to this bar and this line
+	for (auto it = instsConnectedToLine.begin(); it != instsConnectedToLine.end(); ++it) {
+		auto it2 = it->second.find(barNdx);
+		if (it2 != it->second.end() && it2->second == key) {
+			// update the line number this instrument connects to for this bar
+			it2->second += increment;
+			//break;
+		}
+	}
 	// if the language of this pane is Python, we have to change the traceback error string
 	// to update the line number
 	if (thisLang == 1) {
@@ -1217,6 +1283,8 @@ void Editor::eraseMapKey(std::map<int, bool> *m, int key)
 //--------------------------------------------------------------
 void Editor::eraseMapKeys(int key)
 {
+	// first store the value of the linesConnectedToBar map which is the bar this line connects to
+	int barNdx = linesConnectedToBar[key];
 	// since all maps below are created with every new line
 	// we can safely make all the calls below inside the same loop
 	// and dont't need to create a separate loop for each
@@ -1230,6 +1298,45 @@ void Editor::eraseMapKeys(int key)
 	eraseMapKey(&executingLines, key);
 	eraseMapKey(&executionDegrade, key);
 	eraseMapKey(&executionTimeStamp, key);
+	eraseMapKey(&linesConnectedToBar, key);
+	eraseMapKey(&activeLineElements, key);
+	// scroll through all instruments to see which one is connected to this bar and this line
+	for (auto it = instsConnectedToLine.begin(); it != instsConnectedToLine.end(); ++it) {
+		auto it2 = it->second.find(barNdx);
+		// if this bar is stored in the instsConnectedToLine map, erase it
+		if (it2 != it->second.end()) {
+			instsConnectedToLine[it->first].erase(it2->first);
+		}
+	}
+}
+
+//--------------------------------------------------------------
+void Editor::connectLineToBar(int lineNdx, int instNdx, int barNdx)
+{
+	linesConnectedToBar[lineNdx] = barNdx;
+	instsConnectedToLine[instNdx][barNdx] = lineNdx;
+}
+
+//--------------------------------------------------------------
+int Editor::getLineConnectedToBar(int instNdx, int barNdx)
+{
+	if (instsConnectedToLine.find(instNdx) != instsConnectedToLine.end() &&
+			instsConnectedToLine[instNdx].find(barNdx) != instsConnectedToLine[instNdx].end()) {
+		return instsConnectedToLine[instNdx][barNdx];
+	}
+	return -1;
+}
+
+//--------------------------------------------------------------
+void Editor::setActiveLineElement(int lineNdx, int elementNdx)
+{
+	activeLineElements[lineNdx] = elementNdx;
+}
+
+//--------------------------------------------------------------
+void Editor::setAnimation(bool state)
+{
+	animationState = state;
 }
 
 //--------------------------------------------------------------
@@ -1309,7 +1416,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 		}
 		else if ((allStrings[cursorLineIndex].size() > 0) && (cursorPos > 0)) {
 			int numCharsToDelete = 1;
-			// check if the cursor is at the end of the std::string
+			// check if the cursor is at the end of the string
 			if (cursorPos == (int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex]) {
 				if (isThisATab(cursorPos-TABSIZE)) numCharsToDelete = TABSIZE;
 				deletedChar = allStrings[cursorLineIndex].substr(allStrings[cursorLineIndex].size()-numCharsToDelete, numCharsToDelete);
@@ -1354,13 +1461,16 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 			// when we press backspace and the cursor is that the beginning of a line
 			// if there is text in the line, it will be concatenated to the text
 			// of the line above, but the cursor should not be placed at the end
-			// of this concatenated std::string
+			// of this concatenated string
 			cursorPos = arrowCursorPos = std::max(maxCursorPos() - thisLineStrLength, 0);
 			lineCount--;
 			lineCountOffset--;
 			if (lineCountOffset < 0) {
 				lineCountOffset = 0;
 			}
+		}
+		if ((int)allStrings[cursorLineIndex].size() < maxCharactersPerString) {
+			allStringStartPos[cursorLineIndex] = 0;
 		}
 		fileEdited = true;
 	}
@@ -1696,8 +1806,21 @@ void Editor::assembleString(int key)
 		// otherwise, if it's in some middle position, insert the character
 		if (cursorPos > 0) {
 			//std::cout << cursorPos << " " << allStringStartPos[cursorLineIndex] << " " << allStrings[cursorLineIndex].size() << std::endl;
-			allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]) + \
-										  charToInsert + allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
+			std::string strOne;
+			if (cursorPos + allStringStartPos[cursorLineIndex] >= (int)allStrings[cursorLineIndex].size()) {
+				strOne = allStrings[cursorLineIndex];
+			}
+			else {
+				strOne = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]);
+			}
+			std::string strTwo;
+			if (cursorPos + allStringStartPos[cursorLineIndex] >= (int)allStrings[cursorLineIndex].size()) {
+				strTwo = "";
+			}
+			else {
+				strTwo = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
+			}
+			allStrings[cursorLineIndex] = strOne + charToInsert + strTwo;
 			if ((int)allStrings[cursorLineIndex].size() > maxCharactersPerString) {
 				// if the string is long don't move the cursor but scroll the string
 				allStringStartPos[cursorLineIndex] += cursorPosIncrement;
@@ -1706,7 +1829,14 @@ void Editor::assembleString(int key)
 		}
 		// or if it's at the beginning, place the character at the beginning
 		else {
-			allStrings[cursorLineIndex] = charToInsert + allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
+			std::string str;
+			if (cursorPos + allStringStartPos[cursorLineIndex] >= (int)allStrings[cursorLineIndex].size()) {
+				str = "";
+			}
+			else {
+				str = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
+			}
+			allStrings[cursorLineIndex] = charToInsert + str;
 		}
 	}
 	if (cursorPos == maxCharactersPerString) {

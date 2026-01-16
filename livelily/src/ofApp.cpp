@@ -120,8 +120,9 @@ void ofApp::setup()
 	showBarCount = false;
 	showTempo = false;
 
-	sharedData.showScore = false;
+	sharedData.showNotes = false;
 	sharedData.showPianoRoll = false;
+	sharedData.showScope = false;
 	sharedData.longestInstNameWidth = 0;
 	sharedData.staffLinesDist = 10.0;
 	sharedData.scoreFontSize = 35;
@@ -262,7 +263,7 @@ void ofApp::setup()
 	commandsMap[livelily]['c']["\\closeserialport"] = ofColor::fuchsia;
 	commandsMap[livelily]['c']["\\cluster"] = ofColor::fuchsia;
 	commandsMap[livelily]['d']["\\dur"] = ofColor::fuchsia;
-	commandsMap[livelily]['e'][""] = foregroundColor;
+	commandsMap[livelily]['e']["\\editor"] = ofColor::fuchsia;
 	commandsMap[livelily]['f']["\\function"] = ofColor::fuchsia;
 	commandsMap[livelily]['f']["\\finish"] =  ofColor::fuchsia;
 	commandsMap[livelily]['f']["\\fromosc"] =  ofColor::fuchsia;
@@ -384,6 +385,7 @@ void ofApp::setup()
 	commandsMap[livelily]['i']["invert"] = ofColor::skyBlue;
 	commandsMap[livelily]['l']["loopstart"] = ofColor::skyBlue;
 	commandsMap[livelily]['l']["line"] = ofColor::skyBlue;
+	commandsMap[livelily]['n']["notes"] = ofColor::skyBlue;
 	commandsMap[livelily]['o']["onlast"] = ofColor::skyBlue;
 	commandsMap[livelily]['o']["onoctave"] = ofColor::skyBlue;
 	commandsMap[livelily]['o']["on"] = ofColor::skyBlue;
@@ -393,6 +395,7 @@ void ofApp::setup()
 	commandsMap[livelily]['p']["python"] = ofColor::skyBlue;
 	commandsMap[livelily]['p']["pianoroll"] = ofColor::skyBlue;
 	commandsMap[livelily]['r']["reset"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["scope"] = ofColor::skyBlue;
 	commandsMap[livelily]['t']["treble"] = ofColor::skyBlue;
 	commandsMap[livelily]['t']["tempo"] = ofColor::skyBlue;
 
@@ -1421,12 +1424,33 @@ void ofApp::update()
 			//sharedData.typePyStr = false;
 		}
 	}
+
+	if (sharedData.showScope) {
+		scopeWaveformLeft.clear();
+		scopeWaveformRight.clear();
+		scopeRms = scopeBuffer.getRMSAmplitude();
+		for(size_t i = 0; i < scopeBuffer.getNumFrames(); i++) {
+			float sampleLeft = scopeBuffer.getSample(i, 0);
+			float xLeft = ofMap(i, 0, scopeBuffer.getNumFrames(), scoreXOffset, scoreBackgroundWidth+scoreXOffset);
+			float yLeft = ((sampleLeft * (scoreBackgroundHeight / 2)) * scopeRms) + (scoreBackgroundHeight / 2);
+			float sampleRight = scopeBuffer.getSample(i, 1);
+			float xRight = ofMap(i, 0, scopeBuffer.getNumFrames(), scoreXOffset, scoreBackgroundWidth+scoreXOffset);
+			float yRight = ((sampleRight * (scoreBackgroundHeight / 2)) * scopeRms) + (scoreBackgroundHeight / 2);
+			if (scoreOrientation == 1) {
+				yLeft += scoreYOffset;
+				yRight += scoreYOffset;
+			}
+			scopeWaveformLeft.addVertex(xLeft, yLeft);
+			scopeWaveformRight.addVertex(xRight, yRight);
+		}
+	}
 }
 
 /********************* drawing functions ***********************/
 //--------------------------------------------------------------
 void ofApp::draw()
 {
+	ofSetLineWidth(lineWidth);
 	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 		it->second.drawText();
 		// draw the pane separator for panes that do not touch the traceback printing area
@@ -1463,12 +1487,14 @@ void ofApp::draw()
 			paneHeight = sharedData.tracebackBase / (float)it->second;
 		}
 	}
-	ofSetLineWidth(lineWidth);
-	if (sharedData.showScore) {
+	if (sharedData.showNotes) {
 		drawScore();
 	}
 	else if (sharedData.showPianoRoll) {
 		drawPianoRoll();
+	}
+	else if (sharedData.showScope) {
+		drawScope();
 	}
 	// draw the pane separator for panes that do touch the traceback printing area
 	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
@@ -1477,6 +1503,7 @@ void ofApp::draw()
 			it->second.drawPaneSeparator();
 		}
 	}
+	// draw a horizontal line to separate the panes and score from the traceback area
 	ofSetColor(foregroundColor*brightnessCoeff);
 	ofDrawLine(0, sharedData.tracebackYCoord, sharedData.screenWidth, sharedData.tracebackYCoord);
 	if (editors[whichPane].showingShell()) {
@@ -1672,6 +1699,7 @@ void ofApp::drawShell()
 //--------------------------------------------------------------
 void ofApp::drawScore()
 {
+	ofSetLineWidth(lineWidth);
 	ofSetColor(scoreBackgroundColor * brightnessCoeff);
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
 	// safety test to avoid crashes when changing the window size before creating any bars
@@ -1967,7 +1995,7 @@ void ofApp::drawScore()
 		}
 	}
 	// once done drawing the score, draw the line that separates it from the editor
-	// this is important in case of changing the color of the score, to clrearly separate the two
+	// this is important in case of changing the color of the score, to clearly separate the two
 	if (scoreOrientation < 2) {
 		ofColor color;
 		color.r = 255 - scoreBackgroundColor.r;
@@ -1989,6 +2017,7 @@ void ofApp::drawScore()
 //--------------------------------------------------------------
 void ofApp::drawPianoRoll()
 {
+	ofSetLineWidth(lineWidth);
 	// draw the background of the piano roll
 	ofSetColor(backgroundColor * brightnessCoeff);
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
@@ -2069,7 +2098,6 @@ void ofApp::drawPianoRoll()
 				float posAccum = 0;
 				// safety test to ensure the bar we're trying to display actually exists
 				if (instIt->second.notes.find(bar) == instIt->second.notes.end()) {
-					std::cout << "bar " << bar << std::endl;
 					continue;
 				}
 				for (size_t j = 0; j < instIt->second.notes.at(bar).size(); j++) {
@@ -2267,18 +2295,12 @@ void ofApp::drawPianoRoll()
 		}
 	}
 	// draw a line that separates the piano roll from the editor
+	ofSetColor(foregroundColor * brightnessCoeff);
 	if (scoreOrientation == 0 && scoreXOffset > 0) {
-		ofSetColor(foregroundColor * brightnessCoeff);
 		ofDrawLine(scoreXOffset, 0, scoreXOffset, scoreBackgroundHeight);
 	}
 	else if (scoreYOffset > 0) {
-		ofSetColor(foregroundColor * brightnessCoeff);
 		ofDrawLine(0, scoreYOffset, scoreBackgroundWidth, scoreYOffset);
-	}
-	// in case of one pane only and vertical view, draw a line that separates the pianoroll from the traceback area
-	if (editors.size() == 1 && scoreOrientation == 0) {
-		ofSetColor(foregroundColor * brightnessCoeff);
-		ofDrawLine(scoreXOffset, scoreBackgroundHeight, scoreXOffset+scoreBackgroundWidth, scoreBackgroundHeight);
 	}
 }
 
@@ -2292,16 +2314,52 @@ void ofApp::drawBlackKeysOutline(float xPos, float yPos)
 	if (scoreOrientation == 0) {
 		float xEnd = xPos + ((sharedData.pianoRollKeysWidth / 3) * 2);
 		float yOffset = (sharedData.pianoRollKeysHeight / 3) * 2;
-		ofDrawLine(xPos, yPos+lineWidth, xEnd, yPos+lineWidth);
-		ofDrawLine(xPos, yPos+yOffset-lineWidth, xEnd, yPos+yOffset-lineWidth);
-		ofDrawLine(xEnd-lineWidth, yPos+lineWidth, xEnd-lineWidth, yPos+yOffset-lineWidth);
+		ofDrawLine(xPos, yPos, xEnd, yPos);
+		ofDrawLine(xPos, yPos+yOffset, xEnd, yPos+yOffset);
+		ofDrawLine(xEnd, yPos, xEnd, yPos+yOffset);
 	}
 	else {
 		float xOffset = (sharedData.pianoRollKeysWidth / 3) * 2;
 		float yEnd = yPos + ((sharedData.pianoRollKeysHeight / 3) * 2);
-		ofDrawLine(xPos+lineWidth, yPos, xPos+lineWidth, yEnd);
-		ofDrawLine(xPos+xOffset-lineWidth, yPos, xPos+xOffset-lineWidth, yEnd);
-		ofDrawLine(xPos+lineWidth, yEnd-lineWidth, xPos+xOffset-lineWidth, yEnd-lineWidth);
+		ofDrawLine(xPos, yPos, xPos, yEnd);
+		ofDrawLine(xPos+xOffset, yPos, xPos+xOffset, yEnd);
+		ofDrawLine(xPos, yEnd, xPos+xOffset, yEnd);
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::drawScope()
+{
+	// draw the background
+	ofSetColor(backgroundColor * brightnessCoeff);
+	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
+	// draw the legend
+	std::vector<ofColor> colorsVec = {ofColor::cyan, ofColor::fuchsia};
+	std::string chanStr = "chan ";
+	float strWidth = font.stringWidth(chanStr) + oneCharacterWidth;
+	float strHeight = font.stringHeight(chanStr);
+	for (int i = 0; i < 2; i++) {
+		ofSetColor(colorsVec[i]);
+		float x = scoreXOffset+scoreBackgroundWidth-strWidth-10;
+		float y = scoreYOffset+(strHeight*(i+1)) + ((strHeight/2)*(i > 0 ? 1 : 0));
+		ofDrawLine(x-oneCharacterWidth, y, x-oneCharacterWidth-10, y);
+		font.drawString(chanStr + std::to_string(i+1), x, y+(strHeight/2));
+	}
+	// draw the actual waveforms
+	ofSetLineWidth(5);
+	ofSetColor(ofColor::cyan);
+	scopeWaveformLeft.draw();
+	ofSetColor(ofColor::fuchsia);
+	scopeWaveformRight.draw();
+	ofSetLineWidth(lineWidth);
+	// draw a line that separates the scope from the editor
+	ofSetColor(foregroundColor * brightnessCoeff);
+	if (scoreOrientation == 0) {
+		float x = (scoreXOffset > 0 ? scoreXOffset : scoreBackgroundWidth);
+		ofDrawLine(x, 0, x, scoreBackgroundHeight);
+	}
+	else if (scoreOrientation == 1 && scoreYOffset == 0) {
+		ofDrawLine(0, scoreBackgroundHeight, scoreBackgroundWidth, scoreBackgroundHeight);
 	}
 }
 
@@ -2459,7 +2517,7 @@ void ofApp::executeKeyPressed(int key)
 	    	else if ((key >= 49) && (key <= 57) && altPressed) {
 	    		if ((key - 49) < (int)editors.size()) {
 	    			setActivePane(key - 49);
-					if (sharedData.showScore || sharedData.showPianoRoll) {
+					if (sharedData.showNotes || sharedData.showPianoRoll) {
 						if (scoreOrientation == 0 && paneSplitOrientation == 1 && numPanes.size() == 2) {
 							if ((scoreXOffset == 0 && whichPane < numPanes[0]) || (scoreXOffset > 0 && whichPane >= numPanes[0])) {
 								swapScorePosition(0);
@@ -2704,7 +2762,7 @@ void ofApp::handleKeyModifier(pyStdoutStrKeyModifier modifierStruct)
 	}
 }
 
-/**************** add/remove panes functions ******************/
+/********************* panes functions ************************/
 //--------------------------------------------------------------
 void ofApp::addPane(int key)
 {
@@ -2779,7 +2837,7 @@ void ofApp::addPane(int key)
 	// if the panes are split vertically and the score is also vertical (opposite values)
 	// or both are horizontal
 	// we need to swap the position of the score so the new pane becomes visible
-	if (firstAddition && ((sharedData.showScore || sharedData.showPianoRoll) && paneSplitOrientation != scoreOrientation)) {
+	if (firstAddition && ((sharedData.showNotes || sharedData.showPianoRoll) && paneSplitOrientation != scoreOrientation)) {
 		// swap the score position without changing its orientation
 		swapScorePosition(scoreOrientation);
 		// with two panes split horizontally and the score shown horizontally
@@ -2869,6 +2927,16 @@ void ofApp::removePane()
 	}
 }
 
+//--------------------------------------------------------------
+void ofApp::storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state)
+{
+	// this function is called by the sequencer to update the currently active element in the editor
+	int paneNdx = sharedData.barsConnectedToPanes[barNdx];
+	int lineNdx = editors[paneNdx].getLineConnectedToBar(instNdx, barNdx);
+	if (lineNdx > -1) {
+		editors[paneNdx].setActiveLineElement(lineNdx, (state == true ? dataCounter : -1));
+	}
+}
 /********************* parsing functions **********************/
 //--------------------------------------------------------------
 void ofApp::parseStrings(int index, int numLines)
@@ -3515,7 +3583,7 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 			return genError("stray tuplet");
 		}
 		if (cmdInput.inputVec.size() < 2 || !cmdInput.hasBrackets) {
-			return genError("badly formatted \\tuplet");
+			return genError("badly formatted tuplet");
 		}
 		if (cmdInput.inputVec[1].find("/") == std::string::npos) {
 			return genError("badly formatted tuplet ratio");
@@ -3629,7 +3697,7 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 
 	else if (cmdInput.inputVec[0].compare("\\cluster") == 0) {
 		if (cmdInput.isMainCmd) {
-			return genError("stray tuplet");
+			return genError("stray cluster");
 		}
 		if (cmdInput.inputVec.size() < 2 || !cmdInput.hasBrackets) {
 			return genError("badly formatted \\cluster");
@@ -4028,6 +4096,42 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 			return genError("the \\score command takes only second level commands, not arguments");
 		}
 		return scoreCommands(cmdInput.inputVec, lineNum, numLines);
+	}
+
+	else if (cmdInput.inputVec[0].compare("\\editor") == 0 || startsWith(cmdInput.inputVec[0], "\\editor.")) {
+		if (cmdInput.inputVec[0].compare("\\editor") == 0 && cmdInput.inputVec.size() < 2) {
+			return genError("the \\editor command does nothing by itself, you must call one of its second level commands");
+		}
+		else if (cmdInput.inputVec[0].compare("\\editor") == 0 && cmdInput.inputVec.size() >= 2) {
+			return genError("the \\editor command takes only second level commands, not arguments");
+		}
+		// the initial command is \editor. followed by a second level command
+		// to separate the second level command we create a new vector that will copy the originalCommands vector
+		// except from the first item where we trim the \editor. part
+		std::vector<std::string> editorCommands;
+		for (unsigned i = 0; i < cmdInput.inputVec.size(); i++) {
+			if (!i) {
+				// remove the "\editor." part of the command so we isolate the second level command
+				std::string thisCommand = cmdInput.inputVec[i].substr(cmdInput.inputVec[i].find(".")+1);
+				editorCommands.push_back(thisCommand);
+			}
+			else {
+				editorCommands.push_back(cmdInput.inputVec[i]);
+			}
+		}
+		if (editorCommands[0].compare("animate") == 0) {
+			for (auto it = editors.begin(); it != editors.end(); ++it) {
+				it->second.setAnimation(true);
+			}
+		}
+		else if (editorCommands[0].compare("inanimate") == 0) {
+			for (auto it = editors.begin(); it != editors.end(); ++it) {
+				it->second.setAnimation(false);
+			}
+		}
+		else {
+			return genError(editorCommands[1] + ": unknown editor command");
+		}
 	}
 
 	else if (cmdInput.inputVec[0].compare("\\cursor") == 0) {
@@ -5855,7 +5959,7 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 	for (i = 0; i < tokens.size(); i++) {
 		std::vector<std::string> subtokens = tokenizeChord(tokens.at(i));
 		bool isTuplet = true;
-		// tuplets are converted to a forward slash and the tuplet ration after it
+		// tuplets are converted to a forward slash and the tuplet ratio after it
 		// for example, \tuplet 3/2 {c''8 d'' e''} is converted to c''8/3/2 d''/3/2 e''/3/2
 		// so we need to look for digits after a note character, an octave symbol (, or ') or a duration digit
 		size_t slashNdx = subtokens.back().find('/');
@@ -5934,7 +6038,7 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 		int loopStartNdx = 1;
 		for (j = 0; j < subtokens.size(); j++) {
 			if (j == 0 && isCluster.at(i)) {
-				loopStartNdx = 2;
+				loopStartNdx = 3;
 			}
 			bool foundAccidental = false;
 			// the first character of a note token is the actual note, so we start from 1 in the loop below
@@ -6583,14 +6687,14 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 		if (slurBeginningsIndexes.at(i) > -1) numSlurStarts++;
 		if (slurEndingsIndexes.at(i) > -1) numSlurStops++;
 	}
-	std::vector<std::pair<int, int>> slurIndexes (max(max(numSlurStarts, numSlurStops), 1), std::make_pair(-1, -1));
+	std::vector<std::pair<int, int>> slurIndexes (std::max(std::max(numSlurStarts, numSlurStops), 1), std::make_pair(-1, -1));
 	int slurNdx = 0;
 	for (i = 0; i < numNotesVertical; i++) {
 		if (slurBeginningsIndexes.at(i) > -1) slurIndexes.at(slurNdx).first = slurBeginningsIndexes.at(i);
 		if (slurEndingsIndexes.at(i) > -1) slurIndexes.at(slurNdx).second = slurEndingsIndexes.at(i);
 	}
 
-	// once the melodic line has been parsed, we can insert the new data to the std::maps of the Instrument object
+	// once the melodic line has been parsed, we can insert the new data to the maps of the Instrument object
 	std::map<std::string, int>::iterator it = sharedData.instrumentIndexes.find(lastInstrument);
 	if (it == sharedData.instrumentIndexes.end()) {
 		return std::make_pair(3, "instrument does not exist");
@@ -6648,6 +6752,9 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 	}
 
 	sharedData.instruments.at(thisInstIndex).setPassed(true);
+	editors[whichPane].connectLineToBar(lineNum, thisInstIndex, barIndex);
+	// the map below is used by the sequencer, to determine which pane will have its active element set
+	sharedData.barsConnectedToPanes[barIndex] = whichPane;
 	numInstsParsed++;
 	return std::make_pair(0, "");
 }
@@ -6677,15 +6784,23 @@ std::pair<int, std::string> ofApp::parseBarLoop(std::string str, int lineNum, in
 			// the first, default bar (a tacet) has index 0, which we must ignore here
 			if (it->first > 0) thisBarIndexes.push_back(it->first);
 		}
-		// find the last index of the stored loops and store the std::vector we just created to the value of loopData
+		// find the last index of the stored loops and store the vector we just created to the value of loopData
 		int loopNdx = getLastLoopIndex();
 		sharedData.loopData[loopNdx] = thisBarIndexes;
 		return std::make_pair(0, "");
 	}
 	size_t multIndex = wildCardStr.find("*");
 	std::vector<std::string> names;
-	if (multIndex != std::string::npos) {
-		if (!isNumber(wildCardStr.substr(multIndex+1))) {
+	if (multIndex != std::string::npos && multIndex < wildCardStr.size()-1) {
+		std::string restOfStr;
+		size_t whiteSpaceNdx = wildCardStr.substr(multIndex+1).find(" ");
+		if (whiteSpaceNdx == std::string::npos) {
+			restOfStr = wildCardStr;
+		}
+		else {
+			restOfStr = wildCardStr.substr(multIndex+1, whiteSpaceNdx);
+		}
+		if (!isNumber(restOfStr)) {
 			// look for file names that include the characters of the wild card
 			std::vector<int> multNdxs = findIndexesOfCharInStr(wildCardStr, "*");
 			std::vector<std::string> strParts(multNdxs.size(), "");
@@ -6730,10 +6845,6 @@ std::pair<int, std::string> ofApp::parseBarLoop(std::string str, int lineNum, in
 	else {
 		names = tokenizeString(str.substr(0, strLength), " ");
 	}
-	//std::vector<std::string> names = tokenizeString(str.substr(0, strLength), " ");
-	// initialize all variables used in the loop below, so we can initialize the growing std::vector
-	// after them, to ensure it is at the top of the stack
-	//size_t multIndex;
 	size_t nameLength;
 	int howManyTimes;
 	std::map<std::string, int>::iterator thisBarLoopIndexIt;
@@ -6818,7 +6929,7 @@ std::pair<int, std::string> ofApp::parseBarLoop(std::string str, int lineNum, in
 			}
 		}
 	}
-	// find the last index of the stored loops and store the std::vector we just created to the value of loopData
+	// find the last index of the stored loops and store the vector we just created to the value of loopData
 	int loopNdx = getLastLoopIndex();
 	sharedData.loopData[loopNdx] = thisBarIndexes;
 	if (restOfCommand.size() > 0) {
@@ -6829,7 +6940,6 @@ std::pair<int, std::string> ofApp::parseBarLoop(std::string str, int lineNum, in
 	}
 	if (!sequencer.isThreadRunning()) {
 		sharedData.loopIndex = sharedData.tempLoopIndex;
-		//sendLoopIndexToParts();
 	}
 	sendLoopToParts();
 	return std::make_pair(0, "");
@@ -8113,17 +8223,6 @@ void ofApp::quickSort(uint64_t arr[], int arr2[], int low, int high)
 	}
 }
 
-//--------------------------------------------------------------
-std::string ofApp::genStrFromVec(const std::vector<std::string>& vec)
-{
-    std::ostringstream oss;
-    for (const auto& str : vec) {
-        oss << str << " "; // Add a space after each std::string
-    }
-    std::string result = oss.str();
-    return result.empty() ? result : result.substr(0, result.size() - 1); // Remove the trailing space
-}
-
 /****************** OSC to parts functions ********************/
 //--------------------------------------------------------------
 void ofApp::sendToParts(ofxOscMessage m, bool delay)
@@ -8421,6 +8520,17 @@ std::string ofApp::replaceCharInStr(std::string str, std::string a, std::string 
 	return str;
 }
 
+//--------------------------------------------------------------
+std::string ofApp::genStrFromVec(const std::vector<std::string>& vec)
+{
+    std::ostringstream oss;
+    for (const auto& str : vec) {
+        oss << str << " "; // Add a space after each std::string
+    }
+    std::string result = oss.str();
+    return result.empty() ? result : result.substr(0, result.size() - 1); // Remove the trailing space
+}
+
 /******************** tokenizing functions *********************/
 //---------------------------------------------------------------
 //std::vector<std::string> ofApp::tokenizeString(std::string str, std::string delimiter)
@@ -8681,21 +8791,6 @@ void ofApp::storeList(std::string str)
 		if (startsWith(item, "{")) listMap[lastListIndex].push_back(item.substr(1));
 		else if (endsWith(item, "}")) listMap[lastListIndex].push_back(item.substr(0, item.size()-1));
 		else listMap[lastListIndex].push_back(item);
-	}
-}
-
-//--------------------------------------------------------------
-void ofApp::fillInMissingInsts(int barIndex)
-{
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		if (!it->second.hasPassed()) {
-			it->second.createEmptyMelody(barIndex);
-			it->second.setPassed(true);
-			// since all instruments need to set the boolean below to true
-			// for parseStrings() to know that ;all bars of a \bars commands have finished
-			// it's ok to set it to true for missing instruments right from the start
-			if (parsingBars) it->second.setMultiBarsDone(true);
-		}
 	}
 }
 
@@ -9325,6 +9420,7 @@ std::vector<std::string> ofApp::detectRepetitions(std::vector<std::string> token
 	return output;
 }
 
+/***** functions that contain commands/data for the score *****/
 //--------------------------------------------------------------
 CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
@@ -9555,21 +9651,21 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 					sharedData.setBeatAnimation = true;
 				}
 			}
+			else if (commands[1].compare("notes") == 0) {
+				showScore(0);
+			}
 			else if (commands[1].compare("pianoroll") == 0) {
-				sharedData.showScore = false;
-				sharedData.showPianoRoll = true;
-				setPaneCoords();
-				editors[whichPane].setMaxCharactersPerString();
+				showScore(1);
+			}
+			else if (commands[1].compare("scope") == 0) {
+				showScore(2);
 			}
 			else {
 				return genError("unkown argument");
 			}
 		}
 		else {
-			sharedData.showScore = true;
-			sharedData.showPianoRoll = false;
-			setPaneCoords();
-			editors[whichPane].setMaxCharactersPerString();
+			showScore(0);
 		}
 	}
 
@@ -9593,10 +9689,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 			}
 		}
 		else {
-			sharedData.showScore = false;
-			sharedData.showPianoRoll = false;
-			setPaneCoords();
-			editors[whichPane].setMaxCharactersPerString();
+			showScore(-1);
 		}
 	}
 
@@ -9761,6 +9854,35 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 }
 
 //--------------------------------------------------------------
+void ofApp::showScore(int ndx)
+{
+	switch (ndx) {
+		case 0:
+			sharedData.showNotes = true;
+			sharedData.showPianoRoll = false;
+			sharedData.showScope = false;
+			break;
+		case 1:
+			sharedData.showNotes = false;
+			sharedData.showPianoRoll = true;
+			sharedData.showScope = false;
+			break;
+		case 2:
+			sharedData.showNotes = false;
+			sharedData.showPianoRoll = false;
+			sharedData.showScope = true;
+			break;
+		default:
+			sharedData.showNotes = false;
+			sharedData.showPianoRoll = false;
+			sharedData.showScope = false;
+			break;
+	}
+	setPaneCoords();
+	editors[whichPane].setMaxCharactersPerString();
+}
+
+//--------------------------------------------------------------
 CmdOutput ofApp::maestroCommands(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
@@ -9860,6 +9982,13 @@ CmdOutput ofApp::maestroCommands(std::vector<std::string>& originalCommands, int
 }
 
 //--------------------------------------------------------------
+bool ofApp::isScoreVisible()
+{
+	return (sharedData.showNotes || sharedData.showPianoRoll || sharedData.showScope);
+}
+
+/********************* instrument functions *******************/
+//--------------------------------------------------------------
 void ofApp::initializeInstrument(std::string instName)
 {
 	int maxInstIndex = (int)sharedData.instruments.size();
@@ -9883,6 +10012,21 @@ void ofApp::initializeInstrument(std::string instName)
 	sharedData.numInstruments++;
 	keywords.push_back(instName);
 	setScoreCoords();
+}
+
+//--------------------------------------------------------------
+void ofApp::fillInMissingInsts(int barIndex)
+{
+	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		if (!it->second.hasPassed()) {
+			it->second.createEmptyMelody(barIndex);
+			it->second.setPassed(true);
+			// since all instruments need to set the boolean below to true
+			// for parseStrings() to know that ;all bars of a \bars commands have finished
+			// it's ok to set it to true for missing instruments right from the start
+			if (parsingBars) it->second.setMultiBarsDone(true);
+		}
+	}
 }
 
 /*********** coordinates/positions/sizes functions ************/
@@ -9938,8 +10082,7 @@ void ofApp::setPaneCoords()
 		int numLinesDivisor = 1;
 		int widthDivisor = 1;
 		// if we are showing the score and we have only one pane or two panes
-		if ((sharedData.showScore || sharedData.showPianoRoll) &&
-				((numPanes.size() == 1 && numPanes[0] == 1) || (numPanes.size() == 2 && (numPanes[0] == 1 && numPanes[1] == 1)))) {
+		if (isScoreVisible() && ((numPanes.size() == 1 && numPanes[0] == 1) || (numPanes.size() == 2 && (numPanes[0] == 1 && numPanes[1] == 1)))) {
 			if (numPanes.size() == 1) {
 				if (scoreOrientation == 0) {
 					widthDivisor = 2;
@@ -10391,8 +10534,8 @@ void ofApp::resizeWindow()
 		sharedData.pianoRollKeysWidth = scoreBackgroundWidth / (float)sharedData.pianoRollNumWhiteKeys;
 		sharedData.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
 		sharedData.pianoRollMinDur = (scoreBackgroundHeight - sharedData.pianoRollKeysHeight) / (float)MINDUR;
-		if (scoreYOffset > 0) scoreYOffset = (sharedData.tracebackBase / 2);
 	}
+	resetScoreYOffset();
 	setScoreSizes();
 	calculateStaffPositions(getLastBarIndex(), true);
 }
@@ -10431,6 +10574,7 @@ void ofApp::dragEvent(ofDragInfo dragInfo)
 
 }
 
+/********************** audio functions ***********************/
 //--------------------------------------------------------------
 void ofApp::audioIn(ofSoundBuffer & buffer)
 {
@@ -10449,6 +10593,7 @@ void ofApp::audioOut(ofSoundBuffer & buffer)
 	if (pyoSet) {
 		// process and get new audio samples from pyo
 		sharedData.pyo.process(&buffer[0]);
+		if (sharedData.showScope) scopeBuffer = buffer;
 	}
 #endif
 }
@@ -11049,7 +11194,7 @@ void Sequencer::threadedFunction()
 			int bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisBarIndex];
 			// in here we calculate the number of beats on a microsecond basis
 			numBeats = sharedData->numBeats[bar] * sharedData->tempo[bar];
-			if (sharedData->showScore) {
+			if (sharedData->showNotes) {
 				if (sharedData->setAnimation) {
 					for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
 						instMapIt->second.setAnimation(true);
@@ -11331,6 +11476,7 @@ void Sequencer::threadedFunction()
 												oscSender.sendMessage(m, false);
 												m.clear();
 											}
+											((ofApp*)ofGetAppPtr())->storeActiveEditorElement(instMapIt->first, bar, instMapIt->second.getBarDataCounter(), false);
 										}
 									}
 									else {
@@ -11419,6 +11565,14 @@ void Sequencer::threadedFunction()
 												oscSender.sendMessage(m, false);
 												m.clear();
 											}
+											((ofApp*)ofGetAppPtr())->storeActiveEditorElement(instMapIt->first, bar, instMapIt->second.getBarDataCounter(), true);
+										}
+										// if the previous note was slurred, but not tied, deactivate the editor element
+										if (instMapIt->second.getBarDataCounter() > 0) {
+											if (instMapIt->second.isNoteSlurred(bar, instMapIt->second.getBarDataCounter()-1) && \
+													!instMapIt->second.isNoteTied(bar, instMapIt->second.getBarDataCounter()-1)) {
+												((ofApp*)ofGetAppPtr())->storeActiveEditorElement(instMapIt->first, bar, instMapIt->second.getBarDataCounter()-1, false);
+											}
 										}
 									}
 								}
@@ -11430,6 +11584,7 @@ void Sequencer::threadedFunction()
 											for (auto it = instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()].begin(); it != instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()].end(); ++it) {
 												midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendNoteOff(instMapIt->second.getMidiChan(), *it, 0);
 											}
+											((ofApp*)ofGetAppPtr())->storeActiveEditorElement(instMapIt->first, bar, instMapIt->second.getBarDataCounter(), false);
 										}
 									}
 									else {
@@ -11466,6 +11621,7 @@ void Sequencer::threadedFunction()
 											for (auto it = instMapIt->second.midiNotes[bar][instMapIt->second.barDataCounter].begin(); it != instMapIt->second.midiNotes[bar][instMapIt->second.barDataCounter].end(); ++it) {
 												midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendNoteOn(instMapIt->second.getMidiChan(), *it, instMapIt->second.getMidiVel(bar));
 											}
+											((ofApp*)ofGetAppPtr())->storeActiveEditorElement(instMapIt->first, bar, instMapIt->second.getBarDataCounter(), true);
 										}
 										// if the previous note was slurred, but not tied, send the note off message after the note on of the new note
 										if (instMapIt->second.getBarDataCounter() > 0) {
@@ -11474,6 +11630,7 @@ void Sequencer::threadedFunction()
 												for (auto it = instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()-1].begin(); it != instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()-1].end(); ++it) {
 													midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendNoteOff(instMapIt->second.getMidiChan(), *it, 0);
 												}
+												((ofApp*)ofGetAppPtr())->storeActiveEditorElement(instMapIt->first, bar, instMapIt->second.getBarDataCounter()-1, false);
 											}
 										}
 									}
