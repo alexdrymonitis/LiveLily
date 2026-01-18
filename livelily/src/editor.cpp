@@ -1382,10 +1382,14 @@ void Editor::setCursorPos(int pos)
 {
 	// this function is called only by ofApp.cpp
 	cursorPos = pos;
-	if (cursorPos < 0) cursorPos = 0;
-	else if (cursorPos > maxCursorPos()) cursorPos = maxCursorPos();
+	//if (cursorPos < 0) cursorPos = 0;
+	//else if (cursorPos > maxCursorPos()) cursorPos = maxCursorPos();
 	if (!inserting && cursorPos > 0) cursorPos--;
 	arrowCursorPos = cursorPos;
+	if (pos == 0) allStringStartPos[cursorLineIndex] = 0;
+	else if ((int)allStrings[cursorLineIndex].size() > maxCharactersPerString) {
+		allStringStartPos[cursorLineIndex] = (int)allStrings[cursorLineIndex].size() - maxCharactersPerString;
+	}
 }
 
 //--------------------------------------------------------------
@@ -1419,20 +1423,27 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 			// check if the cursor is at the end of the string
 			if (cursorPos == (int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex]) {
 				if (isThisATab(cursorPos-TABSIZE)) numCharsToDelete = TABSIZE;
-				deletedChar = allStrings[cursorLineIndex].substr(allStrings[cursorLineIndex].size()-numCharsToDelete, numCharsToDelete);
-				allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, allStrings[cursorLineIndex].size()-numCharsToDelete);
+				if ((int)allStrings[cursorLineIndex].size() >= numCharsToDelete) {
+					deletedChar = allStrings[cursorLineIndex].substr(allStrings[cursorLineIndex].size()-numCharsToDelete, numCharsToDelete);
+					allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, allStrings[cursorLineIndex].size()-numCharsToDelete);
+				}
 			}
 			else {
 				if (isThisATab(cursorPos-TABSIZE)) numCharsToDelete = TABSIZE;
-				std::string first = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]-numCharsToDelete);
-				std::string second = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
-				deletedChar = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]-numCharsToDelete, numCharsToDelete);
-				allStrings[cursorLineIndex] = first + second;
+				std::string first;
+				std::string second;
+				if ((int)allStrings[cursorLineIndex].size() >= cursorPos+allStringStartPos[cursorLineIndex]-numCharsToDelete) {
+					first = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]-numCharsToDelete);
+					second = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
+					deletedChar = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]-numCharsToDelete, numCharsToDelete);
+					allStrings[cursorLineIndex] = first + second;
+				}
 			}
 			allStringStartPos[cursorLineIndex] -= numCharsToDelete;
 			if (allStringStartPos[cursorLineIndex] < 0) {
 				allStringStartPos[cursorLineIndex] = 0;
 				cursorPos -= numCharsToDelete;
+				if (cursorPos < 0) cursorPos = 0;
 				arrowCursorPos = cursorPos;
 				if (cursorPos == 0) releaseTraceback(cursorLineIndex);
 			}
@@ -2400,13 +2411,6 @@ void Editor::setVisualMode(bool visualModeBool)
 bool Editor::getVisualMode()
 {
 	return visualMode;
-}
-
-//--------------------------------------------------------------
-void Editor::setInsertingMoveCursor()
-{
-	inserting = true;
-	cursorPos = maxCursorPos();
 }
 
 //--------------------------------------------------------------

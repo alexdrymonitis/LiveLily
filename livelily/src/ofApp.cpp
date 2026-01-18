@@ -2593,7 +2593,8 @@ void ofApp::executeKeyPressed(int key)
 				}
 				else if (key == 65) {
 					// capital A when in normal mode sets pane to insert mode and moves cursor to end of line
-					editors[whichPane].setInsertingMoveCursor();
+					editors[whichPane].setCursorPos(editors[whichPane].maxCursorPos()+1);
+					editors[whichPane].setInserting(true);
 				}
 				else if (key == 100) { // d
 					editors[whichPane].copyString(1); // 1 is index for yanking a string
@@ -3967,21 +3968,26 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		if (cmdInput.inputVec[0].compare("\\insts") == 0 && cmdInput.inputVec.size() < 2) {
 			return genError("the \\insts command does nothing by itself, you must call one of its second level commands");
 		}
-		else if (cmdInput.inputVec[0].compare("\\insts") == 0 && cmdInput.inputVec.size() >= 2) {
-			return genError("the \\insts command takes only second level commands, not arguments");
-		}
+		//else if (cmdInput.inputVec[0].compare("\\insts") == 0 && cmdInput.inputVec.size() >= 2) {
+		//	return genError("the \\insts command takes only second level commands, not arguments");
+		//}
+		bool hasDot = true;
 		std::vector<std::string> commands = tokenizeString(cmdInput.inputVec[0], ".");
 		if (commands.size() < 2) {
-			return genError("the \\insts command does nothing by itself, you must call one of its second level commands");
+			hasDot = false;
+			//return genError("the \\insts command does nothing by itself, you must call one of its second level commands");
 		}
 		commands.insert(commands.end(), cmdInput.inputVec.begin()+1, cmdInput.inputVec.end());
 		if (commands[1] == "init" && sharedData.numInstruments > 0) {
 			return genError("instruments have already been initialized, can only add or clear now");
 		}
-		if (commands[1].compare("init") != 0 && commands[1].compare("add") != 0 && commands[1].compare("clear") != 0) {
-			return genError("\\insts command takes only \"init\", \"add\" or \"clear\" second level commands");
-		}
+		//if (commands[1].compare("init") != 0 && commands[1].compare("add") != 0 && commands[1].compare("clear") != 0) {
+		//	return genError("\\insts command takes only \"init\", \"add\" or \"clear\" second level commands");
+		//}
 		if (commands[1].compare("clear") == 0) {
+			if (!hasDot) {
+				return genError("\"clear\" second level command must be concatenated to \"\\inst\" with a dot");
+			}
 			sequencer.stopNow();
 			for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 				commandsMap[livelily][it->second.getName()[0]].erase("\\" + it->second.getName());
@@ -4004,7 +4010,15 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 			tempLines.clear();
 			allBars.clear();
 		}
-		else {
+		else if (commands[1].compare("init") == 0 || commands[1].compare("add") == 0) {
+			if (!hasDot) {
+				if (commands[1].compare("init") == 0) {
+					return genError("\"init\" second level command must be concatenated to \"\\inst\" with a dot");
+				}
+				else {
+					return genError("\"add\" second level command must be concatenated to \"\\inst\" with a dot");
+				}
+			}
 			// check the arguments to make sure they don't start with a backslash
 			for (auto it = commands.begin()+2; it != commands.end(); ++it) {
 				if (startsWith(*it, "\\")) {
@@ -4039,6 +4053,28 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 					for (auto instIt = commands.begin()+2; instIt != commands.end(); ++instIt) {
 						sharedData.instruments[sharedData.instrumentIndexes[*instIt]].createEmptyMelody(barIt->second);
 					}
+				}
+			}
+		}
+		else {
+			// we can call \insts with any instrument command and it will result in calling
+			// this command for all defined instruments
+			// we can do this either with a dot or without one
+			if (sharedData.numInstruments == 0) {
+				return genError("instruments have not been initialized yet");
+			}
+			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+				int firstCommandNdx = 1;
+				std::string s = "\\" + it->second.getName();
+				if (hasDot) {
+					s += ("." + commands[1]);
+					firstCommandNdx = 2;
+				}
+				std::vector<std::string> v = {s};
+				v.insert(v.end(), commands.begin()+firstCommandNdx, commands.end());
+				std::pair<bool, CmdOutput> p = isInstrument(v, lineNum, numLines);
+				if (p.second.errorCode == 3) {
+					return p.second;
 				}
 			}
 		}
@@ -6952,7 +6988,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 	bool hasDot = false;
 	std::vector<std::string> commands;
 	// the initial command is \instname which might be followed by a second level command
-	// to separate the second level command we create a new std::vector that will copy the originalCommands std::vector
+	// to separate the second level command we create a new vector that will copy the originalCommands vector
 	// except from the first item where we trim the \instname. part
 	for (unsigned i = 0; i < originalCommands.size(); i++) {
 		if (!i) {

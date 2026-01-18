@@ -165,7 +165,6 @@ class Editor
 		bool getInserting();
 		void setVisualMode(bool visualModeBool);
 		bool getVisualMode();
-		void setInsertingMoveCursor();
 		void detectExecutingChunk();
 		void allOtherKeys(int key);
 		void replaceCmdStrNewlines();
