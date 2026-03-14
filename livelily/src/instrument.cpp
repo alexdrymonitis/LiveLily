@@ -8,7 +8,7 @@ Instrument::Instrument()
 	staccatoDur = 0.5;
 	staccatissimoDur = 0.25;
 	tenutoDur = 0.9;
-	// we're using the articulations std::map to index durPercetanges
+	// we're using the articulations map to index durPercetanges
 	// which is a std::map<int, std::vector<int>>
 	// index 0 is not articulation
 	// index 1 is marcato
@@ -87,6 +87,18 @@ void Instrument::setID(int id)
 int Instrument::getID()
 {
 	return objID;
+}
+
+//--------------------------------------------------------------
+void Instrument::setColor(ofColor color)
+{
+	Instrument::color = color;
+}
+
+//--------------------------------------------------------------
+ofColor Instrument::getColor()
+{
+	return color;
 }
 
 //--------------------------------------------------------------

@@ -13,11 +13,12 @@
 **
 ** All arguments should be equal to the host audio settings.
 */
-void Pyo::setup(int _nChannels, int _bufferSize, int _sampleRate) {
-    nChannels = _nChannels;
+void Pyo::setup(int _inChannels, int _outChannels, int _bufferSize, int _sampleRate) {
+    inChannels = _inChannels;
+    outChannels = _outChannels;
     bufferSize = _bufferSize;
     sampleRate = _sampleRate;
-    interpreter = pyo_new_interpreter(sampleRate, bufferSize, nChannels);
+    interpreter = pyo_new_interpreter(sampleRate, bufferSize, inChannels, outChannels);
     pyoInBuffer = reinterpret_cast<float*>(pyo_get_input_buffer_address(interpreter));
     pyoOutBuffer = reinterpret_cast<float*>(pyo_get_output_buffer_address(interpreter));
     pyoCallback = reinterpret_cast<callPtr*>(pyo_get_embedded_callback_address(interpreter));
@@ -54,7 +55,7 @@ Pyo::~Pyo() {
 **   *buffer : float *, float pointer pointing to the host's input buffers.
 */
 void Pyo::fillin(float *buffer) {
-    for (int i=0; i<(bufferSize*nChannels); i++) pyoInBuffer[i] = buffer[i];
+    for (int i=0; i<(bufferSize*inChannels); i++) pyoInBuffer[i] = buffer[i];
 }
 
 
@@ -68,7 +69,7 @@ void Pyo::fillin(float *buffer) {
 */
 void Pyo::process(float *buffer) {
     pyoCallback(pyoId);
-    for (int i=0; i<(bufferSize*nChannels); i++) buffer[i] = pyoOutBuffer[i];
+    for (int i=0; i<(bufferSize*outChannels); i++) buffer[i] = pyoOutBuffer[i];
 }
 
 /*
@@ -87,7 +88,7 @@ void Pyo::process(float *buffer) {
 ** returns 0 (no error), 1 (failed to open the file) or 2 (bad code in file).
 */
 int Pyo::loadfile(const char *file, int add) {
-    return pyo_exec_file(interpreter, file, pyoMsg, add);
+    return pyo_exec_file(interpreter, file, pyoMsg, add, debug);
 }
 
 /*
@@ -111,7 +112,7 @@ int Pyo::loadfile(const char *file, int add) {
 */
 int Pyo::value(const char *name, float value) {
     sprintf(pyoMsg, "%s.value=%f", name, value);
-    return pyo_exec_statement(interpreter, pyoMsg, 0);
+    return pyo_exec_statement(interpreter, pyoMsg, debug);
 }
 
 /*
@@ -143,7 +144,7 @@ int Pyo::value(const char *name, float *value, int len) {
         strcat(pyoMsg, fchar);
     }
     strcat(pyoMsg, "]");
-    return pyo_exec_statement(interpreter, pyoMsg, 0);
+    return pyo_exec_statement(interpreter, pyoMsg, debug);
 }
 
 /*
@@ -167,7 +168,7 @@ int Pyo::value(const char *name, float *value, int len) {
 */
 int Pyo::set(const char *name, float value) {
     sprintf(pyoMsg, "%s=%f", name, value);
-    return pyo_exec_statement(interpreter, pyoMsg, 0);
+    return pyo_exec_statement(interpreter, pyoMsg, debug);
 }
 
 /*
@@ -199,7 +200,7 @@ int Pyo::set(const char *name, float *value, int len) {
         strcat(pyoMsg, fchar);
     }
     strcat(pyoMsg, "]");
-    return pyo_exec_statement(interpreter, pyoMsg, 0);
+    return pyo_exec_statement(interpreter, pyoMsg, debug);
 }
 
 /*

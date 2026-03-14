@@ -2474,7 +2474,7 @@ void Notes::drawNotes(int bar, int loopNdx, std::vector<int> *v, float xStartPnt
 						// but the other two need to draw two beams
 						for (int k = 0; k < 2; k++) {
 							// draw the first beam
-							drawBeams(xCoords.at(k), yCoords.at(k), xCoords.at(k+1), yCoords.at(k+1));
+							drawThickLine(xCoords.at(k), yCoords.at(k), xCoords.at(k+1), yCoords.at(k+1));
 							// separate variable for correct offsetting in the loop below
 							float yCoordOffset1;
 							float yCoordOffset2;
@@ -2495,7 +2495,7 @@ void Notes::drawNotes(int bar, int loopNdx, std::vector<int> *v, float xStartPnt
 								if (drawBeam) {
 									yCoordOffset1 = yCoords.at(k) + ((l*(staffDist*BEAMDISTCOEFF)) * grouppedStemDirs.at(bar).at(i));
 									yCoordOffset2 = yCoords.at(k+1) + ((l*(staffDist*BEAMDISTCOEFF)) * grouppedStemDirs.at(bar).at(i));
-									drawBeams(xCoords.at(k), yCoordOffset1, xCoords.at(k+1), yCoordOffset2);
+									drawThickLine(xCoords.at(k), yCoordOffset1, xCoords.at(k+1), yCoordOffset2);
 								}
 							}
 						}
@@ -2565,14 +2565,12 @@ int Notes::drawRest(int bar, int restDur, float x, float yStartPnt, ofColor colo
 }
 
 //--------------------------------------------------------------
-void Notes::drawBeams(float x1, float y1, float x2, float y2)
+void Notes::drawThickLine(float x1, float y1, float x2, float y2)
 {
 	// draw a thick line without affecting the thickness
 	// of all the other lines
 	// taken from
-	// https://forum.openframeworks.cc/t/how-do-i-draw-lines-of-a-
-	// reasonable-thickness-on-a-very-large-canvas-given-opengl-
-	// constraints/30815/7
+	// https://forum.openframeworks.cc/t/how-do-i-draw-lines-of-a-constraints/30815/7
 	ofPoint a;
 	ofPoint b;
 	a.x = x1;

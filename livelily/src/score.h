@@ -146,7 +146,7 @@ class Notes
 		void recenterScore();
 		void drawNotes(int bar, int loopNdx, std::vector<int> *v, float xStartPnt, float yStartPnt,
 				float yOffset, bool animation, float xCoef);
-		void drawBeams(float x1, float y1, float x2, float y2);
+		void drawThickLine(float x1, float y1, float x2, float y2);
 		int drawRest(int bar, int restDur, float x, float yStartPnt, ofColor color, float yOffset);
 		void drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
 		void drawGlissandi(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);

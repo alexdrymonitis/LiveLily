@@ -16,7 +16,9 @@ class Instrument
 		std::string getName();
 		void setID(int id);
 		int getID();
+		void setColor(ofColor color);
 		void setGroup(int groupID);
+		ofColor getColor();
 		int getGroup();
 		void setRhythm(bool isRhythm);
 		bool isRhythm();
@@ -170,6 +172,7 @@ class Instrument
 		std::map<int, std::vector<std::vector<int>>> articulations;
 		std::map<int, std::vector<std::vector<int>>> midiArticulationVals;
 		std::map<int, std::vector<bool>> isSlurred;
+		std::map<int, std::vector<bool>> isCluster;
 		std::map<int, std::vector<std::string>> text;
 		std::map<int, std::vector<std::vector<int>>> textIndexes;
 		std::map<int, std::vector<std::pair<int, int>>> slurIndexes;
@@ -266,6 +269,7 @@ class Instrument
 		bool sendMIDIBool;
 		bool sendToPythonBool;
 		int transposition;
+		ofColor color;
 
 		std::map<int, bool> copyStates;
 		std::map<int, int> copyNdxs;

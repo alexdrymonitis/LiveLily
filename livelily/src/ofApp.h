@@ -50,6 +50,8 @@
 #define HIGHESTKEY 108 // should be 108 // this is a C four octaves above middle C
 #define KEYSWIDTHCOEFF 8
 
+#define HELPFILEPATH "~/Documents/LiveLily/help_files"
+
 // class for storing data concerning livelily functions
 class Function
 {
@@ -129,9 +131,11 @@ struct SharedData
 	std::map<int, std::string> loopsOrdered;
 	// same goes for bars
 	std::map<int, std::string> barsOrdered;
+	// the map below stores the bar indexes for every defined loop
+	std::map<int, std::vector<int>> loopData;
 	// the map below stores the strings of each defined bar, since these can be edited or deleted in the editor.
 	// These can be used elsewhere, like sent to an AI model that is trained on LiveLily files
-	// the key is the bar name and the value is another std::string assembled by the strings of the bar lines
+	// the key is the bar name and the value is another string assembled by the strings of the bar lines
 	// separated with newline characters
 	std::map<std::string, std::string> barLines;
 	// the map below keeps track of how many variants of each loop we create so we can use this as a name extension
@@ -176,6 +180,8 @@ struct SharedData
 	bool showNotes;
 	bool showPianoRoll;
 	bool showScope;
+	// a boolean common for all three booleans above
+	bool showScore;
 	// from the piano roll variables below, only pianoRollTimeStamp needs to be in SharedData
 	// but we define all of them here for consistency
 	int pianoRollNumWhiteKeys;
@@ -214,20 +220,18 @@ struct SharedData
 	int prevNumBars;
 	int prevPosition;
 	int barCounter; // used for visualization on the score
-	std::map<int, std::vector<int>> loopData;
 	// a boolean if we call a pattern while the sequencer is running
 	bool updateLoop;
-	// three different tempo placeholders
+	// two different tempo placeholders
 	// one for the running sequencer (tempo)
-	// one for updating tempo while sequencer is running (newTempo)
-	// and one to hold the tempo in ms without the conversion
-	// to the global minimum duration
+	// and one to hold the tempo in ms without the conversion to the global minimum duration
 	std::map<int, double> tempo;
 	std::map<int, double> tempoMs;
 	std::map<int, int> BPMTempi;
 	std::map<int, int> BPMMultiplier;
 	std::map<int, bool> beatAtDifferentThanDivisor;
-	std::map<int, int> beatAtValues;
+	std::map<int, std::vector<int>> beatAtValues;
+	unsigned beatAtValCounter;
 	std::map<int, int> tempoBaseForScore;
 	std::map<int, bool> BPMDisplayHasDot;
 	// variables for positioning staffs for every pattern
@@ -417,6 +421,13 @@ class ofApp : public ofBaseApp
 		std::pair<bool, CmdOutput> isOscClient(std::vector<std::string>& commands, int lineNum, int numLines);
 		std::pair<bool, CmdOutput> isGroup(std::vector<std::string>& commands, int lineNum, int numLines);
 		//---------------------------------
+		// clearing functions
+		void clearBars();
+		void clearLoops();
+		void clearLists();
+		void clearFunctions();
+		void clearInstruments();
+		//---------------------------------
 		// command typing/executing funcitons
 		void typeShellCommand(int key);
 		void replaceShellStrNewlines();
@@ -580,15 +591,15 @@ class ofApp : public ofBaseApp
 		bool pyoSet;
 		int sampleRate;
 		int bufferSize;
-		int nChannels;
+		int inChannels;
+		int outChannels;
 		ofSoundDevice inSoundDevice;
 		ofSoundDevice outSoundDevice;
 		bool inSoundDeviceSet;
 		bool outSoundDeviceSet;
 		// oscilloscope drawing stuff
 		ofSoundBuffer scopeBuffer;
-		ofPolyline scopeWaveformLeft;
-		ofPolyline scopeWaveformRight;
+		std::vector<ofPolyline> scopeWaveforms;
 		float scopeRms;
 
 		// shell commands stuff
@@ -640,7 +651,7 @@ class ofApp : public ofBaseApp
 		std::map<int, std::vector<std::string>> noIndentCheck;
 		enum languages {livelily, python, lua};
 		// vector of strings of command names that should not be expanded
-		std::vector<std::string> nonExpandableCommands = {"\\bar", "\\bars", "\\loop", "\\group", "\\function"};
+		std::vector<std::string> nonExpandableCommands = {"\\bar", "\\bars", "\\loop", "\\group", "\\function", "\\help"};
 
 		// instrument groups
 		std::map<std::string, std::vector<std::string>> instGroups;
@@ -720,10 +731,6 @@ class ofApp : public ofBaseApp
 
 		// variable to determine when to start storing patterns
 		int whenToStore;
-		// temporary storage of editor lines, needed for \\bars command
-		std::vector<std::string> tempLines;
-		// temporary storage for separated bars, needed for \\bars command
-		std::vector<std::string> allBars;
 		// and a boolean to allow storing a pattern and to insert lines
 		bool storePattern;
 		bool inserting;

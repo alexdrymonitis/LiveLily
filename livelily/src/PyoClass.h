@@ -7,13 +7,15 @@
 #include <string>
 #include <vector>
 
+#define PYOMSGSIZE 262144
+
 #ifdef USEPYO
 typedef int callPtr(int);
 
 class Pyo {
     public:
         ~Pyo();
-        void setup(int nChannels, int bufferSize, int sampleRate);
+        void setup(int inChannels, int outChannels, int bufferSize, int sampleRate);
 		std::vector<std::string> getStdout();
         void process(float *buffer);
         void fillin(float *buffer);
@@ -27,9 +29,11 @@ class Pyo {
         int set(const char *name, float *value, int len);
 
     private:
-        int nChannels;
+        int inChannels;
+        int outChannels;
         int bufferSize;
         int sampleRate;
+		int debug;
         PyThreadState *interpreter;
         float *pyoInBuffer;
         float *pyoOutBuffer;
@@ -37,12 +41,12 @@ class Pyo {
         int pyoId;
         char pyoMsg[PYOMSGSIZE];
 };
-#else
-class Pyo {
-	public:
-		~Pyo();
-        void setup(int nChannels, int bufferSize, int sampleRate) {};
-};
+//#else
+//class Pyo {
+//	public:
+//		~Pyo();
+//        void setup(int inChannels, int outChannels, int bufferSize, int sampleRate) {};
+//};
 #endif
 
 #endif

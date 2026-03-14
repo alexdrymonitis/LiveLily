@@ -18,6 +18,7 @@ Editor::Editor()
 	cursorLineIndex = 0;
 	cursorPos = 0;
 	arrowCursorPos = 0;
+	maxCharactersPerString = oldMaxCharactersPerString = 0;
 	activeSession = true;
 
 	executionStepPerMs = (float)EXECUTIONBRIGHTNESS / (float)(EXECUTIONDUR - EXECUTIONRAMPSTART);
@@ -42,13 +43,14 @@ Editor::Editor()
 	roundBracketCounter = 0;
 
 	fileLoaded = false;
+	tempFileLoaded = false;
 
-	allStrings[0] = "";
-	allStringStartPos[0] = 0;
-	tracebackStr[0] = "";
-	tracebackColor[0] = 0;
-	tracebackNumLines[0] = 1;
-	tracebackStrBreakPnt[0] = false;
+	allLines[0].str = "";
+	allLines[0].startPos = 0;
+	allLines[0].tracebackStr = "";
+	allLines[0].tracebackColor = 0;
+	allLines[0].tracebackNumLines = 1;
+	allLines[0].tracebackStrBreakPnt = false;
 	tabStr = "";
 	for (int i = 0; i < TABSIZE; i++) {
 		tabStr += " ";
@@ -56,7 +58,9 @@ Editor::Editor()
 
 	couldNotLoadFile = false;
 	couldNotSaveFile = false;
+	helpFileOpen = false;
 	fileEdited = false;
+	tempFileEdited = false;
 	autobrackets = true;
 	sendKeys = false;
 	sendLines = false;
@@ -178,9 +182,9 @@ int Editor::getPaneCol()
 //--------------------------------------------------------------
 std::string Editor::getLine(int lineNdx)
 {
-	std::map<int, std::string>::iterator it = allStrings.find(lineNdx);
-	if (it == allStrings.end()) return "";
-	else return it->second;
+	std::map<int, line>::iterator it = allLines.find(lineNdx);
+	if (it == allLines.end()) return "";
+	else return it->second.str;
 }
 
 //--------------------------------------------------------------
@@ -216,24 +220,24 @@ int Editor::getNumTabsInStr(std::string str)
 //--------------------------------------------------------------
 std::vector<int> Editor::getNestDepth()
 {
-	std::map<int, std::string>::iterator it;
+	std::map<int, line>::iterator it;
 	std::vector<int> v(2, 0); // bottom line, nest depth
 	bool insideNest = false;
-	for (it = allStrings.find(cursorLineIndex); it != allStrings.end(); ++it) {
-		if (((thisLang == 0 && startsWith(it->second, "%")) || (thisLang == 1 && startsWith(it->second, "#")) || (thisLang == 2 && startsWith(it->second, "--"))) && !insideNest) break;
-		if (it->second.substr(0, TABSIZE).compare(tabStr) == 0) {
+	for (it = allLines.find(cursorLineIndex); it != allLines.end(); ++it) {
+		if (((thisLang == 0 && startsWith(it->second.str, "%")) || (thisLang == 1 && startsWith(it->second.str, "#")) || (thisLang == 2 && startsWith(it->second.str, "--"))) && !insideNest) break;
+		if (it->second.str.substr(0, TABSIZE).compare(tabStr) == 0) {
 			v[0] = it->first;
-			v[1] = std::max(v[1], getNumTabsInStr(it->second));
+			v[1] = std::max(v[1], getNumTabsInStr(it->second.str));
 			insideNest = true;
 		}
 		else {
-			if (it->first == cursorLineIndex && ((thisLang == 0 && it->second.find("{") != std::string::npos) || (thisLang == 1 && it->second.find(":") != std::string::npos))) continue;
-			else if (it->second.find("}") != std::string::npos) {
+			if (it->first == cursorLineIndex && ((thisLang == 0 && it->second.str.find("{") != std::string::npos) || (thisLang == 1 && it->second.str.find(":") != std::string::npos))) continue;
+			else if (it->second.str.find("}") != std::string::npos) {
 				v[0] = it->first;
 				if (it->first == cursorLineIndex) {
 					--it;
-					while (it->second.substr(0, TABSIZE).compare(tabStr) == 0) {
-						v[1] = std::max(v[1], getNumTabsInStr(it->second));
+					while (it->second.str.substr(0, TABSIZE).compare(tabStr) == 0) {
+						v[1] = std::max(v[1], getNumTabsInStr(it->second.str));
 						--it;
 					}
 				}
@@ -248,10 +252,10 @@ std::vector<int> Editor::getNestDepth()
 //--------------------------------------------------------------
 int Editor::findTopLine(int startLine)
 {
-	std::map<int, std::string>::iterator it;
-	for (it = allStrings.find(startLine); it != allStrings.begin(); --it) {
-		if (it->second.substr(0, TABSIZE).compare(tabStr) != 0) {
-			if (it->second.find("}") != std::string::npos) continue;
+	std::map<int, line>::iterator it;
+	for (it = allLines.find(startLine); it != allLines.begin(); --it) {
+		if (it->second.str.substr(0, TABSIZE).compare(tabStr) != 0) {
+			if (it->second.str.find("}") != std::string::npos) continue;
 			else return it->first;
 		}
 	}
@@ -259,28 +263,28 @@ int Editor::findTopLine(int startLine)
 }
 
 //--------------------------------------------------------------
-std::vector<int> Editor::findBraceForward(std::map<int, std::string>::iterator start, std::map<int, std::string>::iterator finish)
+std::vector<int> Editor::findBraceForward(std::map<int, line>::iterator start, std::map<int, line>::iterator finish)
 {
 	std::vector<int> v(2, -1);
-	if (start == allStrings.end() || finish == allStrings.end()) {
+	if (start == allLines.end() || finish == allLines.end()) {
 		return v;
 	}
 	unsigned i, lineStart;
-	std::map<int, std::string>::iterator it;
+	std::map<int, line>::iterator it;
 	// Declare a stack to hold the previous brackets.
 	std::stack<char> temp;
 	for (it = start; it != finish; ++it) {
 		lineStart = cursorPos;
 		if (it->first > cursorLineIndex) lineStart = 0;
-		for (i = lineStart; i < it->second.length(); i++) {
-			if (it->second[i] == '{' || it->second[i] == '[' || it->second[i] == '(') {
-				temp.push(it->second[i]);
+		for (i = lineStart; i < it->second.str.length(); i++) {
+			if (it->second.str[i] == '{' || it->second.str[i] == '[' || it->second.str[i] == '(') {
+				temp.push(it->second.str[i]);
 			}
-			else if (it->second[i] == '}' || it->second[i] == ']' || it->second[i] == ')') {
+			else if (it->second.str[i] == '}' || it->second.str[i] == ']' || it->second.str[i] == ')') {
 				if (temp.empty()) return v;
-				if ((temp.top() == '{' && it->second[i] == '}')
-					|| (temp.top() == '[' && it->second[i] == ']')
-					|| (temp.top() == '(' && it->second[i] == ')')) {
+				if ((temp.top() == '{' && it->second.str[i] == '}')
+					|| (temp.top() == '[' && it->second.str[i] == ']')
+					|| (temp.top() == '(' && it->second.str[i] == ')')) {
 					temp.pop();
 					if (temp.empty()) {
 						v[0] = i;
@@ -298,27 +302,27 @@ std::vector<int> Editor::findBraceForward(std::map<int, std::string>::iterator s
 std::vector<int> Editor::findBraceBackward()
 {
 	std::vector<int> v(2, -1);
-	if (allStrings.find(cursorLineIndex) == allStrings.end()) {
+	if (allLines.find(cursorLineIndex) == allLines.end()) {
 		return v;
 	}
 	unsigned i, start;
-	std::map<int, std::string>::reverse_iterator it = allStrings.rbegin();
-	size_t step = allStrings.size() - (size_t)(cursorLineIndex + 1);
+	std::map<int, line>::reverse_iterator it = allLines.rbegin();
+	size_t step = allLines.size() - (size_t)(cursorLineIndex + 1);
 	if (step > 0) std::advance(it, step);
 	// Declare a stack to hold the previous brackets.
 	std::stack<char> temp;
-	while (it != allStrings.rend()) {
-		start = (unsigned)std::min((int)it->second.length()-1, cursorPos);
-		if (it->first < cursorLineIndex) start = it->second.length() - 1;
+	while (it != allLines.rend()) {
+		start = (unsigned)std::min((int)it->second.str.length()-1, cursorPos);
+		if (it->first < cursorLineIndex) start = it->second.str.length() - 1;
 		for (i = start; i >= 0; i--) {
-			if (it->second[i] == '}' || it->second[i] == ']' || it->second[i] == ')') {
-				temp.push(it->second[i]);
+			if (it->second.str[i] == '}' || it->second.str[i] == ']' || it->second.str[i] == ')') {
+				temp.push(it->second.str[i]);
 			}
-			else if (it->second[i] == '{' || it->second[i] == '[' || it->second[i] == '(') {
+			else if (it->second.str[i] == '{' || it->second.str[i] == '[' || it->second.str[i] == '(') {
 				if (temp.empty()) return v;
-				if ((it->second[i] == '{' && temp.top() == '}')
-					|| (it->second[i] == '[' && temp.top() == ']')
-					|| (it->second[i] == '(' && temp.top() == ')')) {
+				if ((it->second.str[i] == '{' && temp.top() == '}')
+					|| (it->second.str[i] == '[' && temp.top() == ']')
+					|| (it->second.str[i] == '(' && temp.top() == ')')) {
 					temp.pop();
 					if (temp.empty()) {
 						v[0] = i;
@@ -367,11 +371,11 @@ void Editor::drawText()
 	// then draw the red/orange traceback rectangles
 	int count = 0; // separate counter to start from 0 because i starts from lineCountOffset
 	for (int i = lineCountOffset; i < loopIter; i++) {
-		if (tracebackStr[i].size() > 0 && tracebackColor[i] > 0) {
-			if (tracebackColor[i] == 1) {
+		if (allLines[i].tracebackStr.size() > 0 && allLines[i].tracebackColor > 0) {
+			if (allLines[i].tracebackColor == 1) {
 				ofSetColor(ofColor::orange*((ofApp*)ofGetAppPtr())->brightnessCoeff);
 			}
-			else if (tracebackColor[i] == 2) {
+			else if (allLines[i].tracebackColor == 2) {
 				ofSetColor(ofColor::red*((ofApp*)ofGetAppPtr())->brightnessCoeff);
 			}
 			int xOffset = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset;
@@ -385,34 +389,34 @@ void Editor::drawText()
 	// then check if we're executing any lines and draw the execution rectangle
 	// needs to be first otherwise the alpha blending won't work as expected
 	for (int i = lineCountOffset; i < loopIter; i++) {
-		if (executingLines[i]) {
+		if (allLines[i].isBeingExecuted) {
 			ofSetColor(ofColor::cyan.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 					ofColor::cyan.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
 					ofColor::cyan.b*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-					executionDegrade[i]);
+					allLines[i].executionDegrade);
 			int xOffset = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset;
 			int yOffset = (i-lineCountOffset) * cursorHeight;
 			yOffset += frameYOffset;
 			// rectWidth has been calculated above, before the loop that draw traceback rectangles
 			ofDrawRectangle(xOffset, yOffset, rectWidth, cursorHeight);
-			if ((ofGetElapsedTimeMillis() - executionTimeStamp[i]) >= EXECUTIONRAMPSTART) {
+			if ((ofGetElapsedTimeMillis() - allLines[i].executionTimeStamp) >= EXECUTIONRAMPSTART) {
 				// calculate how many steps the brightness has to dim, depending on the elapsed time
 				// and the step per millisecond
-				int brightnessDegrade = (int)((ofGetElapsedTimeMillis() - (executionTimeStamp[i]+EXECUTIONRAMPSTART)) * executionStepPerMs);
-				executionDegrade[i] = EXECUTIONBRIGHTNESS - brightnessDegrade;
-				if (executionDegrade[i] < 0) {
-					executionDegrade[i] = 0;
-					executingLines[i] = false;
+				int brightnessDegrade = (int)((ofGetElapsedTimeMillis() - (allLines[i].executionTimeStamp+EXECUTIONRAMPSTART)) * executionStepPerMs);
+				allLines[i].executionDegrade = EXECUTIONBRIGHTNESS - brightnessDegrade;
+				if (allLines[i].executionDegrade < 0) {
+					allLines[i].executionDegrade = 0;
+					allLines[i].isBeingExecuted = false;
 				}
 			}
 		}
 	}
 	// check for any execution rectangle that is not visible that might be left hanging
 	// in case of executing bars quickly, and zero their booleans and ramp counters
-	for (size_t i = 0; i < allStrings.size(); i++) {
-		if (executingLines[i] && ((int)i < lineCountOffset || (int)i >= lineCountOffset + loopIter)) {
-			executionDegrade[i] = 0;
-			executingLines[i] = false;
+	for (size_t i = 0; i < allLines.size(); i++) {
+		if (allLines[i].isBeingExecuted && ((int)i < lineCountOffset || (int)i >= lineCountOffset + loopIter)) {
+			allLines[i].executionDegrade = 0;
+			allLines[i].isBeingExecuted = false;
 		}
 	}
 
@@ -420,14 +424,14 @@ void Editor::drawText()
 	// then draw the rectangle that highlights a bracket
 	highlightBracket = false;
 	if (activity) {
-		if (cursorPos < (int)allStrings[cursorLineIndex].size() && cursorPos <= maxCursorPos()) {
+		if (cursorPos < (int)allLines[cursorLineIndex].str.size() && cursorPos <= maxCursorPos()) {
 			// if matching brace is found, this vector will be the X and Y coordinates
 			// and nest depth (only from findBraceForward() but findBraceBackward() returns a 3 element vector
 			// for code integrity), which is used elsewhere
 			std::vector<int> pos (3, -1);
 			char bracketChars[7] = {'{', '}', '[', ']', '(', ')'}; // extra array item for null char
 			//int direction = 0; // initialized to 0 to avoid warning messages during compilation
-			char charOnTopOfCursor = allStrings[cursorLineIndex][cursorPos+allStringStartPos[cursorLineIndex]];
+			char charOnTopOfCursor = allLines[cursorLineIndex].str[cursorPos+allLines[cursorLineIndex].startPos];
 			for (int i = 0; i < 6; i++) {
 				if (bracketChars[i] == charOnTopOfCursor) {
 					//direction = i % 2;
@@ -438,12 +442,12 @@ void Editor::drawText()
 			}
 			//if (highlightBracket) {
 			//	if (direction) pos = findBraceBackward();
-			//	else pos = findBraceForward(allStrings.find(cursorLineIndex), allStrings.end(), true);
+			//	else pos = findBraceForward(allLines.find(cursorLineIndex), allLines.end(), true);
 			//}
 			// if the matching pair has been found, we'll get positions that are greater than -1 for both X and Y
 			if (pos[0] > -1){
 				ofSetColor(ofColor::magenta*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-				int strWidth = font.stringWidth(allStrings[pos[1]].substr(0, pos[0] - allStringStartPos[pos[1]]));
+				int strWidth = font.stringWidth(allLines[pos[1]].str.substr(0, pos[0] - allLines[pos[1]].startPos));
 				bracketHighlightRectX = lineNumberWidth + strWidth + oneAndHalfCharacterWidth + frameXOffset;
 				bracketHighlightRectY = ((pos[1]-lineCountOffset) * cursorHeight) + frameYOffset;
 				ofDrawRectangle(bracketHighlightRectX, bracketHighlightRectY, oneCharacterWidth, cursorHeight);
@@ -463,22 +467,22 @@ void Editor::drawText()
 	// for this reason, we need to calculate the X position of the cursor here, and not below
 	// where we draw the cursor
 	ofColor cursorColor = ((ofApp*)ofGetAppPtr())->brightnessCoeff;
-	int cursorX = lineNumberWidth + font.stringWidth(allStrings[cursorLineIndex].substr(0, cursorPos)) + \
+	int cursorX = lineNumberWidth + font.stringWidth(allLines[cursorLineIndex].str.substr(0, cursorPos)) + \
 				  oneAndHalfCharacterWidth + frameXOffset;
 	bool cursorDrawn = false;
 	for (int i = lineCountOffset; i < loopIter; i++) {
 		int strYOffset = ((count+1)*cursorHeight) + frameYOffset - characterOffset;
 		if (i == cursorLineIndex) {
-			strOnCursorLine = allStrings[i];
+			strOnCursorLine = allLines[i].str;
 			strOnCursorLineYOffset = strYOffset;
 		}
 		// draw all strings that are not empty
-		if (allStrings[i].size() > 0) {
+		if (allLines[i].str.size() > 0) {
 			// iterate through each word to check for keywords
 			// set last argument to tokenizeString to true to include the delimiters
-			std::vector<std::string> tokens = tokenizeString(allStrings[i], delimiters[thisLang], true);
+			std::vector<std::string> tokens = tokenizeString(allLines[i].str, delimiters[thisLang], true);
 			int xOffset = strXOffset;
-			if (cursorLineIndex == i) xOffset -= (allStringStartPos[i] * oneCharacterWidth);
+			if (cursorLineIndex == i) xOffset -= (allLines[i].startPos * oneCharacterWidth);
 			bool isComment = false;
 			bool isString = false;
 			bool isCursorInsideKeyword = false;
@@ -547,9 +551,8 @@ void Editor::drawText()
 				}
 				int subtokCounter = 0;
 				for (auto subit = subtokens.begin(); subit != subtokens.end(); ++subit) {
-					//std::cout << "cursorX: " << cursorX << ", cursorPos: " << cursorPos << ", xOffset: " << xOffset << ", str width of \"" << subtoken << "\": " << font.stringWidth(subtoken) << ", whole str \"" << allStrings[i] << "\": " << font.stringWidth(allStrings[i]) << endl;
 					//if (i == cursorLineIndex && cursorX >= xOffset && cursorX <= xOffset + font.stringWidth(subtoken)) {
-					//	if ((cursorX == xOffset + font.stringWidth(subtoken) && cursorX == xOffset + (int)allStrings[i].size()-1) || cursorX < xOffset + font.stringWidth(subtoken)) {
+					//	if ((cursorX == xOffset + font.stringWidth(subtoken) && cursorX == xOffset + (int)allLines[i].str.size()-1) || cursorX < xOffset + font.stringWidth(subtoken)) {
 					//		isCursorInsideKeyword = true;
 					//	}
 					//}
@@ -559,14 +562,14 @@ void Editor::drawText()
 						bool endOfStr = (tokenNdx == tokens.size()-1 && subtokenNdx == subtokens.size()-1 ? true : false);
 						//if (prevCursorPos != cursorPos)
 						//	std::cout << "\"" << *subit << "\": cursorPos: " << cursorPos << ", subtokensSizeAccum: " << subtokensSizeAccum << ", subtoken size: " << (*subit).size() << endl;
-						if (cursorPos - (int)subtokensSizeAccum + allStringStartPos[i] < (int)(*subit).size() || (cursorPos + allStringStartPos[i] == (int)allStrings[i].size() && endOfStr)) {
+						if (cursorPos - (int)subtokensSizeAccum + allLines[i].startPos < (int)(*subit).size() || (cursorPos + allLines[i].startPos == (int)allLines[i].str.size() && endOfStr)) {
 							isCursorInsideKeyword = true;
 							//if (prevCursorPos != cursorPos)
 							//	std::cout << "drawing cursor for \"" << *subit << "\"\n";
 						}
 					}
 					subtokensSizeAccum += (*subit).size();
-					if (tracebackStr[i].size() > 0 && tracebackColor[i] > 0) {
+					if (allLines[i].tracebackStr.size() > 0 && allLines[i].tracebackColor > 0) {
 						ofSetColor(((ofApp*)ofGetAppPtr())->backgroundColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
 					}
 					else if ((thisLang == 0 && startsWith(*subit, "%")) || (thisLang == 1 && startsWith(*subit, "#"))) {
@@ -654,7 +657,7 @@ void Editor::drawText()
 					size_t firstCharToDisplay = 0;
 					int xOffsetModified = xOffset;
 					int startPos = 0;
-					if (i == cursorLineIndex) startPos = allStringStartPos[i];
+					if (i == cursorLineIndex) startPos = allLines[i].startPos;
 					if (charAccum < startPos) {
 						firstCharToDisplay = (size_t)(startPos - charAccum);
 						xOffsetModified += (firstCharToDisplay * oneCharacterWidth);
@@ -672,7 +675,8 @@ void Editor::drawText()
 					charAccum += (int)(*subit).size();
 					subtokCounter++;
 				}
-				if (thisLang == 0 && animationState && linesConnectedToBar[i] > -1 && isNoteElement && activeLineElements[i] > -1 && activeLineElements[i] == activeElementCounter - 1) {
+				if (thisLang == 0 && animationState && allLines[i].linesConnectedToBar > -1 && isNoteElement &&
+						allLines[i].activeLineElements > -1 && allLines[i].activeLineElements == activeElementCounter - 1) {
 					float strWidth = font.stringWidth(strForAnimationRect);
 					int yPos = (i * cursorHeight) + frameYOffset;
 					ofSetColor(((ofApp*)ofGetAppPtr())->foregroundColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
@@ -696,8 +700,8 @@ void Editor::drawText()
 			// the bounding box coordinates of the highlighted string don't need the offset
 			// which is greater than 0 if the string is too long
 			// but the substring that is drawn on top of this box does need it
-			posAndSize[0] += allStringStartPos[i];
-			std::string strInBlack = allStrings[i].substr(posAndSize[0], posAndSize[1]);
+			posAndSize[0] += allLines[i].startPos;
+			std::string strInBlack = allLines[i].str.substr(posAndSize[0], posAndSize[1]);
 			int widthLocal = font.stringWidth(strInBlack);
 			// draw the selecting rectangle
 			ofSetColor(ofColor::goldenRod*((ofApp*)ofGetAppPtr())->brightnessCoeff);
@@ -717,7 +721,7 @@ void Editor::drawText()
 	// then draw the character the cursor is drawn on top of (if this is the case)
 	if (activity && !inserting && !typingShell) {
 		if (cursorPos < (int)strOnCursorLine.size() && cursorPos <= maxCursorPos()) {
-			std::string onTopOfCursorStr = strOnCursorLine.substr(cursorPos+allStringStartPos[cursorLineIndex], 1);
+			std::string onTopOfCursorStr = strOnCursorLine.substr(cursorPos+allLines[cursorLineIndex].startPos, 1);
 			ofSetColor(0);
 			font.drawString(onTopOfCursorStr, cursorX, strOnCursorLineYOffset);
 		}
@@ -828,13 +832,13 @@ void Editor::drawPaneSeparator()
 //--------------------------------------------------------------
 void Editor::setStringsStartPos()
 {
-	for (unsigned i = 0; i < allStrings.size(); i++) {
+	for (unsigned i = 0; i < allLines.size(); i++) {
 		if (cursorLineIndex == (int)i) {
-			allStringStartPos[i] = (int)allStrings[i].size() - maxCharactersPerString;
-			if (allStringStartPos[i] < 0) allStringStartPos[i] = 0;
+			allLines[i].startPos = (int)allLines[i].str.size() - maxCharactersPerString;
+			if (allLines[i].startPos < 0) allLines[i].startPos = 0;
 		}
 		else {
-			allStringStartPos[i] = 0;
+			allLines[i].startPos = 0;
 		}
 	}
 }
@@ -881,36 +885,39 @@ void Editor::setMaxCharactersPerString()
 	lineNumberWidth = getNumDigitsOfLineCount() * oneCharacterWidth;
 	int width = frameWidth;
 	if (((ofApp*)ofGetAppPtr())->isScoreVisible()) {
-		if (frameWidth > ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX) {
+		if (frameWidth > ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX && ((ofApp*)ofGetAppPtr())->scoreOrientation == 0) {
 			width = ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX;
 		}
 	}
 	maxCharactersPerString = (width-lineNumberWidth-oneAndHalfCharacterWidth) / oneCharacterWidth;
 	maxCharactersPerString -= 1;
-	//setStringsStartPos();
+	if (maxCharactersPerString != oldMaxCharactersPerString) {
+		setStringsStartPos();
+		oldMaxCharactersPerString = maxCharactersPerString;
+	}
 }
 
 //--------------------------------------------------------------
 void Editor::resetCursorPos(int oldMaxCharactersPerString)
 {
-	if ((int)allStrings[cursorLineIndex].size() > 0 && \
-			(int)allStrings[cursorLineIndex].size() > maxCharactersPerString) {
+	if ((int)allLines[cursorLineIndex].str.size() > 0 && \
+			(int)allLines[cursorLineIndex].str.size() > maxCharactersPerString) {
 		if (cursorPos == oldMaxCharactersPerString) {
 			cursorPos = maxCharactersPerString;
-			highlightedCharIndex = (int)allStrings[cursorLineIndex].size();
-			allStringStartPos[cursorLineIndex] = (int)allStrings[cursorLineIndex].substr(0, cursorPos).size() - maxCharactersPerString;
+			highlightedCharIndex = (int)allLines[cursorLineIndex].str.size();
+			allLines[cursorLineIndex].startPos = (int)allLines[cursorLineIndex].str.substr(0, cursorPos).size() - maxCharactersPerString;
 		}
 		else if (cursorPos == 0) {
 			cursorPos = 0;
 			highlightedCharIndex = 0;
-			allStringStartPos[cursorLineIndex] = 0;
+			allLines[cursorLineIndex].startPos = 0;
 		}
 		else {
-			highlightedCharIndex = cursorPos + allStringStartPos[cursorLineIndex];
+			highlightedCharIndex = cursorPos + allLines[cursorLineIndex].startPos;
 			// three factor method
 			cursorPos = round((float)(cursorPos * maxCharactersPerString) / (float)oldMaxCharactersPerString);
-			allStringStartPos[cursorLineIndex] = highlightedCharIndex-cursorPos;
-			if (allStringStartPos[cursorLineIndex] < 0) allStringStartPos[cursorLineIndex] = 0;
+			allLines[cursorLineIndex].startPos = highlightedCharIndex-cursorPos;
+			if (allLines[cursorLineIndex].startPos < 0) allLines[cursorLineIndex].startPos = 0;
 		}
 		stringExceededWindow = true;
 	}
@@ -918,7 +925,7 @@ void Editor::resetCursorPos(int oldMaxCharactersPerString)
 		// if we're going from big to small
 		if (stringExceededWindow) {
 			cursorPos = highlightedCharIndex;
-			allStringStartPos[cursorLineIndex] = 0;
+			allLines[cursorLineIndex].startPos = 0;
 			stringExceededWindow = false;
 		}
 	}
@@ -999,18 +1006,18 @@ void Editor::postIncrementOnNewLine()
 //--------------------------------------------------------------
 void Editor::createNewLine(std::string str, int increment)
 {
-	allStrings[cursorLineIndex+increment] = str;
-	allStringStartPos[cursorLineIndex+increment] = 0;
-	tracebackStr[cursorLineIndex+increment] = "";
-	tracebackColor[cursorLineIndex+increment] = 0;
-	tracebackNumLines[cursorLineIndex+increment] = 1;
-	tracebackTimeStamps[cursorLineIndex+increment] = 0;
-	tracebackStrBreakPnt[cursorLineIndex+increment] = 0;
-	executingLines[cursorLineIndex+increment] = false;
-	executionDegrade[cursorLineIndex+increment] = 0;
-	executionTimeStamp[cursorLineIndex+increment] = 0;
-	linesConnectedToBar[cursorLineIndex+increment] = -1;
-	activeLineElements[cursorLineIndex+increment] = -1;
+	allLines[cursorLineIndex+increment].str = str;
+	allLines[cursorLineIndex+increment].startPos = 0;
+	allLines[cursorLineIndex+increment].tracebackStr = "";
+	allLines[cursorLineIndex+increment].tracebackColor = 0;
+	allLines[cursorLineIndex+increment].tracebackNumLines = 1;
+	allLines[cursorLineIndex+increment].tracebackTimeStamp = 0;
+	allLines[cursorLineIndex+increment].tracebackStrBreakPnt = 0;
+	allLines[cursorLineIndex+increment].isBeingExecuted = false;
+	allLines[cursorLineIndex+increment].executionDegrade = 0;
+	allLines[cursorLineIndex+increment].executionTimeStamp = 0;
+	allLines[cursorLineIndex+increment].linesConnectedToBar = -1;
+	allLines[cursorLineIndex+increment].activeLineElements = -1;
 }
 
 //--------------------------------------------------------------
@@ -1040,35 +1047,40 @@ void Editor::moveLineNumbers(int numLines)
 //--------------------------------------------------------------
 void Editor::moveDataToNextLine()
 {
-	allStrings[cursorLineIndex+1] = allStrings[cursorLineIndex];
-	allStringStartPos[cursorLineIndex+1] = allStringStartPos[cursorLineIndex];
-	tracebackStr[cursorLineIndex+1] = tracebackStr[cursorLineIndex];
-	tracebackColor[cursorLineIndex+1] = tracebackColor[cursorLineIndex];
-	tracebackNumLines[cursorLineIndex+1] = tracebackNumLines[cursorLineIndex];
-	tracebackTimeStamps[cursorLineIndex+1] = tracebackTimeStamps[cursorLineIndex];
-	tracebackStrBreakPnt[cursorLineIndex+1] = tracebackStrBreakPnt[cursorLineIndex];
-	executingLines[cursorLineIndex+1] = executingLines[cursorLineIndex];
-	executionDegrade[cursorLineIndex+1] = executionDegrade[cursorLineIndex];
-	executionTimeStamp[cursorLineIndex+1] = executionTimeStamp[cursorLineIndex];
+	allLines[cursorLineIndex+1].str = allLines[cursorLineIndex].str;
+	allLines[cursorLineIndex+1].startPos = allLines[cursorLineIndex].startPos;
+	allLines[cursorLineIndex+1].tracebackStr = allLines[cursorLineIndex].tracebackStr;
+	allLines[cursorLineIndex+1].tracebackColor = allLines[cursorLineIndex].tracebackColor;
+	allLines[cursorLineIndex+1].tracebackNumLines = allLines[cursorLineIndex].tracebackNumLines;
+	allLines[cursorLineIndex+1].tracebackTimeStamp = allLines[cursorLineIndex].tracebackTimeStamp;
+	allLines[cursorLineIndex+1].tracebackStrBreakPnt = allLines[cursorLineIndex].tracebackStrBreakPnt;
+	allLines[cursorLineIndex+1].isBeingExecuted = allLines[cursorLineIndex].isBeingExecuted;
+	allLines[cursorLineIndex+1].executionDegrade = allLines[cursorLineIndex].executionDegrade;
+	allLines[cursorLineIndex+1].executionTimeStamp = allLines[cursorLineIndex].executionTimeStamp;
+	allLines[cursorLineIndex+1].linesConnectedToBar = allLines[cursorLineIndex].linesConnectedToBar;
+	allLines[cursorLineIndex+1].activeLineElements = allLines[cursorLineIndex].activeLineElements;
 	// if the language of this pane is Python, we have to change the traceback error string to update the line number
 	if (thisLang == 1) {
 		int newKey = cursorLineIndex + 1;
-		size_t secondBreakPnt = tracebackStr[newKey].substr(tracebackStrBreakPnt[newKey]).find(",");
+		size_t secondBreakPnt = allLines[newKey].tracebackStr.substr(allLines[newKey].tracebackStrBreakPnt).find(",");
 		if (secondBreakPnt != std::string::npos) {
-			tracebackStr[newKey] = tracebackStr[newKey].substr(0, tracebackStrBreakPnt[newKey]) + std::to_string(newKey+1) + tracebackStr[newKey].substr(tracebackStrBreakPnt[newKey]+secondBreakPnt);
+			allLines[newKey].tracebackStr = allLines[newKey].tracebackStr.substr(0, allLines[newKey].tracebackStrBreakPnt) + std::to_string(newKey+1) +
+				allLines[newKey].tracebackStr.substr(allLines[newKey].tracebackStrBreakPnt+secondBreakPnt);
 		}
 	}
 
-	allStrings[cursorLineIndex] = "";
-	allStringStartPos[cursorLineIndex] = 0;
-	tracebackStr[cursorLineIndex] = "";
-	tracebackColor[cursorLineIndex] = 0;
-	tracebackNumLines[cursorLineIndex] = 1;
-	tracebackTimeStamps[cursorLineIndex] = 0;
-	tracebackStrBreakPnt[cursorLineIndex] = 0;
-	executingLines[cursorLineIndex] = false;
-	executionDegrade[cursorLineIndex] = 0;
-	executionTimeStamp[cursorLineIndex] = 0;
+	allLines[cursorLineIndex].str = "";
+	allLines[cursorLineIndex].startPos = 0;
+	allLines[cursorLineIndex].tracebackStr = "";
+	allLines[cursorLineIndex].tracebackColor = 0;
+	allLines[cursorLineIndex].tracebackNumLines = 1;
+	allLines[cursorLineIndex].tracebackTimeStamp = 0;
+	allLines[cursorLineIndex].tracebackStrBreakPnt = 0;
+	allLines[cursorLineIndex].isBeingExecuted = false;
+	allLines[cursorLineIndex].executionDegrade = 0;
+	allLines[cursorLineIndex].executionTimeStamp = 0;
+	allLines[cursorLineIndex].linesConnectedToBar = -1;
+	allLines[cursorLineIndex].activeLineElements = -1;
 }
 
 //--------------------------------------------------------------
@@ -1076,12 +1088,12 @@ void Editor::copyOnLineDelete()
 {
 	// in case of backspace the cursorLineIndex variable has been updated before this function call
 	// in case of delete, the variable doesn't change
-	// in any case, it already points to the right key of the std::map below
-	std::map<int, std::string>::iterator it1 = allStrings.find(cursorLineIndex);
-	std::map<int, std::string>::iterator it2 = allStrings.find(cursorLineIndex+1);
-	// first concatenate the two std::strings
-	if (it2 != allStrings.end()) {
-		it1->second += it2->second;
+	// in any case, it already points to the right key of the map below
+	std::map<int, line>::iterator it1 = allLines.find(cursorLineIndex);
+	std::map<int, line>::iterator it2 = allLines.find(cursorLineIndex+1);
+	// first concatenate the two strings
+	if (it2 != allLines.end()) {
+		it1->second.str += it2->second.str;
 		// before moving the keys of the std::maps we must erase the keys of the line below the cursor
 		eraseMapKeys(cursorLineIndex+1);
 	}
@@ -1095,7 +1107,7 @@ void Editor::copyOnLineDelete()
 	// the keys of the iterator and its previous positions should be two numbers apart
 	// which is true only if there is at least one more line after the line we have erased
 	if (it1->first == thisKey + 2) {
-		while (it1 != allStrings.end()) {
+		while (it1 != allLines.end()) {
 			int key = it1->first;
 			changeMapKeys(key, -1);
 			++it1;
@@ -1109,8 +1121,8 @@ void Editor::newLine()
 	bool stringBreaks = false;
 	// a string breaks only if we're at some mid point in the line
 	// and not if we're either at the end or the beginning of it
-	if (cursorPos < ((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex]) &&
-		!(cursorPos == 0 && allStringStartPos[cursorLineIndex] == 0)) {
+	if (cursorPos < ((int)allLines[cursorLineIndex].str.size()-allLines[cursorLineIndex].startPos) &&
+		!(cursorPos == 0 && allLines[cursorLineIndex].startPos == 0)) {
 		stringBreaks = true;
 	}
 	if (cursorLineIndex != (lineCount-1)) {
@@ -1118,15 +1130,15 @@ void Editor::newLine()
 	}
 	if (stringBreaks) {
 		// create a new line with the remainder of the string
-		createNewLine(allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]), 1);
+		createNewLine(allLines[cursorLineIndex].str.substr(cursorPos+allLines[cursorLineIndex].startPos), 1);
 		// and change the string where the cursor is (the cursorLineIndex hasn't been updated yet)
-		allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]);
+		allLines[cursorLineIndex].str = allLines[cursorLineIndex].str.substr(0, cursorPos+allLines[cursorLineIndex].startPos);
 	}
 	else {
 		createNewLine("", 1);
 	}
 	// check if we hit enter at the beginning of a line, which means we have to move all the line data
-	if (cursorPos == 0 && allStringStartPos[cursorLineIndex] == 0) {
+	if (cursorPos == 0 && allLines[cursorLineIndex].startPos == 0) {
 		moveDataToNextLine();
 	}
 	postIncrementOnNewLine();
@@ -1149,8 +1161,8 @@ void Editor::moveCursorOnShiftReturn()
 	}
 	else {
 		tempIndex++;
-		for (std::map<int, std::string>::iterator it = allStrings.find(tempIndex); it != allStrings.end(); ++it) {
-			if (it->second.size() > 0) {
+		for (std::map<int, line>::iterator it = allLines.find(tempIndex); it != allLines.end(); ++it) {
+			if (it->second.str.size() > 0) {
 				tempIndex = it->first;
 				break;
 			}
@@ -1161,81 +1173,15 @@ void Editor::moveCursorOnShiftReturn()
 }
 
 //--------------------------------------------------------------
-bool Editor::changeMapKey(std::map<int, std::string> *m, int key, int increment, bool createNonExisting)
-{
-	if (m->find(key) != m->end()) {
-		auto nodeHolder = m->extract(key);
-		nodeHolder.key() = key + increment;
-		m->insert(std::move(nodeHolder));
-		return true;
-	}
-	else {
-		if (createNonExisting) (*m)[key+increment] = "";
-		return false;
-	}
-}
-
-//--------------------------------------------------------------
-void Editor::changeMapKey(std::map<int, int> *m, int key, int increment, bool createNonExisting)
-{
-	if (m->find(key) != m->end()) {
-		auto nodeHolder = m->extract(key);
-		nodeHolder.key() = key + increment;
-		m->insert(std::move(nodeHolder));
-	}
-	else {
-		if (createNonExisting) (*m)[key+increment] = 0;
-	}
-}
-
-//--------------------------------------------------------------
-void Editor::changeMapKey(std::map<int, uint64_t> *m, int key, int increment, bool createNonExisting)
-{
-	if (m->find(key) != m->end()) {
-		auto nodeHolder = m->extract(key);
-		nodeHolder.key() = key + increment;
-		m->insert(std::move(nodeHolder));
-	}
-	else {
-		if (createNonExisting) (*m)[key+increment] = 0;
-	}
-}
-
-//--------------------------------------------------------------
-void Editor::changeMapKey(std::map<int, bool> *m, int key, int increment, bool createNonExisting)
-{
-	if (m->find(key) != m->end()) {
-		auto nodeHolder = m->extract(key);
-		nodeHolder.key() = key + increment;
-		m->insert(std::move(nodeHolder));
-	}
-	else {
-		if (createNonExisting) (*m)[key+increment] = false;
-	}
-}
-
-//--------------------------------------------------------------
 void Editor::changeMapKeys(int key, int increment)
 {
-	// since all maps below are created with every new line
-	// we can safely make all the calls below inside the same loop
-	// and not need to create a separate loop for each
-	bool createNonExisting = changeMapKey(&allStrings, key, increment, false);
-	// if the string map key exists, then create entries for all other maps
-	// in case any of them doesn't have the current key (which should not be the case)
-	changeMapKey(&allStringStartPos, key, increment, createNonExisting);
-	changeMapKey(&tracebackStr, key, increment, createNonExisting);
-	changeMapKey(&tracebackColor, key, increment, createNonExisting);
-	changeMapKey(&tracebackNumLines, key, increment, createNonExisting);
-	changeMapKey(&tracebackTimeStamps, key, increment, createNonExisting);
-	changeMapKey(&tracebackStrBreakPnt, key, increment, createNonExisting);
-	changeMapKey(&executingLines, key, increment, createNonExisting);
-	changeMapKey(&executionDegrade, key, increment, createNonExisting);
-	changeMapKey(&executionTimeStamp, key, increment, createNonExisting);
-	changeMapKey(&linesConnectedToBar, key, increment, createNonExisting);
-	changeMapKey(&activeLineElements, key, increment, createNonExisting);
+	if (allLines.find(key) != allLines.end()) {
+		auto nodeHolder = allLines.extract(key);
+		nodeHolder.key() = key + increment;
+		allLines.insert(std::move(nodeHolder));
+	}
 	// get the bar number the current line is connected to
-	int barNdx = linesConnectedToBar[key+increment];
+	int barNdx = allLines[key+increment].linesConnectedToBar;
 	// scroll through all instruments to see which one is connected to this bar and this line
 	for (auto it = instsConnectedToLine.begin(); it != instsConnectedToLine.end(); ++it) {
 		auto it2 = it->second.find(barNdx);
@@ -1249,57 +1195,20 @@ void Editor::changeMapKeys(int key, int increment)
 	// to update the line number
 	if (thisLang == 1) {
 		int newKey = key + increment;
-		size_t secondBreakPnt = tracebackStr[newKey].substr(tracebackStrBreakPnt[newKey]).find(",");
+		size_t secondBreakPnt = allLines[newKey].tracebackStr.substr(allLines[newKey].tracebackStrBreakPnt).find(",");
 		if (secondBreakPnt != std::string::npos) {
-			tracebackStr[newKey] = tracebackStr[newKey].substr(0, tracebackStrBreakPnt[newKey]) + std::to_string(newKey+1) + tracebackStr[newKey].substr(tracebackStrBreakPnt[newKey]+secondBreakPnt);
+			allLines[newKey].tracebackStr = allLines[newKey].tracebackStr.substr(0, allLines[newKey].tracebackStrBreakPnt) + std::to_string(newKey+1) +
+				allLines[newKey].tracebackStr.substr(allLines[newKey].tracebackStrBreakPnt+secondBreakPnt);
 		}
 	}
 }
 
 //--------------------------------------------------------------
-void Editor::eraseMapKey(std::map<int, std::string> *m, int key)
-{
-	m->erase(key);
-}
-
-//--------------------------------------------------------------
-void Editor::eraseMapKey(std::map<int, int> *m, int key)
-{
-	m->erase(key);
-}
-
-//--------------------------------------------------------------
-void Editor::eraseMapKey(std::map<int, uint64_t> *m, int key)
-{
-	m->erase(key);
-}
-
-//--------------------------------------------------------------
-void Editor::eraseMapKey(std::map<int, bool> *m, int key)
-{
-	m->erase(key);
-}
-
-//--------------------------------------------------------------
 void Editor::eraseMapKeys(int key)
 {
-	// first store the value of the linesConnectedToBar map which is the bar this line connects to
-	int barNdx = linesConnectedToBar[key];
-	// since all maps below are created with every new line
-	// we can safely make all the calls below inside the same loop
-	// and dont't need to create a separate loop for each
-	eraseMapKey(&allStrings, key);
-	eraseMapKey(&allStringStartPos, key);
-	eraseMapKey(&tracebackStr, key);
-	eraseMapKey(&tracebackColor, key);
-	eraseMapKey(&tracebackNumLines, key);
-	eraseMapKey(&tracebackTimeStamps, key);
-	eraseMapKey(&tracebackStrBreakPnt, key);
-	eraseMapKey(&executingLines, key);
-	eraseMapKey(&executionDegrade, key);
-	eraseMapKey(&executionTimeStamp, key);
-	eraseMapKey(&linesConnectedToBar, key);
-	eraseMapKey(&activeLineElements, key);
+	// first store the value of the linesConnectedToBar variable which is the bar this line connects to
+	int barNdx = allLines[key].linesConnectedToBar;
+	allLines.erase(key);
 	// scroll through all instruments to see which one is connected to this bar and this line
 	for (auto it = instsConnectedToLine.begin(); it != instsConnectedToLine.end(); ++it) {
 		auto it2 = it->second.find(barNdx);
@@ -1313,7 +1222,7 @@ void Editor::eraseMapKeys(int key)
 //--------------------------------------------------------------
 void Editor::connectLineToBar(int lineNdx, int instNdx, int barNdx)
 {
-	linesConnectedToBar[lineNdx] = barNdx;
+	allLines[lineNdx].linesConnectedToBar = barNdx;
 	instsConnectedToLine[instNdx][barNdx] = lineNdx;
 }
 
@@ -1330,7 +1239,7 @@ int Editor::getLineConnectedToBar(int instNdx, int barNdx)
 //--------------------------------------------------------------
 void Editor::setActiveLineElement(int lineNdx, int elementNdx)
 {
-	activeLineElements[lineNdx] = elementNdx;
+	allLines[lineNdx].activeLineElements = elementNdx;
 }
 
 //--------------------------------------------------------------
@@ -1342,10 +1251,9 @@ void Editor::setAnimation(bool state)
 //--------------------------------------------------------------
 bool Editor::isThisATab(int pos)
 {
-	// check if the current position is a tab and return its index within allStringTabs
 	if (pos < 0) return false;
-	if (pos + TABSIZE > (int)allStrings[cursorLineIndex].length()) return false;
-	if (allStrings[cursorLineIndex].substr(pos, TABSIZE).compare(tabStr) == 0) {
+	if (pos + TABSIZE > (int)allLines[cursorLineIndex].str.length()) return false;
+	if (allLines[cursorLineIndex].str.substr(pos, TABSIZE).compare(tabStr) == 0) {
 		return true;
 	}
 	else return false;
@@ -1374,7 +1282,7 @@ int Editor::getTabSize()
 //---------------------------------------------------------------
 int Editor::maxCursorPos()
 {
-	return std::min((int)allStrings[cursorLineIndex].size(), maxCharactersPerString);
+	return std::min((int)allLines[cursorLineIndex].str.size(), maxCharactersPerString);
 }
 
 //--------------------------------------------------------------
@@ -1386,9 +1294,9 @@ void Editor::setCursorPos(int pos)
 	//else if (cursorPos > maxCursorPos()) cursorPos = maxCursorPos();
 	if (!inserting && cursorPos > 0) cursorPos--;
 	arrowCursorPos = cursorPos;
-	if (pos == 0) allStringStartPos[cursorLineIndex] = 0;
-	else if ((int)allStrings[cursorLineIndex].size() > maxCharactersPerString) {
-		allStringStartPos[cursorLineIndex] = (int)allStrings[cursorLineIndex].size() - maxCharactersPerString;
+	if (pos == 0) allLines[cursorLineIndex].startPos = 0;
+	else if ((int)allLines[cursorLineIndex].str.size() > maxCharactersPerString) {
+		allLines[cursorLineIndex].startPos = (int)allLines[cursorLineIndex].str.size() - maxCharactersPerString;
 	}
 }
 
@@ -1418,30 +1326,30 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 		if (highlightManyChars) {
 			deleteString();
 		}
-		else if ((allStrings[cursorLineIndex].size() > 0) && (cursorPos > 0)) {
+		else if ((allLines[cursorLineIndex].str.size() > 0) && (cursorPos > 0)) {
 			int numCharsToDelete = 1;
 			// check if the cursor is at the end of the string
-			if (cursorPos == (int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex]) {
+			if (cursorPos == (int)allLines[cursorLineIndex].str.size()-allLines[cursorLineIndex].startPos) {
 				if (isThisATab(cursorPos-TABSIZE)) numCharsToDelete = TABSIZE;
-				if ((int)allStrings[cursorLineIndex].size() >= numCharsToDelete) {
-					deletedChar = allStrings[cursorLineIndex].substr(allStrings[cursorLineIndex].size()-numCharsToDelete, numCharsToDelete);
-					allStrings[cursorLineIndex] = allStrings[cursorLineIndex].substr(0, allStrings[cursorLineIndex].size()-numCharsToDelete);
+				if ((int)allLines[cursorLineIndex].str.size() >= numCharsToDelete) {
+					deletedChar = allLines[cursorLineIndex].str.substr(allLines[cursorLineIndex].str.size()-numCharsToDelete, numCharsToDelete);
+					allLines[cursorLineIndex].str = allLines[cursorLineIndex].str.substr(0, allLines[cursorLineIndex].str.size()-numCharsToDelete);
 				}
 			}
 			else {
 				if (isThisATab(cursorPos-TABSIZE)) numCharsToDelete = TABSIZE;
 				std::string first;
 				std::string second;
-				if ((int)allStrings[cursorLineIndex].size() >= cursorPos+allStringStartPos[cursorLineIndex]-numCharsToDelete) {
-					first = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]-numCharsToDelete);
-					second = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
-					deletedChar = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]-numCharsToDelete, numCharsToDelete);
-					allStrings[cursorLineIndex] = first + second;
+				if ((int)allLines[cursorLineIndex].str.size() >= cursorPos+allLines[cursorLineIndex].startPos-numCharsToDelete) {
+					first = allLines[cursorLineIndex].str.substr(0, cursorPos+allLines[cursorLineIndex].startPos-numCharsToDelete);
+					second = allLines[cursorLineIndex].str.substr(cursorPos+allLines[cursorLineIndex].startPos);
+					deletedChar = allLines[cursorLineIndex].str.substr(cursorPos+allLines[cursorLineIndex].startPos-numCharsToDelete, numCharsToDelete);
+					allLines[cursorLineIndex].str = first + second;
 				}
 			}
-			allStringStartPos[cursorLineIndex] -= numCharsToDelete;
-			if (allStringStartPos[cursorLineIndex] < 0) {
-				allStringStartPos[cursorLineIndex] = 0;
+			allLines[cursorLineIndex].startPos -= numCharsToDelete;
+			if (allLines[cursorLineIndex].startPos < 0) {
+				allLines[cursorLineIndex].startPos = 0;
 				cursorPos -= numCharsToDelete;
 				if (cursorPos < 0) cursorPos = 0;
 				arrowCursorPos = cursorPos;
@@ -1466,7 +1374,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 			}
 		}
 		else if (cursorPos == 0 && cursorLineIndex > 0) {
-			int thisLineStrLength = allStrings[cursorLineIndex].size();
+			int thisLineStrLength = allLines[cursorLineIndex].str.size();
 			setLineIndexesUpward(cursorLineIndex-1);
 			copyOnLineDelete();
 			// when we press backspace and the cursor is that the beginning of a line
@@ -1480,8 +1388,8 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 				lineCountOffset = 0;
 			}
 		}
-		if ((int)allStrings[cursorLineIndex].size() < maxCharactersPerString) {
-			allStringStartPos[cursorLineIndex] = 0;
+		if ((int)allLines[cursorLineIndex].str.size() < maxCharactersPerString) {
+			allLines[cursorLineIndex].startPos = 0;
 		}
 		fileEdited = true;
 	}
@@ -1514,7 +1422,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 					// combine all the strings to one string separated by newline characters
 					for (int i = 0; i < numExecutingLines; i++) {
 						if (i > 0) pyStr += "\n";
-						pyStr += allStrings[i+executingLineLocal];
+						pyStr += allLines[i+executingLineLocal].str;
 					}
 					// execute the Python line in verbose mode with the last argument set to 1
 					err = ((ofApp*)ofGetAppPtr())->sharedData.pyo.exec(pyStr.c_str(), 1);
@@ -1585,8 +1493,8 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 		else {
 			if (highlightBracket && cursorPos > 0) {
 				// if we hit return while in between two curly brackets
-				if (allStrings[cursorLineIndex].substr(cursorPos-1, 1).compare("{") == 0 &&
-						allStrings[cursorLineIndex].substr(cursorPos, 1).compare("}") == 0) {
+				if (allLines[cursorLineIndex].str.substr(cursorPos-1, 1).compare("{") == 0 &&
+						allLines[cursorLineIndex].str.substr(cursorPos, 1).compare("}") == 0) {
 					// we insert two new lines and add a horizontal tab in the middle
 					newLine();
 					lineBreaking = false;
@@ -1615,9 +1523,9 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 			else {
 				newLine();
 				lineBreaking = false;
-				int numTabs = getNumTabsInStr(allStrings[cursorLineIndex-1]);
+				int numTabs = getNumTabsInStr(allLines[cursorLineIndex-1].str);
 				// 1 is Python, so if we're writing in Python and the last character is a colon, we insert an extra horintal tab
-				if (thisLang == 1 && cursorLineIndex > 0 && allStrings[cursorLineIndex-1].size() > 0 && allStrings[cursorLineIndex-1].back() == ':') {
+				if (thisLang == 1 && cursorLineIndex > 0 && allLines[cursorLineIndex-1].str.size() > 0 && allLines[cursorLineIndex-1].str.back() == ':') {
 					numTabs++;
 				}
 				for (int i = 0; i < numTabs; i++) {
@@ -1636,15 +1544,15 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 		if (highlightManyChars) {
 			deleteString();
 		}
-		else if (cursorPos < (int)allStrings[cursorLineIndex].size()) {
+		else if (cursorPos < (int)allLines[cursorLineIndex].str.size()) {
 			int numCharsToDelete = 1;
 			std::string deletedChar;
 			if (isThisATab(cursorPos)) numCharsToDelete = TABSIZE;
-			std::string first = allStrings[cursorLineIndex].substr(0, cursorPos);
-			std::string second = allStrings[cursorLineIndex].substr(cursorPos+numCharsToDelete);
-			deletedChar = allStrings[cursorLineIndex].substr(cursorPos, numCharsToDelete);
-			allStrings[cursorLineIndex] = first + second;
-			if ((cursorPos == 0) && (allStrings[cursorLineIndex].size() == 0)) {
+			std::string first = allLines[cursorLineIndex].str.substr(0, cursorPos);
+			std::string second = allLines[cursorLineIndex].str.substr(cursorPos+numCharsToDelete);
+			deletedChar = allLines[cursorLineIndex].str.substr(cursorPos, numCharsToDelete);
+			allLines[cursorLineIndex].str = first + second;
+			if ((cursorPos == 0) && (allLines[cursorLineIndex].str.size() == 0)) {
 				releaseTraceback(cursorLineIndex);
 			}
 			// if we're deleting a quote sign
@@ -1809,52 +1717,51 @@ void Editor::assembleString(int key)
 		charToInsert = char(key);
 	}
 	// if the cursor is at the end of the string just add the character
-	int maxStringPos = (int)allStrings[cursorLineIndex].size() - allStringStartPos[cursorLineIndex];
+	int maxStringPos = (int)allLines[cursorLineIndex].str.size() - allLines[cursorLineIndex].startPos;
 	if (cursorPos == maxStringPos) {
-		allStrings[cursorLineIndex] += charToInsert;
+		allLines[cursorLineIndex].str += charToInsert;
 	}
 	else {
 		// otherwise, if it's in some middle position, insert the character
 		if (cursorPos > 0) {
-			//std::cout << cursorPos << " " << allStringStartPos[cursorLineIndex] << " " << allStrings[cursorLineIndex].size() << std::endl;
 			std::string strOne;
-			if (cursorPos + allStringStartPos[cursorLineIndex] >= (int)allStrings[cursorLineIndex].size()) {
-				strOne = allStrings[cursorLineIndex];
+			if (cursorPos + allLines[cursorLineIndex].startPos >= (int)allLines[cursorLineIndex].str.size()) {
+				strOne = allLines[cursorLineIndex].str;
 			}
 			else {
-				strOne = allStrings[cursorLineIndex].substr(0, cursorPos+allStringStartPos[cursorLineIndex]);
+				strOne = allLines[cursorLineIndex].str.substr(0, cursorPos+allLines[cursorLineIndex].startPos);
 			}
 			std::string strTwo;
-			if (cursorPos + allStringStartPos[cursorLineIndex] >= (int)allStrings[cursorLineIndex].size()) {
+			if (cursorPos + allLines[cursorLineIndex].startPos >= (int)allLines[cursorLineIndex].str.size()) {
 				strTwo = "";
 			}
 			else {
-				strTwo = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
+				strTwo = allLines[cursorLineIndex].str.substr(cursorPos+allLines[cursorLineIndex].startPos);
 			}
-			allStrings[cursorLineIndex] = strOne + charToInsert + strTwo;
-			if ((int)allStrings[cursorLineIndex].size() > maxCharactersPerString) {
+			allLines[cursorLineIndex].str = strOne + charToInsert + strTwo;
+			if ((int)allLines[cursorLineIndex].str.size() > maxCharactersPerString) {
 				// if the string is long don't move the cursor but scroll the string
-				allStringStartPos[cursorLineIndex] += cursorPosIncrement;
+				allLines[cursorLineIndex].startPos += cursorPosIncrement;
 				cursorPosIncrement = 0;
 			}
 		}
 		// or if it's at the beginning, place the character at the beginning
 		else {
 			std::string str;
-			if (cursorPos + allStringStartPos[cursorLineIndex] >= (int)allStrings[cursorLineIndex].size()) {
+			if (cursorPos + allLines[cursorLineIndex].startPos >= (int)allLines[cursorLineIndex].str.size()) {
 				str = "";
 			}
 			else {
-				str = allStrings[cursorLineIndex].substr(cursorPos+allStringStartPos[cursorLineIndex]);
+				str = allLines[cursorLineIndex].str.substr(cursorPos+allLines[cursorLineIndex].startPos);
 			}
-			allStrings[cursorLineIndex] = charToInsert + str;
+			allLines[cursorLineIndex].str = charToInsert + str;
 		}
 	}
 	if (cursorPos == maxCharactersPerString) {
-		allStringStartPos[cursorLineIndex] = (int)allStrings[cursorLineIndex].size() - maxCharactersPerString;
+		allLines[cursorLineIndex].startPos = (int)allLines[cursorLineIndex].str.size() - maxCharactersPerString;
 		// if we're placing a double char ({} or [] or "" or ()) at the end of a long string
-		if (doubleChar && allStringStartPos[cursorLineIndex] == ((int)allStrings[cursorLineIndex].size()-maxCharactersPerString)) {
-			allStringStartPos[cursorLineIndex] -= cursorPosIncrement;
+		if (doubleChar && allLines[cursorLineIndex].startPos == ((int)allLines[cursorLineIndex].str.size()-maxCharactersPerString)) {
+			allLines[cursorLineIndex].startPos -= cursorPosIncrement;
 		}
 	}
 	else {
@@ -1885,9 +1792,9 @@ void Editor::setString(std::string s)
 	}
 	else {
 		std::string strWithoutTabs = replaceCharInStr(s, "\t", tabStr);
-		allStrings[cursorLineIndex] += strWithoutTabs;
+		allLines[cursorLineIndex].str += strWithoutTabs;
 	}
-	allStringStartPos[cursorLineIndex] = ((int)allStrings[cursorLineIndex].size() > maxCharactersPerString ? (int)allStrings[cursorLineIndex].size() - maxCharactersPerString : 0);
+	allLines[cursorLineIndex].startPos = ((int)allLines[cursorLineIndex].str.size() > maxCharactersPerString ? (int)allLines[cursorLineIndex].str.size() - maxCharactersPerString : 0);
 	cursorPos = maxCursorPos();
 }
 
@@ -2016,9 +1923,9 @@ void Editor::upArrow(int lineIndex)
 	//if (lineIndex > 0) lineIndex = -(maxNumLines+1);
 	if (setLineIndexesUpward(lineIndex)) {
 		cursorPos = arrowCursorPos;
-		// test if we arrive at a shorter std::string than the one below
-		if (cursorPos >= ((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex])) {
-			// in which case display the cursor right after the std::string
+		// test if we arrive at a shorter string than the one below
+		if (cursorPos >= ((int)allLines[cursorLineIndex].str.size()-allLines[cursorLineIndex].startPos)) {
+			// in which case display the cursor right after the string
 			cursorPos = std::min(maxCursorPos(), arrowCursorPos);
 			if (!inserting && cursorPos == maxCursorPos() && cursorPos > 0) cursorPos--;
 		}
@@ -2088,7 +1995,7 @@ void Editor::downArrow(int lineIndex)
 	if (setLineIndexesDownward(lineIndex)) {
 		cursorPos = arrowCursorPos;
 		// test if we arrive at a shorter string than the one above
-		if (cursorPos >= ((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex])) {
+		if (cursorPos >= ((int)allLines[cursorLineIndex].str.size()-allLines[cursorLineIndex].startPos)) {
 			// in which case display the cursor right after the string
 			cursorPos = std::min(maxCursorPos(), arrowCursorPos);
 			if (!inserting && cursorPos == maxCursorPos() && cursorPos > 0) cursorPos--;
@@ -2125,9 +2032,9 @@ void Editor::rightArrow()
 		// find the next white space from the position of the cursor
 		size_t whiteSpaceIndex = 0;
 		while ((int)whiteSpaceIndex <= cursorPos) {
-			whiteSpaceIndex = allStrings[cursorLineIndex].find(" ", whiteSpaceIndex+1);
+			whiteSpaceIndex = allLines[cursorLineIndex].str.find(" ", whiteSpaceIndex+1);
 			if (whiteSpaceIndex == std::string::npos) {
-				whiteSpaceIndex = allStrings[cursorLineIndex].size();
+				whiteSpaceIndex = allLines[cursorLineIndex].str.size();
 				break;
 			}
 		}
@@ -2144,33 +2051,26 @@ void Editor::rightArrow()
 	if (!inserting) lastCursorPos--; // in normal mode, we don't want to go after the last character
 	// if we're one position before the end of the string or the edge of the window
 	if (cursorPos > lastCursorPos) {
-		if (inserting) {
-			// if the string is still too long to display
-			if (((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex]) > maxCharactersPerString) {
-				allStringStartPos[cursorLineIndex] += numPosToMove;
-				// place the cursor back so that it stays at the last position
-				cursorPos -= numPosToMove;
-				arrowCursorPos = cursorPos;
-			}
-			// if we're at the end of the string
-			else {
-				if (cursorLineIndex < (lineCount-1)) {
-					allStringStartPos[cursorLineIndex] = 0;
-					setLineIndexesDownward(cursorLineIndex+1);
-					cursorPos = arrowCursorPos = 0;
-				}
-				// if we're at the last line, don't move the cursor
-				else {
-					cursorPos -= numPosToMove;
-					arrowCursorPos = cursorPos;
-					numPosToMove = 0;
-				}
-			}
-		}
-		else {
+		// if the string is still too long to display
+		if (((int)allLines[cursorLineIndex].str.size()-allLines[cursorLineIndex].startPos) > maxCharactersPerString) {
+			allLines[cursorLineIndex].startPos += numPosToMove;
+			// place the cursor back so that it stays at the last position
 			cursorPos -= numPosToMove;
 			arrowCursorPos = cursorPos;
-			numPosToMove = 0;
+		}
+		// if we're at the end of the string
+		else {
+			if (inserting && cursorLineIndex < (lineCount-1)) {
+				allLines[cursorLineIndex].startPos = 0;
+				setLineIndexesDownward(cursorLineIndex+1);
+				cursorPos = arrowCursorPos = 0;
+			}
+			// if we're at the last line, don't move the cursor
+			else {
+				cursorPos -= numPosToMove;
+				arrowCursorPos = cursorPos;
+				numPosToMove = 0;
+			}
 		}
 	}
 	if (shiftPressed) {
@@ -2202,13 +2102,13 @@ void Editor::leftArrow()
 	}
 	else if (ctrlPressed) {
 		// find the previous white space from the position of the cursor
-		size_t whiteSpaceIndex = allStrings[cursorLineIndex].size();
+		size_t whiteSpaceIndex = allLines[cursorLineIndex].str.size();
 		while ((int)whiteSpaceIndex >= cursorPos) {
 			if (whiteSpaceIndex < 2) {
 				whiteSpaceIndex = 0;
 				break;
 			}
-			whiteSpaceIndex = allStrings[cursorLineIndex].rfind(" ", whiteSpaceIndex-1);
+			whiteSpaceIndex = allLines[cursorLineIndex].str.rfind(" ", whiteSpaceIndex-1);
 			if (whiteSpaceIndex == std::string::npos) {
 				whiteSpaceIndex = 0;
 				break;
@@ -2224,30 +2124,25 @@ void Editor::leftArrow()
 	// store a temporary copy of the cursor line index before we change it to use if we press shift (see further below)
 	int tempCursorLineIndex = cursorLineIndex;
 	if (cursorPos < 0) {
-		if (inserting) {
-			if ((int)allStrings[cursorLineIndex].size() > maxCharactersPerString && allStringStartPos[cursorLineIndex] > 0) {
-				cursorPos += numPosToMove;
-				arrowCursorPos = cursorPos;
-				allStringStartPos[cursorLineIndex] -= numPosToMove;
-			}
-			if (allStringStartPos[cursorLineIndex] <= 0) {
-				allStringStartPos[cursorLineIndex] = 0;
-				if (cursorLineIndex > 0) {
-					cursorLineIndex--;
-					cursorPos = arrowCursorPos = std::min((int)allStrings[cursorLineIndex].size(), maxCharactersPerString);
-					allStringStartPos[cursorLineIndex] = (int)allStrings[cursorLineIndex].size() - maxCharactersPerString;
-				}
-				else {
-					cursorPos = arrowCursorPos = 0;
-				}
-			}
+		if ((int)allLines[cursorLineIndex].str.size() > maxCharactersPerString && allLines[cursorLineIndex].startPos > 0) {
+			cursorPos += numPosToMove;
+			arrowCursorPos = cursorPos;
+			allLines[cursorLineIndex].startPos -= numPosToMove;
 		}
-		else {
-			cursorPos = arrowCursorPos = 0;
+		if (allLines[cursorLineIndex].startPos <= 0) {
+			allLines[cursorLineIndex].startPos = 0;
+			if (inserting && cursorLineIndex > 0) {
+				cursorLineIndex--;
+				cursorPos = arrowCursorPos = std::min((int)allLines[cursorLineIndex].str.size(), maxCharactersPerString);
+				allLines[cursorLineIndex].startPos = (int)allLines[cursorLineIndex].str.size() - maxCharactersPerString;
+			}
+			else {
+				cursorPos = arrowCursorPos = 0;
+			}
 		}
 	}
-	if (allStringStartPos[cursorLineIndex] < 0) {
-		allStringStartPos[cursorLineIndex] = 0;
+	if (allLines[cursorLineIndex].startPos < 0) {
+		allLines[cursorLineIndex].startPos = 0;
 	}
 	if (shiftPressed) {
 		if (!highlightManyChars) {
@@ -2284,8 +2179,8 @@ void Editor::pageUp()
 	if (cursorLineIndex < 0) cursorLineIndex = 0;
 	if (lineCountOffset < 0) lineCountOffset = 0;
 	cursorPos = arrowCursorPos;
-	// test if we arrive at a shorter std::string than the one above
-	if (cursorPos >= ((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex])) {
+	// test if we arrive at a shorter string than the one above
+	if (cursorPos >= ((int)allLines[cursorLineIndex].str.size()-allLines[cursorLineIndex].startPos)) {
 		// in which case display the cursor right after the std::string
 		cursorPos = std::min(maxCursorPos(), arrowCursorPos);
 	}
@@ -2325,8 +2220,8 @@ void Editor::pageDown()
 		}
 	}
 	cursorPos = arrowCursorPos;
-	// test if we arrive at a shorter std::string than the one above
-	if (cursorPos >= ((int)allStrings[cursorLineIndex].size()-allStringStartPos[cursorLineIndex])) {
+	// test if we arrive at a shorter string than the one above
+	if (cursorPos >= ((int)allLines[cursorLineIndex].str.size()-allLines[cursorLineIndex].startPos)) {
 		// in which case display the cursor right after the string
 		cursorPos = std::min(maxCursorPos(), arrowCursorPos);
 	}
@@ -2427,15 +2322,15 @@ void Editor::detectExecutingChunk()
 	// set the execution variables
 	if (highlightManyChars) {
 		for (int i = topLine; i <= bottomLine; i++) {
-			executingLines[i] = true;
-			executionTimeStamp[i] = ofGetElapsedTimeMillis();
-			executionDegrade[i] = EXECUTIONBRIGHTNESS;
+			allLines[i].isBeingExecuted = true;
+			allLines[i].executionTimeStamp = ofGetElapsedTimeMillis();
+			allLines[i].executionDegrade = EXECUTIONBRIGHTNESS;
 		}
 	}
 	else {
-		executingLines[cursorLineIndex] = true;
-		executionTimeStamp[cursorLineIndex] = ofGetElapsedTimeMillis();
-		executionDegrade[cursorLineIndex] = EXECUTIONBRIGHTNESS;
+		allLines[cursorLineIndex].isBeingExecuted = true;
+		allLines[cursorLineIndex].executionTimeStamp = ofGetElapsedTimeMillis();
+		allLines[cursorLineIndex].executionDegrade = EXECUTIONBRIGHTNESS;
 	}
 }
 
@@ -2499,7 +2394,7 @@ void Editor::allOtherKeys(int key)
 			cursorPos = maxCursorPos();
 			highlightManyCharsStart = 0;
 			highlightManyCharsLineIndex = 0;
-			setHighlightManyChars(0, allStrings[lineCount-1].size(), 0, lineCount-1);
+			setHighlightManyChars(0, allLines[lineCount-1].str.size(), 0, lineCount-1);
 			callAssemble = false;
 		}
 	}
@@ -2560,7 +2455,7 @@ std::vector<int> Editor::setSelectedStrStartPosAndSize(int i)
 			else {
 				v[0] = cursorPos;
 			}
-			v[1] = (int)allStrings[i].size() - v[0];
+			v[1] = (int)allLines[i].str.size() - v[0];
 		}
 	}
 	else if (i == bottomLine) {
@@ -2575,7 +2470,7 @@ std::vector<int> Editor::setSelectedStrStartPosAndSize(int i)
 	}
 	else {
 		v[0] = 0;
-		v[1] = allStrings[i].size();
+		v[1] = allLines[i].str.size();
 	}
 	return v;
 }
@@ -2587,9 +2482,9 @@ void Editor::copyString(int copyTo, bool dehighlight)
 	if (highlightManyChars) {
 		for (int i = topLine; i <= bottomLine; i++) {
 			std::vector<int> posAndSize = setSelectedStrStartPosAndSize(i);
-			// apply the offset of the std::string, in case it's too long to fit in a pane
-			posAndSize[0] += allStringStartPos[i];
-			strToCopy += allStrings[i].substr(posAndSize[0], posAndSize[1]);
+			// apply the offset of the string, in case it's too long to fit in a pane
+			posAndSize[0] += allLines[i].startPos;
+			strToCopy += allLines[i].str.substr(posAndSize[0], posAndSize[1]);
 			if (i < bottomLine) strToCopy += "\n";
 		}
 		strToCopy = replaceCharInStr(strToCopy, tabStr, "\t");
@@ -2610,7 +2505,7 @@ void Editor::copyString(int copyTo, bool dehighlight)
 				ofGetWindowPtr()->setClipboardString("");
 				break;
 			case 1:
-				yankedStr = allStrings[cursorLineIndex].substr(cursorPos, 1);
+				yankedStr = allLines[cursorLineIndex].str.substr(cursorPos, 1);
 				break;
 			default:
 				break;
@@ -2655,12 +2550,12 @@ void Editor::pasteString(int pasteFrom)
 	// set the position of the cursor according to the mode of the pane
 	int tempCursorPos = cursorPos;
 	if (!inserting) tempCursorPos++;
-	// if we paste in the middle of a std::string
-	// the last line must concatenate the pasted std::string with the remaining std::string of the line we broke in the middle
+	// if we paste in the middle of a string
+	// the last line must concatenate the pasted string with the remaining string of the line we broke in the middle
 	std::string remainingStr = "";
-	// but first we need to check if there is anything left in the std::string after the cursor
-	if (tempCursorPos < (int)allStrings[cursorLineIndex].size()) {
-		remainingStr += allStrings[cursorLineIndex].substr(tempCursorPos+allStringStartPos[cursorLineIndex]);
+	// but first we need to check if there is anything left in the string after the cursor
+	if (tempCursorPos < (int)allLines[cursorLineIndex].str.size()) {
+		remainingStr += allLines[cursorLineIndex].str.substr(tempCursorPos+allLines[cursorLineIndex].startPos);
 	}
 	// first create as many new lines as there are in what we're pasting
 	size_t i = 0;
@@ -2682,21 +2577,21 @@ void Editor::pasteString(int pasteFrom)
 	for (std::string originalToken : tokens) {
 		std::string token = replaceCharInStr(originalToken, "\t", tabStr);
 		if (i == 0) {
-			allStrings[tempCursorLineIndex] = allStrings[tempCursorLineIndex].substr(0, tempCursorPos+allStringStartPos[tempCursorLineIndex]);
-			allStrings[tempCursorLineIndex] += token;
+			allLines[tempCursorLineIndex].str = allLines[tempCursorLineIndex].str.substr(0, tempCursorPos+allLines[tempCursorLineIndex].startPos);
+			allLines[tempCursorLineIndex].str += token;
 		}
 		if (i == (tokens.size()-1)) {
-			// if we're pasting one line only just append the remaining std::string
+			// if we're pasting one line only just append the remaining string
 			if (i == 0) {
-				allStrings[tempCursorLineIndex] += remainingStr;
+				allLines[tempCursorLineIndex].str += remainingStr;
 			}
 			// otherwise concatenate the token with the remaining
 			else {
-				allStrings[tempCursorLineIndex] = token + remainingStr;
+				allLines[tempCursorLineIndex].str = token + remainingStr;
 			}
 		}
 		if ((i > 0) && (i < (tokens.size()-1))) {
-			allStrings[tempCursorLineIndex] = token;
+			allLines[tempCursorLineIndex].str = token;
 		}
 		i++;
 		tempCursorLineIndex++;
@@ -2719,12 +2614,7 @@ void Editor::pasteString(int pasteFrom)
 //--------------------------------------------------------------
 void Editor::clearText()
 {
-	allStrings.clear();
-	allStringStartPos.clear();
-	tracebackStr.clear();
-	tracebackColor.clear();
-	tracebackNumLines.clear();
-	tracebackStrBreakPnt.clear();
+	allLines.clear();
 	lineCount = 1;
 	lineCountOffset = 0;
 	cursorLineIndex = cursorPos = 0;
@@ -2735,7 +2625,7 @@ void Editor::clearText()
 void Editor::deleteString()
 {
 	if (!inserting && !highlightManyChars) {
-		allStrings[cursorLineIndex].erase(cursorPos, 1);
+		allLines[cursorLineIndex].str.erase(cursorPos, 1);
 	}
 	else if (highlightManyChars) {
 		// if we're deleting all text
@@ -2753,10 +2643,10 @@ void Editor::deleteString()
 			else {
 				std::vector<int> posAndSize = setSelectedStrStartPosAndSize(i);
 				if (i == topLine) {
-					size_t strSizeBefore = allStrings[i].size();
+					size_t strSizeBefore = allLines[i].str.size();
 					if (topLine == bottomLine && !inserting && posAndSize[0]+posAndSize[1] < maxCursorPos()) posAndSize[1]++;
-					allStrings[i].erase(posAndSize[0], posAndSize[1]);
-					if (allStrings[i].size() == 0) {
+					allLines[i].str.erase(posAndSize[0], posAndSize[1]);
+					if (allLines[i].str.size() == 0) {
 						// if we detele the entire line, the cursor is repositioned automatically
 						releaseTraceback(i);
 					}
@@ -2768,11 +2658,11 @@ void Editor::deleteString()
 				}
 				else if (i == bottomLine) {
 					if (!inserting && posAndSize[0]+posAndSize[1] < maxCursorPos()) posAndSize[1]++;
-					allStrings[i].erase(posAndSize[0], posAndSize[1]);
+					allLines[i].str.erase(posAndSize[0], posAndSize[1]);
 					// position the cursor at the concatenation point
-					cursorPos = (int)allStrings[topLine].size();
+					cursorPos = (int)allLines[topLine].str.size();
 					// then concatenate the top and bottom lines to one string
-					allStrings[topLine] += allStrings[bottomLine];
+					allLines[topLine].str += allLines[bottomLine].str;
 					// and erase the bottom line as it has been embedded into the top one
 					eraseMapKeys(i);
 				}
@@ -2802,52 +2692,58 @@ std::vector<int> Editor::sortVec(std::vector<int> v)
 void Editor::setTraceback(int errorCode, std::string errorStr, int lineNum, size_t strBreakPnt)
 {
 	// error codes are: 0 - nothing, 1 - note, 2 - warning, 3 - error
-	if (errorCode == 0 || errorCode == 1) tracebackColor[lineNum] = 0;
-	else if (errorCode == 2) tracebackColor[lineNum] = 1;
-	else if (errorCode == 3) tracebackColor[lineNum] = 2;
-	else tracebackColor[lineNum] = 0;
+	if (errorCode == 0 || errorCode == 1) allLines[lineNum].tracebackColor = 0;
+	else if (errorCode == 2) allLines[lineNum].tracebackColor = 1;
+	else if (errorCode == 3) allLines[lineNum].tracebackColor = 2;
+	else allLines[lineNum].tracebackColor = 0;
 	// find number of newlines in traceback std::string
 	int numLines = count(begin(errorStr), end(errorStr), '\n') + 1;
-	tracebackStr[lineNum] = errorStr;
-	tracebackTimeStamps[lineNum] = ofGetElapsedTimeMillis();
-	tracebackNumLines[lineNum] = numLines;
-	tracebackStrBreakPnt[lineNum] = strBreakPnt;
+	allLines[lineNum].tracebackStr = errorStr;
+	allLines[lineNum].tracebackTimeStamp = ofGetElapsedTimeMillis();
+	allLines[lineNum].tracebackNumLines = numLines;
+	allLines[lineNum].tracebackStrBreakPnt = strBreakPnt;
 }
 
 //--------------------------------------------------------------
 void Editor::releaseTraceback(int lineNum)
 {
-	std::map<int, std::string>::iterator it = tracebackStr.find(lineNum);
-	if (it != tracebackStr.end()) {
-		tracebackStr[lineNum] = "";
-		tracebackColor[lineNum] = 0;
-		tracebackNumLines[lineNum] = 1;
-		tracebackStrBreakPnt[lineNum] = 0;
+	std::map<int, line>::iterator it = allLines.find(lineNum);
+	if (it != allLines.end()) {
+		allLines[lineNum].tracebackStr = "";
+		allLines[lineNum].tracebackColor = 0;
+		allLines[lineNum].tracebackNumLines = 1;
+		allLines[lineNum].tracebackStrBreakPnt = 0;
 	}
 }
 
 //--------------------------------------------------------------
 std::string Editor::getTracebackStr(int lineNum)
 {
-	return tracebackStr[lineNum];
+	return allLines[lineNum].tracebackStr;
 }
 
 //--------------------------------------------------------------
 int Editor::getTracebackColor(int lineNum)
 {
-	return tracebackColor[lineNum];
+	return allLines[lineNum].tracebackColor;
 }
 
 //--------------------------------------------------------------
 uint64_t Editor::getTracebackTimeStamp(int lineNum)
 {
-	return tracebackTimeStamps[lineNum];
+	return allLines[lineNum].tracebackTimeStamp;
+}
+
+//--------------------------------------------------------------
+void Editor::setTracebackTimeStamp(int lineNum, uint64_t stamp)
+{
+	allLines[lineNum].tracebackTimeStamp = stamp;
 }
 
 //--------------------------------------------------------------
 int Editor::getTracebackNumLines(int lineNum)
 {
-	return tracebackNumLines[lineNum];
+	return allLines[lineNum].tracebackNumLines;
 }
 
 //--------------------------------------------------------------
@@ -2857,15 +2753,15 @@ uint64_t Editor::getTracebackDur()
 }
 
 //--------------------------------------------------------------
-std::map<int, uint64_t>::iterator Editor::getTracebackTimeStampsBegin()
+std::map<int, line>::iterator Editor::getAllLinesBegin()
 {
-	return tracebackTimeStamps.begin();
+	return allLines.begin();
 }
 
 //--------------------------------------------------------------
-std::map<int, uint64_t>::iterator Editor::getTracebackTimeStampsEnd()
+std::map<int, line>::iterator Editor::getAllLinesEnd()
 {
-	return tracebackTimeStamps.end();
+	return allLines.end();
 }
 
 //--------------------------------------------------------------
@@ -2920,8 +2816,8 @@ void Editor::saveFile(std::string fileName)
 		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
 		return;
 	}
-	for (unsigned i = 0; i < allStrings.size(); i++) {
-		file << allStrings[i] << "\n";
+	for (unsigned i = 0; i < allLines.size(); i++) {
+		file << allLines[i].str << "\n";
 	}
 	file.close();
 	fileLoaded = true;
@@ -2957,8 +2853,8 @@ void Editor::saveExistingFile()
 		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
 		return;
 	}
-	for (unsigned i = 0; i < allStrings.size(); i++) {
-		file << allStrings[i] << "\n";
+	for (unsigned i = 0; i < allLines.size(); i++) {
+		file << allLines[i].str << "\n";
 	}
 	file.close();
 	fileEdited = false;
@@ -3972,7 +3868,7 @@ void Editor::loadDialog()
 /////////////////// main load file function ////////////////////
 
 //--------------------------------------------------------------
-void Editor::loadFile(std::string fileName)
+bool Editor::loadFile(std::string fileName)
 {
 	lineCount = 1;
 	cursorPos = 0;
@@ -3980,9 +3876,6 @@ void Editor::loadFile(std::string fileName)
 			!endsWith(fileName, ".py") && !endsWith(fileName, ".lua") && !endsWith(fileName, ".mid")) {
 		fileName += ".lyv";
 	}
-	//if (file.is_open()) {
-	//	file.close();
-	//}
 	std::ifstream file(fileName.c_str());
 	if (!file.is_open()) {
 		// if for some reason the file can't be opened
@@ -3991,8 +3884,7 @@ void Editor::loadFile(std::string fileName)
 		couldNotLoadFile = true;
 		loadedFileStr = "could not load file";
 		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
-		std::cout << "can't open file\n";
-		return;
+		return false;
 	}
 	file.close();
 	clearText();
@@ -4030,29 +3922,77 @@ void Editor::loadFile(std::string fileName)
 		fileName = "MIDI files are not yet supported";
 		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
 		file.close();
-		return;
+		return false;
 	}
 	else {
 		loadTextFile(fileName);
 	}
-	lineCount = (int)allStrings.size();
+	lineCount = (int)allLines.size();
 	cursorLineIndex = 0;
 	cursorPos = arrowCursorPos = 0;
 	fileLoaded = true;
 	fileEdited = false;
+	return true;
+}
+
+//////////////////// loading help files ////////////////////////
+
+//--------------------------------------------------------------
+bool Editor::loadHelpFile(std::string fileName, int newPane)
+{
+	tempAllLines.clear();
+	for (auto it = allLines.begin(); it != allLines.end(); ++it) {
+		tempAllLines[it->first] = it->second;
+	}
+	tempFileLoaded = fileLoaded;
+	tempFileName = loadedFileStr;
+	tempFileEdited = fileEdited;
+	tempCursorLineIndex = cursorLineIndex;
+	tempCursorPos = cursorPos;
+	tempExecutingLine = executingLine;
+	bool fileOpened = loadFile(fileName);
+	if (!fileOpened) {
+		tempAllLines.clear();
+		tempFileName.clear();
+		fileLoaded = tempFileLoaded;
+		fileEdited = tempFileEdited;
+		cursorLineIndex = tempCursorLineIndex;
+		cursorPos = tempCursorPos;
+		lineCount = (int)allLines.size();
+	}
+	if (newPane == 0) helpFileOpen = fileOpened;
+	return fileOpened;
+}
+
+////// close an open help file and restore editor lines ////////
+
+//--------------------------------------------------------------
+void Editor::closeHelpFile()
+{
+	clearText();
+	for (auto it = tempAllLines.begin(); it != tempAllLines.end(); ++it) {
+		allLines[it->first] = it->second;
+	}
+	tempAllLines.clear();
+	if (tempFileLoaded) {
+		loadedFileStr = tempFileName;
+	}
+	fileLoaded = tempFileLoaded;
+	fileEdited = tempFileEdited;
+	cursorLineIndex = tempCursorLineIndex;
+	cursorPos = tempCursorPos;
+	lineCount = (int)allLines.size();
+	allLines[tempExecutingLine].isBeingExecuted = false;
+	allLines[tempExecutingLine].executionDegrade = 0;
+	tempFileName.clear();
+	helpFileOpen = false;
 }
 
 //--------------------------------------------------------------
-//bool Editor::isFileOpen()
-//{
-//	return file.is_open();
-//}
-
-//--------------------------------------------------------------
-//void Editor::closeFile()
-//{
-//	file.close();
-//}
+bool Editor::isHelpFileOpen()
+{
+	return helpFileOpen;
+}
 
 /********************* loading files done *********************/
 

@@ -30,7 +30,8 @@ void ofApp::setup()
     // define audio properties
     sampleRate = 48000;
     bufferSize = 256;
-    nChannels = 2;
+    inChannels = 2;
+    outChannels = 2;
 	//audioDevID = 1;
 	inSoundDeviceSet = false;
 	outSoundDeviceSet = false;
@@ -103,6 +104,7 @@ void ofApp::setup()
 	sharedData.tempoMs[0] = 500;
 	sharedData.BPMMultiplier[0] = 1;
 	sharedData.beatAtDifferentThanDivisor[0] = false;
+	sharedData.beatAtValCounter = 0;
 	sharedData.numerator[0] = 4;
 	sharedData.denominator[0] = 4;
 	sharedData.numBeats[0] = 4;
@@ -123,6 +125,7 @@ void ofApp::setup()
 	sharedData.showNotes = false;
 	sharedData.showPianoRoll = false;
 	sharedData.showScope = false;
+	sharedData.showScore = false;
 	sharedData.longestInstNameWidth = 0;
 	sharedData.staffLinesDist = 10.0;
 	sharedData.scoreFontSize = 35;
@@ -247,94 +250,98 @@ void ofApp::setup()
 	*/
 	// first level commands
 	commandsMap[livelily]['a']["\\accoffset"] = ofColor::fuchsia;
-	commandsMap[livelily]['a']["\\autobrackets"] = ofColor::fuchsia;
 	commandsMap[livelily]['a']["\\active"] = ofColor::fuchsia;
+	commandsMap[livelily]['a']["\\autobrackets"] = ofColor::fuchsia;
 	commandsMap[livelily]['b']["\\bar"] = ofColor::fuchsia;
+	commandsMap[livelily]['b']["\\barlines"] = ofColor::fuchsia;
+	commandsMap[livelily]['b']["\\barnum"] = ofColor::fuchsia;
 	commandsMap[livelily]['b']["\\bars"] = ofColor::fuchsia;
 	commandsMap[livelily]['b']["\\beatcount"] = ofColor::fuchsia;
-	commandsMap[livelily]['b']["\\barnum"] = ofColor::fuchsia;
 	commandsMap[livelily]['b']["\\beatat"] = ofColor::fuchsia;
 	commandsMap[livelily]['b']["\\buffersize"] = ofColor::fuchsia;
-	commandsMap[livelily]['b']["\\barlines"] = ofColor::fuchsia;
 	commandsMap[livelily]['c']["\\change"] = ofColor::fuchsia;
-	commandsMap[livelily]['c']["\\cursor"] =  ofColor::fuchsia;
-	commandsMap[livelily]['c']["\\ctlchange"] = ofColor::fuchsia;
 	commandsMap[livelily]['c']["\\clef"] = ofColor::fuchsia;
 	commandsMap[livelily]['c']["\\closeserialport"] = ofColor::fuchsia;
 	commandsMap[livelily]['c']["\\cluster"] = ofColor::fuchsia;
+	commandsMap[livelily]['c']["\\ctlchange"] = ofColor::fuchsia;
+	commandsMap[livelily]['c']["\\cursor"] =  ofColor::fuchsia;
 	commandsMap[livelily]['d']["\\dur"] = ofColor::fuchsia;
 	commandsMap[livelily]['e']["\\editor"] = ofColor::fuchsia;
-	commandsMap[livelily]['f']["\\function"] = ofColor::fuchsia;
 	commandsMap[livelily]['f']["\\finish"] =  ofColor::fuchsia;
-	commandsMap[livelily]['f']["\\fromosc"] =  ofColor::fuchsia;
 	commandsMap[livelily]['f']["\\framerate"] = ofColor::fuchsia;
+	commandsMap[livelily]['f']["\\fromosc"] =  ofColor::fuchsia;
+	commandsMap[livelily]['f']["\\function"] = ofColor::fuchsia;
 	commandsMap[livelily]['g']["\\group"] = ofColor::fuchsia;
-	commandsMap[livelily]['i']["\\insts"] =  ofColor::fuchsia;
-	commandsMap[livelily]['i']["\\instorder"] = ofColor::fuchsia;
+	commandsMap[livelily]['h']["\\help"] = ofColor::fuchsia;
 	commandsMap[livelily]['i']["\\inactive"] = ofColor::fuchsia;
+	commandsMap[livelily]['i']["\\inchannels"] = ofColor::fuchsia;
+	commandsMap[livelily]['i']["\\instorder"] = ofColor::fuchsia;
+	commandsMap[livelily]['i']["\\insts"] =  ofColor::fuchsia;
 	commandsMap[livelily]['j'][""] = foregroundColor;
-	commandsMap[livelily]['l']["\\loop"] = ofColor::fuchsia;
+	commandsMap[livelily]['l']["\\list"] = ofColor::fuchsia;
+	commandsMap[livelily]['l']["\\listaudiodev"] = ofColor::fuchsia;
 	commandsMap[livelily]['l']["\\listmidiports"] = ofColor::fuchsia;
 	commandsMap[livelily]['l']["\\listserialports"] = ofColor::fuchsia;
-	commandsMap[livelily]['l']["\\list"] = ofColor::fuchsia;
 	commandsMap[livelily]['l']["\\livelily"] = ofColor::fuchsia;
+	commandsMap[livelily]['l']["\\loop"] = ofColor::fuchsia;
 	commandsMap[livelily]['l']["\\lua"] = ofColor::fuchsia;
-	commandsMap[livelily]['l']["\\listaudiodev"] = ofColor::fuchsia;
+	commandsMap[livelily]['m']["\\maestro"] = ofColor::fuchsia;
+	commandsMap[livelily]['m']["\\midiclock"] = ofColor::fuchsia;
 	commandsMap[livelily]['m']["\\mute"] =  ofColor::fuchsia;
 	commandsMap[livelily]['m']["\\mutenow"] =  ofColor::fuchsia;
-	commandsMap[livelily]['m']["\\midiclock"] = ofColor::fuchsia;
-	commandsMap[livelily]['m']["\\tune"] = ofColor::fuchsia;
-	commandsMap[livelily]['m']["\\maestro"] = ofColor::fuchsia;
-	commandsMap[livelily]['n']["\\nchannels"] = ofColor::fuchsia;
 	commandsMap[livelily]['o']["\\openmidiport"] = ofColor::fuchsia;
 	commandsMap[livelily]['o']["\\openserialport"] = ofColor::fuchsia;
 	commandsMap[livelily]['o']["\\osc"] = ofColor::fuchsia;
 	commandsMap[livelily]['o']["\\oscsend"] = ofColor::fuchsia;
-	commandsMap[livelily]['o']["\\ottava"] = ofColor::fuchsia;
+	commandsMap[livelily]['o']["\\outchannels"] = ofColor::fuchsia;
 	commandsMap[livelily]['o']["\\ott"] = ofColor::fuchsia;
+	commandsMap[livelily]['o']["\\ottava"] = ofColor::fuchsia;
 	commandsMap[livelily]['p']["\\pgmchange"] = ofColor::fuchsia;
+	commandsMap[livelily]['p']["\\ppqn"] = ofColor::fuchsia;
 	commandsMap[livelily]['p']["\\print"] = ofColor::fuchsia;
-	commandsMap[livelily]['p']["\\python"] = ofColor::fuchsia;
 	commandsMap[livelily]['p']["\\pystr"] = ofColor::fuchsia;
+	commandsMap[livelily]['p']["\\python"] = ofColor::fuchsia;
 	commandsMap[livelily]['q'][""] = foregroundColor;
 	commandsMap[livelily]['r']["\\random"] = ofColor::fuchsia;
 	commandsMap[livelily]['r']["\\remaining"] =  ofColor::fuchsia;
 	commandsMap[livelily]['r']["\\reset"] =  ofColor::fuchsia;
+	commandsMap[livelily]['s']["\\samplerate"] = ofColor::fuchsia;
+	commandsMap[livelily]['s']["\\score"] =  ofColor::fuchsia;
+	commandsMap[livelily]['s']["\\serialprint"] = ofColor::fuchsia;
+	commandsMap[livelily]['s']["\\serialwrite"] = ofColor::fuchsia;
 	commandsMap[livelily]['s']["\\solo"] = ofColor::fuchsia;
 	commandsMap[livelily]['s']["\\solonow"] = ofColor::fuchsia;
-	commandsMap[livelily]['s']["\\score"] =  ofColor::fuchsia;
-	commandsMap[livelily]['s']["\\staccato"] = ofColor::fuchsia;
 	commandsMap[livelily]['s']["\\staccatissimo"] = ofColor::fuchsia;
-	commandsMap[livelily]['s']["\\serialwrite"] = ofColor::fuchsia;
-	commandsMap[livelily]['s']["\\serialprint"] = ofColor::fuchsia;
+	commandsMap[livelily]['s']["\\staccato"] = ofColor::fuchsia;
 	commandsMap[livelily]['s']["\\system"] = ofColor::fuchsia;
 	commandsMap[livelily]['s']["\\sendkeys"] = ofColor::fuchsia;
 	commandsMap[livelily]['s']["\\sendlines"] = ofColor::fuchsia;
 	commandsMap[livelily]['s']["\\setaudiodev"] = ofColor::fuchsia;
 	commandsMap[livelily]['s']["\\setinaudiodev"] = ofColor::fuchsia;
 	commandsMap[livelily]['s']["\\setoutaudiodev"] = ofColor::fuchsia;
-	commandsMap[livelily]['s']["\\samplerate"] = ofColor::fuchsia;
 	commandsMap[livelily]['t']["\\tempo"] = ofColor::fuchsia;
 	commandsMap[livelily]['t']["\\tenuto"] = ofColor::fuchsia;
 	commandsMap[livelily]['t']["\\time"] = ofColor::fuchsia;
-	commandsMap[livelily]['t']["\\tuplet"] = ofColor::fuchsia;
+	commandsMap[livelily]['t']["\\transpose"] = ofColor::fuchsia;
+	commandsMap[livelily]['t']["\\tune"] = ofColor::fuchsia;
 	commandsMap[livelily]['t']["\\tup"] = ofColor::fuchsia;
+	commandsMap[livelily]['t']["\\tuplet"] = ofColor::fuchsia;
 	commandsMap[livelily]['u']["\\unmute"] =  ofColor::fuchsia;
 	commandsMap[livelily]['u']["\\unmutenow"] = ofColor::fuchsia;
 	commandsMap[livelily]['x'][""] = foregroundColor;
 	commandsMap[livelily]['z'][""] = foregroundColor;
 
 	// second level commands
+	commandsMap[livelily]['a']["accoffset"] = ofColor::violet;
 	commandsMap[livelily]['a']["add"] = ofColor::violet;
 	commandsMap[livelily]['a']["animate"] = ofColor::violet;
-	commandsMap[livelily]['a']["accoffset"] = ofColor::violet;
-	commandsMap[livelily]['b']["bind"] = ofColor::violet;
-	commandsMap[livelily]['b']["beattype"] = ofColor::violet;
 	commandsMap[livelily]['b']["beatsin"] = ofColor::violet;
+	commandsMap[livelily]['b']["beattype"] = ofColor::violet;
+	commandsMap[livelily]['b']["bind"] = ofColor::violet;
 	commandsMap[livelily]['c']["clear"] = ofColor::violet;
 	commandsMap[livelily]['c']["colors"] = ofColor::violet;
-	commandsMap[livelily]['c']["cursor"] = ofColor::violet;
 	commandsMap[livelily]['c']["correct"] = ofColor::violet;
+	commandsMap[livelily]['c']["cursor"] = ofColor::violet;
 	commandsMap[livelily]['d']["delay"] = ofColor::violet;
 	commandsMap[livelily]['f']["fullscreen"] = ofColor::violet;
 	commandsMap[livelily]['g']["goto"] = ofColor::violet;
@@ -343,61 +350,64 @@ void ofApp::setup()
 	commandsMap[livelily]['i']["init"] = ofColor::violet;
 	commandsMap[livelily]['l']["levareaddr"] = ofColor::violet;
 	commandsMap[livelily]['l']["locate"] = ofColor::violet;
-	commandsMap[livelily]['m']["midiport"] = ofColor::violet;
-	commandsMap[livelily]['m']["midichan"] = ofColor::violet;
 	commandsMap[livelily]['m']["mainaddr"] = ofColor::violet;
+	commandsMap[livelily]['m']["midichan"] = ofColor::violet;
+	commandsMap[livelily]['m']["midiport"] = ofColor::violet;
 	commandsMap[livelily]['m']["movex"] = ofColor::violet;
 	commandsMap[livelily]['m']["movey"] = ofColor::violet;
 	commandsMap[livelily]['n']["numbars"] = ofColor::violet;
 	commandsMap[livelily]['o']["onrelease"] = ofColor::violet;
 	commandsMap[livelily]['p']["play"] = ofColor::violet;
-	commandsMap[livelily]['r']["release"] = ofColor::violet;
 	commandsMap[livelily]['r']["recenter"] = ofColor::violet;
-	commandsMap[livelily]['s']["stop"] =  ofColor::violet;
-	commandsMap[livelily]['s']["stopnow"] =  ofColor::violet;
+	commandsMap[livelily]['r']["release"] = ofColor::violet;
+	commandsMap[livelily]['s']["send"] = ofColor::violet;
 	commandsMap[livelily]['s']["sendmidi"] = ofColor::violet;
 	commandsMap[livelily]['s']["setargs"] = ofColor::violet;
-	commandsMap[livelily]['s']["send"] = ofColor::violet;
 	commandsMap[livelily]['s']["setup"] = ofColor::violet;
 	commandsMap[livelily]['s']["sendto"] = ofColor::violet;
 	commandsMap[livelily]['s']["show"] = ofColor::violet;
 	commandsMap[livelily]['s']["showbeat"] = ofColor::violet;
-	commandsMap[livelily]['t']["traverse"] = ofColor::violet;
-	commandsMap[livelily]['t']["transpose"] = ofColor::violet;
+	commandsMap[livelily]['s']["stop"] =  ofColor::violet;
+	commandsMap[livelily]['s']["stopnow"] =  ofColor::violet;
 	commandsMap[livelily]['t']["toggleaddr"] = ofColor::violet;
+	commandsMap[livelily]['t']["transpose"] = ofColor::violet;
+	commandsMap[livelily]['t']["traverse"] = ofColor::violet;
 	commandsMap[livelily]['u']["unbind"] = ofColor::violet;
 	commandsMap[livelily]['u']["update"] = ofColor::violet;
 	commandsMap[livelily]['v']["valndx"] = ofColor::violet;
 	commandsMap[livelily]['v']["valthresh"] = ofColor::violet;
 
 	// arguments
-	commandsMap[livelily]['r']["rhythm"] = ofColor::skyBlue;
 	commandsMap[livelily]['a']["all"] = ofColor::skyBlue;
 	commandsMap[livelily]['a']["alto"] = ofColor::skyBlue;
 	commandsMap[livelily]['b']["barcount"] = ofColor::skyBlue;
-	commandsMap[livelily]['b']["beat"] = ofColor::skyBlue;
-	commandsMap[livelily]['b']["bass"] = ofColor::skyBlue;
 	commandsMap[livelily]['b']["barstart"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["bass"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["beat"] = ofColor::skyBlue;
 	commandsMap[livelily]['c']["char"] = ofColor::skyBlue;
-	commandsMap[livelily]['f']["framerate"] = ofColor::skyBlue;
 	commandsMap[livelily]['f']["fr"] = ofColor::skyBlue;
+	commandsMap[livelily]['f']["framerate"] = ofColor::skyBlue;
+	commandsMap[livelily]['h']["hor"] = ofColor::skyBlue;
 	commandsMap[livelily]['i']["immediately"] = ofColor::skyBlue;
 	commandsMap[livelily]['i']["invert"] = ofColor::skyBlue;
-	commandsMap[livelily]['l']["loopstart"] = ofColor::skyBlue;
 	commandsMap[livelily]['l']["line"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["localhost"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["loopstart"] = ofColor::skyBlue;
 	commandsMap[livelily]['n']["notes"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["off"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["on"] = ofColor::skyBlue;
 	commandsMap[livelily]['o']["onlast"] = ofColor::skyBlue;
 	commandsMap[livelily]['o']["onoctave"] = ofColor::skyBlue;
-	commandsMap[livelily]['o']["on"] = ofColor::skyBlue;
-	commandsMap[livelily]['o']["off"] = ofColor::skyBlue;
 	commandsMap[livelily]['p']["perc"] = ofColor::skyBlue;
 	commandsMap[livelily]['p']["percussion"] = ofColor::skyBlue;
-	commandsMap[livelily]['p']["python"] = ofColor::skyBlue;
 	commandsMap[livelily]['p']["pianoroll"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["python"] = ofColor::skyBlue;
 	commandsMap[livelily]['r']["reset"] = ofColor::skyBlue;
+	commandsMap[livelily]['r']["rhythm"] = ofColor::skyBlue;
 	commandsMap[livelily]['s']["scope"] = ofColor::skyBlue;
-	commandsMap[livelily]['t']["treble"] = ofColor::skyBlue;
 	commandsMap[livelily]['t']["tempo"] = ofColor::skyBlue;
+	commandsMap[livelily]['t']["treble"] = ofColor::skyBlue;
+	commandsMap[livelily]['v']["vert"] = ofColor::skyBlue;
 
 	// color names, same color as arguments above
 	commandsMap[livelily]['a']["aliceBlue"] = ofColor::skyBlue;
@@ -1425,23 +1435,19 @@ void ofApp::update()
 		}
 	}
 
-	if (sharedData.showScope) {
-		scopeWaveformLeft.clear();
-		scopeWaveformRight.clear();
+	if (sharedData.showScope && pyoSet) {
+		for (int i = 0; i < outChannels; i++) {
+			scopeWaveforms[i].clear();
+		}
 		scopeRms = scopeBuffer.getRMSAmplitude();
 		for(size_t i = 0; i < scopeBuffer.getNumFrames(); i++) {
-			float sampleLeft = scopeBuffer.getSample(i, 0);
-			float xLeft = ofMap(i, 0, scopeBuffer.getNumFrames(), scoreXOffset, scoreBackgroundWidth+scoreXOffset);
-			float yLeft = ((sampleLeft * (scoreBackgroundHeight / 2)) * scopeRms) + (scoreBackgroundHeight / 2);
-			float sampleRight = scopeBuffer.getSample(i, 1);
-			float xRight = ofMap(i, 0, scopeBuffer.getNumFrames(), scoreXOffset, scoreBackgroundWidth+scoreXOffset);
-			float yRight = ((sampleRight * (scoreBackgroundHeight / 2)) * scopeRms) + (scoreBackgroundHeight / 2);
-			if (scoreOrientation == 1) {
-				yLeft += scoreYOffset;
-				yRight += scoreYOffset;
+			for (int j = 0; j < outChannels; j++) {
+				float sample = scopeBuffer.getSample(i, j);
+				float x = ofMap(i, 0, scopeBuffer.getNumFrames(), scoreXOffset, scoreBackgroundWidth+scoreXOffset);
+				float y = ((sample * (scoreBackgroundHeight / 2)) * scopeRms) + (scoreBackgroundHeight / 2);
+				if (scoreOrientation == 1) y += scoreYOffset;
+				scopeWaveforms[j].addVertex(x, y);
 			}
-			scopeWaveformLeft.addVertex(xLeft, yLeft);
-			scopeWaveformRight.addVertex(xRight, yRight);
 		}
 	}
 }
@@ -1519,8 +1525,8 @@ void ofApp::drawTraceback()
 {
 	static int tracebackNumLinesStatic = MINTRACEBACKLINES;
 	int tracebackCounter = 0;
-	uint64_t stamps[editors[whichPane].tracebackTimeStamps.size()];
-	int ndxs[editors[whichPane].tracebackTimeStamps.size()];
+	uint64_t stamps[editors[whichPane].allLines.size()];
+	int ndxs[editors[whichPane].allLines.size()];
 	int i = 0;
 	int paneNdx = 0;
 	//for (auto it = numPanes.begin(); it != numPanes.end(); ++it) {
@@ -1529,17 +1535,17 @@ void ofApp::drawTraceback()
 	//	}
 	//}
 	// we must first determine which traceback string was initiated first, so we can print this on top
-	for (auto it = editors[whichPane].getTracebackTimeStampsBegin(); it != editors[whichPane].getTracebackTimeStampsEnd(); ++it) {
-		if ((ofGetElapsedTimeMillis() - it->second) < editors[whichPane].getTracebackDur() && editors[whichPane].getTracebackStr(it->first).size() > 0) {
+	for (auto it = editors[whichPane].getAllLinesBegin(); it != editors[whichPane].getAllLinesEnd(); ++it) {
+		if ((ofGetElapsedTimeMillis() - editors[whichPane].getTracebackTimeStamp(it->first)) < editors[whichPane].getTracebackDur() && editors[whichPane].getTracebackStr(it->first).size() > 0) {
 			// exclude the line of the cursor as this is check below
 			if (it->first != editors[whichPane].getCursorLineIndex()) {
 				ndxs[i] = it->first;
-				stamps[i] = it->second;
+				stamps[i] = editors[whichPane].getTracebackTimeStamp(it->first);
 				i++;
 			}
 		}
 		else {
-			it->second = 0;
+			editors[whichPane].setTracebackTimeStamp(it->first, 0);
 		}
 	}
 	// sort indexes based on time stamps (the smaller the time stamp, the higher it should be in the traceback)
@@ -1554,7 +1560,7 @@ void ofApp::drawTraceback()
 	}
 	// once we check the traceback messages of lines other than that where the cursor is
 	// we check the line of the cursor too
-	if (editors[whichPane].tracebackStr[editors[whichPane].getCursorLineIndex()].size() > 0) {
+	if (editors[whichPane].getTracebackStr(editors[whichPane].getCursorLineIndex()).size() > 0) {
 		// if there was something in the traceback, accumulate
 		if (numTracebackLinesChanged) {
 			numTracebackLines += editors[whichPane].getTracebackNumLines(editors[whichPane].getCursorLineIndex());
@@ -2333,25 +2339,34 @@ void ofApp::drawScope()
 	// draw the background
 	ofSetColor(backgroundColor * brightnessCoeff);
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
-	// draw the legend
-	std::vector<ofColor> colorsVec = {ofColor::cyan, ofColor::fuchsia};
-	std::string chanStr = "chan ";
-	float strWidth = font.stringWidth(chanStr) + oneCharacterWidth;
-	float strHeight = font.stringHeight(chanStr);
-	for (int i = 0; i < 2; i++) {
-		ofSetColor(colorsVec[i]);
-		float x = scoreXOffset+scoreBackgroundWidth-strWidth-10;
-		float y = scoreYOffset+(strHeight*(i+1)) + ((strHeight/2)*(i > 0 ? 1 : 0));
-		ofDrawLine(x-oneCharacterWidth, y, x-oneCharacterWidth-10, y);
-		font.drawString(chanStr + std::to_string(i+1), x, y+(strHeight/2));
+	if (pyoSet) {
+		// draw the legend
+		std::string chanStr = "chan ";
+		// get the number of digits of the number of channels
+		int numDigits = 0;
+		int timesTen = 1;
+		while (timesTen <= outChannels) {
+			timesTen *= 10;
+			numDigits++;
+		}
+		float strWidth = font.stringWidth(chanStr) + (oneCharacterWidth * numDigits);
+		float strHeight = font.stringHeight(chanStr);
+		for (int i = 0; i < outChannels; i++) {
+			// use the same colors we use for the piano roll
+			ofSetColor(colorNameMap[instrumentColors[i%(int)instrumentColors.size()]]);
+			float x = scoreXOffset+scoreBackgroundWidth-strWidth-10;
+			float y = scoreYOffset+(strHeight*(i+1)) + ((strHeight/2)*(i > 0 ? 1 : 0));
+			ofDrawLine(x-oneCharacterWidth, y, x-oneCharacterWidth-10, y);
+			font.drawString(chanStr + std::to_string(i+1), x, y+(strHeight/2));
+		}
+		ofSetLineWidth(lineWidth*2);
+		for (int i = 0; i < outChannels; i++) {
+			// draw the actual waveforms
+			ofSetColor(colorNameMap[instrumentColors[i%(int)instrumentColors.size()]]);
+			scopeWaveforms[i].draw();
+		}
+		ofSetLineWidth(lineWidth);
 	}
-	// draw the actual waveforms
-	ofSetLineWidth(5);
-	ofSetColor(ofColor::cyan);
-	scopeWaveformLeft.draw();
-	ofSetColor(ofColor::fuchsia);
-	scopeWaveformRight.draw();
-	ofSetLineWidth(lineWidth);
 	// draw a line that separates the scope from the editor
 	ofSetColor(foregroundColor * brightnessCoeff);
 	if (scoreOrientation == 0) {
@@ -2505,19 +2520,39 @@ void ofApp::executeKeyPressed(int key)
 	    	else if (char(key) == 'q' && editors[whichPane].isCtrlPressed()) {
 	    		exit();
 	    	}
+			else if (char(key) == 'n' && editors[whichPane].isCtrlPressed()) {
+				// remove all panes but one
+				for (size_t i = 0; i < editors.size()-1; i++) {
+					removePane();
+				}
+				clearBars();
+				clearLoops();
+				clearLists();
+				clearFunctions();
+				clearInstruments();
+				// hide score
+				showScore(-1);
+				editors[whichPane].clearText();
+				editors[whichPane].createNewLine("", 1);
+			}
 	    	// add panes. V for vertical, H for horizontal (with shift pressed)
 	    	else if (((key == 86) || (key == 72)) && editors[whichPane].isCtrlPressed()) {
 				addPane(key);
 			}
 	    	// remove panes. Ctrl+w, where if only one pane, we quit
 	    	else if (key == 119 && editors[whichPane].isCtrlPressed()) {
-				removePane();
+				if (editors[whichPane].isHelpFileOpen()) {
+					editors[whichPane].closeHelpFile();
+				}
+				else {
+					removePane();
+				}
 	    	}
 			// set which editor is active with keys 0-9 and alt pressed
 	    	else if ((key >= 49) && (key <= 57) && altPressed) {
 	    		if ((key - 49) < (int)editors.size()) {
 	    			setActivePane(key - 49);
-					if (sharedData.showNotes || sharedData.showPianoRoll) {
+					if (sharedData.showScore) {
 						if (scoreOrientation == 0 && paneSplitOrientation == 1 && numPanes.size() == 2) {
 							if ((scoreXOffset == 0 && whichPane < numPanes[0]) || (scoreXOffset > 0 && whichPane >= numPanes[0])) {
 								swapScorePosition(0);
@@ -2838,7 +2873,7 @@ void ofApp::addPane(int key)
 	// if the panes are split vertically and the score is also vertical (opposite values)
 	// or both are horizontal
 	// we need to swap the position of the score so the new pane becomes visible
-	if (firstAddition && ((sharedData.showNotes || sharedData.showPianoRoll) && paneSplitOrientation != scoreOrientation)) {
+	if (firstAddition && (sharedData.showScore && paneSplitOrientation != scoreOrientation)) {
 		// swap the score position without changing its orientation
 		swapScorePosition(scoreOrientation);
 		// with two panes split horizontally and the score shown horizontally
@@ -2949,17 +2984,17 @@ void ofApp::parseStrings(int index, int numLines)
 		// parseString() returns a pair of int and string, where the int determines the error type
 		// 0 for nothing, 1 for note, 2 for warning, and 3 for error
 		if (editors[whichPane].getSessionActivity()) {
-			errors.push_back(parseString(editors[whichPane].allStrings[i], i, numLines));
+			errors.push_back(parseString(editors[whichPane].allLines[i].str, i, numLines));
 			if (editors[whichPane].getSendLines()) {
 				ofxOscMessage m;
 				m.setAddress("/livelily"+std::to_string(editors[whichPane].getSendLinesPaneNdx())+"/press");
-				m.addStringArg(editors[whichPane].allStrings[i]);
+				m.addStringArg(editors[whichPane].allLines[i].str);
 				editors[whichPane].oscKeys.sendMessage(m, false);
 			}
 		}
 		else {
-			if (editors[whichPane].allStrings[i] == "\\active") {
-				errors.push_back(parseString(editors[whichPane].allStrings[i], i, numLines));
+			if (editors[whichPane].allLines[i].str == "\\active") {
+				errors.push_back(parseString(editors[whichPane].allLines[i].str, i, numLines));
 			}
 		}
 	}
@@ -3291,7 +3326,7 @@ CmdOutput ofApp::parseExpandedCommands(const std::vector<std::string>& tokens, i
 	size_t firstCmdNdx = 0;
 	bool hasBrackets = false;
 	// initialize a CmdOutput structure with the first command of the string
-	// (all executable lines in LiveLily start with a string)
+	// (all executable lines in LiveLily start with a command)
 	CmdOutput cmdOutput = CmdOutput();
 	if (tokens.empty()) return cmdOutput;
 	// check if there are white spaces (probably a horizontal tab) at the beginning of the input vector
@@ -3420,7 +3455,7 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		sharedData.numBeats[bar] = sharedData.numerator[bar] * (MINDUR / sharedData.denominator[bar]);
 		if (sharedData.BPMMultiplier.find(bar) == sharedData.BPMMultiplier.end()) {
 			sharedData.BPMMultiplier[bar] = 1;
-			sharedData.beatAtValues[bar] = 1;
+			sharedData.beatAtValues[bar] = {1};
 			sharedData.beatAtDifferentThanDivisor[bar] = true;
 		}
 		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
@@ -3470,7 +3505,7 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		if (cmdInput.inputVec.size() == 4) {
 			if (cmdInput.inputVec[2].compare("=") != 0) {
 				barError = true;
-				return genError("\\tempo command takes maximum three arguments");
+				return genError("\\tempo command takes either \"tempo\" or \"duration = tempo\" as argument");
 			}
 			else {
 				std::pair<int, std::string> err = getBaseDurError(cmdInput.inputVec[1]);
@@ -3488,7 +3523,7 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 					return genError("tempo can't be zero or negative");
 				}
 				sharedData.BPMMultiplier[bar] = getBaseDurValue(cmdInput.inputVec[1], sharedData.denominator[bar]);
-				sharedData.beatAtValues[bar] = sharedData.BPMMultiplier[bar];
+				sharedData.beatAtValues[bar] = {sharedData.BPMMultiplier[bar]};
 				sharedData.beatAtDifferentThanDivisor[bar] = true;
 				sharedData.BPMTempi[bar] = tempoVal;
 				// convert BPM to ms
@@ -3521,7 +3556,8 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 				sharedData.tempo[bar] = sharedData.tempoMs[bar] / (MINDUR / sharedData.denominator[bar]);
 				// get the usec duration of the PPQM
 				sharedData.PPQNPerUs[bar] = (uint64_t)(sharedData.tempoMs[bar] / (float)sharedData.PPQN) * 1000;
-				sharedData.BPMMultiplier[bar] = sharedData.beatAtValues[bar] = 1;
+				sharedData.BPMMultiplier[bar] = 1;
+				sharedData.beatAtValues[bar] = {1};
 				sharedData.beatAtDifferentThanDivisor[bar] = true;
 				sharedData.tempoBaseForScore[bar] = 4;
 				sharedData.BPMDisplayHasDot[bar] = false;
@@ -3550,20 +3586,19 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		if (!parsingBar && !parsingBars) {
 			return genError("\\beatat command must be placed inside a bar(s) definition");
 		}
-		if (cmdInput.inputVec.size() > 2) {
-			barError = true;
-			return genError("\\beatat command takes one argument only");
-		}
 		if (cmdInput.inputVec.size() == 1) {
 			barError = true;
-			return genError("\\beatat command takes one argument");
-		}
-		std::pair<int, std::string> err = getBaseDurError(cmdInput.inputVec[1]);
-		if (err.first > 0) {
-			return genError(err.second);
+			return genError("\\beatat command takes at least one argument");
 		}
 		int bar = getLastBarIndex();
-		sharedData.beatAtValues[bar] = getBaseDurValue(cmdInput.inputVec[1], sharedData.denominator[bar]);
+		for (size_t i = 1; i > cmdInput.inputVec.size(); i++) {
+			std::pair<int, std::string> err = getBaseDurError(cmdInput.inputVec[i]);
+			if (err.first > 0) {
+				return genError(err.second);
+			}
+			if (i == 1) sharedData.beatAtValues[bar][0] = getBaseDurValue(cmdInput.inputVec[i], sharedData.denominator[bar]);
+			else sharedData.beatAtValues[bar].push_back(getBaseDurValue(cmdInput.inputVec[i], sharedData.denominator[bar]));
+		}
 		sharedData.beatAtDifferentThanDivisor[bar] = true;
 		// store the beatat information to the barLines std::string
 		int barIndex = getLastLoopIndex();
@@ -3572,8 +3607,8 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		//}
 		sharedData.barLines[sharedData.barsOrdered[barIndex]] += '\t';
 		for (size_t i = 0; i < cmdInput.inputVec.size(); i++) {
+			if (i > 0) sharedData.barLines[sharedData.barsOrdered[barIndex]] += " ";
 			sharedData.barLines[sharedData.barsOrdered[barIndex]] += cmdInput.inputVec[i];
-			if (i < cmdInput.inputVec.size()-1) sharedData.barLines[sharedData.barsOrdered[barIndex]] += " ";
 		}
 		sharedData.barLines[sharedData.barsOrdered[barIndex]] += '\n';
 		return cmdOutput;
@@ -3726,7 +3761,7 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 
 	else if (cmdInput.inputVec[0].compare("\\transpose") == 0) {
 		if (cmdInput.inputVec.size() < 3) {
-			return genError("\\transpose takes three arguments, number of semitones and melodic line to transpose");
+			return genError("\\transpose takes two arguments, melodic line to transpose and number of semitones");
 		}
 		if (!isNumber(cmdInput.inputVec.back())) {
 			return genError("last argument to \\transpose must be an integer, the number of semitones to transpose");
@@ -3740,13 +3775,18 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 			// the output of stripLineFromBar() contains the instrument name in the beginning, so we strip that out
 			line = {cmdOutputLocal.outputVec.begin()+1, cmdOutputLocal.outputVec.end()};
 		}
-		else if (sharedData.instrumentIndexes.find(cmdInput.inputVec[1]) != sharedData.instrumentIndexes.end()){
-			// the std::vector of the command input includes both the \transposed command and the name of the instrument
-			// so we save from its third item onwards, hence +2 below
-			line = {cmdInput.inputVec.begin()+2, cmdInput.inputVec.end()};
-		}
 		else {
-			return genError("\\transpose takes a bar or a loop as an argument");
+			line = {cmdInput.inputVec.begin()+1, cmdInput.inputVec.end()};
+		}
+		CmdOutput cmdOutputLocal = parseExpandedCommands(line, lineNum, numLines);
+		if (cmdOutputLocal.errorCode == 3) {
+			return cmdOutputLocal;
+		}
+		line.clear();
+		line = cmdOutputLocal.outputVec;
+		// since the list might still hold the instrument name, we have to check this and remove it
+		if (sharedData.instrumentIndexes.find(line[0]) != sharedData.instrumentIndexes.end()) {
+			line = {line.begin()+1, line.end()};
 		}
 		// now we run through the line and we transpose all notes
 		std::map<char, int> notes = {{'c', 0}, {'d', 2}, {'e', 4}, {'f', 5}, {'g', 7}, {'a', 9}, {'b', 11}};
@@ -3797,7 +3837,7 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 						}
 					}
 				}
-				// we have now transposed the note, so we can reconstruct the std::string
+				// we have now transposed the note, so we can reconstruct the string
 				if (accidental > 0) newNote += "is";
 				else if (accidental < 0) newNote += "es";
 				// now that we have transposed the semitones, we transpose the octaves too
@@ -3831,10 +3871,11 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 				output.push_back(s);
 			}
 		}
+		if (isNumber(output.back())) output.pop_back();
 		cmdOutput.outputVec = output;
-		// similar to the \tuplet command, we need to replace the entire input std::vector
+		// similar to the \tuplet command, we need to replace the entire input vector
 		// which includes the curly brackets which are not included in the command here
-		// so we need to pop the size of the input std::vector plus one
+		// so we need to pop the size of the input vector plus one
 		cmdOutput.toPop = cmdInput.inputVec.size() + 1;
 		return cmdOutput;
 	}
@@ -3912,7 +3953,7 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 
 	else if (cmdInput.inputVec[0].compare("\\instorder") == 0) {
 		if (cmdInput.inputVec.size() != sharedData.instruments.size()+1) {
-			return genError("instrument std::list must be equal to number of instruments");
+			return genError("instrument list must be equal to number of instruments");
 		}
 		for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
 			sharedData.instrumentIndexesOrdered[i-1] = sharedData.instrumentIndexes[cmdInput.inputVec[i]];
@@ -3992,23 +4033,9 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 			for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 				commandsMap[livelily][it->second.getName()[0]].erase("\\" + it->second.getName());
 			}
-			sharedData.instruments.clear();
-			sharedData.instrumentIndexes.clear();
-			sharedData.instrumentIndexesOrdered.clear();
-			sharedData.numInstruments = 0;
-			sharedData.barsIndexes.clear();
-			sharedData.loopData.clear();
-			sharedData.loopsIndexes.clear();
-			sharedData.loopsOrdered.clear();
-			sharedData.barsOrdered.clear();
-			sharedData.barLines.clear();
-			sharedData.loopsVariants.clear();
-			sharedData.grouppedOSCClients.clear();
-			sharedData.distBetweenBeats.clear();
-			instrumentOSCHostPorts.clear();
-			instGroups.clear();
-			tempLines.clear();
-			allBars.clear();
+			clearBars();
+			clearLoops();
+			clearInstruments();
 		}
 		else if (commands[1].compare("init") == 0 || commands[1].compare("add") == 0) {
 			if (!hasDot) {
@@ -5154,12 +5181,32 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 
 	else if (cmdInput.inputVec[0].compare("\\nchannels") == 0) {
 		if (cmdInput.inputVec.size() != 2) {
-			return genError("\\nchannels takes one argument, the number of audio channels");
+			return genError("\\nchannels takes one argument, the number of audio I/O channels");
 		}
 		if (!isNumber(cmdInput.inputVec[1])) {
 			return genError("argument to \\nchannels must be an integer");
 		}
-		nChannels = stoi(cmdInput.inputVec[1]);
+		inChannels = outChannels = stoi(cmdInput.inputVec[1]);
+	}
+
+	else if (cmdInput.inputVec[0].compare("\\inchannels") == 0) {
+		if (cmdInput.inputVec.size() != 2) {
+			return genError("\\inchannels takes one argument, the number of audio input channels");
+		}
+		if (!isNumber(cmdInput.inputVec[1])) {
+			return genError("argument to \\inchannels must be an integer");
+		}
+		inChannels = stoi(cmdInput.inputVec[1]);
+	}
+
+	else if (cmdInput.inputVec[0].compare("\\outchannels") == 0) {
+		if (cmdInput.inputVec.size() != 2) {
+			return genError("\\outchannels takes one argument, the number of audio output channels");
+		}
+		if (!isNumber(cmdInput.inputVec[1])) {
+			return genError("argument to \\outchannels must be an integer");
+		}
+		outChannels = stoi(cmdInput.inputVec[1]);
 	}
 
 	else if (cmdInput.inputVec[0].compare("\\livelily") == 0) {
@@ -5219,6 +5266,43 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		}
 	}
 
+	else if (cmdInput.inputVec[0].compare("\\help") == 0) {
+		if (cmdInput.inputVec.size() == 1) {
+			return genError("nothing specified to open its help file");
+		}
+		int newPane = 0;
+		if (cmdInput.inputVec.size() > 2 && (cmdInput.inputVec[2].compare("vert") == 0 || cmdInput.inputVec[2].compare("hor") == 0)) {
+			if (cmdInput.inputVec[2].compare("vert") == 0) {
+				newPane = 1;
+			}
+			else {
+				newPane = 2;
+			}
+		}
+		std::string filePath = HELPFILEPATH;
+		if (startsWith(filePath, "~")) {
+			filePath = getenv("HOME") + filePath.substr(1);
+		}
+		filePath += "/" + cmdInput.inputVec[1].substr(1) + "-help.lyv";
+		switch (newPane) {
+			case 1:
+				addPane(86);
+				break;
+			case 2:
+				addPane(72);
+				break;
+			default:
+				break;
+		}
+		bool fileOpened = editors[whichPane].loadHelpFile(filePath, newPane);
+		if (!fileOpened) {
+			if (newPane > 0) {
+				removePane();
+			}
+			return genError("couldn't find help file for " + cmdInput.inputVec[1]);
+		}
+	}
+
 	else {
 		// the functions return a pair with a boolean stating if an instrument, loop, function, or list is found
 		// and a CmdOutput structure
@@ -5270,7 +5354,7 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 			if (foundDot) barName = tokens[0].substr(0, dotNdx);
 			else barName = tokens[0];
 			// determine if this is a single bar or a loop
-			// if it is a loop, replace the tokens std::vector with the output of parseExpandedCommands()
+			// if it is a loop, replace the tokens vector with the output of parseExpandedCommands()
 			if (sharedData.loopsIndexes.find(barName) != sharedData.loopsIndexes.end() && sharedData.barsIndexes.find(barName) == sharedData.barsIndexes.end()) {
 				CmdInput cmdInput = {tokens, std::vector<std::string>(), false, false};
 				CmdOutput cmdOutput = parseCommand(cmdInput, lineNum, numLines);
@@ -5340,20 +5424,24 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 			}
 		}
 	}
-	// before we parse the input std::vector to detect commands, we store it as a string
+	// before we parse the input vector to detect commands, we store it as a string
 	// which will be the string of the currect bar
 	std::string barLine = genStrFromVec(tokens);
+	// the boolean below is used to determine if we need to update the barLine string
+	bool barLineChanged = false;
 	// parse the string to detect any containing commands like \ottava, \tuplet, \cluster, or a bar or loop name
 	// first insert the instrument name as this has been striped
 	std::vector<std::string> v = {"\\" + sharedData.instruments[lastInstrumentIndex].getName()};
 	// then append the rest of the input vector
 	v.insert(v.end(), tokens.begin(), tokens.end());
 	CmdOutput cmdOutput = parseExpandedCommands(v, lineNum, numLines);
+	// check if the input vector is different than the output of parseExpandedCommands()
+	// and if it is, set barLineChanged to true
+	// this might happen if instead of notes we pass a previous bar for this instrument or another one
+	if (tokens != cmdOutput.outputVec) barLineChanged = true;
 	if (cmdOutput.errorCode == 3) return std::make_pair(3, cmdOutput.errorStr);
 	tokens.clear();
 	tokens = {cmdOutput.outputVec.begin()+1, cmdOutput.outputVec.end()};
-	// the boolean below is used to determine if we need to update the barLine string
-	bool barLineChanged = false;
 	if (tokens[0] == "\\bars") {
 		// the algorithm of this if test is similar to the if (parsingBars) above
 		// but here we need a boolean too because we get the entire bars definition strings e.g.
@@ -5397,21 +5485,6 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 	if (tokens[0] == "\\bar") {
 		CmdOutput cmdOutput = stripLineFromBar(tokens, lineNum, numLines);
 		if (cmdOutput.errorCode == 3) return std::make_pair(3, cmdOutput.errorStr);
-		tokens.clear();
-		// the first item of the CmdOutput structure returned by parseExpandedCommands()
-		// is the name of the instrument the line of which we're extracting here
-		// so we discard it and keep the rest of the information
-		tokens = {cmdOutput.outputVec.begin()+1, cmdOutput.outputVec.end()};
-		barLineChanged = true;
-	}
-	// if we provide a bar name and an instrument name as a second level command
-	// then the tokens vector will contain the melodic line of this instrument at this bar
-	// so we check if the first item of the tokens vector is an instrument name
-	// the else if test below can also be true if we parse many bars and for one of them
-	// we ask for a previous bar of this bars definition but for another instrument
-	// in this case, we'll get the instrument name and the entire line with all the bars
-	else if (sharedData.instrumentIndexes.find(tokens[0]) != sharedData.instrumentIndexes.end()){
-		CmdOutput cmdOutput = parseExpandedCommands(tokens, lineNum, numLines);
 		tokens.clear();
 		// the first item of the CmdOutput structure returned by parseExpandedCommands()
 		// is the name of the instrument the line of which we're extracting here
@@ -6825,16 +6898,37 @@ std::pair<int, std::string> ofApp::parseBarLoop(std::string str, int lineNum, in
 		sharedData.loopData[loopNdx] = thisBarIndexes;
 		return std::make_pair(0, "");
 	}
+	// if we get only two asterisks, it means we want to create a loop with all the bars and loops
+	if (wildCardStr.compare("**") == 0) {
+		// find the last index of the stored loops to avoid storing its own data into itself
+		int loopNdx = getLastLoopIndex();
+		std::vector<int> thisLoopIndexes;
+		for (auto it = sharedData.loopsOrdered.begin(); it != sharedData.loopsOrdered.end(); ++it) {
+			// the first, default bar (a tacet) has index 0, which we must ignore here
+			if (it->first > 0 && it->first != loopNdx) thisLoopIndexes.push_back(it->first);
+		}
+		std::vector<int> v;
+		sharedData.loopData[loopNdx] = v;
+		for (int thisLoopNdx : thisLoopIndexes) {
+			for (int barNdx : sharedData.loopData[thisLoopNdx]) {
+				sharedData.loopData[loopNdx].push_back(barNdx);
+			}
+		}
+		return std::make_pair(0, "");
+	}
+	// check if the asterisk is used as a wild card
 	size_t multIndex = wildCardStr.find("*");
 	std::vector<std::string> names;
-	if (multIndex != std::string::npos && multIndex < wildCardStr.size()-1) {
+	if (multIndex != std::string::npos) {
 		std::string restOfStr;
-		size_t whiteSpaceNdx = wildCardStr.substr(multIndex+1).find(" ");
-		if (whiteSpaceNdx == std::string::npos) {
-			restOfStr = wildCardStr;
-		}
-		else {
-			restOfStr = wildCardStr.substr(multIndex+1, whiteSpaceNdx);
+		if (multIndex < wildCardStr.size()-1 && multIndex > 0) {
+			size_t whiteSpaceNdx = wildCardStr.substr(multIndex+1).find(" ");
+			if (whiteSpaceNdx == std::string::npos) {
+				restOfStr = wildCardStr.substr(multIndex+1);
+			}
+			else {
+				restOfStr = wildCardStr.substr(multIndex+1, whiteSpaceNdx);
+			}
 		}
 		if (!isNumber(restOfStr)) {
 			// look for file names that include the characters of the wild card
@@ -6892,20 +6986,22 @@ std::pair<int, std::string> ofApp::parseBarLoop(std::string str, int lineNum, in
 		nameLength = name.size();
 		multIndex = name.find("*");
 		howManyTimes = 1;
-		if (multIndex != std::string::npos) {
+		if (multIndex != std::string::npos && multIndex < name.size()-1) {
+			std::string repeatCoeff = name.substr(multIndex+1);
+			if (endsWith(repeatCoeff, "}")) repeatCoeff.pop_back();
 			nameLength = multIndex;
-			if (!isNumber(name.substr(multIndex+1))) {
+			if (!isNumber(repeatCoeff)) {
 				return std::make_pair(3, "repetition coefficient not an int");
 			}
 			else if (multIndex == 0) {
 				// the multiplication symbol cannot be the first symbol in the token
 				return std::make_pair(3, "the multiplication character must be concatenated to the bar/loop name");
 			}
-			else if (multIndex == name.size()-1) {
-				// the multiplication symbol must be followed by a number
-				return std::make_pair(3, "the multiplication symbol must be concatenated to a number");
-			}
 			howManyTimes = stoi(name.substr(multIndex+1));
+		}
+		else if (multIndex == name.size()-1) {
+			// the multiplication symbol must be followed by a number
+			return std::make_pair(3, "the multiplication symbol must be concatenated to a number");
 		}
 		// first check for barLoops because when we define a bar with data
 		// and not with combinations of other bars, we create a barLoop with the same name
@@ -7189,6 +7285,12 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 					else if (commands[2].compare("immediately") == 0) {
 						sendScoreChangeToPart(lastInstrumentIndex, false);
 					}
+					else if (commands[2].compare("help") == 0) {
+						std::string noteStr = "sets when the connected LiveLily-Part score will be update\n";
+						noteStr += "arguments are \"onlast\" or \"immediately\"\n";
+						noteStr += "\"onlast\" sets the update to happen when last visible part is playing, \"immediately\" sets the update to happen immediately";
+						return std::make_pair(instrumentExists, genNote(noteStr));
+					}
 					else {
 						return std::make_pair(instrumentExists, genError(commands[2] + (std::string)"unknown argument to \"update\", must be \"onlast\" or \"immediately\""));
 					}
@@ -7458,12 +7560,11 @@ std::pair<bool, CmdOutput> ofApp::isBarLoop(std::vector<std::string>& originalCo
 						std::vector<std::string> instBarLinesTokens = tokenizeExpandedCommands(*it);
 						size_t instNameNdx = 0;
 						// bar definitions have their lines indented by a horizontal tab written as single white spaces
-						// these white spaces have been left out when the std::string is tokenized
-						// below we determine which token in the std::vector to look at, which must be the first after these spaces
+						// these white spaces have been left out when the string is tokenized
+						// below we determine which token in the vector to look at, which must be the first after these spaces
 						if (instBarLinesTokens.size() > 0 && startsWith(instBarLinesTokens.at(0), "\t")) instNameNdx++;
 						if (instBarLinesTokens.size() > 0 && instBarLinesTokens.at(0).substr(instNameNdx) == commands[1]) {
-							std::vector<std::string> v = {instBarLinesTokens.at(0).substr(instNameNdx)};
-							v.insert(v.end(), instBarLinesTokens.begin()+1, instBarLinesTokens.end());
+							std::vector<std::string> v = {instBarLinesTokens.begin()+1, instBarLinesTokens.end()};
 							return std::make_pair(barLoopExists, genOutput(v));
 						}
 					}
@@ -7491,7 +7592,7 @@ std::pair<bool, CmdOutput> ofApp::isBarLoop(std::vector<std::string>& originalCo
 						sharedData.prevPosition = sharedData.thisPosition;
 					}
 				}
-				else  {
+				else {
 					std::vector<std::string> v;
 					// first check if this is a loop and not a bar
 					if (sharedData.barsIndexes.find(barLoopName) == sharedData.barsIndexes.end()) {
@@ -7534,6 +7635,7 @@ std::pair<bool, CmdOutput> ofApp::isFunction(std::vector<std::string>& commands,
 	}
 	if (functionExists && executeFunction) {
 		std::vector<std::string> functionLines = tokenizeString(sharedData.functions[lastFunctionIndex].printStr(), "\n");
+		std::pair<int, std::string> p;
 		for (std::string line : functionLines) {
 			// detect $ args and replace them with actual args
 			std::vector<int> argNdxs = findIndexesOfCharInStr(line, "$");
@@ -7571,7 +7673,7 @@ std::pair<bool, CmdOutput> ofApp::isFunction(std::vector<std::string>& commands,
 					}
 				}
 			}
-			std::pair<int, std::string> p = parseString(lineWithArgs, lineNum, numLines);
+			p = parseString(lineWithArgs, lineNum, numLines);
 			if (p.first == 3) { // on error, return
 				return std::make_pair(functionExists, genError(p.second));
 			}
@@ -7580,6 +7682,17 @@ std::pair<bool, CmdOutput> ofApp::isFunction(std::vector<std::string>& commands,
 		if (onUnbindFuncNdx > -1) {
 			CmdInput cmdInput = {{sharedData.functions[onUnbindFuncNdx].getName()}, std::vector<std::string>(), false, true};
 			return std::make_pair(functionExists, parseCommand(cmdInput, 1, 1));
+		}
+		else {
+			// if we're not unbinding the function, check if we get a note or warning so we can return these
+			switch (p.first) {
+				case 1:
+					return std::make_pair(functionExists, genNote(p.second));
+				case 2:
+					return std::make_pair(functionExists, genWarning(p.second));
+				default:
+					break;
+			}
 		}
 	}
 	return std::make_pair(functionExists, cmdOutput);
@@ -7862,7 +7975,75 @@ std::pair<bool, CmdOutput> ofApp::isGroup(std::vector<std::string>& originalComm
 	return std::make_pair(groupExists, cmdOutput);
 }
 
-/************* command typing/executing functions **************/
+/********************* clearing functions *********************/
+//--------------------------------------------------------------
+void ofApp::clearBars()
+{
+	for (auto it = sharedData.barsIndexes.begin(); it != sharedData.barsIndexes.end(); ++it) {
+		keywords.erase(std::find(keywords.begin(), keywords.end(), it->first));
+		commandsMap[livelily][it->first[1]].erase(it->first);
+	}
+	sharedData.barsIndexes.clear();
+	sharedData.barsOrdered.clear();
+	sharedData.barLines.clear();
+	sharedData.distBetweenBeats.clear();
+}
+
+//--------------------------------------------------------------
+void ofApp::clearLoops()
+{
+	for (auto it = sharedData.loopsIndexes.begin(); it != sharedData.loopsIndexes.end(); ++it) {
+		keywords.erase(std::find(keywords.begin(), keywords.end(), it->first));
+		commandsMap[livelily][it->first[1]].erase(it->first);
+	}
+	sharedData.loopData.clear();
+	sharedData.loopsIndexes.clear();
+	sharedData.loopsOrdered.clear();
+	sharedData.loopsVariants.clear();
+}
+
+//--------------------------------------------------------------
+void ofApp::clearLists()
+{
+	for (auto it = listIndexes.begin(); it != listIndexes.end(); ++it) {
+		keywords.erase(std::find(keywords.begin(), keywords.end(), it->first));
+		commandsMap[livelily][it->first[1]].erase(it->first);
+	}
+	listIndexes.clear();
+	listMap.clear();
+}
+
+//--------------------------------------------------------------
+void ofApp::clearFunctions()
+{
+	for (auto it = functionIndexes.begin(); it != functionIndexes.end(); ++it) {
+		keywords.erase(std::find(keywords.begin(), keywords.end(), it->first));
+		commandsMap[livelily][it->first[1]].erase(it->first);
+	}
+	functionIndexes.clear();
+	sharedData.functions.clear();
+	lastFunctionIndex = 0;
+	storingFunction = false;
+}
+
+//--------------------------------------------------------------
+void ofApp::clearInstruments()
+{
+	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		std::string s = it->second.getName();
+		keywords.erase(std::find(keywords.begin(), keywords.end(), "\\"+s));
+		commandsMap[livelily][s[0]].erase("\\"+s);
+	}
+	sharedData.instruments.clear();
+	sharedData.instrumentIndexes.clear();
+	sharedData.instrumentIndexesOrdered.clear();
+	sharedData.numInstruments = 0;
+	sharedData.grouppedOSCClients.clear();
+	instrumentOSCHostPorts.clear();
+	instGroups.clear();
+}
+
+/************ command typing/executing functions **************/
 //--------------------------------------------------------------
 void ofApp::typeShellCommand(int key)
 {
@@ -7926,6 +8107,9 @@ void ofApp::typeShellCommand(int key)
 		if (expandingArg && startsWith(shellStrLocal.substr(shellStrLocal.find(" ")+1), "/")) {
 			fullPath = shellStrLocal.substr(shellStrLocal.find(" ")+1, shellStrLocal.substr(shellStrLocal.find(" ")+1).find_last_of("/"));
 		}
+		else if (expandingArg && startsWith(shellStrLocal.substr(shellStrLocal.find(" ")+1), "~")) {
+			fullPath = getenv("HOME") + shellStrLocal.substr(shellStrLocal.find(" ")+2, shellStrLocal.substr(shellStrLocal.find(" ")+2).find_last_of("/"));
+		}
 		else if (expandingArg) {
 			std::string pwdStr = ofSystem("pwd");
 			fullPath = pwdStr.substr(0, pwdStr.size()-1) + "/";
@@ -7964,7 +8148,7 @@ void ofApp::typeShellCommand(int key)
 				shellStr = shellStrLocal.substr(0, shellStrLocal.find_last_of("/")+1) + v[0];
 			}
 			else if (expandingArg) {
-					shellStr = shellStrLocal.substr(0, shellStrLocal.find(" ")+1) + v[0];
+				shellStr = shellStrLocal.substr(0, shellStrLocal.find(" ")+1) + v[0];
 			}
 			else {
 				shellStr = v[0];
@@ -8013,6 +8197,7 @@ void ofApp::typeShellCommand(int key)
 			shellLsOutputStr = "";
 			shellStrCursorPos = 0;
 			numShellLines = 1;
+			numShellLsOutputLines = 0;
 			editors[whichPane].setTypingShell(true);
 			editors[whichPane].setShowingShell(true);
 		}
@@ -8044,6 +8229,33 @@ void ofApp::replaceShellStrNewlines()
 void ofApp::executeShellCommand()
 {
 	shellStrColor = ofColor::white;
+	// first extract the argument and expand it according to the symbols it uses
+	// like the tilde character or a dot
+	size_t whiteSpace = shellStr.find(" ");
+	std::string arg;
+	if (whiteSpace != std::string::npos || whiteSpace < shellStr.size()-1) {
+		std::string shellStrLocal = shellStr.substr(whiteSpace+1);
+		// remove newline characters from command
+		shellStrLocal.erase(std::remove(shellStrLocal.begin(), shellStrLocal.end(), '\n'), shellStrLocal.end());
+		if (startsWith(shellStrLocal, "~")) {
+			arg = getenv("HOME") + shellStrLocal.substr(1);
+		}
+		else if (startsWith(shellStrLocal, "/")) {
+			arg = shellStrLocal;
+		}
+		else {
+			std::string pwdStr = ofSystem("pwd");
+			// there's a newline character at the end of ofSystem("pwd"), so we remove it below
+			arg = pwdStr.substr(0, pwdStr.size()-1) + "/";
+			if (startsWith(shellStrLocal, "./")) {
+				arg += shellStrLocal.substr(2);
+			}
+			else {
+				arg += shellStrLocal;
+			}
+		}
+	}
+	// then check which command we're calling
 	if (startsWith(shellStr, ":save")) {
 		if (shellStr.compare(":save") == 0) {
 			shellStr = "save command called without an argument";
@@ -8052,30 +8264,18 @@ void ofApp::executeShellCommand()
 			return;
 		}
 		if (!startsWith(shellStr, ":save ")) {
-			shellStr = "Not an editor command: " + shellStr;
+			shellStr = shellStr + ": not an editor command";
 			shellStrColor = ofColor::red;
 			numShellLines = 1;
 			return;
 		}
-		if (shellStr.size() < 7) {
+		if (arg.empty()) {
 			shellStr = "save command called without an argument";
 			shellStrColor = ofColor::red;
 			numShellLines = 1;
 			return;
 		}
-		std::string shellStrLocal = shellStr;
-		// remove newline characters from command
-		shellStrLocal.erase(std::remove(shellStrLocal.begin(), shellStrLocal.end(), '\n'), shellStrLocal.end());
-		std::string fullPath;
-		if (startsWith(shellStrLocal.substr(shellStrLocal.find(" ")+1), "/")) {
-			fullPath = shellStrLocal.substr(shellStrLocal.find(" ")+1);
-		}
-		else {
-			std::string pwdStr = ofSystem("pwd");
-			// there's a newline character at the end of ofSystem("pwd"), so we remove it below
-			fullPath = pwdStr.substr(0, pwdStr.size()-1) + "/" + shellStrLocal.substr(shellStrLocal.find(" ")+1);
-		}
-		editors[whichPane].saveFile(fullPath);
+		editors[whichPane].saveFile(arg);
 		shellStr.clear();
 		numShellLines = 0;
 	}
@@ -8092,59 +8292,29 @@ void ofApp::executeShellCommand()
 			return;
 		}
 		if (!startsWith(shellStr, ":load ")) {
-			shellStr = "Not an editor command: " + shellStr;
+			shellStr = shellStr + ": not an editor command";
 			shellStrColor = ofColor::red;
 			numShellLines = 1;
 			return;
 		}
-		if (shellStr.size() < 7) {
+		if (arg.empty()) {
 			shellStr = "load command called without an argument";
 			shellStrColor = ofColor::red;
 			numShellLines = 1;
 			return;
 		}
-		std::string shellStrLocal = shellStr;
-		// remove newline characters from command
-		shellStrLocal.erase(std::remove(shellStrLocal.begin(), shellStrLocal.end(), '\n'), shellStrLocal.end());
-		std::string filePath = shellStrLocal.substr(6);
-		if (!startsWith(filePath, "/")) {
-			if (startsWith(filePath, ".")) {
-				filePath = filePath.substr(1);
-			}
-			else {
-				filePath = "/" + filePath;
-			}
-			std::string pwdStr = ofSystem("pwd");
-			// there's a newline character at the end of ofSystem("pwd"), so we remove it below
-			filePath = pwdStr.substr(0, pwdStr.size()-1) + filePath;
-		}
-		editors[whichPane].loadFile(filePath);
+		editors[whichPane].loadFile(arg);
 		shellStr.clear();
 		numShellLines = 0;
 	}
 	else if (startsWith(shellStr, ":ls")) {
-		if (shellStr.find(" ") == std::string::npos && shellStr.size() > 3) {
-			shellStr = "Not an editor command: " + shellStr;
+		if (whiteSpace == std::string::npos && shellStr.size() > 3) {
+			shellStr = shellStr + ": not an editor command";
 			shellStrColor = ofColor::red;
 			numShellLines = 1;
 			return;
 		}
-		std::string shellStrLocal = shellStr;
-		// remove newline characters from command
-		shellStrLocal.erase(std::remove(shellStrLocal.begin(), shellStrLocal.end(), '\n'), shellStrLocal.end());
-		std::string fullPath;
-		if (shellStr.compare(":ls") == 0) {
-			fullPath = ".";
-		}
-		else if (startsWith(shellStrLocal.substr(shellStrLocal.find(" ")+1), "/")) {
-			fullPath = shellStrLocal.substr(shellStrLocal.find(" ")+1);
-		}
-		else {
-			std::string pwdStr = ofSystem("pwd");
-			// there's a newline character at the end of ofSystem("pwd"), so we remove it below
-			fullPath = pwdStr.substr(0, pwdStr.size()-1) + "/" + shellStrLocal.substr(shellStrLocal.find(" ")+1);
-		}
-		std::string lsOutput = ofSystem("ls -p " + fullPath);
+		std::string lsOutput = ofSystem("ls -p " + arg);
 		shellStr.clear();
 		numShellLines = 0;
 		formatShellLsOutput(tokenizeString(lsOutput, "\n"));
@@ -8155,13 +8325,18 @@ void ofApp::executeShellCommand()
 		if (shellStr.length() >= maxShellChars) replaceShellStrNewlines();
 	}
 	else if (shellStr.compare(":q") == 0) {
-		removePane();
+		if (editors[whichPane].isHelpFileOpen()) {
+			editors[whichPane].closeHelpFile();
+		}
+		else {
+			removePane();
+		}
 	}
 	else if (shellStr.compare(":qa") == 0) {
 		exit();
 	}
 	else {
-		shellStr = "Not an editor command: " + shellStr;
+		shellStr = shellStr + ": not an editor command";
 		shellStrColor = ofColor::red;
 		numShellLines = 1;
 	}
@@ -8854,7 +9029,7 @@ int ofApp::storeNewBar(std::string barName)
 		sharedData.BPMTempi[barIndex] = 120;
 		sharedData.BPMMultiplier[barIndex] = 1;
 		sharedData.beatAtDifferentThanDivisor[barIndex] = false;
-		sharedData.beatAtValues[barIndex] = 1;
+		sharedData.beatAtValues[barIndex] = {1};
 		sharedData.tempoBaseForScore[barIndex] = 4;
 		sharedData.BPMDisplayHasDot[barIndex] = false;
 		sharedData.tempo[barIndex] = sharedData.tempoMs[barIndex] / (MINDUR / sharedData.denominator[barIndex]);
@@ -8881,8 +9056,8 @@ int ofApp::storeNewBar(std::string barName)
 	keywords.push_back(barName);
 	// store the bar name
 	// the rest of the bar data will be stored in parseMelodicLine()
-	// sharedData.barLines is a std::map of std::string and std::string, so the key is the bar name
-	sharedData.barLines[barName] = "\\bar " + barName + " {\n";
+	// sharedData.barLines is a map of string and string, so the key is the bar name
+	sharedData.barLines[barName] = "\\bar " + barName.substr(1) + " {\n";
 	return barIndex;
 }
 
@@ -8957,11 +9132,29 @@ void ofApp::deleteLastBar()
 		sharedData.numerator.erase(bar);
 		sharedData.denominator.erase(bar);
 	}
+	if (sharedData.tempo.find(bar) != sharedData.tempo.end()) {
+		sharedData.tempo.erase(bar);
+	}
+	if (sharedData.tempoMs.find(bar) != sharedData.tempoMs.end()) {
+		sharedData.tempoMs.erase(bar);
+	}
+	if (sharedData.BPMTempi.find(bar) != sharedData.BPMTempi.end()) {
+		sharedData.BPMTempi.erase(bar);
+	}
+	if (sharedData.BPMMultiplier.find(bar) != sharedData.BPMMultiplier.end()) {
+		sharedData.BPMMultiplier.erase(bar);
+	}
+	if (sharedData.beatAtDifferentThanDivisor.find(bar) != sharedData.beatAtDifferentThanDivisor.end()) {
+		sharedData.beatAtDifferentThanDivisor.erase(bar);
+	}
+	if (sharedData.beatAtValues.find(bar) != sharedData.beatAtValues.end()) {
+		sharedData.beatAtValues.erase(bar);
+	}
 	commandsMap[livelily][sharedData.loopsOrdered[bar].substr(1)[0]].erase(sharedData.loopsOrdered[bar]);
 	sharedData.loopsOrdered.erase(bar);
 	sharedData.loopsVariants.erase(bar);
-	// sharedData.barLines is a std::map<std::string, std::string> so we get the correct key
-	// from the sharedData.barsOrdered std::map using the bar index as the key
+	// sharedData.barLines is a map<string, string> so we get the correct key
+	// from the sharedData.barsOrdered map using the bar index as the key
 	sharedData.barLines.erase(sharedData.barsOrdered[bar]);
 	sharedData.tempLoopIndex = getLastLoopIndex();
 	if (!sequencer.isThreadRunning()) {
@@ -9116,7 +9309,7 @@ void ofApp::initPyo()
 	if (pyoSet) return;
 #ifdef USEPYO
 	// initialize a pyo server
-	sharedData.pyo.setup(nChannels, bufferSize, sampleRate);
+	sharedData.pyo.setup(inChannels, outChannels, bufferSize, sampleRate);
 	// empty the first comment about wxPython
 	sharedData.pyo.getStdout();
 	// initialize OpenFrameworks audio streaming channels
@@ -9127,12 +9320,15 @@ void ofApp::initPyo()
 	if (outSoundDeviceSet) {
 		settings.setOutDevice(outSoundDevice);
 	}
-	settings.numOutputChannels = nChannels;
+	//settings.numInputChannels = inChannels;
+	settings.numOutputChannels = outChannels;
 	settings.sampleRate = sampleRate;
 	settings.bufferSize = bufferSize;
 	settings.numBuffers = 4;
 	settings.setOutListener(this);
 	soundStream.setup(settings);
+	// set the size of the array for displaying the oscilloscope
+	scopeWaveforms.resize(outChannels);
 #endif
 	pyoSet = true;
 }
@@ -9354,14 +9550,12 @@ int ofApp::getPlayingBarIndex()
 //--------------------------------------------------------------
 CmdOutput ofApp::stripLineFromBar(std::vector<std::string> tokens, int lineNum, int numLines)
 {
-	// the output of calling a bar is a std::vector of std::strings with single tokens
-	// so we run through it to determine which std::strings we'll use to assemble a new std::string std::vector
+	// the output of calling a bar is a vector of strings with single tokens
+	// so we run through it to determine which strings we'll use to assemble a new string vector
 	bool startPushing = false;
 	std::vector<std::string> newTokens;
 	for (auto it = tokens.begin(); it != tokens.end(); ++it) {
 		size_t newlineNdx = (*it).find("\n");
-		//auto openCurlyBracketNdx = (*it).find("{");
-		//auto closeCurlyBracketNdx = (*it).find("}");
 		size_t tabNdx = (*it).find("\t");
 		if (startPushing) {
 			// don't include the newline character
@@ -9372,13 +9566,6 @@ CmdOutput ofApp::stripLineFromBar(std::vector<std::string> tokens, int lineNum, 
 				startPushing = false;
 				break;
 			}
-			//else if (closeCurlyBracketNdx != std::string::npos) {
-			//	if (!(*it).substr(0, closeCurlyBracketNdx).empty() && sharedData.instrumentIndexes.find((*it).substr(0, closeCurlyBracketNdx)) == sharedData.instrumentIndexes.end()) {
-			//		newTokens.push_back((*it).substr(0, closeCurlyBracketNdx));
-			//	}
-			//	startPushing = false;
-			//	break;
-			//}
 			else {
 				if (!(*it).empty() && sharedData.instrumentIndexes.find(*it) == sharedData.instrumentIndexes.end()) {
 					newTokens.push_back(*it);
@@ -9389,13 +9576,6 @@ CmdOutput ofApp::stripLineFromBar(std::vector<std::string> tokens, int lineNum, 
 			newTokens.push_back((*it).substr(tabNdx+1));
 			startPushing = true;
 		}
-		//else if (openCurlyBracketNdx != std::string::npos && sharedData.instrumentIndexes.find((*it).substr(openCurlyBracketNdx)) != sharedData.instrumentIndexes.end() &&
-		//		(*it).substr(openCurlyBracketNdx) != "\\" + sharedData.instruments[lastInstrumentIndex].getName()) {
-		//	startPushing = false;
-		//}
-		//else if (sharedData.instrumentIndexes.find(*it) != sharedData.instrumentIndexes.end() && *it != "\\" + sharedData.instruments[lastInstrumentIndex].getName()) {
-		//	startPushing = false;
-		//}
 	}
 	return parseExpandedCommands(newTokens, lineNum, numLines);
 }
@@ -9897,21 +10077,25 @@ void ofApp::showScore(int ndx)
 			sharedData.showNotes = true;
 			sharedData.showPianoRoll = false;
 			sharedData.showScope = false;
+			sharedData.showScore = true;
 			break;
 		case 1:
 			sharedData.showNotes = false;
 			sharedData.showPianoRoll = true;
 			sharedData.showScope = false;
+			sharedData.showScore = true;
 			break;
 		case 2:
 			sharedData.showNotes = false;
 			sharedData.showPianoRoll = false;
 			sharedData.showScope = true;
+			sharedData.showScore = true;
 			break;
 		default:
 			sharedData.showNotes = false;
 			sharedData.showPianoRoll = false;
 			sharedData.showScope = false;
+			sharedData.showScore = false;
 			break;
 	}
 	setPaneCoords();
@@ -10020,7 +10204,7 @@ CmdOutput ofApp::maestroCommands(std::vector<std::string>& originalCommands, int
 //--------------------------------------------------------------
 bool ofApp::isScoreVisible()
 {
-	return (sharedData.showNotes || sharedData.showPianoRoll || sharedData.showScope);
+	return sharedData.showScore;
 }
 
 /********************* instrument functions *******************/
@@ -10509,10 +10693,6 @@ void ofApp::exit()
 	if (serialPortOpen) {
 		serial.close();
 	}
-	// check if any of the panes has an open file
-	//for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
-	//	if (it->second.isFileOpen()) it->second.closeFile();
-	//}
 	ofExit();
 }
 
@@ -11247,6 +11427,7 @@ void Sequencer::threadedFunction()
 			// calculate the following two in case we connect to a score part
 			sharedData->beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs[bar] / 4.0);
 			sharedData->beatVizRampStart = sharedData->tempoMs[bar] / 4;
+			sharedData->beatAtValCounter = 0;
 			sendFinishToParts(false);
 			ofxOscMessage m;
 			m.setAddress("/beatinfo");
@@ -11381,6 +11562,8 @@ void Sequencer::threadedFunction()
 						// update the previous number of bars displayed and the previous position to properly display single bars in horizontal view
 						sharedData->prevNumBars = sharedData->numBars;
 						sharedData->prevPosition = sharedData->thisPosition;
+						// reset the counter for the beat durations
+						sharedData->beatAtValCounter = 0;
 					}
 					// after checking if we must update the indexes, increment them
 					if (!countdown) {
@@ -11426,8 +11609,12 @@ void Sequencer::threadedFunction()
 					}
 					if (sharedData->beatAtDifferentThanDivisor[bar]) {
 						sendBeatVizInfoCounter++;
-						int modulo = (sharedData->beatAtValues[bar] > 0 ? sharedData->beatAtValues[bar] : 1);
+						int modulo = (sharedData->beatAtValues[bar][sharedData->beatAtValCounter] > 0 ? sharedData->beatAtValues[bar][sharedData->beatAtValCounter] : 1);
 						sendBeatVizInfoCounter %= modulo;
+						sharedData->beatAtValCounter++;
+						if (sharedData->beatAtValCounter >= sharedData->beatAtValues[bar].size()) {
+							sharedData->beatAtValCounter = 0;
+						}
 					}
 					for (auto func = sharedData->functions.begin(); func != sharedData->functions.end(); ++func) {
 						// binding a function to the number of instruments + 1, binds to the start of each bar

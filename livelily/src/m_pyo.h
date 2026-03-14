@@ -18,10 +18,6 @@
  * License along with pyo.  If not, see <http://www.gnu.org/licenses/>.   *
  *************************************************************************/
 #include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <pthread.h>
-
 
 #if !defined(_WIN32)
 #include <dlfcn.h>
@@ -39,19 +35,41 @@ extern "C" {
 #define INLINE
 #endif
 
-#if !defined(_WIN32)
-/* libpython handle. libpython must be made available to the program loaded
-** in a new interpreter. */
-static void *libpython_handle;
-#endif
-
-#define PYOMSGSIZE 262144
+/* sub-interpreter counter, necessary to determine when to shut down Python */
+static int py_instance_count = 0;
+/* global interpreter boolean, used to initialize the global interpreter only once for all running [pyo~] objects */
+static int py_global_initialized = 0;
+/* global interpreter instance */
+static PyThreadState *main_tstate = NULL;
 
 /* Function prototypes to redirect Python's stdout to C
- * Needed because it is called before it is define
+ * Needed because it is called before it is defined
 */
 static inline void redirect_stdout_to_c(void);
 static PyObject* PyInit_cstdout(void);
+
+/*
+** Creates a global python interpreter.
+** This is called by every new [pyo~] object,
+** but the global interpreter is initialized only once, using the py_global_initialized variable
+*/
+static void pyo_python_global_init(void)
+{
+    if (!py_global_initialized) {
+		/* redirect Python's stdout to m_pyo.h from where we can get it in here */
+		PyImport_AppendInittab("cstdout", PyInit_cstdout);
+
+        Py_Initialize();
+
+        /* Save main interpreter state */
+        main_tstate = PyThreadState_Get();
+
+        /* Release GIL */
+        PyEval_ReleaseThread(main_tstate);
+
+        py_global_initialized = 1;
+    }
+}
 
 /*
 ** Creates a new python interpreter and starts a pyo server in it.
@@ -66,36 +84,20 @@ static PyObject* PyInit_cstdout(void);
 **
 ** returns the new python thread's interpreter state.
 */
-INLINE PyThreadState * pyo_new_interpreter(float sr, int bufsize, int chnls) {
-    char msg[600];
+INLINE PyThreadState * pyo_new_interpreter(float sr, int bufsize, int ichnls, int ochnls) {
+    char msg[128];
     PyThreadState *interp;
-    if(!Py_IsInitialized()) {
-		/* redirect Python's stdout to m_pyo.h from where we can get it in here */
-		PyImport_AppendInittab("cstdout", PyInit_cstdout);
-        Py_InitializeEx(0);
-		//PyEval_InitThreads();
-    }
+	
+	pyo_python_global_init();
 
-#if !defined(_WIN32)
-    /* This call hardcodes 3.9 as the python version to be used to embed pyo in
-       a C or C++ program. This is not a good idea and must be fixed when everthing
-       is stable.
-    */
-    if (libpython_handle == NULL) {
-#ifdef __linux__
-        libpython_handle = dlopen("libpython3.13.so", RTLD_GLOBAL | RTLD_NOW);
-#elif __APPLE__
-        libpython_handle = dlopen("libpython3.13.dylib", RTLD_GLOBAL | RTLD_NOW);
-#endif
-    }
-#endif
-
-    PyGILState_Ensure();            /* get the GIL */
+	PyEval_AcquireThread(main_tstate);
 
     interp = Py_NewInterpreter();   /* add a new sub-interpreter */
 	redirect_stdout_to_c();
 
-    /* On MacOS, trying to import wxPython in embedded python hang the process. */
+    /* On MacOS, trying to import wxPython in embedded python hang the process.
+	 * On Linux, it crashes the host (at least in Pd)
+	 */
     PyRun_SimpleString("import os; os.environ['PYO_GUI_WX'] = '0'");
 
     /* Force embedded audio server. */
@@ -105,7 +107,7 @@ INLINE PyThreadState * pyo_new_interpreter(float sr, int bufsize, int chnls) {
     PyRun_SimpleString("BPM = 60.0");
 
     PyRun_SimpleString("from pyo import *");
-    sprintf(msg, "_s_ = Server(sr=%f, nchnls=%d, buffersize=%d, duplex=1)", sr, chnls, bufsize);
+    sprintf(msg, "_s_ = Server(sr=%f, nchnls=%d, buffersize=%d, duplex=1, ichnls=%d)", sr, ochnls, bufsize, ichnls);
     PyRun_SimpleString(msg);
     PyRun_SimpleString("_s_.boot()\n_s_.start()\n_s_.setServer()");
     PyRun_SimpleString("_server_id_ = _s_.getServerID()");
@@ -125,6 +127,9 @@ INLINE PyThreadState * pyo_new_interpreter(float sr, int bufsize, int chnls) {
 #endif
 
     PyEval_ReleaseThread(interp);
+
+	/* increase the sub-interpreter counter */
+	py_instance_count++;
 
     return interp;
 }
@@ -300,27 +305,29 @@ INLINE int pyo_get_server_id(PyThreadState *interp) {
 **  interp : pointer, pointer to the targeted Python thread state.
 */
 INLINE void pyo_end_interpreter(PyThreadState *interp) {
-    /* Ensure all threads that might call Python are stopped. */
+    /* Clean up pyo's server. */
+	if (interp) {
+		PyEval_AcquireThread(interp);
+    	PyRun_SimpleString("_s_.setServer()\n_s_.stop()\n_s_.shutdown()");
+    	PyEval_ReleaseThread(interp);
 
-    //PyGILState_STATE gstate = PyGILState_Ensure();
+		//PyGILState_STATE state = PyGILState_Ensure();
+    	PyGILState_Ensure();
 
-    if (interp != NULL) {
-        /* Make the sub-interpreter current and run shutdown commands */
-        PyThreadState_Swap(interp);
-        PyRun_SimpleString("_s_.setServer()\n_s_.stop()\n_s_.shutdown()");
+		Py_EndInterpreter(interp);
+	}
 
-        /* End the sub-interpreter: do NOT swap it back afterward */
-        Py_EndInterpreter(interp);
-        /* No PyThreadState_Swap(save) here */
-    }
-
-    //PyGILState_Release(gstate);
-
-#if !defined(_WIN32)
-    if (libpython_handle != NULL) {
-        dlclose(libpython_handle);
-    }
-#endif
+	/* decrement the sub-interpreter counter */
+	if (py_instance_count > 0) py_instance_count--;
+	/* if we delete the last sub-interpreter and the global interpreter is active
+	 * finalize it all
+	**/
+	if (py_instance_count == 0 && py_global_initialized) {
+		PyEval_AcquireThread(main_tstate);
+        Py_FinalizeEx();
+		py_global_initialized = 0;
+		main_tstate = NULL;
+	}
 }
 
 /*
@@ -413,6 +420,95 @@ INLINE int pyo_is_server_started(PyThreadState *interp) {
 }
 
 /*
+** These two functions are used to execute code, either as a statement
+** or as a loaded file.
+** They are called by pyo_exec_file() and pyo_exec_statement()
+*/
+INLINE void copy_pyunicode_to_msg(PyObject *u, char *msg)
+{
+    if (!u) return;
+    const char *s = PyUnicode_AsUTF8(u);
+    if (s) {
+        strcpy(msg, s);
+    }
+}
+
+INLINE int pyo_exec_code(char *msg, const char *filename, int debug)
+{
+	int err = 0;
+    PyObject *codeObj = Py_CompileString(msg, filename, Py_file_input);
+    if (codeObj == NULL) {
+        if (debug) {
+            /* format compile error */
+            PyObject *ptype=NULL,*pvalue=NULL,*ptraceback=NULL;
+            PyErr_Fetch(&ptype,&pvalue,&ptraceback);
+            PyErr_NormalizeException(&ptype,&pvalue,&ptraceback);
+
+            PyObject *tbmod = PyImport_ImportModule("traceback");
+            if (tbmod) {
+                PyObject *fmt = PyObject_GetAttrString(tbmod, "format_exception");
+                if (fmt && PyCallable_Check(fmt)) {
+                    PyObject *tb_arg = ptraceback ? ptraceback : Py_None;
+                    PyObject *exc_list = PyObject_CallFunctionObjArgs(fmt,
+                        ptype?ptype:Py_None, pvalue?pvalue:Py_None, tb_arg, NULL);
+                    if (exc_list) {
+                        PyObject *sep = PyUnicode_FromString("");
+                        PyObject *exc_str = PyUnicode_Join(sep, exc_list);
+                        if (exc_str) { copy_pyunicode_to_msg(exc_str, msg); Py_DECREF(exc_str); }
+                        Py_XDECREF(sep);
+                        Py_DECREF(exc_list);
+                    }
+                    Py_XDECREF(fmt);
+                }
+                Py_DECREF(tbmod);
+            }
+            Py_XDECREF(ptype); Py_XDECREF(pvalue); Py_XDECREF(ptraceback);
+        }
+        err = 1;
+    }
+	else {
+        PyObject *mainmod = PyImport_AddModule("__main__");  // borrowed
+        PyObject *globals = PyModule_GetDict(mainmod);       // borrowed
+		
+        PyObject *res = PyEval_EvalCode((PyObject *)codeObj, globals, globals);
+        if (res == NULL) {
+            if (debug) {
+				/* runtime error formatting */
+                PyObject *ptype=NULL,*pvalue=NULL,*ptraceback=NULL;
+                PyErr_Fetch(&ptype,&pvalue,&ptraceback);
+                PyErr_NormalizeException(&ptype,&pvalue,&ptraceback);
+
+                PyObject *tbmod = PyImport_ImportModule("traceback");
+                if (tbmod) {
+                    PyObject *fmt = PyObject_GetAttrString(tbmod, "format_exception");
+                    if (fmt && PyCallable_Check(fmt)) {
+                        PyObject *tb_arg = ptraceback ? ptraceback : Py_None;
+                        PyObject *exc_list = PyObject_CallFunctionObjArgs(fmt,
+								ptype?ptype:Py_None, pvalue?pvalue:Py_None, tb_arg, NULL);
+                        if (exc_list) {
+                            PyObject *sep = PyUnicode_FromString("");
+                            PyObject *exc_str = PyUnicode_Join(sep, exc_list);
+                            if (exc_str) { copy_pyunicode_to_msg(exc_str, msg); Py_DECREF(exc_str); }
+                            Py_XDECREF(sep);
+                            Py_DECREF(exc_list);
+                        }
+                        Py_XDECREF(fmt);
+                    }
+                    Py_DECREF(tbmod);
+                }
+                Py_XDECREF(ptype); Py_XDECREF(pvalue); Py_XDECREF(ptraceback);
+            }
+            err = 1;
+        }
+		else {
+            Py_DECREF(res);
+        }
+        Py_DECREF(codeObj);
+    }
+	return err;
+}
+
+/*
 ** Execute a python script "file" in the given thread's interpreter (interp).
 ** A pre-allocated string "msg" must be given to create the python command
 ** used for error handling. An integer "add" is needed to indicate if the
@@ -431,8 +527,8 @@ INLINE int pyo_is_server_started(PyThreadState *interp) {
 **
 ** returns 0 (no error), 1 (failed to open the file) or 2 (bad code in file).
 */
-INLINE int pyo_exec_file(PyThreadState *interp, const char *file, char *msg, int add) {
-    int ok, isrel, badcode, err = 0;
+INLINE int pyo_exec_file(PyThreadState *interp, const char *file, char *msg, int add, int debug) {
+    int ok, isrel, err = 0;
     PyObject *module;
     PyEval_AcquireThread(interp);
     sprintf(msg, "import os\n_isrel_ = True\n_ok_ = os.path.isfile('./%s')", file);
@@ -448,19 +544,54 @@ INLINE int pyo_exec_file(PyThreadState *interp, const char *file, char *msg, int
             PyRun_SimpleString("_s_.boot(newBuffer=False).start()");
         }
         if (isrel) {
-            sprintf(msg, "_badcode_ = False\ntry:\n    exec(open('./%s').read())\nexcept:\n    _badcode_ = True", file);
+            sprintf(msg, "exec(open('./%s').read())", file);
         } else {
-            sprintf(msg, "_badcode_ = False\ntry:\n    exec(open('%s').read())\nexcept:\n    _badcode_ = True", file);
+            sprintf(msg, "exec(open('%s').read())", file);
         }
-        PyRun_SimpleString(msg);
-        badcode = PyLong_AsLong(PyObject_GetAttrString(module, "_badcode_"));
-        if (badcode) {
-            err = 2; // err = 2 means bad code in the file.
-        }
+		err = pyo_exec_code(msg, file, debug);
+		/* error code 1 means file not loaded
+		 * so if we get an error in the code, we increment the error code by one
+		 */
+		if (err) err++;
     }
     else {
-        err = 1; // err = 1 means problem opening the file.
+		err = 1;
     }
+    PyEval_ReleaseThread(interp);
+    return err;
+}
+
+/*
+** Execute a python statement "msg" in the thread's interpreter "interp".
+** If "debug" is true, the statement will be executed in a try - except
+** block. The error message, if any, will be write back in the *msg
+** pointer and the function will return 1. If no error occured, the
+** function returned 0. If debug is false, the statement is executed
+** without any error checking (unsafe but faster).
+**
+** arguments:
+**  interp : pointer, pointer to the targeted Python thread state.
+**  msg : char *, pointer to a string containing the statement to execute.
+**                In debug mode, if an error occured, the output log will
+**                be write back in this string.
+**  debug, int, if positive, the commands will be executed in a try-except
+**              statement. If 0, there will be no error checking, which is
+**              much faster.
+**
+** returns 0 (no error) or 1 (bad code in file).
+*/
+
+INLINE int pyo_exec_statement(PyThreadState *interp, char *msg, int debug) {
+    static long input_counter = 0;  /* REPL-style line counter */
+
+    int err = 0;
+
+    PyEval_AcquireThread(interp);
+
+    char filename[64];
+    snprintf(filename, sizeof(filename), "<python-input-%ld>", input_counter++);
+
+	err = pyo_exec_code(msg, filename, debug);
     PyEval_ReleaseThread(interp);
     return err;
 }
@@ -520,6 +651,8 @@ INLINE int pyo_dequeue_stdout(char **out_msg) {
 /* --------- cstdout module hooks ---------- */
 static PyObject* cstdout_write(PyObject *self, PyObject *args) {
     const char *s;
+	(void)(self); /* unused */
+	(void)(args);
     if (!PyArg_ParseTuple(args, "s", &s)) return NULL;
 
 	pyo_enqueue_stdout(s);
@@ -528,6 +661,8 @@ static PyObject* cstdout_write(PyObject *self, PyObject *args) {
 }
 
 static PyObject* cstdout_flush(PyObject *self, PyObject *args) {
+	(void)(self); /* unused */
+	(void)(args);
     Py_RETURN_NONE;
 }
 
@@ -575,119 +710,6 @@ static inline void redirect_stdout_to_c(void) {
 /*
 ** Functions to redirect Python's stdout in here done
 */
-
-/*
-** Execute a python statement "msg" in the thread's interpreter "interp".
-** If "debug" is true, the statement will be executed in a try - except
-** block. The error message, if any, will be write back in the *msg
-** pointer and the function will return 1. If no error occured, the
-** function returned 0. If debug is false, the statement is executed
-** without any error checking (unsafe but faster).
-**
-** arguments:
-**  interp : pointer, pointer to the targeted Python thread state.
-**  msg : char *, pointer to a string containing the statement to execute.
-**                In debug mode, if an error occured, the output log will
-**                be write back in this string.
-**  debug, int, if positive, the commands will be executed in a try-except
-**              statement. If 0, there will be no error checking, which is
-**              much faster.
-**
-** returns 0 (no error) or 1 (bad code in file).
-*/
-INLINE int pyo_exec_statement(PyThreadState *interp, char *msg, int debug) {
-    static long input_counter = 0;  /* REPL-style line counter */
-
-    int err = 0;
-
-    auto copy_pyunicode_to_msg = [&](PyObject *u) {
-        if (!u) return;
-        const char *s = PyUnicode_AsUTF8(u);
-        if (s) {
-            strcpy(msg, s);
-        }
-    };
-
-    //PyGILState_STATE gstate = PyGILState_Ensure();
-    PyEval_AcquireThread(interp);
-
-    char filename[64];
-    snprintf(filename, sizeof(filename), "<python-input-%ld>", input_counter++);
-
-    PyObject *codeObj = Py_CompileString(msg, filename, Py_file_input);
-    if (codeObj == NULL) {
-        if (debug) {
-            /* format compile error */
-            PyObject *ptype=NULL,*pvalue=NULL,*ptraceback=NULL;
-            PyErr_Fetch(&ptype,&pvalue,&ptraceback);
-            PyErr_NormalizeException(&ptype,&pvalue,&ptraceback);
-
-            PyObject *tbmod = PyImport_ImportModule("traceback");
-            if (tbmod) {
-                PyObject *fmt = PyObject_GetAttrString(tbmod, "format_exception");
-                if (fmt && PyCallable_Check(fmt)) {
-                    PyObject *tb_arg = ptraceback ? ptraceback : Py_None;
-                    PyObject *exc_list = PyObject_CallFunctionObjArgs(fmt,
-                        ptype?ptype:Py_None, pvalue?pvalue:Py_None, tb_arg, NULL);
-                    if (exc_list) {
-                        PyObject *sep = PyUnicode_FromString("");
-                        PyObject *exc_str = PyUnicode_Join(sep, exc_list);
-                        if (exc_str) { copy_pyunicode_to_msg(exc_str); Py_DECREF(exc_str); }
-                        Py_XDECREF(sep);
-                        Py_DECREF(exc_list);
-                    }
-                    Py_XDECREF(fmt);
-                }
-                Py_DECREF(tbmod);
-            }
-            Py_XDECREF(ptype); Py_XDECREF(pvalue); Py_XDECREF(ptraceback);
-        }
-        err = 1;
-    }
-	else {
-        PyObject *mainmod = PyImport_AddModule("__main__");  // borrowed
-        PyObject *globals = PyModule_GetDict(mainmod);       // borrowed
-
-        PyObject *res = PyEval_EvalCode((PyObject *)codeObj, globals, globals);
-        if (res == NULL) {
-            if (debug) {
-                /* runtime error formatting */
-                PyObject *ptype=NULL,*pvalue=NULL,*ptraceback=NULL;
-                PyErr_Fetch(&ptype,&pvalue,&ptraceback);
-                PyErr_NormalizeException(&ptype,&pvalue,&ptraceback);
-
-                PyObject *tbmod = PyImport_ImportModule("traceback");
-                if (tbmod) {
-                    PyObject *fmt = PyObject_GetAttrString(tbmod, "format_exception");
-                    if (fmt && PyCallable_Check(fmt)) {
-                        PyObject *tb_arg = ptraceback ? ptraceback : Py_None;
-                        PyObject *exc_list = PyObject_CallFunctionObjArgs(fmt,
-                            ptype?ptype:Py_None, pvalue?pvalue:Py_None, tb_arg, NULL);
-                        if (exc_list) {
-                            PyObject *sep = PyUnicode_FromString("");
-                            PyObject *exc_str = PyUnicode_Join(sep, exc_list);
-                            if (exc_str) { copy_pyunicode_to_msg(exc_str); Py_DECREF(exc_str); }
-                            Py_XDECREF(sep);
-                            Py_DECREF(exc_list);
-                        }
-                        Py_XDECREF(fmt);
-                    }
-                    Py_DECREF(tbmod);
-                }
-                Py_XDECREF(ptype); Py_XDECREF(pvalue); Py_XDECREF(ptraceback);
-            }
-            err = 1;
-        }
-		else {
-            Py_DECREF(res);
-        }
-        Py_DECREF(codeObj);
-    }
-    //PyGILState_Release(gstate);
-    PyEval_ReleaseThread(interp);
-    return err;
-}
-
 
 #if defined(_LANGUAGE_C_PLUS_PLUS) || defined(__cplusplus)
 }

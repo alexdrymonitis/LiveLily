@@ -26,27 +26,29 @@ struct noteData
 	double durationMillis;
 };
 
+// structure holding data for each line of the editor
+struct line
+{
+	std::string str;
+	int startPos;
+	std::string tracebackStr;
+	int tracebackColor;
+	int tracebackNumLines;
+	uint64_t tracebackTimeStamp;
+	size_t tracebackStrBreakPnt;
+	// variable to dim the execution rectangle
+	bool isBeingExecuted;
+	int executionDegrade;
+	uint64_t executionTimeStamp;
+	int linesConnectedToBar;
+	int activeLineElements;
+
+};
+
 class Editor
 {
 	public:
 		Editor();
-		//// disable copying (because of std::ifstream)
-		//Editor(const Editor&) = delete;
-		//Editor& operator=(const Editor&) = delete;
-		//// add move constructor
-		//Editor(Editor&& other) noexcept
-		//	: file(std::move(other.file)) // transfer ownership of stream
-		//{
-		//	// move other state here if you have any
-		//}
-		//// add move assignment operator
-		//Editor& operator=(Editor&& other) noexcept {
-		//	if (this != &other) {
-		//		file = std::move(other.file); // transfer ownership
-		//		// move other state here if you have any
-		//	}
-		//	return *this;
-		//}
 		// set the ID of each editor
 		void setID(int id);
 		int getID();
@@ -74,7 +76,7 @@ class Editor
 		int getNumTabsInStr(std::string str);
 		std::vector<int> getNestDepth();
 		int findTopLine(int startLine);
-		std::vector<int> findBraceForward(std::map<int, std::string>::iterator start, std::map<int, std::string>::iterator finish);
+		std::vector<int> findBraceForward(std::map<int, line>::iterator start, std::map<int, line>::iterator finish);
 		std::vector<int> findBraceBackward();
 		std::vector<int> findEnclosingBraceIndexes();
 		// get the number of digits of line count, used in the text drawing function
@@ -106,15 +108,7 @@ class Editor
 		void copyOnLineDelete();
 		void newLine();
 		void moveCursorOnShiftReturn();
-		bool changeMapKey(std::map<int, std::string> *m, int key, int increment, bool createNonExisting);
-		void changeMapKey(std::map<int, int> *m, int key, int increment, bool createNonExisting);
-		void changeMapKey(std::map<int, uint64_t> *m, int key, int increment, bool createNonExisting);
-		void changeMapKey(std::map<int, bool> *m, int key, int increment, bool createNonExisting);
 		void changeMapKeys(int key, int increment); // to change the keys of nine std::maps with one function call
-		void eraseMapKey(std::map<int, std::string> *m, int key);
-		void eraseMapKey(std::map<int, int> *m, int key);
-		void eraseMapKey(std::map<int, uint64_t> *m, int key);
-		void eraseMapKey(std::map<int, bool> *m, int key);
 		void eraseMapKeys(int key); // to erase the keys of nine maps with one function call
 		void connectLineToBar(int lineNdx, int instNdx, int barNdx);
 		int getLineConnectedToBar(int instNdx, int barNdx);
@@ -184,10 +178,11 @@ class Editor
 		std::string getTracebackStr(int lineNum);
 		int getTracebackColor(int lineNum);
 		uint64_t getTracebackTimeStamp(int lineNum);
+		void setTracebackTimeStamp(int lineNum, uint64_t stamp);
 		int getTracebackNumLines(int lineNum);
 		uint64_t getTracebackDur();
-		std::map<int, uint64_t>::iterator getTracebackTimeStampsBegin();
-		std::map<int, uint64_t>::iterator getTracebackTimeStampsEnd();
+		std::map<int, line>::iterator getAllLinesBegin();
+		std::map<int, line>::iterator getAllLinesEnd();
 		// receive single characters from OSC
 		void fromOscPress(int ascii);
 		void fromOscRelease(int ascii);
@@ -200,9 +195,10 @@ class Editor
 		void loadXMLFile(std::string filePath);
 		void loadTextFile(std::string filePath);
 		void loadDialog();
-		void loadFile(std::string fileName);
-		//bool isFileOpen();
-		//void closeFile();
+		bool loadFile(std::string fileName);
+		bool loadHelpFile(std::string fileName, int newPane);
+		void closeHelpFile();
+		bool isHelpFileOpen();
 		// misc
 		float getCursorHeight();
 		// debugging
@@ -225,7 +221,9 @@ class Editor
 		bool activity;
 
 		bool fileLoaded;
+		bool tempFileLoaded;
 		std::string loadedFileStr;
+		std::string tempFileName;
 		std::string loadedFileFullPath;
 		std::string defaultFileNames[3] = {"untitled.lyv", "untitled.py", "untitled.lua"};
 		bool couldNotLoadFile;
@@ -244,17 +242,14 @@ class Editor
 		ofTrueTypeFont font;
 		int fontSize;
 		bool fontLoaded;
-		std::map<int, std::string> allStrings;
-		std::map<int, int> allStringStartPos;
-		std::map<int, std::vector<int>> allStringTabs;
-		std::map<int, std::vector<int>> bracketIndexes;
+		std::map<int, line> allLines;
+		// to open a help file without losing the editor's contents, we need a temporary map with the lines data
+		std::map<int, line> tempAllLines;
 		std::string tabStr; // to not having to write "    " every time
 
 		// variables to connect lines to bars for animating the editor
 		bool animationState;
-		std::map<int, int> linesConnectedToBar;
 		std::map<int, std::map<int, int>> instsConnectedToLine;
-		std::map<int, int> activeLineElements;
 
 		// variables for highlighting pairs of curly brackets
 		bool highlightBracket;
@@ -273,7 +268,10 @@ class Editor
 		int cursorLineIndex; // Y position of cursor
 		int cursorPos; // X position of cursor
 		int arrowCursorPos; // X position for when we navigate with the arrow keys
-
+		// the two variables below are used for opening help files and storing the cursor line and position temporarily
+		int tempCursorLineIndex;
+		int tempCursorPos;
+		
 		int maxNumLines;
 		int maxNumLinesReset;
 		float frameXOffset;
@@ -285,6 +283,7 @@ class Editor
 		int halfCharacterWidth;
 		int oneAndHalfCharacterWidth;
 		int maxCharactersPerString;
+		int oldMaxCharactersPerString;
 		size_t maxBacktraceChars;
 		float characterOffset;
 		// store last highlighted char to properly position the cursor when
@@ -292,21 +291,13 @@ class Editor
 		int highlightedCharIndex;
 		// and a boolean to check whether a std::string has just got small enough to fit the window
 		bool stringExceededWindow;
-		//STDERR, keys are line numbers
-		std::map<int, std::string> tracebackStr;
-		std::map<int, int> tracebackColor;
-		std::map<int, int> tracebackNumLines;
-		std::map<int, uint64_t> tracebackTimeStamps;
-		std::map<int, size_t> tracebackStrBreakPnt;
-		// variable to dim the execution rectangle
-		std::map<int, bool> executingLines;
-		std::map<int, int> executionDegrade;
-		std::map<int, uint64_t> executionTimeStamp;
 		float executionStepPerMs;
 		// variable to set the first (or only) line to execute
 		// useful in case we hit shift+return as the cursor will move
 		// before the line is executed
 		int executingLine;
+		// a temporary storage for the executing line when loading help files
+		int tempExecutingLine;
 		// used in case we're executing more than one lines
 		// so as many rectangles as the executing lines are created
 		// all with the same width
@@ -322,7 +313,9 @@ class Editor
 		int lastChar;
 	private:
 		int objID;
+		bool helpFileOpen;
 		bool fileEdited;
+		bool tempFileEdited;
 		bool autobrackets;
 		bool activeSession;
 		bool sendKeys;
