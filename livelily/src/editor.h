@@ -207,7 +207,7 @@ class Editor
 		void printVector(std::vector<float> v);
 
 		int thisLang;
-		std::string lyvDelimiter = "{ }*.\"";
+		std::string lyvDelimiter = "{ }[]*.\"";
 		std::string pyDelimiter = "{ }[]():*.,\"'=/";
 		std::string luaDelimiter = "[]"; // random stuff for now
 		std::string delimiters[3] = {lyvDelimiter, pyDelimiter, luaDelimiter};

@@ -88,7 +88,7 @@ void ofApp::setup()
 	fontSize = 18;
 	whichPane = 0;
 	Editor editor;
-	editors[0] = editor; // std::move(editor);
+	editors[0] = editor;
 	editors[0].setActivity(true);
 	editors[0].setID(0);
 	editors[0].setPaneRow(0);
@@ -231,7 +231,7 @@ void ofApp::setup()
 
 	/* Colors used for syntax highlighting for LiveLily
 	   first level commands -- fuchsia
-	   second level commands - violet
+	   methods --------------- violet
 	   arguments ------------- skyBlue
 	   instruments ----------- greenYellow
 	   bars ------------------ orchid
@@ -246,6 +246,7 @@ void ofApp::setup()
 	   digits ---------------- gold
 	   text highlight box ---- goldenRod
 	   strings --------------- aqua
+	   variables ------------- darkTurquoise
 	   -- paleGreen is used for the pulse of the beat
 	*/
 	// first level commands
@@ -267,6 +268,7 @@ void ofApp::setup()
 	commandsMap[livelily]['c']["\\cursor"] =  ofColor::fuchsia;
 	commandsMap[livelily]['d']["\\dur"] = ofColor::fuchsia;
 	commandsMap[livelily]['e']["\\editor"] = ofColor::fuchsia;
+	commandsMap[livelily]['e']["\\expand"] = ofColor::fuchsia;
 	commandsMap[livelily]['f']["\\finish"] =  ofColor::fuchsia;
 	commandsMap[livelily]['f']["\\framerate"] = ofColor::fuchsia;
 	commandsMap[livelily]['f']["\\fromosc"] =  ofColor::fuchsia;
@@ -331,7 +333,7 @@ void ofApp::setup()
 	commandsMap[livelily]['x'][""] = foregroundColor;
 	commandsMap[livelily]['z'][""] = foregroundColor;
 
-	// second level commands
+	// methods
 	commandsMap[livelily]['a']["accoffset"] = ofColor::violet;
 	commandsMap[livelily]['a']["add"] = ofColor::violet;
 	commandsMap[livelily]['a']["animate"] = ofColor::violet;
@@ -374,6 +376,7 @@ void ofApp::setup()
 	commandsMap[livelily]['t']["traverse"] = ofColor::violet;
 	commandsMap[livelily]['u']["unbind"] = ofColor::violet;
 	commandsMap[livelily]['u']["update"] = ofColor::violet;
+	commandsMap[livelily]['v']["val"] = ofColor::violet;
 	commandsMap[livelily]['v']["valndx"] = ofColor::violet;
 	commandsMap[livelily]['v']["valthresh"] = ofColor::violet;
 
@@ -3051,7 +3054,7 @@ void ofApp::parseStrings(int index, int numLines)
 		}
 		if (!parsingLoop) {
 			// store the closing curly bracket in the bar lines std::map
-			// sharedData.barLines is a std::map<std::string, std::string> so we get the key with
+			// sharedData.barLines is a map<string, string> so we get the key with
 			// sharedData.barsOrdered[barIndex]
 			sharedData.barLines[sharedData.barsOrdered[barIndex]] += "}";
 			// then add a rest for any instrument that is not included in the bar
@@ -3111,7 +3114,7 @@ void ofApp::parseStrings(int index, int numLines)
 			}
 			parsingBars = false;
 			firstInstForBarsSet = false;
-			// once done, create a std::string to create a loop with all the separate bars
+			// once done, create a string to create a loop with all the separate bars
 			std::string multiBarsLoop = "\\loop " + multiBarsName + " {";
 			for (int i = 0; i < barsIterCounter-1; i++) {
 				multiBarsLoop += ("\\" + multiBarsName + "-" + std::to_string(i+1) + " ");
@@ -3123,6 +3126,13 @@ void ofApp::parseStrings(int index, int numLines)
 			// after we create the loop of the bars we have created, we send the line with the loop command to the parts
 			sendLoopToParts();
 			barsIterCounter = 0;
+			// lastly, check if we're calling the loop to be played, in case the sequencer is already running
+			int lineNdx = index + numLines - 1;
+			std::string lastLine = editors[whichPane].allLines[lineNdx].str;
+			if (startsWith(lastLine, "}") && lastLine.size() > 1) {
+				lastLine = lastLine.substr(1);
+				parseCommand(genCmdInput(lastLine), lineNdx, 1);
+			}
 		}
 	}
 	// if we're creating a pattern out of patterns
@@ -3218,7 +3228,7 @@ std::pair<int, std::string> ofApp::parseString(std::string str, int lineNum, int
 		}
 		else {
 			parsingCommand = true;
-			// first replace any command inside the std::string with the actual output of the command
+			// first replace any command inside the string with the actual output of the command
 			CmdOutput cmdOutput = expandCommands(str, lineNum, numLines);
 			if (cmdOutput.errorCode > 0) {
 				editors[whichPane].setTraceback(cmdOutput.errorCode, cmdOutput.errorStr, lineNum);
@@ -3335,12 +3345,12 @@ CmdOutput ofApp::parseExpandedCommands(const std::vector<std::string>& tokens, i
 		else break;
 	}
 	cmdOutput.outputVec = {tokens[firstCmdNdx]};
-	deque<std::string> outputDeque;
+	std::deque<std::string> outputDeque;
 
 	while (index > firstCmdNdx) {
 		std::string token = tokens[index];
 		// if the token is a command
-		if (!token.empty() && token[firstCmdNdx] == '\\') {
+		if (!token.empty() && token[0] == '\\') {
 			size_t dequeNdx = 0;
 			std::vector<std::string> cmd;
 			cmd.push_back(token); // this is the command taken from the original tokens vector
@@ -3352,50 +3362,49 @@ CmdOutput ofApp::parseExpandedCommands(const std::vector<std::string>& tokens, i
 					outputDeque.pop_front();
 				}
 				outputDeque.insert(outputDeque.begin(), cmdOutputLocal.outputVec.begin(), cmdOutputLocal.outputVec.end());
-				index--;
-				continue;
 			}
-
-			// check if the first argument is outside curly brackets
-			if (outputDeque[dequeNdx] != "{") {
-				// extract the first argument of the command
-				// this is extracted from the outputDeque deque instead of the tokens std::vector
-				cmd.push_back(outputDeque[dequeNdx++]);
-			}
-			// then check if there are more arguments inside curly brackets
-			if (dequeNdx < outputDeque.size() && outputDeque[dequeNdx] == "{") {
-				hasBrackets = true;
-				int openBracketsCounter = 1;
-				int closeBracketsCounter = 0;
-				dequeNdx++; // skip open curly bracket
-				// the while test below used to be (dequeNdx < outputDeque.size() && outputDeque[dequeNdx] != "}")
-				// and in the loop body there was only: cmd.push_back(outputDeque[dequeNdx++]);
-				// but an issue occured with the \transpose command and now it has changed
-				// this comment is here in case this change causes other issues, so I can revert back to the initial version
-				while (dequeNdx < outputDeque.size()) {
-					// some commands that are expanded in here return a string that contains curly brackets
-					// like when a bar name is called inside another command (e.g. \transpose {\barname 12})
-					// for this reason we must keep track of how many bracket pairs we have
-					if (outputDeque[dequeNdx] == "{") openBracketsCounter++;
-					if (outputDeque[dequeNdx] == "}") closeBracketsCounter++;
-					if (closeBracketsCounter == openBracketsCounter) break;
-					else cmd.push_back(outputDeque[dequeNdx]);
-					dequeNdx++;
+			else {
+				// check if the first argument is outside curly brackets
+				if (outputDeque[dequeNdx] != "{") {
+					// extract the first argument of the command
+					// this is extracted from the outputDeque deque instead of the tokens std::vector
+					cmd.push_back(outputDeque[dequeNdx++]);
 				}
+				// then check if there are more arguments inside curly brackets
+				if (dequeNdx < outputDeque.size() && outputDeque[dequeNdx] == "{") {
+					hasBrackets = true;
+					int openBracketsCounter = 1;
+					int closeBracketsCounter = 0;
+					dequeNdx++; // skip open curly bracket
+					// the while test below used to be (dequeNdx < outputDeque.size() && outputDeque[dequeNdx] != "}")
+					// and in the loop body there was only: cmd.push_back(outputDeque[dequeNdx++]);
+					// but an issue occured with the \transpose command and now it has changed
+					// this comment is here in case this change causes other issues, so I can revert back to the initial version
+					while (dequeNdx < outputDeque.size()) {
+						// some commands that are expanded in here return a string that contains curly brackets
+						// like when a bar name is called inside another command (e.g. \transpose {\barname 12})
+						// for this reason we must keep track of how many bracket pairs we have
+						if (outputDeque[dequeNdx] == "{") openBracketsCounter++;
+						if (outputDeque[dequeNdx] == "}") closeBracketsCounter++;
+						if (closeBracketsCounter == openBracketsCounter) break;
+						else cmd.push_back(outputDeque[dequeNdx]);
+						dequeNdx++;
+					}
+				}
+				if (hasBrackets) {
+					dequeNdx++; // move to point to the item after the closing bracket
+				}
+				// the second argument to the data structure initialization below
+				// is the tokens after the command and its argumets
+				CmdInput cmdInput = {cmd, {outputDeque.begin()+dequeNdx, outputDeque.end()}, hasBrackets, false};
+				CmdOutput cmdOutputLocal = parseCommand(cmdInput, lineNum, numLines);
+				if (cmdOutputLocal.errorCode == 3) return cmdOutputLocal;
+				for (size_t i = 0; i < cmdOutputLocal.toPop; i++) {
+					if (outputDeque.size() > 0) outputDeque.pop_front();
+				}
+				if (hasBrackets) hasBrackets = false;
+				outputDeque.insert(outputDeque.begin(), cmdOutputLocal.outputVec.begin(), cmdOutputLocal.outputVec.end());
 			}
-			if (hasBrackets) {
-				dequeNdx++; // move to point to the item after the closing bracket
-			}
-			// the second argument to the data structure initialization below
-			// is the tokens after the command and its argumets
-			CmdInput cmdInput = {cmd, {outputDeque.begin()+dequeNdx, outputDeque.end()}, hasBrackets, false};
-			CmdOutput cmdOutputLocal = parseCommand(cmdInput, lineNum, numLines);
-			if (cmdOutputLocal.errorCode == 3) return cmdOutputLocal;
-			for (size_t i = 0; i < cmdOutputLocal.toPop; i++) {
-				outputDeque.pop_front();
-			}
-			if (hasBrackets) hasBrackets = false;
-			outputDeque.insert(outputDeque.begin(), cmdOutputLocal.outputVec.begin(), cmdOutputLocal.outputVec.end());
 		}
 		else {
 			outputDeque.push_front(token);
@@ -4007,27 +4016,27 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 
 	else if (cmdInput.inputVec[0].compare("\\insts") == 0 || startsWith(cmdInput.inputVec[0], "\\insts.")) {
 		if (cmdInput.inputVec[0].compare("\\insts") == 0 && cmdInput.inputVec.size() < 2) {
-			return genError("the \\insts command does nothing by itself, you must call one of its second level commands");
+			return genError("the \\insts command does nothing by itself, you must call one of its methods");
 		}
 		//else if (cmdInput.inputVec[0].compare("\\insts") == 0 && cmdInput.inputVec.size() >= 2) {
-		//	return genError("the \\insts command takes only second level commands, not arguments");
+		//	return genError("the \\insts command takes only methods, not arguments");
 		//}
 		bool hasDot = true;
 		std::vector<std::string> commands = tokenizeString(cmdInput.inputVec[0], ".");
 		if (commands.size() < 2) {
 			hasDot = false;
-			//return genError("the \\insts command does nothing by itself, you must call one of its second level commands");
+			//return genError("the \\insts command does nothing by itself, you must call one of its methods");
 		}
 		commands.insert(commands.end(), cmdInput.inputVec.begin()+1, cmdInput.inputVec.end());
 		if (commands[1] == "init" && sharedData.numInstruments > 0) {
 			return genError("instruments have already been initialized, can only add or clear now");
 		}
 		//if (commands[1].compare("init") != 0 && commands[1].compare("add") != 0 && commands[1].compare("clear") != 0) {
-		//	return genError("\\insts command takes only \"init\", \"add\" or \"clear\" second level commands");
+		//	return genError("\\insts command takes only \"init\", \"add\" or \"clear\" methods");
 		//}
 		if (commands[1].compare("clear") == 0) {
 			if (!hasDot) {
-				return genError("\"clear\" second level command must be concatenated to \"\\inst\" with a dot");
+				return genError("\"clear\" method must be concatenated to \"\\inst\" with a dot");
 			}
 			sequencer.stopNow();
 			for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
@@ -4040,10 +4049,10 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		else if (commands[1].compare("init") == 0 || commands[1].compare("add") == 0) {
 			if (!hasDot) {
 				if (commands[1].compare("init") == 0) {
-					return genError("\"init\" second level command must be concatenated to \"\\inst\" with a dot");
+					return genError("\"init\" method must be concatenated to \"\\inst\" with a dot");
 				}
 				else {
-					return genError("\"add\" second level command must be concatenated to \"\\inst\" with a dot");
+					return genError("\"add\" method must be concatenated to \"\\inst\" with a dot");
 				}
 			}
 			// check the arguments to make sure they don't start with a backslash
@@ -4153,28 +4162,28 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 
 	else if (cmdInput.inputVec[0].compare("\\score") == 0 || startsWith(cmdInput.inputVec[0], "\\score.")) {
 		if (cmdInput.inputVec[0].compare("\\score") == 0 && cmdInput.inputVec.size() < 2) {
-			return genError("the \\score command does nothing by itself, you must call one of its second level commands");
+			return genError("the \\score command does nothing by itself, you must call one of its methods");
 		}
 		else if (cmdInput.inputVec[0].compare("\\score") == 0 && cmdInput.inputVec.size() >= 2) {
-			return genError("the \\score command takes only second level commands, not arguments");
+			return genError("the \\score command takes only methods, not arguments");
 		}
 		return scoreCommands(cmdInput.inputVec, lineNum, numLines);
 	}
 
 	else if (cmdInput.inputVec[0].compare("\\editor") == 0 || startsWith(cmdInput.inputVec[0], "\\editor.")) {
 		if (cmdInput.inputVec[0].compare("\\editor") == 0 && cmdInput.inputVec.size() < 2) {
-			return genError("the \\editor command does nothing by itself, you must call one of its second level commands");
+			return genError("the \\editor command does nothing by itself, you must call one of its methods");
 		}
 		else if (cmdInput.inputVec[0].compare("\\editor") == 0 && cmdInput.inputVec.size() >= 2) {
-			return genError("the \\editor command takes only second level commands, not arguments");
+			return genError("the \\editor command takes only methods, not arguments");
 		}
-		// the initial command is \editor. followed by a second level command
-		// to separate the second level command we create a new vector that will copy the originalCommands vector
+		// the initial command is \editor. followed by a method
+		// to separate the method we create a new vector that will copy the originalCommands vector
 		// except from the first item where we trim the \editor. part
 		std::vector<std::string> editorCommands;
 		for (unsigned i = 0; i < cmdInput.inputVec.size(); i++) {
 			if (!i) {
-				// remove the "\editor." part of the command so we isolate the second level command
+				// remove the "\editor." part of the command so we isolate the method
 				std::string thisCommand = cmdInput.inputVec[i].substr(cmdInput.inputVec[i].find(".")+1);
 				editorCommands.push_back(thisCommand);
 			}
@@ -4222,7 +4231,11 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 			barError = true;
 			return genError("\\bar command takes a name as an argument");
 		}
-		std::string barName = "\\" + cmdInput.inputVec[1];
+		std::pair<int, std::string> p = checkNameAvailability("bar", cmdInput.inputVec[1]);
+		if (p.first == 3) {
+			return genError(p.second);
+		}
+		std::string barName = p.second;
 		auto barExists = sharedData.barsIndexes.find(barName);
 		if (barExists != sharedData.barsIndexes.end()) {
 			barError = true;
@@ -4255,7 +4268,11 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		if (cmdInput.inputVec.size() > 1 && startsWith(cmdInput.inputVec[1], "{")) {
 			return genError("\\loop command must take a name as an argument");
 		}
-		std::string loopName = "\\" + cmdInput.inputVec[1];
+		std::pair<int, std::string> p = checkNameAvailability("loop", cmdInput.inputVec[1]);
+		if (p.first == 3) {
+			return genError(p.second);
+		}
+		std::string loopName = p.second;
 		auto loopExists = sharedData.loopsIndexes.find(loopName);
 		if (loopExists != sharedData.loopsIndexes.end()) {
 			return genError((std::string)"loop " + loopName + (std::string)" already exists");
@@ -4287,7 +4304,14 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 			}
 			parsingBars = true;
 		}
-		multiBarsName = cmdInput.inputVec[1];
+		std::pair<int, std::string> p = checkNameAvailability("loop", cmdInput.inputVec[1]);
+		if (p.first == 3) {
+			return genError(p.second);
+		}
+		// in case of \bars we need to discard the backslash in the loop name
+		// because we use this name to store the bars of the loop and we should not
+		// have the backslash in the beginning when we call the \bar command
+		multiBarsName = p.second.substr(1);
 		auto barsExist = sharedData.loopsIndexes.find("\\" + multiBarsName);
 		if (barsExist != sharedData.loopsIndexes.end()) {
 			return genError((std::string)"bars " + multiBarsName + (std::string)" already exist");
@@ -4295,8 +4319,8 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		barsIterCounter++;
 		numBarsToParse = 0;
 		numBarsToParseSet = false;
-		// store each bar separately with the "-x" suffix, where x is the counter
-		// of the iterations, until all instruments have had all their separate bars parsed
+		// store each bar separately with the "-x" suffix, where x is the counter of the iterations
+		// until all instruments have had all their separate bars parsed
 		cmdOutput.outputVec.insert(cmdOutput.outputVec.end(), {"\\bar", multiBarsName+"-"+std::to_string(barsIterCounter)});
 		CmdInput cmdInputLocal = {cmdOutput.outputVec, std::vector<std::string>(), false, true};
 		parseCommand(cmdInputLocal, lineNum, numLines);
@@ -4362,14 +4386,18 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 			return genError("\\std::list takes a name as an argument");
 		}
 		if (cmdInput.inputVec.size() < 3) {
-			return genError("\\std::list must be assigned at least one item, inside curly brackets");
+			return genError("\\list must be assigned at least one item, inside curly brackets");
 		}
-		std::string listName = "\\" + cmdInput.inputVec[1];
+		std::pair<int, std::string> p = checkNameAvailability("list", cmdInput.inputVec[1]);
+		if (p.first == 3) {
+			return genError(p.second);
+		}
+		std::string listName = p.second;
 		bool firstList = true;
 		if (listIndexes.size() > 0) {
 			firstList = false;
 			if (listIndexes.find(listName) != listIndexes.end()) {
-				return genError("std::list already exists");
+				return genError("list already exists");
 			}
 		}
 		storingList = true;
@@ -4384,6 +4412,26 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 			return genError(error.second);
 		}
 		keywords.push_back(listName);
+	}
+
+	else if (cmdInput.inputVec[0].compare("\\expand") == 0) {
+		if (cmdInput.inputVec.size() == 1) {
+			return genError("\\expand takes at least one argument, a bar name to expand");
+		}
+		for (size_t i = 1; i < cmdInput.inputVec.size(); i++) {
+			if (cmdInput.inputVec[i] == "|") {
+				cmdOutput.outputVec.push_back("|");
+			}
+			else {
+				CmdInput cmdInputLocal = {{cmdInput.inputVec[i]}, std::vector<std::string>(), false, false};
+				CmdOutput cmdOutputLocal = parseCommand(cmdInputLocal, lineNum, numLines);
+				for (std::string s : cmdOutputLocal.outputVec) {
+					cmdOutput.outputVec.push_back(s);
+				}
+			}
+		}
+		cmdOutput.toPop = cmdInput.inputVec.size() + 1;
+		return cmdOutput;
 	}
 
 	else if (cmdInput.inputVec[0].compare("\\fromosc") == 0) {
@@ -4654,7 +4702,11 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		}
 		else {
 			int functionNdx = 0;
-			std::string functionName = "\\" + cmdInput.inputVec[1];
+			std::pair<int, std::string> p = checkNameAvailability("function", cmdInput.inputVec[1]);
+			if (p.first == 3) {
+				return genError(p.second);
+			}
+			std::string functionName = p.second;
 			if (functionIndexes.size() > 0) {
 				std::map<std::string, int>::reverse_iterator it = functionIndexes.rbegin();
 				functionNdx = it->second + 1;
@@ -4821,10 +4873,10 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 	// currently default Note On duration, staccato, staccatissimo, and tenuto
 	else if (cmdInput.inputVec[0].compare("\\dur") == 0 || startsWith(cmdInput.inputVec[0], "\\dur.")) {
 		if (cmdInput.inputVec[0].compare("\\dur") == 0 && cmdInput.inputVec.size() < 2) {
-			return genError("the \\dur command does nothing by itself, you must call one of its second level commands");
+			return genError("the \\dur command does nothing by itself, you must call one of its methods");
 		}
 		else if (cmdInput.inputVec[0].compare("\\dur") == 0 && cmdInput.inputVec.size() >= 2) {
-			return genError("the \\dur command takes only second level commands, not arguments");
+			return genError("the \\dur command takes only methods, not arguments");
 		}
 		std::string subcommand = cmdInput.inputVec[0].substr(cmdInput.inputVec[0].find(".")+1);
 		if (cmdInput.inputVec.size() == 1) {
@@ -4848,7 +4900,7 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		}
 		for (unsigned i = 0; i < sharedData.instruments.size(); i++) {
 			int error = sharedData.instruments[i].setDuration(subcommand, (float)percentage/10.0);
-			if (error) return genError("unknown duration second level command");
+			if (error) return genError("unknown duration method");
 		}
 		if (percentage == 100) {
 			return genWarning("percentage to \\dur." + subcommand + " set to 100\% of Note On duration");
@@ -4881,10 +4933,10 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		if (isNumber(cmdInput.inputVec[1])) {
 			serialPort = stoi(cmdInput.inputVec[1]);
 			if (serialPort < 0) {
-				return genError("serial port std::list number must be positive");
+				return genError("serial port list number must be positive");
 			}
 			if (serialPort >= (int)serialDeviceList.size()) {
-				return genError("serial port std::list number out of range");
+				return genError("serial port list number out of range");
 			}
 			serialPortNumSet = true;
 		}
@@ -5062,10 +5114,10 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 
 	else if (cmdInput.inputVec[0].compare("\\maestro") == 0 || startsWith(cmdInput.inputVec[0], "\\maestro.")) {
 		if (cmdInput.inputVec[0].compare("\\maestro") == 0 && cmdInput.inputVec.size() < 2) {
-			return genError("the \\maestro command does nothing by itself, you must call one of its second level commands");
+			return genError("the \\maestro command does nothing by itself, you must call one of its methods");
 		}
 		else if (cmdInput.inputVec[0].compare("\\maestro") == 0 && cmdInput.inputVec.size() >= 2) {
-			return genError("the \\maestro command takes only second level commands, not arguments");
+			return genError("the \\maestro command takes only methods, not arguments");
 		}
 		return maestroCommands(cmdInput.inputVec, lineNum, numLines);
 	}
@@ -5232,13 +5284,13 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 #endif
 				}
 				else {
-					return genError("\\python takes only \"send\" as a second level command");
+					return genError("\\python takes only \"send\" as a method");
 				}
 			}
 		}
 		else {
 			if (cmdInput.inputVec.size() > 1) {
-				return genError("language command takes no arguments, only \"send\" second level command");
+				return genError("language command takes no arguments, only \"send\" method");
 			}
 			// if we switch to Python, we initialize the audio settings
 			initPyo();
@@ -5303,11 +5355,90 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		}
 	}
 
+	else if (cmdInput.inputVec.size() >= 3 && cmdInput.inputVec[1].compare("=") == 0) {
+		// if we have more than three items in the input vector and the second one is an equals sign
+		// then we are defining a variable
+		std::string varName = "\\" + cmdInput.inputVec[0];
+		if (cmdInput.inputVec.size() > 3) {
+			if (cmdInput.inputVec.size() % 2 == 0) {
+				return genError("wrong format in variable definition");
+			}
+			std::vector<std::string> v = {"*", "/", "+", "-"};
+			std::vector<std::string> items = {cmdInput.inputVec.begin()+2, cmdInput.inputVec.end()};
+			for (size_t i = 0; i < items.size(); i++) {
+				if ((i % 2 == 0 && std::find(v.begin(), v.end(), items[i]) != v.end()) ||
+						(i % 2 != 0 && std::find(v.begin(), v.end(), items[i]) == v.end())) {
+					return genError("wrong format in variable definition");
+				}
+			}
+			// store indexes of operands based on execution order
+			// the pair is operation type (indexes of v) and first operand index
+			std::vector<std::pair<int, int>> ndxs;
+			for (size_t i = 0; i < v.size(); i++) {
+				for (size_t j = 1; j < items.size(); j++) {
+					if (v[i] == items[j]) {
+						ndxs.push_back(std::make_pair(i, j-1));
+					}
+				}
+			}
+			// then do all the operations in order
+			for (size_t i = 0; i < ndxs.size(); i++) {
+				// the function below returns a pair of pairs
+				// the first pair is a pair of two strings, the first is the error string
+				// and the second is the result as a string in case of addition
+				// the second pair is int and float, the int is the result type (int or float)
+				// and the float is the result
+				// if the result type is int, we truncate the float of the result by way of casting to int
+				std::pair<std::pair<std::string, std::string>, std::pair<int, float>> p = getArithmeticResult(items[ndxs[i].second], items[ndxs[i].second+2], ndxs[i].first);
+				if (!p.first.first.empty()) {
+					return genError(p.first.first);
+				}
+				// if this is not the last operation
+				if (items.size() > 3) {
+					// erase the two operands and the operation symbol
+					for (int j = 0; j < 3; j++) {
+						items.erase(items.begin()+ndxs[i].second);
+					}
+					// in their place insert the result of the operation
+					// if the string result is empty, then the result is arithmetic
+					if (p.first.second.empty()) {
+						// if the first item of the second pair is 1, then the result is a float
+						if (p.second.first) {
+							items.insert(items.begin()+ndxs[i].second, std::to_string(p.second.second));
+						}
+						else {
+							items.insert(items.begin()+ndxs[i].second, std::to_string((int)p.second.second));
+						}
+					}
+					// if the string result is not empty, then we are adding strings
+					else {
+						items.insert(items.begin()+ndxs[i].second, p.first.second);
+					}
+					// correct all the indexes that are higher than the index we just used
+					for (size_t j = 0; j < ndxs.size(); j++) {
+						if (ndxs[j].second > ndxs[i].second) ndxs[j].second -= 2;
+					}
+				}
+				else {
+					items.clear();
+					variables[varName].varStr = stripValFromResult(p);
+				}
+			}
+		}
+		else {
+			variable var = {cmdInput.inputVec[2], 0};
+			variables[varName] = var;
+		}
+		commandsMap[livelily][cmdInput.inputVec[0][0]][varName] = ofColor::darkTurquoise;
+	}
+
 	else {
-		// the functions return a pair with a boolean stating if an instrument, loop, function, or list is found
+		// the functions return a pair with a boolean stating if an instrument, loop, function, list, osc client, group, or variable is found
 		// and a CmdOutput structure
 		// if the boolean is true, we just return the CmdOutput structure, otherwise we go on to the next function
 		std::pair<bool, CmdOutput> p;
+		p = isVariable(cmdInput.inputVec, cmdInput.isMainCmd, lineNum, numLines);
+		if (p.first) return p.second;
 		p = isInstrument(cmdInput.inputVec, lineNum, numLines);
 		if (p.first) return p.second;
 		p = isBarLoop(cmdInput.inputVec, cmdInput.isMainCmd, lineNum, numLines);
@@ -5323,6 +5454,30 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 		return genError(cmdInput.inputVec[0] + ": unknown command");
 	}
 	return cmdOutput;
+}
+
+//--------------------------------------------------------------
+std::pair<int, std::string> ofApp::checkNameAvailability(std::string structType, std::string s)
+{
+	std::string name;
+	if (variables.find(s) != variables.end()) {
+		if (startsWith(variables[s].varStr, "\\")) {
+			name = variables[s].varStr;
+		}
+		else {
+			name = "\\" + variables[s].varStr;
+		}
+		variables[s].varType = structTypes[structType];
+	}
+	else {
+		if (startsWith(s, "\\")) {
+			return std::make_pair(3, "can't use command " + s + " as " + structType + " name");
+		}
+		else {
+			name = "\\" + s;
+		}
+	}
+	return std::make_pair(0, name);
 }
 
 //--------------------------------------------------------------
@@ -5346,8 +5501,10 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 	// the easiest way to detect this
 	tokens = detectRepetitions(tokens);
 	if (parsingBars) {
+		// first check if the last token is an upright slash, and remove it
+		if (tokens.back() == "|") tokens.pop_back();
 		if (startsWith(tokens[0], "\\")) {
-			// first determine whether there is an instrument name as a second level command
+			// first determine whether there is an instrument name as a method
 			size_t dotNdx = tokens[0].find_last_of(".");
 			bool foundDot = (dotNdx != std::string::npos ? true : false);
 			std::string barName;
@@ -7083,12 +7240,12 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 	CmdOutput cmdOutput = CmdOutput();
 	bool hasDot = false;
 	std::vector<std::string> commands;
-	// the initial command is \instname which might be followed by a second level command
-	// to separate the second level command we create a new vector that will copy the originalCommands vector
+	// the initial command is \instname which might be followed by a method
+	// to separate the method we create a new vector that will copy the originalCommands vector
 	// except from the first item where we trim the \instname. part
 	for (unsigned i = 0; i < originalCommands.size(); i++) {
 		if (!i) {
-			// separate the name of the instrument from a possible second level command
+			// separate the name of the instrument from a possible method
 			std::vector<std::string> tokens = tokenizeString(originalCommands[i], ".");
 			for (unsigned j = 0; j < tokens.size(); j++) {
 				commands.push_back(tokens[j]);
@@ -7110,7 +7267,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 			if (commands.size() > 1) {
 				if (commands[1].compare("rhythm") == 0) {
 					if (hasDot) {
-						return std::make_pair(instrumentExists, genError("\"rhythm\" is an arguement, not a second level command, should not be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"rhythm\" is an arguement, not a method, should not be concatenated to instrument name with a dot"));
 					}
 					if (commands.size() > 2) {
 						return std::make_pair(instrumentExists, genError("\"rhythm\" argument takes no further arguments"));
@@ -7119,7 +7276,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("transpose") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"transpose\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"transpose\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (commands.size() != 3) {
 						return std::make_pair(instrumentExists, genError("\"transpose\" command takes one argument"));
@@ -7138,7 +7295,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("sendmidi") == 0) {
 					if (hasDot) {
-						return std::make_pair(instrumentExists, genError("\"sendmidi\" is an arguement, not a second level command, should not be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"sendmidi\" is an arguement, not a method, should not be concatenated to instrument name with a dot"));
 					}
 					if (commands.size() > 2) {
 						return std::make_pair(instrumentExists, genError("\"sendmidi\" takes no arguments"));
@@ -7147,7 +7304,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("sendto") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"sendto\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"sendto\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					int sendNotice = 0;
 					if (commands.size() > 4) {
@@ -7228,7 +7385,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("fullscreen") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"fullscreen\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"fullscreen\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
 						return std::make_pair(instrumentExists, genError("instrument doesn't have OSC set"));
@@ -7251,7 +7408,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("cursor") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"cursor\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"cursor\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
 						return std::make_pair(instrumentExists, genError("instrument doesn't have OSC set"));
@@ -7274,7 +7431,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("update") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"update\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"update\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (commands.size() < 3) {
 						return std::make_pair(instrumentExists, genError("\"update\" takes one argument, \"onlast\" or \"immediately\""));
@@ -7297,7 +7454,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("beatcolor") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"beatcolor\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"beatcolor\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (commands.size() < 3) {
 						return std::make_pair(instrumentExists, genError("\"beatcolor\" takes one argument, \"change\" or \"keep\""));
@@ -7314,7 +7471,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("midiport") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"midiport\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"midiport\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (commands.size() != 3) {
 						return std::make_pair(instrumentExists, genError("\"midiport\"  takes one argument, the MIDI port to open"));
@@ -7344,7 +7501,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("midichan") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"midichan\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"midichan\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (commands.size() == 2) {
 						return std::make_pair(instrumentExists, genError("no MIDI channel set"));
@@ -7367,7 +7524,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("size") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"size\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"size\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
 						return std::make_pair(instrumentExists, genError("instrument doesn't have OSC set"));
@@ -7382,7 +7539,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("numbars") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"numbars\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"numbars\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
 						return std::make_pair(instrumentExists, genError("instrument doesn't have OSC set"));
@@ -7397,7 +7554,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("accoffset") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"accoffset\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"accoffset\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
 						return std::make_pair(instrumentExists, genError("instrument doesn't have OSC set"));
@@ -7413,7 +7570,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 				}
 				else if (commands[1].compare("delay") == 0) {
 					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"delay\" is a second level command, must be concatenated to instrument name with a dot"));
+						return std::make_pair(instrumentExists, genError("\"delay\" is a method, must be concatenated to instrument name with a dot"));
 					}
 					if (commands.size() != 3) {
 						return std::make_pair(instrumentExists, genError("\"delay\" command takes one argument, the delay to send messages in milliseconds"));
@@ -7455,14 +7612,14 @@ std::pair<bool, CmdOutput> ofApp::isBarLoop(std::vector<std::string>& originalCo
 		if (sharedData.loopsIndexes.find(barLoopName) != sharedData.loopsIndexes.end()) {
 			barLoopExists = true;
 			int indexLocal = sharedData.loopsIndexes[barLoopName];
-			// the initial command is \barloopname which might be followed by a second level command
-			// to separate the second level command we create a new std::vector that will copy the originalCommands std::vector
+			// the initial command is \barloopname which might be followed by a method
+			// to separate the method we create a new vector that will copy the originalCommands vector
 			// except from the first item where we trim the \barloopname. part
 			bool hasDot = false;
 			std::vector<std::string> commands;
 			for (unsigned i = 0; i < originalCommands.size(); i++) {
 				if (!i) {
-					// separate the name of the bar/loop from the second level command
+					// separate the name of the bar/loop from the method
 					std::vector<std::string> tokens = tokenizeString(originalCommands[i], ".");
 					for (unsigned j = 0; j < tokens.size(); j++) {
 						commands.push_back(tokens[j]);
@@ -7492,21 +7649,21 @@ std::pair<bool, CmdOutput> ofApp::isBarLoop(std::vector<std::string>& originalCo
 			if (commands.size() > 1) {
 				if (commands[1].compare("goto") == 0 || commands[1].compare("locate") == 0) {
 					if (sharedData.barsIndexes.find(commands[0]) != sharedData.barsIndexes.end()) {
-						return std::make_pair(barLoopExists, genError("\"goto\" and \"locate\" second level commands are aimed at loops, not bars"));
+						return std::make_pair(barLoopExists, genError("\"goto\" and \"locate\" methods are aimed at loops, not bars"));
 					}
 					if (!hasDot) {
-						return std::make_pair(barLoopExists, genError("\"goto\", \"locate\" and instrument names as second level commands must be concatenated to the loop name with a dot"));
+						return std::make_pair(barLoopExists, genError("\"goto\", \"locate\" and instrument names as methods must be concatenated to the loop name with a dot"));
 					}
 				}
 				else if (sharedData.instrumentIndexes.find(commands[1]) == sharedData.instrumentIndexes.end()) {
-					return std::make_pair(barLoopExists, genError("if arguments are provided to a bar/loop, first must be \"goto\", \"locate\", or name of instrument"));
+					return std::make_pair(barLoopExists, genError("if methods or arguments are provided to a bar/loop, first must be \"goto\", \"locate\", or name of instrument"));
 				}
 				if (commands.size() < 3 && commands[1].compare("goto") == 0) {
 					return std::make_pair(barLoopExists, genError("\"goto\" takes one argument, the bar/loop-name/index to go to"));
 				}
 				if (commands.size() == 3) {
 					if (sharedData.instrumentIndexes.find(commands[1]) == sharedData.instrumentIndexes.end()) {
-						return std::make_pair(barLoopExists, genError("a bar/loop with an instrument name as a second level command takes no arguments"));
+						return std::make_pair(barLoopExists, genError("a bar/loop with an instrument name as a method takes no arguments"));
 					}
 					auto it = find(sharedData.loopData[indexLocal].begin(), sharedData.loopData[indexLocal].end(), sharedData.loopsIndexes[commands[2]]);
 					int gotoIndexOrBarName = 0;
@@ -7542,7 +7699,7 @@ std::pair<bool, CmdOutput> ofApp::isBarLoop(std::vector<std::string>& originalCo
 				}
 				else if (commands.size() == 2) {
 					if (sharedData.instrumentIndexes.find(commands[1]) == sharedData.instrumentIndexes.end()) {
-						return std::make_pair(barLoopExists, genError("unkown second level command to " + commands[0]));
+						return std::make_pair(barLoopExists, genError("unkown method to " + commands[0]));
 					}
 					// first check if this is a loop and not a bar
 					if (sharedData.barsIndexes.find(barLoopName) == sharedData.barsIndexes.end()) {
@@ -7710,14 +7867,14 @@ std::pair<bool, CmdOutput> ofApp::isList(std::vector<std::string>& originalComma
 		if (listIndexes.find(listName) != listIndexes.end()) {
 			listExists = true;
 			lastListIndex = listIndexes[listName];
-			// the initial command is listname which might be followed by a second level command
-			// to separate the second level command we create a new vector that will copy the originalCommands vector
+			// the initial command is listname which might be followed by a method
+			// to separate the method we create a new vector that will copy the originalCommands vector
 			// except from the first item where we trim the \listname. part
 			bool hasDot = false;
 			std::vector<std::string> commands;
 			for (unsigned i = 0; i < originalCommands.size(); i++) {
 				if (!i) {
-					// separate the name of the list from the second level command
+					// separate the name of the list from the method
 					std::vector<std::string> tokens = tokenizeString(originalCommands[i], ".");
 					for (unsigned j = 0; j < tokens.size(); j++) {
 						commands.push_back(tokens[j]);
@@ -7733,7 +7890,7 @@ std::pair<bool, CmdOutput> ofApp::isList(std::vector<std::string>& originalComma
 			}
 			if (commands[1].compare("traverse") == 0) {
 				if (!hasDot) {
-					return std::make_pair(listExists, genError("second level commands must be concatenated to the std::list name with a dot"));
+					return std::make_pair(listExists, genError("methods must be concatenated to the list name with a dot"));
 				}
 				traversingList = true;
 				listIndexCounter = 0;
@@ -7796,14 +7953,14 @@ std::pair<bool, CmdOutput> ofApp::isOscClient(std::vector<std::string>& original
 		else oscClientName = originalCommands[0];
 		if (oscClients.find(oscClientName) != oscClients.end()) {
 			oscClientExists = true;
-			// the initial command is \oscclientname which might be followed by a second level command
-			// to separate the second level command we create a new vector that will copy the originalCommands vector
+			// the initial command is \oscclientname which might be followed by a method
+			// to separate the method we create a new vector that will copy the originalCommands vector
 			// except from the first item where we trim the \oscclientname. part
 			bool hasDot = false;
 			std::vector<std::string> commands;
 			for (unsigned i = 0; i < originalCommands.size(); i++) {
 				if (!i) {
-					// separate the name of the OSC client from the second level command
+					// separate the name of the OSC client from the method
 					std::vector<std::string> tokens = tokenizeString(originalCommands[i], ".");
 					for (unsigned j = 0; j < tokens.size(); j++) {
 						commands.push_back(tokens[j]);
@@ -7815,10 +7972,10 @@ std::pair<bool, CmdOutput> ofApp::isOscClient(std::vector<std::string>& original
 				}
 			}
 			if (!hasDot) {
-				return std::make_pair(oscClientExists, genError("OSC client name and second level command must be concatenated with a dot"));
+				return std::make_pair(oscClientExists, genError("OSC client name and method must be concatenated with a dot"));
 			}
 			if (commands.size() < 2) {
-				return std::make_pair(oscClientExists, genWarning("no second level commands provided"));
+				return std::make_pair(oscClientExists, genWarning("no methods provided"));
 			}
 			for (unsigned i = 1; i < commands.size(); i++) {
 				if (commands[i].compare("setup") == 0) {
@@ -7927,14 +8084,14 @@ std::pair<bool, CmdOutput> ofApp::isGroup(std::vector<std::string>& originalComm
 		else groupName = originalCommands[0];
 		if (instGroups.find(groupName) != instGroups.end()) {
 			groupExists = true;
-			// the initial command is \grouptname which might be followed by a second level command
-			// to separate the second level command we create a new std::vector that will copy the originalCommands vector
+			// the initial command is \groupname which might be followed by a method
+			// to separate the method we create a new vector that will copy the originalCommands vector
 			// except from the first item where we trim the \groupname. part
 			bool hasDot = false;
 			std::vector<std::string> commands;
 			for (unsigned i = 0; i < originalCommands.size(); i++) {
 				if (!i) {
-					// separate the name of the group from the second level command
+					// separate the name of the group from the method
 					std::vector<std::string> tokens = tokenizeString(originalCommands[i], ".");
 					for (unsigned j = 0; j < tokens.size(); j++) {
 						commands.push_back(tokens[j]);
@@ -7946,7 +8103,7 @@ std::pair<bool, CmdOutput> ofApp::isGroup(std::vector<std::string>& originalComm
 				}
 			}
 			if (commands.size() == 1) {
-				return std::make_pair(groupExists, genWarning("group called with no second level commands or arguments"));
+				return std::make_pair(groupExists, genWarning("group called with no methods or arguments"));
 			}
 			for (std::string inst : instGroups[groupName]) {
 				size_t cmdOffset = 1;
@@ -7973,6 +8130,193 @@ std::pair<bool, CmdOutput> ofApp::isGroup(std::vector<std::string>& originalComm
 		}
 	}
 	return std::make_pair(groupExists, cmdOutput);
+}
+
+//--------------------------------------------------------------
+std::pair<bool, CmdOutput> ofApp::isVariable(std::vector<std::string>& originalCommands, bool isMainCmd, int lineNum, int numLines)
+{
+	bool varExists = false;
+	CmdOutput cmdOutput = CmdOutput();
+	if (variables.size() > 0) {
+		std::string varName;
+		if (originalCommands[0].find(".") != std::string::npos) varName = originalCommands[0].substr(0, originalCommands[0].find("."));
+		else varName = originalCommands[0];
+		if (variables.find(varName) != variables.end()) {
+			varExists = true;
+			// the initial command is \varname which might be followed by a method
+			// to separate the method we create a new vector that will copy the originalCommands vector
+			// except from the first item where we trim the \varname. part
+			// for now variables don't have their own methods, so we don't need to check for a dot
+			// this is left here for a possible future development
+			bool hasDot = false;
+			std::vector<std::string> commands;
+			for (unsigned i = 0; i < originalCommands.size(); i++) {
+				if (!i) {
+					// separate the name of the group from the method
+					std::vector<std::string> tokens = tokenizeString(originalCommands[i], ".");
+					for (unsigned j = 0; j < tokens.size(); j++) {
+						commands.push_back(tokens[j]);
+					}
+					if (tokens.size() > 1) hasDot = true;
+				}
+				else {
+					commands.push_back(originalCommands[i]);
+				}
+			}
+			std::vector<std::string> operations = {"*=", "/=", "+=", "-="};
+			if ((commands.size() == 3 && !hasDot && variables[varName].varType == 0 && std::find(operations.begin(), operations.end(), commands[1]) != operations.end()) ||
+					(commands.size() == 4 && hasDot && commands[1].compare("val") == 0 && std::find(operations.begin(), operations.end(), commands[2]) != operations.end())) {
+				int commandNdx = commands.size() == 3 ? 1 : 2;
+				auto it = std::find(operations.begin(), operations.end(), commands[commandNdx]);
+				int operationType = std::distance(operations.begin(), it);
+				std::string operand2 = commands[commandNdx+1];
+				std::pair<std::pair<std::string, std::string>, std::pair<int, float>> p = getArithmeticResult(variables[varName].varStr, operand2, operationType);
+				if (!p.first.first.empty()) {
+					return std::make_pair(varExists, genError(p.first.first));
+				}
+				variables[varName].varStr = stripValFromResult(p);
+				cmdOutput.outputVec.push_back(variables[varName].varStr);
+			}
+			else if (commands.size() == 3 && !hasDot && variables[varName].varType != 0 &&
+					std::find(operations.begin(), operations.end(), commands[1]) != operations.end()) {
+				return std::make_pair(varExists, genError("a structure has been assigned to " + varName + "; use " + varName + ".val for arithmetic operations"));
+			}
+			else {
+				if (commands.size() == 2) {
+					if (!hasDot) {
+						if (commands[1].compare("}") == 0) {
+							// in case a variable name is inside brackets (in case of calling it with \expand)
+							// remove the closing bracket and treat it as if it is called without methods
+							commands.pop_back();
+							goto checkVarType;
+						}
+						return std::make_pair(varExists, genError("methods to variable must be concatenated with a dot"));
+					}
+					if (commands[1].compare("val") == 0) {
+						cmdOutput.outputVec = {variables[varName].varStr};
+						return std::make_pair(varExists, cmdOutput);
+					}
+					else {
+						goto checkVarType;
+					}
+				}
+				else {
+				checkVarType:
+					size_t ndxOffset = 1;
+					// variable type 0 is simple variable
+					if (!variables[varName].varType) {
+						cmdOutput.outputVec.push_back(variables[varName].varStr);
+					}
+					else {
+						// assemble the command changing the variable name with its value
+						std::string mainCmd = "\\" + variables[varName].varStr;
+						if (hasDot && commands.size() > 1) {
+							mainCmd += ("." + commands[1]);
+							ndxOffset = 2;
+						}
+						std::vector<std::string> v = {mainCmd};
+						for (size_t i = ndxOffset; i < commands.size(); i++) v.push_back(commands[i]);
+						std::pair<bool, CmdOutput> p;
+						// variable types 1, 2, and 3 are bar, bars, and loop, respectively
+						if (variables[varName].varType < 4) {
+							p = isBarLoop(v, isMainCmd, lineNum, numLines);
+						}
+						else {
+							switch (variables[varName].varType) {
+								case 4:
+									p = isFunction(v, lineNum, numLines);
+									break;
+								case 5:
+									p = isList(v, lineNum, numLines);
+									break;
+							}
+						}
+						cmdOutput = p.second;
+					}
+				}
+			}
+		}
+	}
+	return std::make_pair(varExists, cmdOutput);
+}
+
+/*************** arithmetic operations functions **************/
+//--------------------------------------------------------------
+std::pair<std::pair<std::string, std::string>, std::pair<int, float>> ofApp::getArithmeticResult(std::string strOperand1, std::string strOperand2, int operationType)
+{
+	if (operationType != 2 && !((isNumber(strOperand1) || isFloat(strOperand1)) ||
+			(isNumber(strOperand2) || isFloat(strOperand2)))) {
+		std::string err = "only addition is possible with non numbers";
+		int intResultDummy = 0;
+		float floatResultDummy = 0;
+		return std::make_pair(std::make_pair(err, ""), std::make_pair(intResultDummy, floatResultDummy));
+	}
+	int resultType = 0;
+	float operand1 = 0;
+	float operand2 = 0;
+	bool useStrings = false;
+	if (operationType != 2) {
+		// only addition can handle strings
+		operand1 = stof(strOperand1);
+		operand2 = stof(strOperand2);
+	}
+	else {
+		if (!isNumber(strOperand1) || !isFloat(strOperand1) || !isNumber(strOperand2) || !isFloat(strOperand2)) {
+			useStrings = true;
+		}
+		else {
+			operand1 = stof(strOperand1);
+			operand2 = stof(strOperand2);
+		}
+	}
+	float result = 0;
+	std::string strResult;
+	std::string err;
+	switch (operationType) {
+		case 0:
+			result = operand1 * operand2;
+			break;
+		case 1:
+			if (operand2 == 0) {
+				err = "division by zero";
+			}
+			else {
+				result = operand1 / operand2;
+			}
+			break;
+		case 2:
+			if (useStrings) {
+				strResult = strOperand1 + strOperand2;
+			}
+			else {
+				result = operand1 + operand2;
+			}
+			break;
+		case 3:
+			result = operand1 - operand2;
+			break;
+	}
+	if (!isNumber(strOperand1) || !isNumber(strOperand2)) {
+		resultType = 1;
+	}
+	else {
+		resultType = 0;
+	}
+	return std::make_pair(std::make_pair(err, strResult), std::make_pair(resultType, result));
+}
+
+//--------------------------------------------------------------
+std::string ofApp::stripValFromResult(std::pair<std::pair<std::string, std::string>, std::pair<int, float>> p)
+{
+	std::string var;
+	if (p.first.second.empty()) {
+		if (p.second.first) var = std::to_string(p.second.second);
+		else var = std::to_string((int)p.second.second);
+	}
+	else {
+		var = p.first.second;
+	}
+	return var;
 }
 
 /********************* clearing functions *********************/
@@ -8744,21 +9088,6 @@ std::string ofApp::genStrFromVec(const std::vector<std::string>& vec)
 
 /******************** tokenizing functions *********************/
 //---------------------------------------------------------------
-//std::vector<std::string> ofApp::tokenizeString(std::string str, std::string delimiter)
-//{
-//	size_t start = 0;
-//	size_t end = str.find(delimiter);
-//	std::vector<std::string> tokens;
-//	while (end != std::string::npos) {
-//		tokens.push_back(str.substr(start, end));
-//		start += end + 1;
-//		end = str.substr(start).find(delimiter);
-//	}
-//	// the last token is not extracted in the loop above because end has reached std::string::npos
-//	// so we extract it here by simply passing a substd::string from the last start point to the end
-//	tokens.push_back(str.substr(start));
-//	return tokens;
-//}
 std::vector<std::string> ofApp::tokenizeString(std::string str, std::string delimiter, bool addDelimiter)
 {
 	size_t prev = 0, pos;
@@ -9336,15 +9665,15 @@ void ofApp::initPyo()
 //--------------------------------------------------------------
 CmdOutput ofApp::functionFuncs(std::vector<std::string>& originalCommands)
 {
-	// the initial command is \functionname which might be followed by a second level command
-	// to separate the second level command we create a new vector that will copy the originalCommands vector
+	// the initial command is \functionname which might be followed by a method
+	// to separate the method we create a new vector that will copy the originalCommands vector
 	// except from the first item where we trim the \functionname. part
 	bool hasDot = false;
 	CmdOutput cmdOutput = CmdOutput();
 	std::vector<std::string> commands;
 	for (unsigned i = 0; i < originalCommands.size(); i++) {
 		if (!i) {
-			// separate the name of the function from a possible second level command
+			// separate the name of the function from a possible method
 			std::vector<std::string> tokens = tokenizeString(originalCommands[i], ".");
 			for (unsigned j = 0; j < tokens.size(); j++) {
 				commands.push_back(tokens[j]);
@@ -9355,7 +9684,7 @@ CmdOutput ofApp::functionFuncs(std::vector<std::string>& originalCommands)
 			commands.push_back(originalCommands[i]);
 		}
 	}
-	if (!hasDot && commands.size() > 1) return genError("function name and second level command must be concatenated with a dot");
+	if (!hasDot && commands.size() > 1) return genError("function name and method must be concatenated with a dot");
 	for (unsigned i = 1; i < commands.size(); i++) {
 		if (commands[i].compare("setargs") == 0) {
 			sharedData.functions[lastFunctionIndex].resetArgumentIndex();
@@ -9641,13 +9970,13 @@ std::vector<std::string> ofApp::detectRepetitions(std::vector<std::string> token
 CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
-	// the initial command is \score. followed by a second level command
-	// to separate the second level command we create a new vector that will copy the originalCommands vector
+	// the initial command is \score. followed by a method
+	// to separate the method we create a new vector that will copy the originalCommands vector
 	// except from the first item where we trim the \score. part
 	std::vector<std::string> commands;
 	for (unsigned i = 0; i < originalCommands.size(); i++) {
 		if (!i) {
-			// remove the "\score." part of the command so we isolate the second level command
+			// remove the "\score." part of the command so we isolate the method
 			std::string thisCommand = originalCommands[i].substr(originalCommands[i].find(".")+1);
 			commands.push_back(thisCommand);
 		}
@@ -9851,7 +10180,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 	else if (commands[0].compare("show") == 0) {
 		if (commands.size() > 1) {
 			if (commands.size() > 2) {
-				return genError("second level command \"show\" takes up to one argument, not more");
+				return genError("method \"show\" takes up to one argument, not more");
 			}
 			if (commands[1].compare("barcount") == 0) {
 				showBarCount = true;
@@ -9888,7 +10217,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 	else if (commands[0].compare("hide") == 0) {
 		if (commands.size() > 1) {
 			if (commands.size() > 2) {
-				return genError("second level command \"hide\" takes up to one argument, not more");
+				return genError("method \"hide\" takes up to one argument, not more");
 			}
 			if (commands[1].compare("barcount") == 0) {
 				showBarCount = false;
@@ -9911,7 +10240,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 
 	else if (commands[0].compare("animate") == 0) {
 		if (commands.size() > 1) {
-			return genError("second level command \"animate\" takes no arguments");
+			return genError("method \"animate\" takes no arguments");
 		}
 		if (sequencer.isThreadRunning()) {
 			for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
@@ -9926,7 +10255,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 
 	else if (commands[0].compare("inanimate") == 0) {
 		if (commands.size() > 1) {
-			return genError("second level command \"inanimate\" takes no arguments");
+			return genError("method \"inanimate\" takes no arguments");
 		}
 		for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 			it->second.setAnimation(false);
@@ -10064,7 +10393,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 	}
 
 	else {
-		return genError("unkown second level command to \\score");
+		return genError("unkown method to \\score");
 	}
 	return cmdOutput;
 }
@@ -10106,13 +10435,13 @@ void ofApp::showScore(int ndx)
 CmdOutput ofApp::maestroCommands(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
-	// the initial command is \maestro. followed by a second level command
-	// to separate the second level command we create a new vector that will copy the originalCommands vector
+	// the initial command is \maestro. followed by a method
+	// to separate the method we create a new vector that will copy the originalCommands vector
 	// except from the first item where we trim the \maestro. part
 	std::vector<std::string> commands;
 	for (unsigned i = 0; i < originalCommands.size(); i++) {
 		if (!i) {
-			// remove the "\maestro." part of the command so we isolate the second level command
+			// remove the "\maestro." part of the command so we isolate the method
 			std::string thisCommand = originalCommands[i].substr(originalCommands[i].find(".")+1);
 			commands.push_back(thisCommand);
 		}
@@ -11688,8 +12017,11 @@ void Sequencer::threadedFunction()
 												!instMapIt->second.isNoteTied(bar, instMapIt->second.getBarDataCounter())) {
 											if (instMapIt->second.sendToPython()) {
 #ifdef USEPYO
-												std::string pyoStr = instMapIt->second.getName() + ".setAmp(0)";
-												sharedData->pyo.exec(pyoStr.c_str(), 0);
+												std::string pyoStr = instMapIt->second.getName();
+												if (!instMapIt->second.isRhythm()) {
+													pyoStr += ".setAmp(0)";
+													sharedData->pyo.exec(pyoStr.c_str(), 0);
+												}
 #endif
 											}
 											else {
@@ -11766,8 +12098,10 @@ void Sequencer::threadedFunction()
 											if (instMapIt->second.sendToPython()) {
 #ifdef USEPYO
 												if (i > 1) s += "]";
-												std::string pyoStr = instMapIt->second.getName() + ".setFreq(" + s + ")";
-												sharedData->pyo.exec(pyoStr.c_str(), 0);
+												if (!instMapIt->second.isRhythm()) {
+													std::string pyoStr = instMapIt->second.getName() + ".setFreq(" + s + ")";
+													sharedData->pyo.exec(pyoStr.c_str(), 0);
+												}
 #endif
 											}
 											else {
@@ -11777,7 +12111,13 @@ void Sequencer::threadedFunction()
 
 											if (instMapIt->second.sendToPython()) {
 #ifdef USEPYO
-												std::string pyoStr = instMapIt->second.getName() + ".setAmp(" + std::to_string(instMapIt->second.getDynamic(bar)) + ")";
+												std::string pyoStr = instMapIt->second.getName();
+												if (instMapIt->second.isRhythm()) {
+													pyoStr += ".play()";
+												}
+												else {
+													pyoStr += (".setAmp(" + std::to_string(instMapIt->second.getDynamic(bar)) + ")");
+												}
 												sharedData->pyo.exec(pyoStr.c_str(), 0);
 #endif
 											}

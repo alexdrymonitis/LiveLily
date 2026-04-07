@@ -292,6 +292,12 @@ struct CmdOutput
 	std::vector<std::string> outputVec;
 };
 
+struct variable
+{
+	std::string varStr;
+	int varType;
+};
+
 class Sequencer : public ofThread
 {
 	public:
@@ -411,6 +417,7 @@ class ofApp : public ofBaseApp
 		std::vector<std::string> tokenizeExpandedCommands(const std::string& input);
 		CmdOutput parseExpandedCommands(const std::vector<std::string>& tokens, int lineNum, int numLines);
 		CmdOutput parseCommand(CmdInput cmdInput, int lineNum, int numLines);
+		std::pair<int, std::string> checkNameAvailability(std::string structType, std::string s);
 		std::pair<int, std::string> parseMelodicLine(std::vector<std::string> v, int lineNum, int numLines);
 		std::pair<int, std::string> parseBarLoop(std::string str, int lineNum, int numLines);
 		std::pair<bool, CmdOutput> isInstrument(std::vector<std::string>& commands, int lineNum, int numLines);
@@ -420,6 +427,11 @@ class ofApp : public ofBaseApp
 		std::pair<int, std::string> listItemExists(size_t listItemNdx);
 		std::pair<bool, CmdOutput> isOscClient(std::vector<std::string>& commands, int lineNum, int numLines);
 		std::pair<bool, CmdOutput> isGroup(std::vector<std::string>& commands, int lineNum, int numLines);
+		std::pair<bool, CmdOutput> isVariable(std::vector<std::string>& commands, bool isMainCmd, int lineNum, int numLines);
+		//---------------------------------
+		// arithmetic operations functions
+		std::pair<std::pair<std::string, std::string>, std::pair<int, float>> getArithmeticResult(std::string strOperand1, std::string strOperand2, int operationType);
+		std::string stripValFromResult(std::pair<std::pair<std::string, std::string>, std::pair<int, float>> p);
 		//---------------------------------
 		// clearing functions
 		void clearBars();
@@ -643,7 +655,7 @@ class ofApp : public ofBaseApp
 
 		std::map<int, std::map<char, std::map<std::string, ofColor>>> commandsMap;
 		std::map<std::string, ofColor> colorNameMap;
-		// the two vectors below is used to determine if we must tokenize words based on digits
+		// the two vectors below are used to determine if we must tokenize words based on digits
 		std::vector<std::string> commandsToNotTokenize;
 		std::vector<std::string> keywords;
 		// the map of vectors below is used to determine the number of lines to execute
@@ -651,10 +663,14 @@ class ofApp : public ofBaseApp
 		std::map<int, std::vector<std::string>> noIndentCheck;
 		enum languages {livelily, python, lua};
 		// vector of strings of command names that should not be expanded
-		std::vector<std::string> nonExpandableCommands = {"\\bar", "\\bars", "\\loop", "\\group", "\\function", "\\help"};
+		std::vector<std::string> nonExpandableCommands = {"\\insts", "\\bar", "\\bars", "\\loop", "\\group", "\\function", "\\help"};
 
 		// instrument groups
 		std::map<std::string, std::vector<std::string>> instGroups;
+
+		// variables
+		std::map<std::string, variable> variables;
+		std::map<std::string, int> structTypes = {{"bar", 1}, {"bars", 2}, {"loop", 3}, {"function", 4}, {"list", 5}};
 
 		// various lists
 		std::map<int, std::list<std::string>> listMap;
