@@ -469,6 +469,9 @@ void Editor::drawText()
 	ofColor cursorColor = ((ofApp*)ofGetAppPtr())->brightnessCoeff;
 	int cursorX = lineNumberWidth + font.stringWidth(allLines[cursorLineIndex].str.substr(0, cursorPos)) + \
 				  oneAndHalfCharacterWidth + frameXOffset;
+	// font.stringWidth() returns +1 when the string ends with a white space
+	// so we subtract the length of one character, if this is the case
+	if (allLines[cursorLineIndex].str.substr(0, cursorPos).back() == ' ') cursorX -= oneCharacterWidth;
 	bool cursorDrawn = false;
 	for (int i = lineCountOffset; i < loopIter; i++) {
 		int strYOffset = ((count+1)*cursorHeight) + frameYOffset - characterOffset;
@@ -560,12 +563,8 @@ void Editor::drawText()
 						size_t tokenNdx = std::distance(tokens.begin(), it);
 						size_t subtokenNdx = std::distance(subtokens.begin(), subit);
 						bool endOfStr = (tokenNdx == tokens.size()-1 && subtokenNdx == subtokens.size()-1 ? true : false);
-						//if (prevCursorPos != cursorPos)
-						//	std::cout << "\"" << *subit << "\": cursorPos: " << cursorPos << ", subtokensSizeAccum: " << subtokensSizeAccum << ", subtoken size: " << (*subit).size() << endl;
 						if (cursorPos - (int)subtokensSizeAccum + allLines[i].startPos < (int)(*subit).size() || (cursorPos + allLines[i].startPos == (int)allLines[i].str.size() && endOfStr)) {
 							isCursorInsideKeyword = true;
-							//if (prevCursorPos != cursorPos)
-							//	std::cout << "drawing cursor for \"" << *subit << "\"\n";
 						}
 					}
 					subtokensSizeAccum += (*subit).size();
@@ -1084,34 +1083,57 @@ void Editor::moveDataToNextLine()
 }
 
 //--------------------------------------------------------------
+//void Editor::copyOnLineDelete()
+//{
+//	// in case of backspace the cursorLineIndex variable has been updated before this function call
+//	// in case of delete, the variable doesn't change
+//	// in any case, it already points to the right key of the map below
+//	std::map<int, line>::iterator it1 = allLines.find(cursorLineIndex);
+//	std::map<int, line>::iterator it2 = allLines.find(cursorLineIndex+1);
+//	// first concatenate the two strings
+//	if (it2 != allLines.end()) {
+//		it1->second.str += it2->second.str;
+//		// before moving the keys of the std::maps we must erase the keys of the line below the cursor
+//		eraseMapKeys(cursorLineIndex+1);
+//	}
+//	// since cursorLineIndex is updated, if we are deleting line 10
+//	// cursorLineIndex is 9 before we enter this function
+//	// but we want to change the keys of lines 11 onward
+//	// advance though moves the iterator to the next element
+//	// and since we have already erased the next line, we advance one element only
+//	int thisKey = it1->first;
+//	std::advance(it1, 1);
+//	// the keys of the iterator and its previous positions should be two numbers apart
+//	// which is true only if there is at least one more line after the line we have erased
+//	if (it1->first == thisKey + 2) {
+//		while (it1 != allLines.end()) {
+//			int key = it1->first;
+//			changeMapKeys(key, -1);
+//			++it1;
+//		}
+//	}
+//}
+// provided by chatgpt (changes have also been made in changeMapKeys() and eraseMapKeys())
 void Editor::copyOnLineDelete()
 {
-	// in case of backspace the cursorLineIndex variable has been updated before this function call
-	// in case of delete, the variable doesn't change
-	// in any case, it already points to the right key of the map below
-	std::map<int, line>::iterator it1 = allLines.find(cursorLineIndex);
-	std::map<int, line>::iterator it2 = allLines.find(cursorLineIndex+1);
-	// first concatenate the two strings
-	if (it2 != allLines.end()) {
-		it1->second.str += it2->second.str;
-		// before moving the keys of the std::maps we must erase the keys of the line below the cursor
-		eraseMapKeys(cursorLineIndex+1);
+	auto current = allLines.find(cursorLineIndex);
+	if (current == allLines.end())
+		return;
+
+	auto next = allLines.find(cursorLineIndex + 1);
+
+	// Merge the next line into the current line.
+	if (next != allLines.end()) {
+		current->second.str += next->second.str;
+		eraseMapKeys(cursorLineIndex + 1);
 	}
-	// since cursorLineIndex is updated, if we are deleting line 10
-	// cursorLineIndex is 9 before we enter this function
-	// but we want to change the keys of lines 11 onward
-	// advance though moves the iterator to the next element
-	// and since we have already erased the next line, we advance one element only
-	int thisKey = it1->first;
-	std::advance(it1, 1);
-	// the keys of the iterator and its previous positions should be two numbers apart
-	// which is true only if there is at least one more line after the line we have erased
-	if (it1->first == thisKey + 2) {
-		while (it1 != allLines.end()) {
-			int key = it1->first;
-			changeMapKeys(key, -1);
-			++it1;
-		}
+
+	// Everything after the deleted line moves up by one.
+	int key = cursorLineIndex + 2;
+
+	while (allLines.find(key) != allLines.end()) {
+		changeMapKeys(key, -1);
+		++key;
 	}
 }
 
@@ -1175,13 +1197,29 @@ void Editor::moveCursorOnShiftReturn()
 //--------------------------------------------------------------
 void Editor::changeMapKeys(int key, int increment)
 {
-	if (allLines.find(key) != allLines.end()) {
-		auto nodeHolder = allLines.extract(key);
-		nodeHolder.key() = key + increment;
-		allLines.insert(std::move(nodeHolder));
-	}
+	//if (allLines.find(key) != allLines.end()) {
+	//	auto nodeHolder = allLines.extract(key);
+	//	nodeHolder.key() = key + increment;
+	//	allLines.insert(std::move(nodeHolder));
+	//}
+	//// get the bar number the current line is connected to
+	//int barNdx = allLines[key+increment].linesConnectedToBar;
+	// edit of the lines above by chatgpt
+	auto it = allLines.find(key);
+	if (it == allLines.end())
+	    return;
+
+	auto nodeHolder = allLines.extract(it);
+	nodeHolder.key() = key + increment;
+
+	auto result = allLines.insert(std::move(nodeHolder));
+	if (!result.inserted)
+	    return;
+
 	// get the bar number the current line is connected to
-	int barNdx = allLines[key+increment].linesConnectedToBar;
+	int barNdx = result.position->second.linesConnectedToBar;
+	// end of edit
+
 	// scroll through all instruments to see which one is connected to this bar and this line
 	for (auto it = instsConnectedToLine.begin(); it != instsConnectedToLine.end(); ++it) {
 		auto it2 = it->second.find(barNdx);
@@ -1207,15 +1245,32 @@ void Editor::changeMapKeys(int key, int increment)
 void Editor::eraseMapKeys(int key)
 {
 	// first store the value of the linesConnectedToBar variable which is the bar this line connects to
-	int barNdx = allLines[key].linesConnectedToBar;
-	allLines.erase(key);
+	//int barNdx = allLines[key].linesConnectedToBar;
+	//allLines.erase(key);
+	// edit of the lines above by chatgpt
+	// first store the value of the linesConnectedToBar variable which is the bar this line connects to
+	auto it = allLines.find(key);
+	if (it == allLines.end())
+	    return;
+
+	int barNdx = it->second.linesConnectedToBar;
+	allLines.erase(it);
+	// end of edit
+
 	// scroll through all instruments to see which one is connected to this bar and this line
 	for (auto it = instsConnectedToLine.begin(); it != instsConnectedToLine.end(); ++it) {
 		auto it2 = it->second.find(barNdx);
-		// if this bar is stored in the instsConnectedToLine map, erase it
-		if (it2 != it->second.end()) {
-			instsConnectedToLine[it->first].erase(it2->first);
-		}
+		//// if this bar is stored in the instsConnectedToLine map, erase it
+		//if (it2 != it->second.end()) {
+		//	instsConnectedToLine[it->first].erase(it2->first);
+		//}
+		// edit of the commented out lines above by chatgpt
+		// Only erase the connection if this bar is connected to the line
+    	// that was actually erased.
+    	if (it2 != it->second.end() && it2->second == key) {
+    	    it->second.erase(it2);
+    	}
+		// end of edit
 	}
 }
 
@@ -1325,6 +1380,11 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 		std::string deletedChar;
 		if (highlightManyChars) {
 			deleteString();
+			// in case we delete more than one characters at the end of the string
+			// we need to check if the saved cursor position is greater than the remaining string
+			if (cursorPos >= (int)allLines[cursorLineIndex].str.size()) {
+				cursorPos = (int)allLines[cursorLineIndex].str.size();
+			}
 		}
 		else if ((allLines[cursorLineIndex].str.size() > 0) && (cursorPos > 0)) {
 			int numCharsToDelete = 1;
@@ -1425,11 +1485,15 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 						pyStr += allLines[i+executingLineLocal].str;
 					}
 					// execute the Python line in verbose mode with the last argument set to 1
-					err = ((ofApp*)ofGetAppPtr())->sharedData.pyo.exec(pyStr.c_str(), 1);
+					err = ((ofApp*)ofGetAppPtr())->sharedData.pyo.exec(pyStr.c_str());
 					if (err) {
+						// get the error message
 						std::string errStr = ((ofApp*)ofGetAppPtr())->sharedData.pyo.getErrorMsg();
+						// get the position of the end of the word "line"
 						size_t lineNdx = errStr.find("line")+ 5;
-						errStr = errStr.substr(0, lineNdx) + std::to_string(executingLineLocal+1) + errStr.substr(lineNdx+errStr.substr(lineNdx+1).find(" "));
+						// insert the line number of the editor and not the Python interpreter
+						// and remove the last character (the last substr addition) which is a newline
+						errStr = errStr.substr(0, lineNdx) + std::to_string(executingLineLocal+1) + errStr.substr(lineNdx+errStr.substr(lineNdx+1).find(" "), errStr.substr(lineNdx+errStr.substr(lineNdx+1).find(" ")).size()-1);
 						setTraceback(3, errStr, executingLineLocal, lineNdx);
 					}
 					else {
@@ -1543,6 +1607,11 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 	else if (key == 127) {
 		if (highlightManyChars) {
 			deleteString();
+			// in case we delete more than one characters at the end of the string
+			// we need to check if the saved cursor position is greater than the remaining string
+			if (cursorPos >= (int)allLines[cursorLineIndex].str.size()) {
+				cursorPos = (int)allLines[cursorLineIndex].str.size();
+			}
 		}
 		else if (cursorPos < (int)allLines[cursorLineIndex].str.size()) {
 			int numCharsToDelete = 1;
@@ -2629,7 +2698,7 @@ void Editor::deleteString()
 	}
 	else if (highlightManyChars) {
 		// if we're deleting all text
-		if (bottomLine - topLine == lineCount - 1) {
+		if (bottomLine - topLine == lineCount - 1 && lastChar - firstChar == (int)allLines[cursorLineIndex].str.size()) {
 			clearText();
 			createNewLine("", 0);
 			return;
@@ -2802,8 +2871,8 @@ void Editor::saveDialog()
 //--------------------------------------------------------------
 void Editor::saveFile(std::string fileName)
 {
-	std::cout << "saving \"" << fileName << "\"\n";
-	if (!endsWith(fileName, ".lyv") || !endsWith(fileName, ".py") || !endsWith(fileName, ".lua")) {
+	//std::cout << "saving \"" << fileName << "\"\n";
+	if (!endsWith(fileName, ".lyv") && !endsWith(fileName, ".py") && !endsWith(fileName, ".lua")) {
 		fileName += ".lyv";
 	}
 	std::ofstream file(fileName.c_str());

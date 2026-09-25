@@ -1603,7 +1603,7 @@ void Notes::storeSlurCoords(int bar)
 		else {
 			slurStartX[bar][i] = -(2 * staffDist);
 			slurLinks[bar][i].first = 1;
-			isLinked[bar].first = min(isLinked[bar].first, -slurLinks[bar][i].first);
+			isLinked[bar].first = std::min(isLinked[bar].first, -slurLinks[bar][i].first);
 			bool foundSlurStart = false;
 			int prevBar = bar - 1;
 			while (!foundSlurStart) {
@@ -1611,7 +1611,7 @@ void Notes::storeSlurCoords(int bar)
 				if (slurIndexes[prevBar].size() == 1 && \
 						(slurIndexes[prevBar][0].first == -1 && slurIndexes[prevBar][0].second == -1)) {
 					slurLinks[bar][i].first++;
-					isLinked[bar].first = min(isLinked[bar].first, -slurLinks[bar][i].first);
+					isLinked[bar].first = std::min(isLinked[bar].first, -slurLinks[bar][i].first);
 				}
 				else {
 					for (unsigned j = slurIndexes[prevBar].size() - 1; j >= 0; j--) {
@@ -1888,7 +1888,7 @@ void Notes::storeSlurCoords(int bar)
 				}
 				if (j > 0 && j < slurStopNdx-1) {
 					if ((allNotesMinYPos[bar][j] > middleY1 && middleY1 > -FLT_MAX) || (allNotesMinYPos[bar][j] < middleY2 && middleY2 > -FLT_MAX)) {
-						allNotesMinYPos[bar][j] = min(middleY1, middleY2); // - (noteHeight/2);
+						allNotesMinYPos[bar][j] = std::min(middleY1, middleY2); // - (noteHeight/2);
 					}
 				}
 			}
@@ -1915,10 +1915,10 @@ void Notes::storeOttavaCoords(int bar)
 					// so I create a float here
 					float zero = 0.0;
 					if (stemDirections[bar][i] > 0) {
-						yPos = min(allNotesMinYPos[bar][i], min(allNoteStemCoordsY[bar][i], zero));
+						yPos = std::min(allNotesMinYPos[bar][i], std::min(allNoteStemCoordsY[bar][i], zero));
 					}
 					else {
-						yPos = min(allNotesMinYPos[bar][i], min(allNoteHeadCoordsY[bar][i][0], zero));
+						yPos = std::min(allNotesMinYPos[bar][i], std::min(allNoteHeadCoordsY[bar][i][0], zero));
 					}
 					yPos -= staffDist; //(noteHeight + halfStaffDist);
 					if (stemDirections[bar][i] > 0 && allNoteStemCoordsY[bar][i] - (yPos+textHalfHeight) < halfStaffDist) {
@@ -1953,7 +1953,7 @@ void Notes::storeOttavaCoords(int bar)
 							}
 						}
 					}
-					// adding textHalfHeight to compensate for the height of the std::string which is not added to the actual allOttavasYCoords[bar][i]
+					// adding textHalfHeight to compensate for the height of the string which is not added to the actual allOttavasYCoords[bar][i]
 					if (yPos + textHalfHeight > allNotesMaxYPos[bar][i] && yPos < FLT_MAX) {
 						allNotesMaxYPos[bar][i] = yPos; // + textHalfHeight;
 					}
@@ -1975,7 +1975,7 @@ void Notes::storeOttavaCoords(int bar)
 			// first check if all symbols within the same ottava don't fall on anything else
 			for (unsigned j = prevChange+1; j < allOttavasChangedAt[bar].size(); j++) {
 				if (allOttavas[bar][j] > 0) {
-					allOttavasYCoords[bar][prevChange] = min(allNotesMinYPos[bar][j] - textHalfHeight, allOttavasYCoords[bar][prevChange]);
+					allOttavasYCoords[bar][prevChange] = std::min(allNotesMinYPos[bar][j] - textHalfHeight, allOttavasYCoords[bar][prevChange]);
 					// subtracting textHalfHeight to compensate for the height of the std::string which is not added to the actual allOttavasYCoords[bar][i]
 					if (allOttavasYCoords[bar][prevChange] - textHalfHeight < allNotesMinYPos[bar][j] && allOttavasYCoords[bar][prevChange] > -FLT_MAX) {
 						allNotesMinYPos[bar][j] = allOttavasYCoords[bar][prevChange];
@@ -2031,11 +2031,11 @@ void Notes::storeTextCoords(int bar)
 				if (allTextsIndexes.at(bar).at(i).at(j) > 0) {
 					allTextsYCoords.at(bar).at(i).at(j) = 0;
 					if (stemDirections.at(bar).at(i) > 0) {
-						yPos = min(allNotesMinYPos[bar][i], min(allNoteStemCoordsY[bar][i], allTextsYCoords.at(bar).at(i).at(j)));
+						yPos = std::min(allNotesMinYPos[bar][i], std::min(allNoteStemCoordsY[bar][i], allTextsYCoords.at(bar).at(i).at(j)));
 					}
 
 					else {
-						yPos = min(allNotesMinYPos[bar][i], min(allNoteHeadCoordsY[bar][i][0], allTextsYCoords.at(bar).at(i).at(j)));
+						yPos = std::min(allNotesMinYPos[bar][i], std::min(allNoteHeadCoordsY[bar][i][0], allTextsYCoords.at(bar).at(i).at(j)));
 					}
 					yPos -= (noteHeight + halfStaffDist);
 					allTextsYCoords.at(bar).at(i).at(j) = yPos;

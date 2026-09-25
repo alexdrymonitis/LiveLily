@@ -1,6 +1,10 @@
 #include "PyoClass.h"
+#include <iostream>
 
-#ifdef USEPYO
+//Pyo::Pyo() {
+//	gstate = PyGILState_Ensure();  // Acquire GIL
+//}
+
 /*
 ** Creates a python interpreter and initialize a pyo server inside it.
 ** This function must be called, once per Pyo object, before any other
@@ -14,30 +18,17 @@
 ** All arguments should be equal to the host audio settings.
 */
 void Pyo::setup(int _inChannels, int _outChannels, int _bufferSize, int _sampleRate) {
-    inChannels = _inChannels;
+	inChannels = _inChannels;
     outChannels = _outChannels;
     bufferSize = _bufferSize;
     sampleRate = _sampleRate;
+	debug = 0;
     interpreter = pyo_new_interpreter(sampleRate, bufferSize, inChannels, outChannels);
     pyoInBuffer = reinterpret_cast<float*>(pyo_get_input_buffer_address(interpreter));
     pyoOutBuffer = reinterpret_cast<float*>(pyo_get_output_buffer_address(interpreter));
     pyoCallback = reinterpret_cast<callPtr*>(pyo_get_embedded_callback_address(interpreter));
-    pyoId = pyo_get_server_id(interpreter);
-}
-
-/*
-** Gets updated from ecitor.cpp
-** All it does is check if there is a message in the queue by Python's stdout
-** and returns it to the editor so the message can be stored in LiveLily's traceback 
-*/
-std::vector<std::string> Pyo::getStdout() {
-    std::vector<std::string> out;
-    char *msg;
-    while (pyo_dequeue_stdout(&msg)) {
-        out.emplace_back(msg);   // copy into vector
-        free(msg);               // free allocated C buffer
-    }
-    return out;
+    pyoId = reinterpret_cast<void *>(pyo_get_server_address(interpreter));
+	processing = false;
 }
 
 /*
@@ -55,7 +46,14 @@ Pyo::~Pyo() {
 **   *buffer : float *, float pointer pointing to the host's input buffers.
 */
 void Pyo::fillin(float *buffer) {
+	processing = true;
     for (int i=0; i<(bufferSize*inChannels); i++) pyoInBuffer[i] = buffer[i];
+	processing = false;
+}
+
+bool Pyo::isProcessing()
+{
+	return processing;
 }
 
 
@@ -69,7 +67,9 @@ void Pyo::fillin(float *buffer) {
 */
 void Pyo::process(float *buffer) {
     pyoCallback(pyoId);
+	processing = true;
     for (int i=0; i<(bufferSize*outChannels); i++) buffer[i] = pyoOutBuffer[i];
+	processing = false;
 }
 
 /*
@@ -144,7 +144,7 @@ int Pyo::value(const char *name, float *value, int len) {
         strcat(pyoMsg, fchar);
     }
     strcat(pyoMsg, "]");
-    return pyo_exec_statement(interpreter, pyoMsg, debug);
+    return pyo_exec_statement(interpreter, pyoMsg, 0);
 }
 
 /*
@@ -205,7 +205,7 @@ int Pyo::set(const char *name, float *value, int len) {
 
 /*
 ** Executes any raw valid python statement. With this function, one can dynamically
-** creates and manipulates audio objects and algorithms.
+** create and manipulate audio objects and algorithms.
 **
 ** arguments:
 **   msg : const char *, pointer to a string containing the statement to execute.
@@ -218,14 +218,34 @@ int Pyo::set(const char *name, float *value, int len) {
 ** pyo.exec("fr = Rossler(pitch=pits, chaos=0.9, mul=250, add=500)")
 ** pyo.exec("b = SumOsc(freq=fr, ratio=0.499, index=0.4, mul=0.2).out()")
 */
-int Pyo::exec(const char *_msg, int debug) {
+int Pyo::exec(const char *_msg) {
     strcpy(pyoMsg, _msg);
     return pyo_exec_statement(interpreter, pyoMsg, debug);
 }
 
 /*
+** Set the debug state
+*/
+void Pyo::setDebug(int debugVal) {
+	debug = debugVal;
+}
+
+/*
+** Get the STDOUT as a vector of strings
+*/
+std::vector<std::string> Pyo::getStdout() {
+    std::vector<std::string> out;
+    char *msg;
+    while (pyo_dequeue_stdout(&msg)) {
+		out.emplace_back(msg);   // copy into vector
+		free(msg);               // free allocated C buffer
+    }
+    return out;
+}
+
+/*
 ** Return the error message stored to the pyoMsg char array
-** in case the function above returns a non-zero error code
+** in case the exec() or loadfile() returns a non-zero error code
 */
 std::string Pyo::getErrorMsg() {
 	std::string s(pyoMsg);
@@ -236,7 +256,7 @@ std::string Pyo::getErrorMsg() {
 ** Shutdown and reboot the pyo server while keeping current in/out buffers.
 ** This will erase audio objects currently active within the server.
 **
-*/void Pyo::clear() {
+*/
+void Pyo::clear() {
     pyo_server_reboot(interpreter);
 }
-#endif

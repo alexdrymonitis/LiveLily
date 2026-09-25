@@ -28,6 +28,7 @@ Instrument::Instrument()
 	beatCounter = 0;
 	barCounter = 0;
 	barDataCounter = 0;
+	tempBarDataCounter = 0;
 	barDataCounterReset = false;
 	seqToggle = 0;
 	noteDur = 0;
@@ -228,7 +229,7 @@ int Instrument::setDuration(std::string subcommand, float dur)
 		setStaccatissimoDur(dur);
 		return 0;
 	}
-	else if (subcommand.compare("tenuro") == 0) {
+	else if (subcommand.compare("tenuto") == 0) {
 		setTenutoDur(dur);
 		return 0;
 	}
@@ -858,6 +859,12 @@ void Instrument::setNoteDur(int bar, float tempo)
 	}
 }
 
+int Instrument::getDurPercentage(int bar)
+{
+	int dataCounter = (barDataCounter < (int)articulations[bar].size() ? barDataCounter : (int)articulations[bar].size() - 1);
+	return (int)(durPercentages[articulations[bar][dataCounter][0]] * 100.0);
+}
+
 //--------------------------------------------------------------
 bool Instrument::isNoteSlurred(int bar, int dataCounter)
 {
@@ -963,6 +970,9 @@ int Instrument::getBarDataCounter()
 void Instrument::toggleSeqToggle(int bar)
 {
 	seqToggle++;
+	// if we have a 100% duration for note on messages we increment the toggle twice
+	// to immediately move on to the next note of message
+	if (getDurPercentage(bar) == 100) seqToggle++;
 	if (seqToggle > 1) {
 		seqToggle = 0;
 		barDataCounter++;
@@ -974,6 +984,12 @@ void Instrument::toggleSeqToggle(int bar)
 int Instrument::getSeqToggle()
 {
 	return seqToggle;
+}
+
+//--------------------------------------------------------------
+void Instrument::storeTempBarDataCounter()
+{
+	tempBarDataCounter = barDataCounter;
 }
 
 //--------------------------------------------------------------

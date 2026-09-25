@@ -9,6 +9,7 @@
 #include <utility> // to add pair
 #include "editor.h"
 #include "instrument.h"
+#include "ofTimer.h"
 #ifdef USEPYO
 #include "PyoClass.h"
 #endif
@@ -178,10 +179,6 @@ struct SharedData
 	// articulation strings so each program can treat them differently
 	std::string articulSyms[8];
 	bool showNotes;
-	bool showPianoRoll;
-	bool showScope;
-	// a boolean common for all three booleans above
-	bool showScore;
 	// from the piano roll variables below, only pianoRollTimeStamp needs to be in SharedData
 	// but we define all of them here for consistency
 	int pianoRollNumWhiteKeys;
@@ -312,6 +309,7 @@ class Sequencer : public ofThread
 		void setFinish(bool finishState);
 		void setCountdown(int num);
 		void setMidiTune(int tuneVal);
+		void setCheckLoop(std::string barLoopName, int numIter);
 
 		ofxMidiOut midiOut;
 		std::vector<ofxMidiOut> midiOuts;
@@ -333,6 +331,8 @@ class Sequencer : public ofThread
 		void sendStopCountdownToParts();
 		void sendCountdownToParts(int coundown);
 		void sendFinishToParts(bool finishState);
+		std::string setSeqOscAddress(std::string instName, std::string s, bool checking);
+		void fireNote(std::map<int, Instrument>::iterator instMapIt, int bar, uint64_t timeStamp, bool checking);
 		void threadedFunction();
 
 		SharedData *sharedData;
@@ -341,6 +341,7 @@ class Sequencer : public ofThread
 		ofTimer timer;
 		bool runSequencer;
 		bool sequencerRunning;
+		bool sequencerStart;
 		bool updateSequencer;
 		bool sequencerUpdated;
 		bool updateTempo;
@@ -361,6 +362,12 @@ class Sequencer : public ofThread
 		int countdownCounter;
 		bool countdown;
 		int midiTuneVal;
+		int loopToCheckNdx;
+		int loopToCheckBarNdx;
+		int loopToCheckNumIter;
+		int loopToCheckIterCounter;
+		bool checkLoop;
+		int tempBar;
 
 		/* iterators for accessing data in Instrument objects */
 		std::map<std::string, int>::iterator instNamesIt;
@@ -385,6 +392,7 @@ class ofApp : public ofBaseApp
 		void drawPianoRoll();
 		void drawBlackKeysOutline(float xPos, float yPos);
 		void drawScope();
+		void drawSequencer();
 
 		void sendBeatVizInfo(int bar);
 		void moveCursorOnShiftReturn();
@@ -548,7 +556,7 @@ class ofApp : public ofBaseApp
 		//---------------------------------
 		// various commands for the score
 		CmdOutput scoreCommands(std::vector<std::string>& originalCommands, int lineNum, int numLines);
-		void showScore(int ndx);
+		void setShowScore(int ndx);
 		CmdOutput maestroCommands(std::vector<std::string>& commands, int lineNum, int numLines);
 		bool isScoreVisible();
 		//---------------------------------
@@ -759,6 +767,12 @@ class ofApp : public ofBaseApp
 		// STDERR
 		bool parsingCommand;
 
+		// variables for the score
+		bool showScore;
+		int scoreType;
+		bool showPianoRoll;
+		bool showScope;
+		// showNotes is in SharedData because it is used by the sequencer
 		float scoreXOffset;
 		float scoreYOffset;
 		float scoreBackgroundWidth;
@@ -773,6 +787,7 @@ class ofApp : public ofBaseApp
 		bool mustUpdateScore;
 		bool scoreUpdated;
 		bool scoreChangeOnLastBar;
+		int seqResolution;
 		// a vector of colors to appear in order of instrument creation for the piano roll
 		std::vector<std::string> instrumentColors = {"magenta", "green", "yellow", "cyan", "violet", "orchid", "orange"};
 		// map that stores which editors can receive data from OSC
@@ -819,6 +834,12 @@ class ofApp : public ofBaseApp
 		bool correctOnSameOctaveOnly;
 		bool showBarCount;
 		bool showTempo;
+
+		bool exiting;
+
+		// mouse's X and Y coords
+		int mouseX;
+		int mouseY;
 };
 
 #endif

@@ -110,6 +110,7 @@ class Instrument
 		void zeroNoteDur();
 		bool mustFireStep(uint64_t stamp, int bar, float tempo);
 		void setNoteDur(int bar, float tempo);
+		int getDurPercentage(int bar);
 		bool isNoteSlurred(int bar, int dataCounter);
 		bool isNoteTied(int bar, int dataCounter);
 		bool isLastNoteTied(int bar);
@@ -127,6 +128,7 @@ class Instrument
 		void resetBarDataCounter();
 		void toggleSeqToggle(int bar);
 		int getSeqToggle();
+		void storeTempBarDataCounter();
 		bool hasText(int bar);
 		std::string getText(int bar);
 		int getPitchBendVal(int bar);
@@ -149,18 +151,18 @@ class Instrument
 
 		std::string name;
 		std::map<int, float> distBetweenBeats;
-		// std::maps of int and std::map of int and std::vector (of std::vectors)
-		// int key of outter std::map is instrument index, retrieved from instrumentIndexes above
-		// int key of inner std::map is bar index, retrieved from barsIndexes above
-		// std::vector if bar data
-		// if std::vector of std::vectors, it is chord notes
+		// maps of int and map of int and vector (of vectors)
+		// int key of outter map is instrument index, retrieved from instrumentIndexes above
+		// int key of inner map is bar index, retrieved from barsIndexes above
+		// vector if bar data
+		// if vector of vectors, it is chord notes
 		std::map<int, std::vector<std::vector<float>>> notes;
 		std::map<int, std::vector<std::vector<int>>> midiNotes;
 		std::map<int, std::vector<int>> durs;
 		std::map<int, std::vector<int>> dursWithoutSlurs;
 		std::map<int, std::vector<int>> midiDursWithoutSlurs;
 		std::map<int, std::vector<int>> pitchBendVals;
-		// std::vectors not affected by slurs and ties, needed for counting in the sequencer
+		// vectors not affected by slurs and ties, needed for counting in the sequencer
 		std::map<int, std::vector<int>> dursUnchanged;
 		std::map<int, std::vector<float>> dynamics;
 		std::map<int, std::vector<int>> midiVels;
@@ -241,6 +243,7 @@ class Instrument
 		uint64_t beatCounter;
 		int barCounter;
 		int barDataCounter;
+		int tempBarDataCounter;
 		bool barDataCounterReset;
 		int seqToggle; // so we can alternate between notes on and notes off
 		int64_t noteDur;
