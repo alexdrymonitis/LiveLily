@@ -48,6 +48,31 @@ class Session
 		// the curly bracket depth while storing a function body, the function's own brackets included
 		int functionBodyDepth;
 		int lastFunctionIndex;
+
+		// the state of parsing bars (\bar), loops (\loop), and bars defined together (\bars)
+		// whether there was an error in a bar, so that its melodic lines are not stored
+		bool barError;
+		bool parsingBar;
+		bool parsingBars;
+		bool parsingLoop;
+		// the name of a \bars definition, until it is stored as a loop
+		std::string barsName;
+		// a counter of the instruments parsed, for first bars that are not complete
+		int numInstsParsed;
+		// the loop command sent to connected score parts
+		std::string lastLoopCommand;
+		// the name of the bars of \bars, and the counter of its passes, one for every bar
+		std::string multiBarsName;
+		int barsIterCounter;
+		// whether all the instruments of \bars have the same number of bars, and that number
+		bool numBarsToParseSet;
+		int numBarsToParse;
+		// the number of bars defined by a \time, \tempo or \beatat with more than one value separated by |, inside \bars
+		// 0 if there is none, and the command that defined it, for error messages
+		int barsCmdNumBars;
+		std::string barsCmdName;
+		int firstInstForBarsIndex;
+		bool firstInstForBarsSet;
 };
 
 #endif

@@ -847,24 +847,7 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// global line width
 		int lineWidth;
 
-		// boolean to determine whethere there was an error when storing a bar
-		// useful to avoid storing melodic lines in such a case
-		bool barError;
-		// variable used for copying contents of bars
-		int barToCopy;
-
-		int minDur;
-
-		// variable to determine when to start storing patterns
-		int whenToStore;
-		// and a boolean to allow storing a pattern and to insert lines
-		bool storePattern;
 		bool inserting;
-		// a string to hold the name of a \\bars command argument
-		// until it is stored as a loop
-		std::string barsName;
-		// a counter of parsed instruments that is used for first, incomplete bars
-		int numInstsParsed;
 
 		// STDERR
 
@@ -897,16 +880,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		std::map<int, std::string> fromOscAddr;
 
 		std::map<int, int> instNameWidths;
-		// we need an index to point to the correct 2D vector
-		int patternIndex;
-		// the boolean below determines whether we're parsing a bar
-		bool parsingBar;
-		// and one for parsing multiple bars
-		bool parsingBars;
-		// and one for parsing loops
-		bool parsingLoop;
-		// a string to hold the loop command to be sent over OSC to connected servers
-		std::string lastLoopCommand;
 		// a boolean for sending data defined with \bars to score parts one at each frame
 		bool waitToSendBarDataToParts;
 		// and one to denote that all bars have finished parsing so we can start sending to parts
@@ -918,22 +891,9 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		int numScorePartSenders;
 		bool checkIfAllPartsReceivedBarData;
 		uint64_t sendBarDataToPartsTimeStamp;
-		// a string to termporarily store the name of the multiple bars
-		std::string multiBarsName;
-		// and a counter for the iterations of multiple bars parsing
-		int barsIterCounter;
-		bool numBarsToParseSet;
-		// a variable to check if all instruments parsed the same number of bars
-		int numBarsToParse;
-		// the number of bars defined by a \time, \tempo or \beatat with more than one value separated by |, inside \bars
-		// 0 if there is none, and the command that defined it, for error messages
-		int barsCmdNumBars;
-		std::string barsCmdName;
 		char noteChars[8];
 		std::string lastInstrument;
 		int lastInstrumentIndex;
-		int firstInstForBarsIndex;
-		bool firstInstForBarsSet;
 		int tempNumInstruments;
 		// about adding a natural after the same note has been inserted with an accidental
 		bool correctOnSameOctaveOnly;
