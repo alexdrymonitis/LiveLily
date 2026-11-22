@@ -522,8 +522,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		//---------------------------------
 		// instrument functions
 		void initializeInstrument(std::string instName);
-		// the data directory of LiveLily (bin/data), where relative paths start, e.g. of a SoundFont, set by setup()
-		std::string dataDirectory;
 		// test mode, set from the command line (see main.cpp and testmode.cpp)
 		std::string testFile;
 		std::string testOut;
@@ -635,16 +633,9 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 
 
 
-		// the colors of the names of the code in the editor, by language and first character, and the colors that can be set by name
-		std::map<int, std::map<char, std::map<std::string, Color>>> commandsMap;
-		std::map<std::string, Color> colorNameMap;
-		// the two vectors below are used to determine if we must tokenize words based on digits
-		std::vector<std::string> commandsToNotTokenize;
-		std::vector<std::string> keywords;
 		// the map of vectors below is used to determine the number of lines to execute
 		// if we start from the first line of a chunk that is not indented
 		std::map<int, std::vector<std::string>> noIndentCheck;
-		enum languages {livelily, python, lua};
 		// vector of strings of command names that should not be expanded
 		/* the signatures of commands: how parseCommand() and evaluateTokens() treat their arguments
 		   the language is the same for all commands: a command takes no argument, one argument after it, or more arguments in curly brackets
@@ -794,8 +785,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		bool mustUpdateScore;
 		bool scoreUpdated;
 		bool scoreChangeOnLastBar;
-		// a vector of colors to appear in order of instrument creation for the piano roll
-		std::vector<std::string> instrumentColors = {"magenta", "green", "yellow", "cyan", "violet", "orchid", "orange"};
 		// map that stores which editors can receive data from OSC
 		std::map<int, bool> fromOsc;
 		// and a map with the OSC address for each editor

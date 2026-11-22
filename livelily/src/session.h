@@ -8,6 +8,7 @@
 #include <set>
 #include <utility>
 #include <vector>
+#include "color.h"
 #include "midi.h"
 #include "osc.h"
 #include "serial.h"
@@ -37,6 +38,21 @@ class Session
 		Sequencer sequencer;
 		// set by \score.play, and the sequencer starts at the next update of the app
 		bool startSequencer;
+
+		// the data directory of LiveLily (bin/data), where relative paths start, e.g. of a SoundFont, set by the app at its start
+		std::string dataDirectory;
+
+		// the languages of the code of the panes
+		enum languages {livelily, python, lua};
+		// the names of the code (commands, and the names defined in a session) with their colors in the editor
+		// by language and first character, and the colors that can be set by name
+		std::map<int, std::map<char, std::map<std::string, Color>>> commandsMap;
+		std::map<std::string, Color> colorNameMap;
+		// which words the editor splits at digits when it colors them (e.g. the duration of c''4), see Editor::drawText()
+		std::vector<std::string> commandsToNotTokenize;
+		std::vector<std::string> keywords;
+		// the colors of the instruments in the piano roll and the step sequencer, in the order they are created
+		std::vector<std::string> instrumentColors = {"magenta", "green", "yellow", "cyan", "violet", "orchid", "orange"};
 
 		// variables (e.g. x = 5), by their names
 		std::map<std::string, variable> variables;
