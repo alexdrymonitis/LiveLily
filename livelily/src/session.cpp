@@ -1,6 +1,7 @@
 // the engine functions of Session (see session.h) that are not the parser (parser.cpp): helpers of the commands
 // storing bars, loops, lists and instruments, sending to score parts, pyo and audio
 #include "session.h"
+#include "clock.h"
 #include <sstream>
 #include <algorithm>
 #include <cmath>
@@ -229,7 +230,7 @@ void Session::sendToParts(OscMessage m, bool delay)
 {
 	for (auto it = sharedData.grouppedOSCClients.begin(); it != sharedData.grouppedOSCClients.end(); ++it) {
 		if (sharedData.instruments[*it].hasDelay() && delay) {
-			std::pair<OscMessage, unsigned long> p = std::make_pair(m, ofGetElapsedTimeMillis());
+			std::pair<OscMessage, unsigned long> p = std::make_pair(m, Clock::millis());
 			sharedData.instruments[*it].oscFifo.push_back(p);
 		}
 		else {
@@ -1546,7 +1547,6 @@ CmdOutput Session::scoreCommands(std::vector<std::string>& originalCommands, int
 			sharedData.animate = true;
 		}
 		startSequencer = true;
-		//sharedData.pianoRollTimeStamp = ofGetElapsedTimeMillis();
 		// ties at the end of bars that are followed by other notes are ignored
 		std::string warning = tieWarning(sharedData.loopIndex);
 		if (!warning.empty()) return genWarning(warning);

@@ -2,6 +2,7 @@
 #define EDITOR_H
 
 #include "ofMain.h"
+#include "codetext.h"
 #include "osc.h"
 #include <vector>
 #include <string>
@@ -72,15 +73,6 @@ struct EditorSnapshot
 
 // a chunk of LiveLily code (a definition with curly brackets, or a single line)
 // and the first error in its curly brackets, if there is one
-struct BracketChunk
-{
-	int top;
-	int bottom;
-	int errorLine; // -1 if the curly brackets of the chunk are fine
-	std::string errorStr;
-	bool finished; // false for a definition whose closing curly bracket is missing
-};
-
 // structure for binding keys to actions when in normal mode
 struct binding
 {
@@ -123,12 +115,12 @@ class Editor
 		// finding the code chunk to execute
 		// LiveLily code chunks are defined by curly brackets, Python (and Lua) code chunks by indentation
 		// these don't depend on the contents of the editor, so they are static, to be used by ofApp on function bodies
-		static std::string bracketsInLine(const std::string& str);
+		static std::string bracketsInLine(const std::string& str) { return CodeText::bracketsInLine(str); }
 		int scanBraces(const std::string& str, int depth);
-		static bool isLyvCodeLine(const std::string& str);
-		static std::string definitionCommand(const std::string& str);
-		static void countUnmatchedBrackets(const std::string& str, int& openBrackets, int& closingBrackets);
-		static std::vector<BracketChunk> findBracketChunksInLines(const std::vector<std::string>& lines);
+		static bool isLyvCodeLine(const std::string& str) { return CodeText::isLyvCodeLine(str); }
+		static std::string definitionCommand(const std::string& str) { return CodeText::definitionCommand(str); }
+		static void countUnmatchedBrackets(const std::string& str, int& openBrackets, int& closingBrackets) { CodeText::countUnmatchedBrackets(str, openBrackets, closingBrackets); }
+		static std::vector<BracketChunk> findBracketChunksInLines(const std::vector<std::string>& lines) { return CodeText::findBracketChunksInLines(lines); }
 		std::vector<BracketChunk> findBracketChunks(int firstLine, int lastLine);
 		// returns the line of an unmatched curly bracket in the given lines (and sets errorStr), or -1 if there is none
 		int findUnmatchedBracket(int firstLine, int numLines, std::string& errorStr);

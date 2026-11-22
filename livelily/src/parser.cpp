@@ -1,6 +1,6 @@
-// the parsing functions of the ofApp class
-// these are members of ofApp, declared in ofApp.h, and defined here to keep ofApp.cpp shorter
-#include "ofApp.h"
+// the parser of LiveLily: functions of Session (see session.h), which reach the user interface only through FrontendHost
+#include "session.h"
+#include "codetext.h"
 #include "tokens.h"
 #include <string>
 #include <vector>
@@ -5536,7 +5536,7 @@ std::pair<int, std::string> Session::parseMelodicLine(std::vector<std::string> t
 		float valsDiff = dynamicsData.at(endNdx) - dynamicsData.at(startNdx);
 		// if a crescendo/diminuendo has not been explicitly defined (either left hanging or ended with an exclamation mark)
 		// then we add or subtract the next dynamic from the one where the crescendo/diminuendo starts to the closing of the ramp
-		// we get this value by multiplying by 127 to get back to the MIDI range, then add MIDIVELSTEP (defined in ofApp.h), which is one dynamics step
+		// we get this value by multiplying by 127 to get back to the MIDI range, then add MIDIVELSTEP (defined in session.h), which is one dynamics step
 		// set the sign for this one step (see the contiuation of this comment) and then divide by 127
 		// to bring it back to a range between 0 and 1
 		// to determine whether we need to add or subtract, we use dynamicsRampDirForScore
@@ -6648,7 +6648,7 @@ std::pair<bool, CmdOutput> Session::isFunction(std::vector<std::string>& command
 		}
 		// split the body into chunks the same way the editor does (definitions like bars, and single lines)
 		// and parse each chunk separately, so that each definition is finished before the next chunk is parsed
-		for (const BracketChunk& chunk : Editor::findBracketChunksInLines(bodyLines)) {
+		for (const BracketChunk& chunk : CodeText::findBracketChunksInLines(bodyLines)) {
 			if (chunk.errorLine > -1) {
 				return std::make_pair(functionExists, genError(chunk.errorStr + " in the body of the function"));
 			}

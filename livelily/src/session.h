@@ -67,7 +67,7 @@ struct CmdInput
 	std::vector<std::string> afterCmdVec;
 	bool hasBrackets;
 	bool isMainCmd;
-	// true for a command inside a line, whose arguments have been evaluated before it runs (see ofApp::evaluateTokens())
+	// true for a command inside a line, whose arguments have been evaluated before it runs (see Session::evaluateTokens())
 	bool argsEvaluated = false;
 };
 
@@ -76,7 +76,7 @@ struct CmdOutput
 	int errorCode;
 	std::string errorStr;
 	// for a command inside a line, its output replaces the command and its arguments, unless this is true
-	// in which case the output replaces only the command, and its arguments stay in the line after it (see ofApp::genOutput())
+	// in which case the output replaces only the command, and its arguments stay in the line after it (see Session::genOutput())
 	bool keepsArgs;
 	std::vector<std::string> outputVec;
 };
