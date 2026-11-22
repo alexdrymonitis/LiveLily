@@ -1,4 +1,5 @@
 #include "of_midi.h"
+#include <algorithm>
 
 std::vector<std::string> OfMidiOutput::portNames()
 {
@@ -45,9 +46,8 @@ void OfMidiOutput::noteOff(int port, int channel, int note, int velocity)
 
 void OfMidiOutput::pitchBend(int port, int channel, int value)
 {
-	// the value is sent as it is given, as it was before this interface, although ofxMidi expects 0 to 16383 (8192 for no bend)
-	// and LiveLily gives -8192 to 8191 (0 for no bend, as midi.h says), so a bend reaches a port 8192 too low
-	if (ofxMidiOut* o = out(port)) o->sendPitchBend(channel, value);
+	// LiveLily gives -8192 to 8191 (0 for no bend, see midi.h), and ofxMidi expects 0 to 16383 (8192 for no bend)
+	if (ofxMidiOut* o = out(port)) o->sendPitchBend(channel, std::clamp(value + 8192, 0, 16383));
 }
 
 void OfMidiOutput::programChange(int port, int channel, int program)
