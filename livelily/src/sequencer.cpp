@@ -204,6 +204,8 @@ void Sequencer::sendAllNotesOff()
 //--------------------------------------------------------------
 void Sequencer::start()
 {
+	// a stop that was asked for before (see stop()) doesn't stop this playback
+	mustStop = false;
 	runSequencer = true;
 	sequencerRunning = false;
 	startThread();
@@ -212,7 +214,9 @@ void Sequencer::start()
 //--------------------------------------------------------------
 void Sequencer::stop()
 {
-	mustStop = true;
+	// the sequencer stops at the end of the bar it plays, so there is nothing to stop when it doesn't play
+	// (otherwise the next \score.play would stop at once)
+	if (isThreadRunning()) mustStop = true;
 }
 
 //--------------------------------------------------------------
@@ -1693,6 +1697,8 @@ std::vector<std::string> Sequencer::dryRun()
 	Clock::simulate(true);
 	dryRunLog = &log;
 	dryRunStart = Clock::micros();
+	// as start() does
+	mustStop = false;
 	runSequencer = true;
 	sequencerRunning = false;
 	// the steps of the thread, every 100 microseconds of the simulated clock (see setup())
