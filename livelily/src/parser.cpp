@@ -432,23 +432,37 @@ void ofApp::callBoundFunction(const std::string& funcName, const std::string& ar
 //--------------------------------------------------------------
 void ofApp::setEditorTraceback(int errorCode, std::string errorStr, int lineNum)
 {
-	if (std::this_thread::get_id() == mainThreadId && currentBoundFunction.empty()) {
-		editors[whichPane].setTraceback(errorCode, errorStr, lineNum);
-		return;
-	}
-	std::lock_guard<std::mutex> lock(pendingTracebacksMutex);
-	pendingTracebacks.push_back({whichPane, lineNum, false, errorCode, errorStr, currentBoundFunction});
+	frontend->setLineMessage(whichPane, lineNum, errorCode, errorStr, currentBoundFunction);
 }
 
 //--------------------------------------------------------------
 void ofApp::releaseEditorTraceback(int lineNum)
 {
-	if (std::this_thread::get_id() == mainThreadId && currentBoundFunction.empty()) {
-		editors[whichPane].releaseTraceback(lineNum);
+	frontend->clearLineMessage(whichPane, lineNum, currentBoundFunction);
+}
+
+//--------------------------------------------------------------
+// the editors are drawn on the main thread, so a message from another thread (e.g. a function called by the sequencer)
+// or from a function the sequencer called, which goes to the line of its definition, is queued, and shown in update()
+void ofApp::setLineMessage(int pane, int line, int errorCode, const std::string& text, const std::string& boundFunction)
+{
+	if (std::this_thread::get_id() == mainThreadId && boundFunction.empty()) {
+		editors[pane].setTraceback(errorCode, text, line);
 		return;
 	}
 	std::lock_guard<std::mutex> lock(pendingTracebacksMutex);
-	pendingTracebacks.push_back({whichPane, lineNum, true, 0, "", currentBoundFunction});
+	pendingTracebacks.push_back({pane, line, false, errorCode, text, boundFunction});
+}
+
+//--------------------------------------------------------------
+void ofApp::clearLineMessage(int pane, int line, const std::string& boundFunction)
+{
+	if (std::this_thread::get_id() == mainThreadId && boundFunction.empty()) {
+		editors[pane].releaseTraceback(line);
+		return;
+	}
+	std::lock_guard<std::mutex> lock(pendingTracebacksMutex);
+	pendingTracebacks.push_back({pane, line, true, 0, "", boundFunction});
 }
 
 //--------------------------------------------------------------

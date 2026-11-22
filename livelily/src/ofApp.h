@@ -217,6 +217,10 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		void notePlaying(int instNdx, int bar, int noteNdx, bool playing) override { storeActiveEditorElement(instNdx, bar, noteNdx, playing); }
 		void restPlaying(int instNdx, int bar, int noteNdx) override { storeActiveEditorRest(instNdx, bar, noteNdx); }
 		void nothingPlaying(int instNdx) override { clearActiveEditorElement(instNdx); }
+		void setLineMessage(int pane, int line, int errorCode, const std::string& text, const std::string& boundFunction) override;
+		void clearLineMessage(int pane, int line, const std::string& boundFunction) override;
+		// the user interface, as the engine (the parser and the sequencer) sees it, which is this app for now
+		FrontendHost* frontend = this;
 		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);
 		// the same for a rest, which stays highlighted until the next note or rest replaces it
 		void storeActiveEditorRest(int instNdx, int barNdx, int dataCounter);
