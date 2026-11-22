@@ -64,3 +64,8 @@ void OfMidiOutput::sendByte(int port, unsigned char byte)
 {
 	if (ofxMidiOut* o = out(port)) o->sendMidiByte(byte);
 }
+
+std::unique_ptr<MidiOutput> makeMidiOutput()
+{
+	return std::make_unique<OfMidiOutput>();
+}

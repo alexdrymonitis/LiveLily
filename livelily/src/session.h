@@ -1,11 +1,16 @@
 #ifndef SESSION_H
 #define SESSION_H
 
+#include <cstdint>
 #include <list>
+#include <memory>
 #include <map>
 #include <set>
 #include <utility>
 #include <vector>
+#include "midi.h"
+#include "osc.h"
+#include "serial.h"
 #include <string>
 
 // a variable of a session (x = 5), with its value as a string and its type
@@ -105,6 +110,52 @@ class Session
 		// the names of the commands of LiveLily (e.g. \merge), which can't be used as names of bars, loops, functions, lists
 		// variables, instruments, groups, or OSC clients and servers, as these are called by their name with a backslash
 		std::set<std::string> reservedNames;
+
+		// input and output, through the interfaces of the platform (see midi.h, osc.h, serial.h)
+		// the MIDI output, for the parser and the sequencer
+		std::unique_ptr<MidiOutput> midi = makeMidiOutput();
+		// OSC clients and servers (\oscclient, \oscserver), by their names, and the functions mapped to the addresses of servers
+		std::map<std::string, std::shared_ptr<OscSender>> oscClients;
+		std::map<std::string, std::shared_ptr<OscReceiver>> oscServers;
+		std::map<std::string, std::vector<std::pair<std::string, std::string>>> oscServerFuncs;
+		// the receiver of OSC messages to LiveLily itself (e.g. of the maestro, or keys typed in another LiveLily)
+		std::shared_ptr<OscReceiver> oscReceiver = makeOscReceiver();
+		bool oscReceiverIsSet;
+		// the serial port, and the serial devices as \listserialports listed them last, which \openserialport opens by their number
+		std::unique_ptr<SerialPort> serial = makeSerialPort();
+		std::vector<SerialDevice> serialDeviceList;
+		bool serialPortOpen;
+
+		// score parts on other computers (\instname.sendto)
+		// the IP and port of every instrument, so that instruments that send to the same server get the generic messages once
+		std::map<int, std::pair<std::string, int>> instrumentOSCHostPorts;
+		// time to wait for a positive/negative response from a server
+		uint64_t scorePartResponseTime;
+		// pairs of instrument and bar where a score part client had an error receiving the data of the bar
+		std::vector<std::pair<int, int>> scorePartErrors;
+		// how many times a loop is called, by its index, in case some score parts haven't received the data of a bar correctly
+		std::map<int, int> partsReceivedOKCounters;
+		// sending the data of the bars of \bars to score parts, one at each frame
+		bool waitToSendBarDataToParts;
+		bool sendBarDataToPartsBool;
+		int sendBarDataToPartsCounter;
+		int barDataOKFromPartsCounter;
+		int numScorePartSenders;
+		bool checkIfAllPartsReceivedBarData;
+		uint64_t sendBarDataToPartsTimeStamp;
+
+		// controlling LiveLily with an accelerometer (\maestro)
+		std::string maestroAddress;
+		std::string maestroToggleAddress;
+		std::string maestroLevareAddress;
+		int maestroValNdx;
+		bool maestroToggleSet;
+		bool receivingMaestro;
+		bool maestroInitialized;
+		int maestroBeatsIn;
+		unsigned long maestroTimeStamp;
+		float maestroValThresh;
+		std::vector<float> maestroVec;
 };
 
 #endif

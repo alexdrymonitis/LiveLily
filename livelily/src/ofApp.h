@@ -7,7 +7,6 @@
 #include "audio.h"
 #include "frontend.h"
 #include "session.h"
-#include "of_midi.h"
 #include <map>
 #include <vector>
 #include <utility> // to add pair
@@ -597,9 +596,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 
 		SharedData sharedData;
 		Sequencer sequencer;
-		// the MIDI output, with openFrameworks for now, which the parser and the sequencer use through the interface of midi.h
-		OfMidiOutput ofMidiOutput;
-		MidiOutput* midi = &ofMidiOutput;
 
 		// Pyo stuff
 		// the audio stream for pyo and the click track (see audio.h), with openFrameworks for now
@@ -652,32 +648,9 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// the working directory before the last :cd, for :cd -
 		std::string prevWorkingDir;
 
-		// interfacing stuff
-		std::map<std::string, std::shared_ptr<OscSender>> oscClients;
-		std::map<std::string, std::shared_ptr<OscReceiver>> oscServers;
-		std::map<std::string, std::vector<std::pair<std::string, std::string>>> oscServerFuncs;
-		std::unique_ptr<SerialPort> serial = makeSerialPort();
-		// the serial devices, as \listserialports listed them last, which \openserialport opens by their number
-		std::vector<SerialDevice> serialDeviceList;
-		bool serialPortOpen;
-
-		// map of instrument index and pair of IP and port
-		// so we can group instruments that send their data to the same server
-		// this way, generic messages will be sent only once
-		std::map<int, std::pair<std::string, int>> instrumentOSCHostPorts;
-
-		// time to wait for a positive/negative response from a server
-		uint64_t scorePartResponseTime;
-		// std::vector of pairs with instrument index and bar index received from a score part client
-		// where an error occured in receiving bar data
-		std::vector<std::pair<int, int>> scorePartErrors;
-		// std::map with loop indexes as keys and ints as values to count how many times we call a loop
-		// useful in case some instruments (servers) haven't received the data of a bar correctly
-		std::map<int, int> partsReceivedOKCounters;
 
 
 		bool startSequencer;
-		bool midiPortOpen;
 
 		// the colors of the names of the code in the editor, by language and first character, and the colors that can be set by name
 		std::map<int, std::map<char, std::map<std::string, Color>>> commandsMap;
@@ -777,18 +750,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 
 
 
-		// variables for controlling LiveLily with an accelerometer
-		std::string maestroAddress;
-		std::string maestroToggleAddress;
-		std::string maestroLevareAddress;
-		int maestroValNdx;
-		bool maestroToggleSet;
-		bool receivingMaestro;
-		bool maestroInitialized;
-		int maestroBeatsIn;
-		unsigned long maestroTimeStamp;
-		float maestroValThresh;
-		std::vector<float> maestroVec;
 
 		enum errorTypeNdx {note, warning, error};
 
@@ -808,8 +769,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		ofTrueTypeFont instFont;
 		bool fontLoaded;
 
-		std::shared_ptr<OscReceiver> oscReceiver = makeOscReceiver();
-		bool oscReceiverIsSet;
 
 		std::map<int, std::string> allStrings;
 		std::map<int, int> allStringStartPos;
@@ -860,17 +819,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		std::map<int, std::string> fromOscAddr;
 
 		std::map<int, int> instNameWidths;
-		// a boolean for sending data defined with \bars to score parts one at each frame
-		bool waitToSendBarDataToParts;
-		// and one to denote that all bars have finished parsing so we can start sending to parts
-		bool sendBarDataToPartsBool;
-		// a counter that increments at each frame
-		int sendBarDataToPartsCounter;
-		// another counter that increments when we receive an OK from parts
-		int barDataOKFromPartsCounter;
-		int numScorePartSenders;
-		bool checkIfAllPartsReceivedBarData;
-		uint64_t sendBarDataToPartsTimeStamp;
 		bool showBarCount;
 		bool showTempo;
 

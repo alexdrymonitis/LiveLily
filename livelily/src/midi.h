@@ -1,6 +1,7 @@
 #ifndef MIDI_H
 #define MIDI_H
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -25,5 +26,8 @@ class MidiOutput
 		// a single byte, e.g. of the MIDI clock
 		virtual void sendByte(int port, unsigned char byte) = 0;
 };
+
+// the platform makes it (of_midi.cpp for now)
+std::unique_ptr<MidiOutput> makeMidiOutput();
 
 #endif

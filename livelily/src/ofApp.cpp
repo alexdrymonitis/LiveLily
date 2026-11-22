@@ -48,7 +48,7 @@ void ofApp::setup()
 	unsigned int framerate = 60;
 
 	sequencer.setup(&sharedData);
-	sequencer.setMidiOutput(midi);
+	sequencer.setMidiOutput(midi.get());
 	sequencer.setFrontend(this);
 
 	// define audio properties
