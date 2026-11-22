@@ -62,41 +62,9 @@ static int curlyBracketBalance(const std::string& str)
 }
 
 /********************* parsing functions **********************/
-//--------------------------------------------------------------
-void ofApp::parseStrings(int index, int numLines)
-{
-	barError = false;
-	// an unmatched curly bracket (e.g. a bar definition that is not finished) is an error
-	// and in this case none of the lines is parsed
-	std::string bracketError;
-	int unmatchedBracketLine = editors[whichPane].findUnmatchedBracket(index, numLines, bracketError);
-	if (unmatchedBracketLine > -1) {
-		editors[whichPane].setTraceback(3, bracketError, unmatchedBracketLine);
-		return;
-	}
-	// collect the lines to parse from the editor
-	std::vector<std::pair<int, std::string>> lines;
-	for (int i = index; i < (index+numLines); i++) {
-		if (editors[whichPane].getSessionActivity()) {
-			lines.push_back(std::make_pair(i, editors[whichPane].allLines[i].str));
-			if (editors[whichPane].getSendLines()) {
-				OscMessage m;
-				m.setAddress("/livelily"+std::to_string(editors[whichPane].getSendLinesPaneNdx())+"/press");
-				m.addStringArg(editors[whichPane].allLines[i].str);
-				editors[whichPane].oscKeys->send(m);
-			}
-		}
-		else {
-			if (editors[whichPane].allLines[i].str == "\\active") {
-				lines.push_back(std::make_pair(i, editors[whichPane].allLines[i].str));
-			}
-		}
-	}
-	parseLines(lines, numLines, false);
-}
 
 //--------------------------------------------------------------
-std::vector<std::pair<int, std::string>> ofApp::normalizeDefinitionLines(const std::vector<std::pair<int, std::string>>& lines)
+std::vector<std::pair<int, std::string>> Session::normalizeDefinitionLines(const std::vector<std::pair<int, std::string>>& lines)
 {
 	// a comment starts at a % that is not inside a string
 	auto stripComment = [](const std::string& str) {
@@ -237,7 +205,7 @@ std::vector<std::pair<int, std::string>> ofApp::normalizeDefinitionLines(const s
 }
 
 //--------------------------------------------------------------
-std::pair<int, std::string> ofApp::parseLines(const std::vector<std::pair<int, std::string>>& inputLines, int numLines, bool stopOnError, bool nextBarsPass)
+std::pair<int, std::string> Session::parseLines(const std::vector<std::pair<int, std::string>>& inputLines, int numLines, bool stopOnError, bool nextBarsPass)
 {
 	// parses a chunk of lines, either from the editor (see parseStrings()) or from a function body (see isFunction())
 	// and finishes any bar, set of bars, or loop they define
@@ -343,11 +311,11 @@ std::pair<int, std::string> ofApp::parseLines(const std::vector<std::pair<int, s
 				sharedData.numerator[barIndex] = 4;
 				sharedData.denominator[barIndex] = 4;
 			}
-			setScoreNotes(barIndex);
+			frontend->setScoreNotes(barIndex);
 			if (!parsingBars) {
 				// then set the note positions and calculate the staff positions
-				setNotePositions(barIndex);
-				calculateStaffPositions(barIndex, false);
+				frontend->setNotePositions(barIndex);
+				frontend->calculateStaffPositions(barIndex, false);
 			}
 			barError = false;
 			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
@@ -358,7 +326,6 @@ std::pair<int, std::string> ofApp::parseLines(const std::vector<std::pair<int, s
 			sharedData.loopIndex = sharedData.tempLoopIndex;
 			//sendLoopIndexToParts();
 		}
-		inserting = false;
 		parsingBar = false;
 		parsingLoop = false;
 	}
@@ -382,11 +349,11 @@ std::pair<int, std::string> ofApp::parseLines(const std::vector<std::pair<int, s
 		}
 		else {
 			int barIndex = sharedData.barsIndexes["\\"+multiBarsName+"-1"];
-			setNotePositions(barIndex, barsIterCounter);
+			frontend->setNotePositions(barIndex, barsIterCounter);
 			for (int i = 0; i < barsIterCounter; i++) {
 				barIndex = sharedData.barsIndexes["\\"+multiBarsName+"-"+std::to_string(i+1)];
 				sendBarToParts(barIndex);
-				calculateStaffPositions(barIndex, false);
+				frontend->calculateStaffPositions(barIndex, false);
 			}
 			parsingBars = false;
 			firstInstForBarsSet = false;
@@ -419,7 +386,7 @@ std::pair<int, std::string> ofApp::parseLines(const std::vector<std::pair<int, s
 }
 
 //--------------------------------------------------------------
-void ofApp::callBoundFunction(const std::string& funcName, const std::string& args)
+void Session::callBoundFunction(const std::string& funcName, const std::string& args)
 {
 	// any traceback set while this function runs (including by functions it calls)
 	// is queued with this name, so it can go to the line where this function is defined
@@ -430,143 +397,24 @@ void ofApp::callBoundFunction(const std::string& funcName, const std::string& ar
 }
 
 //--------------------------------------------------------------
-void ofApp::setEditorTraceback(int errorCode, std::string errorStr, int lineNum)
+void Session::setEditorTraceback(int errorCode, std::string errorStr, int lineNum)
 {
 	frontend->setLineMessage(whichPane, lineNum, errorCode, errorStr, currentBoundFunction);
 }
 
 //--------------------------------------------------------------
-void ofApp::releaseEditorTraceback(int lineNum)
+void Session::releaseEditorTraceback(int lineNum)
 {
 	frontend->clearLineMessage(whichPane, lineNum, currentBoundFunction);
 }
 
-//--------------------------------------------------------------
-// the editors are drawn on the main thread, so a message from another thread (e.g. a function called by the sequencer)
-// or from a function the sequencer called, which goes to the line of its definition, is queued, and shown in update()
-void ofApp::setLineMessage(int pane, int line, int errorCode, const std::string& text, const std::string& boundFunction)
-{
-	if (std::this_thread::get_id() == mainThreadId && boundFunction.empty()) {
-		editors[pane].setTraceback(errorCode, text, line);
-		return;
-	}
-	std::lock_guard<std::mutex> lock(pendingTracebacksMutex);
-	pendingTracebacks.push_back({pane, line, false, errorCode, text, boundFunction});
-}
+
+
+
+
 
 //--------------------------------------------------------------
-void ofApp::clearLineMessage(int pane, int line, const std::string& boundFunction)
-{
-	if (std::this_thread::get_id() == mainThreadId && boundFunction.empty()) {
-		editors[pane].releaseTraceback(line);
-		return;
-	}
-	std::lock_guard<std::mutex> lock(pendingTracebacksMutex);
-	pendingTracebacks.push_back({pane, line, true, 0, "", boundFunction});
-}
-
-//--------------------------------------------------------------
-bool ofApp::lineDefinesFunction(const std::string& str, const std::string& funcName)
-{
-	// a definition line is: optional white space, "\function", white space, the function name (without the backslash)
-	// followed by white space, an opening curly bracket, a comment, or the end of the line
-	const std::string cmd = "\\function";
-	size_t pos = str.find_first_not_of(" \t");
-	if (pos == std::string::npos || str.compare(pos, cmd.size(), cmd) != 0) return false;
-	pos += cmd.size();
-	size_t nameStart = str.find_first_not_of(" \t", pos);
-	// there must be white space between \function and the name
-	if (nameStart == std::string::npos || nameStart == pos) return false;
-	size_t nameEnd = str.find_first_of(" \t{%", nameStart);
-	std::string name = str.substr(nameStart, nameEnd == std::string::npos ? std::string::npos : nameEnd - nameStart);
-	return "\\" + name == funcName;
-}
-
-//--------------------------------------------------------------
-std::pair<int, int> ofApp::findFunctionDefinitionLine(const std::string& funcName)
-{
-	int pane, defLine;
-	{
-		std::lock_guard<std::mutex> lock(sharedData.functionsMutex);
-		auto funcIndexIt = functionIndexes.find(funcName);
-		if (funcIndexIt == functionIndexes.end()) return std::make_pair(-1, -1);
-		auto funcIt = sharedData.functions.find(funcIndexIt->second);
-		if (funcIt == sharedData.functions.end()) return std::make_pair(-1, -1);
-		pane = funcIt->second.getDefinitionPane();
-		defLine = funcIt->second.getDefinitionLine();
-	}
-	auto editorIt = editors.find(pane);
-	if (editorIt == editors.end()) return std::make_pair(-1, -1);
-	std::map<int, line>& lines = editorIt->second.allLines;
-	// first check the stored line, which is the common case and avoids searching the pane on every call
-	auto lineIt = lines.find(defLine);
-	if (lineIt != lines.end() && lineDefinesFunction(lineIt->second.str, funcName)) {
-		return std::make_pair(pane, defLine);
-	}
-	// the definition has moved (e.g. lines were inserted or deleted above it), or its line was changed or deleted
-	// so search the pane for it, and if it is defined more than once, pick the definition closest to the stored line
-	int foundLine = -1;
-	int minDistance = std::numeric_limits<int>::max();
-	for (auto it = lines.begin(); it != lines.end(); ++it) {
-		if (lineDefinesFunction(it->second.str, funcName)) {
-			int distance = std::abs(it->first - defLine);
-			if (distance < minDistance) {
-				minDistance = distance;
-				foundLine = it->first;
-			}
-		}
-	}
-	// the definition is no longer in the pane
-	if (foundLine < 0) return std::make_pair(-1, -1);
-	// store the new line, so the next lookup finds it without searching
-	{
-		std::lock_guard<std::mutex> lock(sharedData.functionsMutex);
-		auto funcIndexIt = functionIndexes.find(funcName);
-		if (funcIndexIt != functionIndexes.end()) {
-			auto funcIt = sharedData.functions.find(funcIndexIt->second);
-			// only if the function hasn't been redefined elsewhere in the meantime
-			if (funcIt != sharedData.functions.end() && funcIt->second.getDefinitionPane() == pane && funcIt->second.getDefinitionLine() == defLine) {
-				funcIt->second.setDefinitionLocation(pane, foundLine);
-			}
-		}
-	}
-	return std::make_pair(pane, foundLine);
-}
-
-//--------------------------------------------------------------
-void ofApp::applyPendingTracebacks()
-{
-	// take the queued tracebacks while holding the lock, and apply them after releasing it
-	std::vector<PendingTraceback> tracebacks;
-	{
-		std::lock_guard<std::mutex> lock(pendingTracebacksMutex);
-		if (pendingTracebacks.empty()) return;
-		tracebacks.swap(pendingTracebacks);
-	}
-	for (const PendingTraceback& tb : tracebacks) {
-		int pane = tb.pane;
-		int lineNum = tb.lineNum;
-		// tracebacks of bound functions go to the line where the function is defined
-		// if that line still defines it, otherwise to the dummy line they were set with
-		if (!tb.boundFunction.empty()) {
-			std::pair<int, int> definition = findFunctionDefinitionLine(tb.boundFunction);
-			if (definition.first > -1) {
-				pane = definition.first;
-				lineNum = definition.second;
-			}
-		}
-		// the pane might have been closed and the line deleted since the traceback was queued
-		auto editorIt = editors.find(pane);
-		if (editorIt == editors.end()) continue;
-		// setTraceback() uses operator[] which would create the line if it doesn't exist
-		if (editorIt->second.allLines.find(lineNum) == editorIt->second.allLines.end()) continue;
-		if (tb.release) editorIt->second.releaseTraceback(lineNum);
-		else editorIt->second.setTraceback(tb.errorCode, tb.errorStr, lineNum);
-	}
-}
-
-//--------------------------------------------------------------
-std::pair<int, std::string> ofApp::storeFunctionLine(const std::string& str, int lineNum, int numLines)
+std::pair<int, std::string> Session::storeFunctionLine(const std::string& str, int lineNum, int numLines)
 {
 	// stores a line of the body of the function being defined
 	// the curly brackets are tracked, so that definitions inside the function (e.g. a bar) are stored with their brackets
@@ -620,7 +468,7 @@ std::pair<int, std::string> ofApp::storeFunctionLine(const std::string& str, int
 }
 
 //--------------------------------------------------------------
-std::pair<int, std::string> ofApp::parseString(std::string str, int lineNum, int numLines)
+std::pair<int, std::string> Session::parseString(std::string str, int lineNum, int numLines)
 {
 	if (str.length() == 0) return std::make_pair(0, "");
 	if (startsWith(str, "%")) return std::make_pair(0, "");
@@ -726,7 +574,7 @@ std::pair<int, std::string> ofApp::parseString(std::string str, int lineNum, int
 }
 
 //--------------------------------------------------------------
-std::vector<std::string> ofApp::tokenizeLine(const std::string& input)
+std::vector<std::string> Session::tokenizeLine(const std::string& input)
 {
 	bool isString = false;
 	bool isChord = false;
@@ -784,7 +632,7 @@ std::vector<std::string> ofApp::tokenizeLine(const std::string& input)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::evaluateTokens(const std::vector<std::string>& tokens, int lineNum, int numLines)
+CmdOutput Session::evaluateTokens(const std::vector<std::string>& tokens, int lineNum, int numLines)
 {
 	size_t index = tokens.size() - 1;
 	size_t firstCmdNdx = 0;
@@ -951,7 +799,7 @@ CmdOutput ofApp::evaluateTokens(const std::vector<std::string>& tokens, int line
 // with durations: the notes of the onsets of the line go to the durations in turn, wrapping around if there are more durations
 // a duration can have a dynamic and articulations (e.g. 8\f), and a rest (e.g. r8) takes no note
 // a melodic line can't take the notes of a rhythm staff, and a rhythm staff takes the durations as they are
-std::pair<std::string, std::vector<std::string>> ofApp::applyToLine(const std::vector<std::string>& args)
+std::pair<std::string, std::vector<std::string>> Session::applyToLine(const std::vector<std::string>& args)
 {
 	std::vector<std::string> output;
 	auto fail = [&output](const std::string& error) { return std::make_pair(error, output); };
@@ -1192,7 +1040,7 @@ std::pair<std::string, std::vector<std::string>> ofApp::applyToLine(const std::v
 }
 
 //--------------------------------------------------------------
-ofApp::NameKind ofApp::nameKind(const std::string& name)
+Session::NameKind Session::nameKind(const std::string& name)
 {
 	// the kind of a name defined in a session, which decides both its signature (see commandSpec()) and its dispatcher (see parseCommand())
 	// the names are stored with their backslash, and if a name is defined as more than one kind, the first kind below is the one it is
@@ -1209,7 +1057,7 @@ ofApp::NameKind ofApp::nameKind(const std::string& name)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::evalArgs(const std::vector<std::string>& args, int lineNum, int numLines)
+CmdOutput Session::evalArgs(const std::vector<std::string>& args, int lineNum, int numLines)
 {
 	// the arguments are evaluated as the arguments of a command, after a placeholder for that command, which evaluateTokens() leaves as it is
 	bool hasCommand = std::any_of(args.begin(), args.end(), isCommandToken);
@@ -1227,7 +1075,7 @@ CmdOutput ofApp::evalArgs(const std::vector<std::string>& args, int lineNum, int
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::evalNames(const std::vector<std::string>& args, int lineNum, int numLines)
+CmdOutput Session::evalNames(const std::vector<std::string>& args, int lineNum, int numLines)
 {
 	// the instrument names (and \all) are taken as they are written, and any other command is evaluated on its own (see ArgsMode::names)
 	CmdOutput result = CmdOutput();
@@ -1244,7 +1092,7 @@ CmdOutput ofApp::evalNames(const std::vector<std::string>& args, int lineNum, in
 }
 
 //--------------------------------------------------------------
-std::string ofApp::nameTakenError(const std::string& name, NameKind kind)
+std::string Session::nameTakenError(const std::string& name, NameKind kind)
 {
 	// a name can be defined as one kind only (e.g. a list and a bar can't have the same name), as it is called the same way for every kind
 	// redefining a name as its own kind is left to the command that defines it (e.g. a function gets a new body)
@@ -1259,7 +1107,7 @@ std::string ofApp::nameTakenError(const std::string& name, NameKind kind)
 }
 
 //--------------------------------------------------------------
-bool ofApp::functionTakesArgs(const std::string& name)
+bool Session::functionTakesArgs(const std::string& name)
 {
 	// read without the lock of the functions, as nameKind() reads functionIndexes, since this is called while parsing
 	// which can happen while that lock is held, and the functions change only when they are defined
@@ -1278,7 +1126,7 @@ bool ofApp::functionTakesArgs(const std::string& name)
 }
 
 //--------------------------------------------------------------
-ofApp::CommandSpec ofApp::commandSpec(const std::string& token)
+Session::CommandSpec Session::commandSpec(const std::string& token)
 {
 	size_t dot = token.find('.');
 	std::string name = token.substr(0, dot);
@@ -1305,7 +1153,7 @@ ofApp::CommandSpec ofApp::commandSpec(const std::string& token)
 // (e.g. in a bar written in one line), and these are returned to be parsed after the command
 // \time takes a time signature (e.g. 4/4), \tempo a tempo (e.g. 120) or a duration, = and a tempo (e.g. 4 = 120)
 // and \beatat one or more durations (e.g. 4. 4.), and in \bars all of them can have values for every bar, separated by | (e.g. 4/4 | 3/4)
-std::vector<std::string> ofApp::splitBarCommandArgs(CmdInput& cmdInput)
+std::vector<std::string> Session::splitBarCommandArgs(CmdInput& cmdInput)
 {
 	const std::vector<std::string>& v = cmdInput.inputVec;
 	auto onlyChars = [](const std::string& str, const char* chars) { return !str.empty() && str.find_first_not_of(chars) == std::string::npos; };
@@ -1325,7 +1173,7 @@ std::vector<std::string> ofApp::splitBarCommandArgs(CmdInput& cmdInput)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::prepareArgs(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::prepareArgs(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	// evaluates the arguments of a command, according to its mode (see CommandSpec), before parseCommand() runs its code
 	// the arguments of a command inside a line have been evaluated already (see evaluateTokens())
@@ -1344,7 +1192,7 @@ CmdOutput ofApp::prepareArgs(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
+CmdOutput Session::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 {
 	// the arguments arrive prepared for the mode of the command (see CommandSpec), and the handlers of the commands follow
 	CmdOutput prepared = prepareArgs(cmdInput, lineNum, numLines);
@@ -1374,110 +1222,110 @@ CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-const std::map<std::string, ofApp::CommandEntry>& ofApp::commandTable()
+const std::map<std::string, Session::CommandEntry>& Session::commandTable()
 {
 	// every command of LiveLily: its name, its handler, its signature (the mode of its arguments, and whether it takes none, see CommandSpec)
 	// and whether it also takes methods (e.g. \insts.init), with the handler of the name before the dot
-	// e.g. {"\\numinsts", {&ofApp::cmdNuminsts, {ArgsMode::values, true}}} for a command with values that takes no arguments
+	// e.g. {"\\numinsts", {&Session::cmdNuminsts, {ArgsMode::values, true}}} for a command with values that takes no arguments
 	// a handler can be shared by more names (e.g. \tuplet and \tup), and it can tell them apart by cmdInput.inputVec[0]
 	static const std::map<std::string, CommandEntry> commands = {
 		// commands that store or read their arguments as they are written, or evaluate them themselves
-		{"\\insts", {&ofApp::cmdInsts, {ArgsMode::raw}, true}},
-		{"\\bar", {&ofApp::cmdBar, {ArgsMode::raw}}},
-		{"\\bars", {&ofApp::cmdBars, {ArgsMode::raw}}},
-		{"\\loop", {&ofApp::cmdLoop, {ArgsMode::raw}}},
-		{"\\group", {&ofApp::cmdGroup, {ArgsMode::raw}}},
-		{"\\function", {&ofApp::cmdFunction, {ArgsMode::raw}}},
-		{"\\help", {&ofApp::cmdHelp, {ArgsMode::raw}}},
-		{"\\merge", {&ofApp::cmdMerge, {ArgsMode::raw}}},
-		{"\\unmerge", {&ofApp::cmdMerge, {ArgsMode::raw}}},
-		{"\\apply", {&ofApp::cmdApply, {ArgsMode::raw}}},
-		{"\\list", {&ofApp::cmdList, {ArgsMode::raw}}},
+		{"\\insts", {&Session::cmdInsts, {ArgsMode::raw}, true}},
+		{"\\bar", {&Session::cmdBar, {ArgsMode::raw}}},
+		{"\\bars", {&Session::cmdBars, {ArgsMode::raw}}},
+		{"\\loop", {&Session::cmdLoop, {ArgsMode::raw}}},
+		{"\\group", {&Session::cmdGroup, {ArgsMode::raw}}},
+		{"\\function", {&Session::cmdFunction, {ArgsMode::raw}}},
+		{"\\help", {&Session::cmdHelp, {ArgsMode::raw}}},
+		{"\\merge", {&Session::cmdMerge, {ArgsMode::raw}}},
+		{"\\unmerge", {&Session::cmdMerge, {ArgsMode::raw}}},
+		{"\\apply", {&Session::cmdApply, {ArgsMode::raw}}},
+		{"\\list", {&Session::cmdList, {ArgsMode::raw}}},
 		// commands with values (on, off, numbers, notes, etc.)
-		{"\\print", {&ofApp::cmdPrint, {ArgsMode::values}}},
-		{"\\transpose", {&ofApp::cmdTranspose, {ArgsMode::values}}},
-		{"\\euclide", {&ofApp::cmdEuclide, {ArgsMode::values}}},
-		{"\\accoffset", {&ofApp::cmdAccoffset, {ArgsMode::values}}},
-		{"\\active", {&ofApp::cmdActive, {ArgsMode::values, true}}},
-		{"\\inactive", {&ofApp::cmdInactive, {ArgsMode::values, true}}},
-		{"\\buffersize", {&ofApp::cmdBuffersize, {ArgsMode::values}}},
-		{"\\clicktrack", {&ofApp::cmdClicktrack, {ArgsMode::values}, true}},
-		{"\\closeserialport", {&ofApp::cmdCloseserialport, {ArgsMode::values, true}}},
-		{"\\cursor", {&ofApp::cmdCursor, {ArgsMode::values}}},
-		{"\\framerate", {&ofApp::cmdFramerate, {ArgsMode::values}}},
-		{"\\inchannels", {&ofApp::cmdInchannels, {ArgsMode::values}}},
-		{"\\outchannels", {&ofApp::cmdOutchannels, {ArgsMode::values}}},
-		{"\\nchannels", {&ofApp::cmdNchannels, {ArgsMode::values}}},
-		{"\\listaudiodev", {&ofApp::cmdListaudiodev, {ArgsMode::values, true}}},
-		{"\\listmidiports", {&ofApp::cmdListmidiports, {ArgsMode::values, true}}},
-		{"\\listserialports", {&ofApp::cmdListserialports, {ArgsMode::values, true}}},
-		{"\\midiclock", {&ofApp::cmdMidiclock, {ArgsMode::values}}},
-		{"\\ppqn", {&ofApp::cmdPpqn, {ArgsMode::values}}},
-		{"\\samplerate", {&ofApp::cmdSamplerate, {ArgsMode::values}}},
-		{"\\tune", {&ofApp::cmdTune, {ArgsMode::values}}},
+		{"\\print", {&Session::cmdPrint, {ArgsMode::values}}},
+		{"\\transpose", {&Session::cmdTranspose, {ArgsMode::values}}},
+		{"\\euclide", {&Session::cmdEuclide, {ArgsMode::values}}},
+		{"\\accoffset", {&Session::cmdAccoffset, {ArgsMode::values}}},
+		{"\\active", {&Session::cmdActive, {ArgsMode::values, true}}},
+		{"\\inactive", {&Session::cmdInactive, {ArgsMode::values, true}}},
+		{"\\buffersize", {&Session::cmdBuffersize, {ArgsMode::values}}},
+		{"\\clicktrack", {&Session::cmdClicktrack, {ArgsMode::values}, true}},
+		{"\\closeserialport", {&Session::cmdCloseserialport, {ArgsMode::values, true}}},
+		{"\\cursor", {&Session::cmdCursor, {ArgsMode::values}}},
+		{"\\framerate", {&Session::cmdFramerate, {ArgsMode::values}}},
+		{"\\inchannels", {&Session::cmdInchannels, {ArgsMode::values}}},
+		{"\\outchannels", {&Session::cmdOutchannels, {ArgsMode::values}}},
+		{"\\nchannels", {&Session::cmdNchannels, {ArgsMode::values}}},
+		{"\\listaudiodev", {&Session::cmdListaudiodev, {ArgsMode::values, true}}},
+		{"\\listmidiports", {&Session::cmdListmidiports, {ArgsMode::values, true}}},
+		{"\\listserialports", {&Session::cmdListserialports, {ArgsMode::values, true}}},
+		{"\\midiclock", {&Session::cmdMidiclock, {ArgsMode::values}}},
+		{"\\ppqn", {&Session::cmdPpqn, {ArgsMode::values}}},
+		{"\\samplerate", {&Session::cmdSamplerate, {ArgsMode::values}}},
+		{"\\tune", {&Session::cmdTune, {ArgsMode::values}}},
 		// commands that return values inside other commands
-		{"\\rand", {&ofApp::cmdRandom, {ArgsMode::values}}},
-		{"\\random", {&ofApp::cmdRandom, {ArgsMode::values}}},
-		{"\\barnum", {&ofApp::cmdBarnum, {ArgsMode::values, true}}},
-		{"\\beatcount", {&ofApp::cmdBeatcount, {ArgsMode::values, true}}},
-		{"\\mouse", {&ofApp::cmdMouse, {ArgsMode::values, true}}},
-		{"\\mousex", {&ofApp::cmdMousex, {ArgsMode::values, true}}},
-		{"\\mousey", {&ofApp::cmdMousey, {ArgsMode::values, true}}},
-		{"\\expand", {&ofApp::cmdExpand, {ArgsMode::values}}},
-		{"\\system", {&ofApp::cmdSystem, {ArgsMode::values}}},
-		{"\\pystr", {&ofApp::cmdPystr, {ArgsMode::values}}},
+		{"\\rand", {&Session::cmdRandom, {ArgsMode::values}}},
+		{"\\random", {&Session::cmdRandom, {ArgsMode::values}}},
+		{"\\barnum", {&Session::cmdBarnum, {ArgsMode::values, true}}},
+		{"\\beatcount", {&Session::cmdBeatcount, {ArgsMode::values, true}}},
+		{"\\mouse", {&Session::cmdMouse, {ArgsMode::values, true}}},
+		{"\\mousex", {&Session::cmdMousex, {ArgsMode::values, true}}},
+		{"\\mousey", {&Session::cmdMousey, {ArgsMode::values, true}}},
+		{"\\expand", {&Session::cmdExpand, {ArgsMode::values}}},
+		{"\\system", {&Session::cmdSystem, {ArgsMode::values}}},
+		{"\\pystr", {&Session::cmdPystr, {ArgsMode::values}}},
 		// \remaining takes the name of a bar, as it is written
-		{"\\remaining", {&ofApp::cmdRemaining, {ArgsMode::raw}}},
+		{"\\remaining", {&Session::cmdRemaining, {ArgsMode::raw}}},
 		// commands inside bars (\time, \tempo, and \beatat start a line of a bar, which is not evaluated, see parseCommand())
-		{"\\time", {&ofApp::cmdTime, {ArgsMode::values}}},
-		{"\\tempo", {&ofApp::cmdTempo, {ArgsMode::values}}},
-		{"\\beatat", {&ofApp::cmdBeatat, {ArgsMode::values}}},
-		{"\\clef", {&ofApp::cmdClef, {ArgsMode::values}}},
-		{"\\ottava", {&ofApp::cmdOttava, {ArgsMode::values}}},
-		{"\\ott", {&ofApp::cmdOttava, {ArgsMode::values}}},
-		{"\\tuplet", {&ofApp::cmdTuplet, {ArgsMode::values}}},
-		{"\\tup", {&ofApp::cmdTuplet, {ArgsMode::values}}},
-		{"\\cluster", {&ofApp::cmdCluster, {ArgsMode::values}}},
+		{"\\time", {&Session::cmdTime, {ArgsMode::values}}},
+		{"\\tempo", {&Session::cmdTempo, {ArgsMode::values}}},
+		{"\\beatat", {&Session::cmdBeatat, {ArgsMode::values}}},
+		{"\\clef", {&Session::cmdClef, {ArgsMode::values}}},
+		{"\\ottava", {&Session::cmdOttava, {ArgsMode::values}}},
+		{"\\ott", {&Session::cmdOttava, {ArgsMode::values}}},
+		{"\\tuplet", {&Session::cmdTuplet, {ArgsMode::values}}},
+		{"\\tup", {&Session::cmdTuplet, {ArgsMode::values}}},
+		{"\\cluster", {&Session::cmdCluster, {ArgsMode::values}}},
 		// commands of playback and state, with instrument names, or values
-		{"\\mute", {&ofApp::cmdMute, {ArgsMode::names}}},
-		{"\\unmute", {&ofApp::cmdUnmute, {ArgsMode::names}}},
-		{"\\solo", {&ofApp::cmdSolo, {ArgsMode::names}}},
-		{"\\mutenow", {&ofApp::cmdMutenow, {ArgsMode::names}}},
-		{"\\unmutenow", {&ofApp::cmdUnmutenow, {ArgsMode::names}}},
-		{"\\solonow", {&ofApp::cmdSolonow, {ArgsMode::names}}},
-		{"\\instorder", {&ofApp::cmdInstorder, {ArgsMode::names}}},
-		{"\\score", {&ofApp::cmdScore, {ArgsMode::values}, true}},
-		{"\\editor", {&ofApp::cmdEditor, {ArgsMode::values}, true}},
-		{"\\notedur", {&ofApp::cmdNotedur, {ArgsMode::values}, true}},
+		{"\\mute", {&Session::cmdMute, {ArgsMode::names}}},
+		{"\\unmute", {&Session::cmdUnmute, {ArgsMode::names}}},
+		{"\\solo", {&Session::cmdSolo, {ArgsMode::names}}},
+		{"\\mutenow", {&Session::cmdMutenow, {ArgsMode::names}}},
+		{"\\unmutenow", {&Session::cmdUnmutenow, {ArgsMode::names}}},
+		{"\\solonow", {&Session::cmdSolonow, {ArgsMode::names}}},
+		{"\\instorder", {&Session::cmdInstorder, {ArgsMode::names}}},
+		{"\\score", {&Session::cmdScore, {ArgsMode::values}, true}},
+		{"\\editor", {&Session::cmdEditor, {ArgsMode::values}, true}},
+		{"\\notedur", {&Session::cmdNotedur, {ArgsMode::values}, true}},
 		// commands of input and output (OSC, serial, MIDI, audio devices, and the languages of a pane)
-		{"\\osc", {&ofApp::cmdOsc, {ArgsMode::values}}},
-		{"\\oscclient", {&ofApp::cmdOsc, {ArgsMode::values}}},
-		{"\\oscserver", {&ofApp::cmdOscserver, {ArgsMode::values}}},
-		{"\\fromosc", {&ofApp::cmdFromosc, {ArgsMode::values}}},
-		{"\\sendkeys", {&ofApp::cmdSendkeys, {ArgsMode::values}}},
-		{"\\sendlines", {&ofApp::cmdSendlines, {ArgsMode::values}}},
-		{"\\serialprint", {&ofApp::cmdSerialprint, {ArgsMode::values}}},
-		{"\\serialwrite", {&ofApp::cmdSerialwrite, {ArgsMode::values}}},
-		{"\\openserialport", {&ofApp::cmdOpenserialport, {ArgsMode::values}}},
-		{"\\openmidiport", {&ofApp::cmdOpenmidiport, {ArgsMode::values}}},
-		{"\\ctlchange", {&ofApp::cmdCtlchange, {ArgsMode::values}}},
-		{"\\pgmchange", {&ofApp::cmdPgmchange, {ArgsMode::values}}},
-		{"\\setaudiodev", {&ofApp::cmdSetaudiodev, {ArgsMode::values}}},
-		{"\\setinaudiodev", {&ofApp::cmdSetinaudiodev, {ArgsMode::values}}},
-		{"\\setoutaudiodev", {&ofApp::cmdSetoutaudiodev, {ArgsMode::values}}},
-		{"\\python", {&ofApp::cmdPython, {ArgsMode::values}, true}},
-		{"\\lua", {&ofApp::cmdLua, {ArgsMode::values}}},
-		{"\\livelily", {&ofApp::cmdLivelily, {ArgsMode::values}}},
-		{"\\maestro", {&ofApp::cmdMaestro, {ArgsMode::values}, true}},
-		{"\\numinsts", {&ofApp::cmdNuminsts, {ArgsMode::values, true}}},
+		{"\\osc", {&Session::cmdOsc, {ArgsMode::values}}},
+		{"\\oscclient", {&Session::cmdOsc, {ArgsMode::values}}},
+		{"\\oscserver", {&Session::cmdOscserver, {ArgsMode::values}}},
+		{"\\fromosc", {&Session::cmdFromosc, {ArgsMode::values}}},
+		{"\\sendkeys", {&Session::cmdSendkeys, {ArgsMode::values}}},
+		{"\\sendlines", {&Session::cmdSendlines, {ArgsMode::values}}},
+		{"\\serialprint", {&Session::cmdSerialprint, {ArgsMode::values}}},
+		{"\\serialwrite", {&Session::cmdSerialwrite, {ArgsMode::values}}},
+		{"\\openserialport", {&Session::cmdOpenserialport, {ArgsMode::values}}},
+		{"\\openmidiport", {&Session::cmdOpenmidiport, {ArgsMode::values}}},
+		{"\\ctlchange", {&Session::cmdCtlchange, {ArgsMode::values}}},
+		{"\\pgmchange", {&Session::cmdPgmchange, {ArgsMode::values}}},
+		{"\\setaudiodev", {&Session::cmdSetaudiodev, {ArgsMode::values}}},
+		{"\\setinaudiodev", {&Session::cmdSetinaudiodev, {ArgsMode::values}}},
+		{"\\setoutaudiodev", {&Session::cmdSetoutaudiodev, {ArgsMode::values}}},
+		{"\\python", {&Session::cmdPython, {ArgsMode::values}, true}},
+		{"\\lua", {&Session::cmdLua, {ArgsMode::values}}},
+		{"\\livelily", {&Session::cmdLivelily, {ArgsMode::values}}},
+		{"\\maestro", {&Session::cmdMaestro, {ArgsMode::values}, true}},
+		{"\\numinsts", {&Session::cmdNuminsts, {ArgsMode::values, true}}},
 		// \return gives the value of the function whose body it is in
-		{"\\return", {&ofApp::cmdReturn, {ArgsMode::values}}}
+		{"\\return", {&Session::cmdReturn, {ArgsMode::values}}}
 	};
 	return commands;
 }
 
 //--------------------------------------------------------------
-ofApp::CommandHandler ofApp::commandHandler(const std::string& name)
+Session::CommandHandler Session::commandHandler(const std::string& name)
 {
 	// the handler of a command, by its name, or by the name before the dot, if the command takes methods (see commandTable())
 	auto it = commandTable().find(name);
@@ -1491,7 +1339,7 @@ ofApp::CommandHandler ofApp::commandHandler(const std::string& name)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdTime(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdTime(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (barError) return cmdOutput;
@@ -1598,7 +1446,7 @@ CmdOutput ofApp::cmdTime(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdTempo(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdTempo(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (barError) return cmdOutput;
@@ -1711,7 +1559,7 @@ CmdOutput ofApp::cmdTempo(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdBeatat(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdBeatat(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (barError) return cmdOutput;
@@ -1762,7 +1610,7 @@ CmdOutput ofApp::cmdBeatat(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdTuplet(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdTuplet(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (cmdInput.isMainCmd) {
@@ -1792,7 +1640,7 @@ CmdOutput ofApp::cmdTuplet(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdOttava(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdOttava(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (cmdInput.isMainCmd || !parsingBar) {
@@ -1817,7 +1665,7 @@ CmdOutput ofApp::cmdOttava(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdCluster(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdCluster(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (cmdInput.isMainCmd) {
@@ -1844,7 +1692,7 @@ CmdOutput ofApp::cmdCluster(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdTranspose(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdTranspose(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (cmdInput.inputVec.size() < 3) {
@@ -1978,7 +1826,7 @@ CmdOutput ofApp::cmdTranspose(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdClef(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdClef(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (!parsingBar) {
 		return genError("stray \\clef command");
@@ -2027,7 +1875,7 @@ CmdOutput ofApp::cmdClef(CmdInput& cmdInput, int lineNum, int numLines)
 // if the onsets don't fit after the offset, the offset is made smaller, with a warning
 // the notes are applied to the onsets in turn (c', cis', <c' ees'>, c', cis'), and without notes the onsets are durations only, for rhythm staffs
 // dynamics among the notes (e.g. \euclide {16 5 4 c' cis' \f \p}) are applied to the onsets in turn too, written only when they change
-CmdOutput ofApp::cmdEuclide(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdEuclide(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (!parsingBar) {
@@ -2183,7 +2031,7 @@ CmdOutput ofApp::cmdEuclide(CmdInput& cmdInput, int lineNum, int numLines)
 // \apply {\bar[.\inst] notes...} applies notes to the onsets of the line of a bar, spread over them as evenly as possible in time
 // e.g. \apply {\1.\inst2 c' <c' ees'>}, and \apply {\bar[.\inst] durations...} applies the notes of the line, in turn, to durations
 // e.g. \apply {\1.\inst2 8 8 4 2. 8} (see applyToLine())
-CmdOutput ofApp::cmdApply(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdApply(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (!parsingBar) {
@@ -2210,7 +2058,7 @@ CmdOutput ofApp::cmdApply(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdPpqn(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdPpqn(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\ppqn command needs the PPQN number as an argument");
@@ -2230,7 +2078,7 @@ CmdOutput ofApp::cmdPpqn(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdMidiclock(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdMidiclock(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\midiclock takes one argument");
@@ -2253,7 +2101,7 @@ CmdOutput ofApp::cmdMidiclock(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdInstorder(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdInstorder(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != sharedData.instruments.size()+1) {
 		return genError("instrument list must be equal to number of instruments");
@@ -2265,7 +2113,7 @@ CmdOutput ofApp::cmdInstorder(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdPrint(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdPrint(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (!cmdInput.isMainCmd) {
 		return genError("\\print can only be a top command");
@@ -2275,7 +2123,7 @@ CmdOutput ofApp::cmdPrint(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdOsc(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdOsc(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		std::string cmd;
@@ -2299,7 +2147,7 @@ CmdOutput ofApp::cmdOsc(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdOscserver(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdOscserver(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\oscserver command takes one argument, the name of the OSC server");
@@ -2322,7 +2170,7 @@ CmdOutput ofApp::cmdOscserver(CmdInput& cmdInput, int lineNum, int numLines)
 //--------------------------------------------------------------
 // \return ends the function whose body it is in, and gives the value of the function, its arguments (evaluated), or nothing
 // e.g. \function double { \return $1 $1 } makes \print \double 7 print 7 7
-CmdOutput ofApp::cmdReturn(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdReturn(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (functionReturns.empty()) {
@@ -2337,14 +2185,14 @@ CmdOutput ofApp::cmdReturn(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdNuminsts(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdNuminsts(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) return genError("\\numinsts takes no arguments");
 	return genOutput(std::to_string(sharedData.instruments.size()));
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdBarnum(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdBarnum(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\barnum takes no arguments");
@@ -2353,7 +2201,7 @@ CmdOutput ofApp::cmdBarnum(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdBeatcount(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdBeatcount(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\beatcount takes no arguments");
@@ -2366,7 +2214,7 @@ CmdOutput ofApp::cmdBeatcount(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdInsts(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdInsts(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec[0].compare("\\insts") == 0 && cmdInput.inputVec.size() < 2) {
 		return genError("the \\insts command does nothing by itself, you must call one of its methods");
@@ -2486,7 +2334,7 @@ CmdOutput ofApp::cmdInsts(CmdInput& cmdInput, int lineNum, int numLines)
 			addedInstruments(numInstsBefore);
 		}
 		// space the staves of the new instruments right away, and not only when the first bar is written
-		calculateStaffPositions(getLastBarIndex(), false);
+		frontend->calculateStaffPositions(getLastBarIndex(), false);
 	}
 	else {
 		// we can call \insts with any instrument command and it will result in calling
@@ -2517,7 +2365,7 @@ CmdOutput ofApp::cmdInsts(CmdInput& cmdInput, int lineNum, int numLines)
 // \merge \inst1 \inst2 ... draws the instruments on the staff of the first one, as voices (see applyMergeLayout())
 // the first has its stems up, the second down, the third up again, etc., as LilyPond does with voices
 // \unmerge \inst ... draws the instruments on their own staves again, and \unmerge alone all of them
-CmdOutput ofApp::cmdMerge(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdMerge(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	bool merging = (cmdInput.inputVec[0].compare("\\merge") == 0);
 	if (merging && cmdInput.inputVec.size() < 3) {
@@ -2554,7 +2402,7 @@ CmdOutput ofApp::cmdMerge(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdGroup(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdGroup(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 3) {
 		return genError("\\group command takes at least two arguments");
@@ -2606,7 +2454,7 @@ CmdOutput ofApp::cmdGroup(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdScore(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdScore(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec[0].compare("\\score") == 0 && cmdInput.inputVec.size() < 2) {
 		return genError("the \\score command does nothing by itself, you must call one of its methods");
@@ -2618,7 +2466,7 @@ CmdOutput ofApp::cmdScore(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdEditor(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdEditor(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec[0].compare("\\editor") == 0 && cmdInput.inputVec.size() < 2) {
 		return genError("the \\editor command does nothing by itself, you must call one of its methods");
@@ -2666,7 +2514,7 @@ CmdOutput ofApp::cmdEditor(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdCursor(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdCursor(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if ((cmdInput.inputVec.size() == 1) || (cmdInput.inputVec.size() > 2)) {
 		return genError("\\cursor takes one argument");
@@ -2684,7 +2532,7 @@ CmdOutput ofApp::cmdCursor(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdBar(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdBar(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		barError = true;
@@ -2745,7 +2593,7 @@ CmdOutput ofApp::cmdBar(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdLoop(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdLoop(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\loop command takes a name as an argument");
@@ -2779,7 +2627,7 @@ CmdOutput ofApp::cmdLoop(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdBars(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdBars(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (cmdInput.inputVec.size() < 2) {
@@ -2827,7 +2675,7 @@ CmdOutput ofApp::cmdBars(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdRandom(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdRandom(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	int start = 0, end = 0, diff = 0, randVal;
 	bool symbols = false;
@@ -2875,7 +2723,7 @@ CmdOutput ofApp::cmdRandom(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdList(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdList(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\std::list takes a name as an argument");
@@ -2908,7 +2756,7 @@ CmdOutput ofApp::cmdList(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdExpand(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdExpand(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (cmdInput.inputVec.size() == 1) {
@@ -2930,7 +2778,7 @@ CmdOutput ofApp::cmdExpand(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdFromosc(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdFromosc(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 2) {
 		return genError("\\fromosc commands takes maximum one argument");
@@ -2939,12 +2787,11 @@ CmdOutput ofApp::cmdFromosc(CmdInput& cmdInput, int lineNum, int numLines)
 		if (!startsWith(cmdInput.inputVec[1], "/")) {
 			return genError("OSC address must start with /");
 		}
-		fromOscAddr[whichPane] = cmdInput.inputVec[1];
+		frontend->setPaneFromOsc(whichPane, cmdInput.inputVec[1]);
 	}
 	else {
-		fromOscAddr[whichPane] = "/livelily" + std::to_string(whichPane+1);
+		frontend->setPaneFromOsc(whichPane, "/livelily" + std::to_string(whichPane+1));
 	}
-	fromOsc[whichPane] = true;
 	if (!oscReceiverIsSet) {
 		oscReceiver->setup(OSCPORT);
 		oscReceiverIsSet = true;
@@ -2953,7 +2800,7 @@ CmdOutput ofApp::cmdFromosc(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdRemaining(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdRemaining(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (!parsingBar) {
 		return genError("\\remaining can only be called inside a bar definition");
@@ -2996,7 +2843,7 @@ CmdOutput ofApp::cmdRemaining(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSolo(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSolo(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\solo commands takes at least one argument");
@@ -3034,7 +2881,7 @@ CmdOutput ofApp::cmdSolo(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSolonow(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSolonow(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\solonow commands takes at least one argument");
@@ -3069,7 +2916,7 @@ CmdOutput ofApp::cmdSolonow(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdMute(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdMute(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\mute command takes at least one argument");
@@ -3104,7 +2951,7 @@ CmdOutput ofApp::cmdMute(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdUnmute(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdUnmute(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\unmute command takes at least one argument");
@@ -3140,7 +2987,7 @@ CmdOutput ofApp::cmdUnmute(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdMutenow(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdMutenow(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\mutenow command takes at least one argument");
@@ -3174,7 +3021,7 @@ CmdOutput ofApp::cmdMutenow(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdUnmutenow(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdUnmutenow(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
 		return genError("\\unmutenow command takes at least one argument");
@@ -3208,7 +3055,7 @@ CmdOutput ofApp::cmdUnmutenow(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdFunction(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdFunction(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (cmdInput.inputVec.size() < 2) {
@@ -3273,7 +3120,7 @@ CmdOutput ofApp::cmdFunction(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdTune(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdTune(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\tune takes one argument, the tuning frequency");
@@ -3290,7 +3137,7 @@ CmdOutput ofApp::cmdTune(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdListmidiports(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdListmidiports(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\listmidiports command takes no arguments");
@@ -3309,7 +3156,7 @@ CmdOutput ofApp::cmdListmidiports(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdOpenmidiport(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdOpenmidiport(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\openmidiport takes one argument, the MIDI port to open");
@@ -3338,7 +3185,7 @@ CmdOutput ofApp::cmdOpenmidiport(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdCtlchange(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdCtlchange(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 5) {
 		return genError("\\ctlchange takes four arguments, port, channel, controller nr, and value");
@@ -3367,7 +3214,7 @@ CmdOutput ofApp::cmdCtlchange(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdPgmchange(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdPgmchange(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 4) {
 		return genError("\\pgmchange takes three arguments, port, channel, and value");
@@ -3394,7 +3241,7 @@ CmdOutput ofApp::cmdPgmchange(CmdInput& cmdInput, int lineNum, int numLines)
 //--------------------------------------------------------------
 // the test below includes all functions that set duration percetanges for notes
 // currently default Note On duration, staccato, staccatissimo, and tenuto
-CmdOutput ofApp::cmdNotedur(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdNotedur(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec[0].compare("\\notedur") == 0 && cmdInput.inputVec.size() < 2) {
 		return genError("the \\notedur command does nothing by itself, you must call one of its methods");
@@ -3435,7 +3282,7 @@ CmdOutput ofApp::cmdNotedur(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdListserialports(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdListserialports(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\listserialports command takes no arguments");
@@ -3456,7 +3303,7 @@ CmdOutput ofApp::cmdListserialports(CmdInput& cmdInput, int lineNum, int numLine
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdOpenserialport(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdOpenserialport(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 3 || cmdInput.inputVec.size() > 3) {
 		return genError("\\openserialport takes two arguments, port path and baud rate");
@@ -3502,7 +3349,7 @@ CmdOutput ofApp::cmdOpenserialport(CmdInput& cmdInput, int lineNum, int numLines
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSerialwrite(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSerialwrite(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() == 1) {
 		return genError("\\serialwrite takes at least one argument, a byte to send over serial");
@@ -3524,7 +3371,7 @@ CmdOutput ofApp::cmdSerialwrite(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSerialprint(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSerialprint(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() == 1) {
 		return genError("\\serialprint takes at least one argument, a character to send over serial");
@@ -3543,34 +3390,34 @@ CmdOutput ofApp::cmdSerialprint(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdMousex(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdMousex(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\mousex takes no arguments");
 	}
-	return genOutput(std::to_string(mouseX));
+	return genOutput(std::to_string(frontend->mousePosition().first));
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdMousey(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdMousey(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\mousey takes no arguments");
 	}
-	return genOutput(std::to_string(mouseY));
+	return genOutput(std::to_string(frontend->mousePosition().second));
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdMouse(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdMouse(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\mouse takes no arguments");
 	}
-	return genOutput({std::to_string(mouseX), std::to_string(mouseY)});
+	return genOutput({std::to_string(frontend->mousePosition().first), std::to_string(frontend->mousePosition().second)});
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdCloseserialport(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdCloseserialport(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (serial->isOpen()) {
 		serial->close();
@@ -3579,7 +3426,7 @@ CmdOutput ofApp::cmdCloseserialport(CmdInput& cmdInput, int lineNum, int numLine
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSystem(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSystem(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() == 1) {
 		return genWarning("no command added to \\system");
@@ -3595,7 +3442,7 @@ CmdOutput ofApp::cmdSystem(CmdInput& cmdInput, int lineNum, int numLines)
 
 //--------------------------------------------------------------
 // a click track on the beats of \beatat, \clicktrack on or off, and \clicktrack.tune with the frequency of its clicks
-CmdOutput ofApp::cmdClicktrack(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdClicktrack(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	if (cmdInput.inputVec[0].compare("\\clicktrack") == 0) {
@@ -3655,7 +3502,7 @@ CmdOutput ofApp::cmdClicktrack(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdPystr(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdPystr(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\pystr command takes one argument, the typing mode");
@@ -3673,7 +3520,7 @@ CmdOutput ofApp::cmdPystr(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdActive(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdActive(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\active takes no arguments");
@@ -3683,7 +3530,7 @@ CmdOutput ofApp::cmdActive(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdInactive(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdInactive(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\inactive takes no arguments");
@@ -3693,7 +3540,7 @@ CmdOutput ofApp::cmdInactive(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSendkeys(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSendkeys(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 3) {
 		return genError("\\sendkeys takes two arguments, host IP and pane index");
@@ -3709,7 +3556,7 @@ CmdOutput ofApp::cmdSendkeys(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSendlines(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSendlines(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 3) {
 		return genError("\\sendlines takes two arguments, host IP and pane index");
@@ -3725,7 +3572,7 @@ CmdOutput ofApp::cmdSendlines(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdMaestro(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdMaestro(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec[0].compare("\\maestro") == 0 && cmdInput.inputVec.size() < 2) {
 		return genError("the \\maestro command does nothing by itself, you must call one of its methods");
@@ -3737,7 +3584,7 @@ CmdOutput ofApp::cmdMaestro(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdFramerate(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdFramerate(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() == 1) {
 		// the frame rate as a number with its default formatting (e.g. 60 or 59.9401)
@@ -3760,7 +3607,7 @@ CmdOutput ofApp::cmdFramerate(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdListaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdListaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\listaudiodev takes no arguments");
@@ -3775,7 +3622,7 @@ CmdOutput ofApp::cmdListaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSetaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSetaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\setaudiodev takes one argument, the audio device ID");
@@ -3799,7 +3646,7 @@ CmdOutput ofApp::cmdSetaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSetinaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSetinaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\setinaudiodev takes one argument, the audio device ID");
@@ -3821,7 +3668,7 @@ CmdOutput ofApp::cmdSetinaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSetoutaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSetoutaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\setoutaudiodev takes one argument, the audio device ID");
@@ -3843,7 +3690,7 @@ CmdOutput ofApp::cmdSetoutaudiodev(CmdInput& cmdInput, int lineNum, int numLines
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdSamplerate(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdSamplerate(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\samplerate takes one argument, the audio sample rate");
@@ -3856,7 +3703,7 @@ CmdOutput ofApp::cmdSamplerate(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdBuffersize(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdBuffersize(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\buffersize takes one argument, the audio buffer size");
@@ -3869,7 +3716,7 @@ CmdOutput ofApp::cmdBuffersize(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdNchannels(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdNchannels(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\nchannels takes one argument, the number of audio I/O channels");
@@ -3882,7 +3729,7 @@ CmdOutput ofApp::cmdNchannels(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdInchannels(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdInchannels(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\inchannels takes one argument, the number of audio input channels");
@@ -3895,7 +3742,7 @@ CmdOutput ofApp::cmdInchannels(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdOutchannels(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdOutchannels(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\outchannels takes one argument, the number of audio output channels");
@@ -3908,7 +3755,7 @@ CmdOutput ofApp::cmdOutchannels(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdLivelily(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdLivelily(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("language command takes no arguments");
@@ -3918,7 +3765,7 @@ CmdOutput ofApp::cmdLivelily(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdPython(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdPython(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec[0].find(".") != std::string::npos) {
 		std::vector<std::string> v = tokenizeString(cmdInput.inputVec[0], ".");
@@ -3951,7 +3798,7 @@ CmdOutput ofApp::cmdPython(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdLua(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdLua(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("language command takes no arguments");
@@ -3961,7 +3808,7 @@ CmdOutput ofApp::cmdLua(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdAccoffset(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdAccoffset(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\accoffset command takes one argument, the offset for accidentals that are close together");
@@ -3980,7 +3827,7 @@ CmdOutput ofApp::cmdAccoffset(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::cmdHelp(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::cmdHelp(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() == 1) {
 		return genError("nothing specified to open its help file");
@@ -4008,42 +3855,11 @@ CmdOutput ofApp::cmdHelp(CmdInput& cmdInput, int lineNum, int numLines)
 	return CmdOutput();
 }
 
-//--------------------------------------------------------------
-void ofApp::setEditorOption(int pane, const std::string& option, const std::string& value)
-{
-	Editor& editor = editors[pane];
-	if (option == "alignment") {
-		// the width of a unit of the grid applies at once if alignment is on, and the next time it is turned on otherwise
-		if (value == "short" || value == "long") {
-			editor.alignShort = (value == "short");
-			if (editor.alignment) alignBars(pane);
-		}
-		else {
-			editor.alignment = (value == "on");
-			if (editor.alignment) alignBars(pane);
-			else unalignBars(pane);
-		}
-	}
-	else if (option == "animation") editor.setAnimation(value == "on");
-	else if (option == "autobrackets") editor.setAutocomplete(value == "on");
-	else if (option == "autocomplete") editor.setAutocompletion(value == "on");
-}
 
-//--------------------------------------------------------------
-bool ofApp::openHelp(int pane, const std::string& filePath, int newPane)
-{
-	// a new pane beside or below the active one (as Ctrl+v and Ctrl+h do), which becomes the active one
-	if (pane != whichPane) setActivePane(pane);
-	if (newPane == 1) addPane(86);
-	else if (newPane == 2) addPane(72);
-	bool fileOpened = editors[whichPane].loadHelpFile(filePath, newPane);
-	if (!fileOpened && newPane > 0) removePane();
-	return fileOpened;
-}
 
 //--------------------------------------------------------------
 // a variable definition or assignment (e.g. x = 5, \x = 5, or \x.val = 5), a line whose second item is =
-CmdOutput ofApp::defineVariable(CmdInput& cmdInput, int lineNum, int numLines)
+CmdOutput Session::defineVariable(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	// if we have more than three items in the input vector and the second one is an equals sign
 	// then we are defining a variable, or assigning a new value to it
@@ -4107,7 +3923,7 @@ CmdOutput ofApp::defineVariable(CmdInput& cmdInput, int lineNum, int numLines)
 }
 
 //--------------------------------------------------------------
-std::pair<int, std::string> ofApp::checkNameAvailability(std::string structType, std::string s)
+std::pair<int, std::string> Session::checkNameAvailability(std::string structType, std::string s)
 {
 	std::string name;
 	if (variables.find(s) != variables.end()) {
@@ -4148,7 +3964,7 @@ std::pair<int, std::string> ofApp::checkNameAvailability(std::string structType,
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::selectBarOfBarsCommand(CmdInput& cmdInput)
+CmdOutput Session::selectBarOfBarsCommand(CmdInput& cmdInput)
 {
 	// inside \bars, the lines are parsed once for every bar, and the values of each bar are separated by |
 	// like with the notes of the instruments, e.g. "\time 4/4 | 3/4", "\tempo 4 = 60 | 4 = 90" or "\beatat 4 | 2"
@@ -4205,7 +4021,7 @@ CmdOutput ofApp::selectBarOfBarsCommand(CmdInput& cmdInput)
 }
 
 //--------------------------------------------------------------
-std::pair<int, int> ofApp::tupletRatio(const std::string& str)
+std::pair<int, int> Session::tupletRatio(const std::string& str)
 {
 	// the ratio of a tuplet, e.g. 3/2, or {0, 0} if it is not two numbers greater than zero
 	size_t slash = str.find('/');
@@ -4220,7 +4036,7 @@ std::pair<int, int> ofApp::tupletRatio(const std::string& str)
 }
 
 //--------------------------------------------------------------
-std::pair<bool, int> ofApp::ottavaValue(const std::string& str)
+std::pair<bool, int> Session::ottavaValue(const std::string& str)
 {
 	// the value of an ottava, from -2 to 2, and whether it is valid
 	if (str.empty() || str.size() > 2) return std::make_pair(false, 0);
@@ -4233,7 +4049,7 @@ std::pair<bool, int> ofApp::ottavaValue(const std::string& str)
 
 // expands the repetitions of tokens (e.g. c4*3) and groups (e.g. [c d e]*2) as detectRepetitions() does
 // and returns the indexes of the tokens in the order they are played
-static void expandRepetitions(const std::vector<PositionedToken>& tokens, size_t& ndx, bool stopAtClosingBracket, std::vector<int>& out)
+void expandRepetitions(const std::vector<PositionedToken>& tokens, size_t& ndx, bool stopAtClosingBracket, std::vector<int>& out)
 {
 	while (ndx < tokens.size()) {
 		const std::string& t = tokens[ndx].text;
@@ -4268,192 +4084,9 @@ static void expandRepetitions(const std::vector<PositionedToken>& tokens, size_t
 	}
 }
 
-//--------------------------------------------------------------
-void ofApp::storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNotes)
-{
-	// stores which token of the line of the editor every note of an instrument in a bar comes from, so that the token can be
-	// highlighted while its note plays (see \editor.animate)
-	// a note of a bar that copies another bar (e.g. \1 or \1.\inst) comes from the copying token and from the note of the copied bar
-	// if the notes can't be matched to the tokens of the line (e.g. a line in a function), nothing is stored for the bar
-	std::vector<std::vector<EditorNoteSpan>>& spans = editorNoteSpans[std::make_pair(instNdx, barNdx)];
-	spans.clear();
-	auto editorIt = editors.find(whichPane);
-	if (editorIt == editors.end() || editorIt->second.allLines.find(lineNum) == editorIt->second.allLines.end()) return;
-	const std::string& str = editorIt->second.allLines[lineNum].str;
-	std::vector<PositionedToken> tokens = positionedTokens(str);
-	// the melodic line starts after the name of the instrument, which can be at the start of the line or after \bar (e.g. \bar 1 { \inst c'1 })
-	std::string instName = "\\" + sharedData.instruments[instNdx].getName();
-	size_t first = 0;
-	while (first < tokens.size() && tokens[first].text != instName && tokens[first].text.substr(0, instName.size() + 1) != instName + ".") first++;
-	if (first >= tokens.size()) return;
-	first++;
-	// the melodic line ends at the end of the line, or at a closing bracket that doesn't belong to a tuplet (e.g. the end of a bar in one line)
-	// in a bar written in one line, it also ends where the next statement starts, at the name of another instrument or group, or a command of the bar
-	auto startsStatement = [&](const std::string& word) {
-		if (word == "\\time" || word == "\\tempo" || word == "\\beatat") return true;
-		if (word.size() < 2 || word[0] != '\\') return false;
-		std::string name = word.substr(1, word.find('.') == std::string::npos ? std::string::npos : word.find('.') - 1);
-		return sharedData.instrumentIndexes.find("\\" + name) != sharedData.instrumentIndexes.end() || instGroups.find("\\" + name) != instGroups.end();
-	};
-	size_t last = first;
-	int braceDepth = 0;
-	while (last < tokens.size()) {
-		if (tokens[last].text == "{") braceDepth++;
-		else if (tokens[last].text == "}") {
-			if (braceDepth == 0) break;
-			braceDepth--;
-		}
-		else if (braceDepth == 0 && startsStatement(tokens[last].text)) break;
-		last++;
-	}
-	std::vector<PositionedToken> melodic(tokens.begin() + first, tokens.begin() + last);
-	// with \bars, the bars are separated by |, and the notes are those of the bar being parsed
-	if (parsingBars) {
-		std::vector<PositionedToken> segment;
-		int barCounter = 1;
-		for (const PositionedToken& t : melodic) {
-			if (t.text == "|") barCounter++;
-			else if (barCounter == barsIterCounter) segment.push_back(t);
-		}
-		melodic = segment;
-	}
-	// commands with arguments in curly brackets make notes that are not written as they play (e.g. \euclide {16 5 4 c' cis'} or \transpose { c d e 2 })
-	// so their arguments are not notes, and while their notes play, the command is highlighted as a whole
-	// \euclide (and other such commands) from its backslash to its closing bracket, and \transpose with the contents of its curly brackets
-	// \transpose without curly brackets has its arguments up to the number of semitones (e.g. \transpose \1 2)
-	std::vector<int> groupEnd(melodic.size(), -1); // the index of the last token of a command with curly brackets
-	std::vector<int> groupStart(melodic.size(), -1); // the index of the first token that is highlighted for it
-	std::vector<bool> insideGroup(melodic.size(), false);
-	std::vector<bool> skipToken(melodic.size(), false); // \transpose with notes only, and its number of semitones
-	for (size_t i = 0; i < melodic.size(); i++) {
-		const std::string& t = melodic[i].text;
-		if (t.empty() || t[0] != '\\' || insideGroup[i] || t == "\\tuplet" || t == "\\tup") continue;
-		bool isTranspose = (t == "\\transpose");
-		size_t end = melodic.size();
-		// a command that takes a name can have it before its curly brackets (e.g. \apply \1.\inst {c' e'}, see CommandSpec)
-		size_t open = i + 1;
-		if (i + 2 < melodic.size() && melodic[i+1].text != "{" && melodic[i+2].text == "{") open = i + 2;
-		if (open < melodic.size() && melodic[open].text == "{") {
-			int depth = 0;
-			for (size_t j = open; j < melodic.size(); j++) {
-				if (melodic[j].text == "{") depth++;
-				else if (melodic[j].text == "}" && --depth == 0) {
-					end = j;
-					break;
-				}
-			}
-		}
-		else if (isTranspose) {
-			for (size_t j = i + 1; j < melodic.size(); j++) {
-				if (isFloat(melodic[j].text)) {
-					end = j;
-					break;
-				}
-			}
-		}
-		if (end >= melodic.size()) continue;
-		if (isTranspose) {
-			// with notes only (e.g. \transpose { c4 r e r -12 }), its notes and rests are highlighted as in any melodic line
-			// and only \transpose and its number of semitones are not (with a bar name in it, it is highlighted as a whole)
-			bool hasCommand = false;
-			for (size_t j = i + 1; j <= end; j++) {
-				if (!melodic[j].text.empty() && melodic[j].text[0] == '\\') hasCommand = true;
-			}
-			if (!hasCommand) {
-				size_t amountNdx = (melodic[end].text == "}" ? end - 1 : end);
-				skipToken[i] = true;
-				if (amountNdx > i && isFloat(melodic[amountNdx].text)) skipToken[amountNdx] = true;
-				continue;
-			}
-		}
-		groupEnd[i] = (int)end;
-		groupStart[i] = (int)(isTranspose ? i + 1 : i);
-		for (size_t j = i + 1; j <= end; j++) insideGroup[j] = true;
-	}
-	std::vector<int> order;
-	size_t ndx = 0;
-	expandRepetitions(melodic, ndx, false, order);
-	int pane = whichPane;
-	int lineId = editorIt->second.getLineId(lineNum);
-	auto spanOf = [&](int tokenNdx) {
-		if (groupEnd[tokenNdx] >= 0) {
-			// a command with curly brackets, from the first to the last of its highlighted tokens (see groupStart above)
-			int start = melodic[groupStart[tokenNdx]].start;
-			int length = melodic[groupEnd[tokenNdx]].start + (int)melodic[groupEnd[tokenNdx]].text.size() - start;
-			return EditorNoteSpan{pane, lineId, start, length, str.substr(start, length)};
-		}
-		return EditorNoteSpan{pane, lineId, melodic[tokenNdx].start, (int)melodic[tokenNdx].text.size(), melodic[tokenNdx].text};
-	};
-	auto spansOf = [&](int tokenNdx) { return std::vector<EditorNoteSpan>{spanOf(tokenNdx)}; };
-	// every token gives the notes it plays, each with its tokens
-	// a command that is not known here (e.g. a variable or a function) gives the notes that are left, if it is the only one
-	std::vector<std::vector<EditorNoteSpan>> result;
-	int unknownPosition = -1; // where in result the notes of the unknown command go
-	int unknownToken = -1;
-	for (size_t k = 0; k < order.size(); k++) {
-		const std::string& t = melodic[order[k]].text;
-		if (t == "{" || t == "}" || t == "|" || t == "[" || t == "]") continue;
-		// the arguments of a command with curly brackets (see groupEnd above)
-		if (insideGroup[order[k]] || skipToken[order[k]]) continue;
-		// commands that don't play notes, and their argument
-		if (t == "\\ottava" || t == "\\ott" || t == "\\clef" || t == "\\tuplet" || t == "\\tup") {
-			k++;
-			continue;
-		}
-		if (t.empty() || t[0] != '\\') {
-			// a note, a rest, or a chord, or the steps of the x - notation (e.g. x-x-), each with its own characters of the token
-			std::vector<Step> steps = stepTokens(t);
-			if (steps.size() > 1) {
-				for (const Step& step : steps) {
-					int start = melodic[order[k]].start + (int)step.start;
-					result.push_back({EditorNoteSpan{pane, lineId, start, (int)step.length, t.substr(step.start, step.length)}});
-				}
-			}
-			else {
-				result.push_back(spansOf(order[k]));
-			}
-			continue;
-		}
-		// a bar that is copied, with the instrument of this line or another one, e.g. \1 or \1.\inst
-		size_t dot = t.find('.');
-		std::string barName = t.substr(0, dot);
-		auto barIt = sharedData.barsIndexes.find(barName);
-		if (barIt != sharedData.barsIndexes.end()) {
-			int sourceInst = instNdx;
-			if (dot != std::string::npos) {
-				std::string sourceName = t.substr(dot + 1);
-				if (!startsWith(sourceName, "\\")) sourceName = "\\" + sourceName;
-				auto instIt = sharedData.instrumentIndexes.find(sourceName);
-				if (instIt == sharedData.instrumentIndexes.end()) return;
-				sourceInst = instIt->second;
-			}
-			auto sourceIt = editorNoteSpans.find(std::make_pair(sourceInst, barIt->second));
-			int numSourceNotes = (int)sharedData.instruments[sourceInst].notes[barIt->second].size();
-			for (int n = 0; n < numSourceNotes; n++) {
-				std::vector<EditorNoteSpan> noteSpans = spansOf(order[k]);
-				if (sourceIt != editorNoteSpans.end() && n < (int)sourceIt->second.size()) {
-					noteSpans.insert(noteSpans.end(), sourceIt->second[n].begin(), sourceIt->second[n].end());
-				}
-				result.push_back(noteSpans);
-			}
-			continue;
-		}
-		// any other command
-		if (unknownToken >= 0) return; // more than one, the notes can't be matched
-		unknownToken = order[k];
-		unknownPosition = (int)result.size();
-	}
-	if (unknownToken >= 0) {
-		int remaining = numNotes - (int)result.size();
-		if (remaining < 0) return;
-		result.insert(result.begin() + unknownPosition, remaining, std::vector<EditorNoteSpan>{spanOf(unknownToken)});
-	}
-	if ((int)result.size() != numNotes) return;
-	spans = result;
-}
 
 //--------------------------------------------------------------
-std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tokens, int lineNum, int numLines)
+std::pair<int, std::string> Session::parseMelodicLine(std::vector<std::string> tokens, int lineNum, int numLines)
 {
 	// a warning of a command in the melodic line (e.g. \euclide), which is returned if the line has no errors (see isInstrument())
 	melodicLineWarning.clear();
@@ -6122,7 +5755,7 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 	sharedData.instruments.at(thisInstIndex).setPassed(true);
 	frontend->connectLineToBar(whichPane, lineNum, thisInstIndex, barIndex);
 	// the tokens of the notes, for highlighting them in the editor while they play (see \editor.animate)
-	storeEditorNoteSpans(lineNum, thisInstIndex, barIndex, (int)numNotesVertical);
+	frontend->storeEditorNoteSpans(lineNum, thisInstIndex, barIndex, (int)numNotesVertical);
 	// the map below is used by the sequencer, to determine which pane will have its active element set
 	sharedData.barsConnectedToPanes[barIndex] = whichPane;
 	numInstsParsed++;
@@ -6130,7 +5763,7 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 }
 
 //--------------------------------------------------------------
-std::pair<int, std::string> ofApp::parseBarLoop(std::string str, int lineNum, int numLines)
+std::pair<int, std::string> Session::parseBarLoop(std::string str, int lineNum, int numLines)
 {
 	// first check if there is anything after the closing bracket
 	size_t closingBracketIndex = str.find("}");
@@ -6311,7 +5944,7 @@ std::pair<int, std::string> ofApp::parseBarLoop(std::string str, int lineNum, in
 }
 
 //--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& originalCommands, int lineNum, int numLines)
+std::pair<bool, CmdOutput> Session::isInstrument(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
 	bool hasDot = false;
@@ -6732,7 +6365,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 }
 
 //--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isBarLoop(std::vector<std::string>& originalCommands, bool isMainCmd, int lineNum, int numLines)
+std::pair<bool, CmdOutput> Session::isBarLoop(std::vector<std::string>& originalCommands, bool isMainCmd, int lineNum, int numLines)
 {
 	bool barLoopExists = false;
 	CmdOutput cmdOutput = CmdOutput();
@@ -6898,7 +6531,7 @@ std::pair<bool, CmdOutput> ofApp::isBarLoop(std::vector<std::string>& originalCo
 					sharedData.tempLoopIndex = sharedData.loopsIndexes[commands[0]];
 					if (sequencer.isThreadRunning()) {
 						sequencer.update();
-						mustUpdateScore = true;
+						frontend->scoreMustUpdate();
 						OscMessage m;
 						m.setAddress("/update");
 						m.addIntArg(sharedData.tempLoopIndex);
@@ -6940,7 +6573,7 @@ std::pair<bool, CmdOutput> ofApp::isBarLoop(std::vector<std::string>& originalCo
 }
 
 //--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isFunction(std::vector<std::string>& commands, int lineNum, int numLines)
+std::pair<bool, CmdOutput> Session::isFunction(std::vector<std::string>& commands, int lineNum, int numLines)
 {
 	bool functionExists = false;
 	bool executeFunction = false;
@@ -7072,7 +6705,7 @@ std::pair<bool, CmdOutput> ofApp::isFunction(std::vector<std::string>& commands,
 }
 
 //--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isList(std::vector<std::string>& originalCommands, int lineNum, int numLines)
+std::pair<bool, CmdOutput> Session::isList(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
 	bool listExists = false;
 	CmdOutput cmdOutput = CmdOutput();
@@ -7161,7 +6794,7 @@ std::pair<bool, CmdOutput> ofApp::isList(std::vector<std::string>& originalComma
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::listItemOutput(std::pair<int, std::string> item, int lineNum, int numLines)
+CmdOutput Session::listItemOutput(std::pair<int, std::string> item, int lineNum, int numLines)
 {
 	// the items of a list are stored as they are written (see CommandSpec), so an item that is a command (e.g. a bar or an instrument name)
 	// is evaluated when it is read, and gives its output (e.g. the lines of the bar), as if it were written in its place
@@ -7176,7 +6809,7 @@ CmdOutput ofApp::listItemOutput(std::pair<int, std::string> item, int lineNum, i
 }
 
 //--------------------------------------------------------------
-std::pair<int, std::string> ofApp::listItemExists(size_t listItemNdx)
+std::pair<int, std::string> Session::listItemExists(size_t listItemNdx)
 {
 	if (listItemNdx < 1) {
 		return std::make_pair(3, "lists are 1-based indexed, the first item is 1");
@@ -7191,7 +6824,7 @@ std::pair<int, std::string> ofApp::listItemExists(size_t listItemNdx)
 }
 
 //--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isOscClient(std::vector<std::string>& originalCommands, int lineNum, int numLines)
+std::pair<bool, CmdOutput> Session::isOscClient(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
 	bool oscClientExists = false;
 	CmdOutput cmdOutput = CmdOutput();
@@ -7309,7 +6942,7 @@ std::pair<bool, CmdOutput> ofApp::isOscClient(std::vector<std::string>& original
 }
 
 //--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isOscServer(std::vector<std::string>& originalCommands, int lineNum, int numLines)
+std::pair<bool, CmdOutput> Session::isOscServer(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
 	bool oscServerExists = false;
 	CmdOutput cmdOutput = CmdOutput();
@@ -7396,7 +7029,7 @@ std::pair<bool, CmdOutput> ofApp::isOscServer(std::vector<std::string>& original
 }
 
 //--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isGroup(std::vector<std::string>& originalCommands, int lineNum, int numLines)
+std::pair<bool, CmdOutput> Session::isGroup(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
 	bool groupExists = false;
 	CmdOutput cmdOutput = CmdOutput();
@@ -7455,7 +7088,7 @@ std::pair<bool, CmdOutput> ofApp::isGroup(std::vector<std::string>& originalComm
 }
 
 //--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isVariable(std::vector<std::string>& originalCommands, bool isMainCmd, int lineNum, int numLines)
+std::pair<bool, CmdOutput> Session::isVariable(std::vector<std::string>& originalCommands, bool isMainCmd, int lineNum, int numLines)
 {
 	bool varExists = false;
 	CmdOutput cmdOutput = CmdOutput();

@@ -112,4 +112,8 @@ inline std::vector<Step> stepTokens(const std::string& token)
 	return steps;
 }
 
+// the indexes of the notes of a melodic line in the order they play, with the repetitions of a token (e.g. c4*3) or of tokens
+// in curly brackets expanded, from ndx on, up to a closing bracket if stopAtClosingBracket is true (in parser.cpp)
+void expandRepetitions(const std::vector<PositionedToken>& tokens, size_t& ndx, bool stopAtClosingBracket, std::vector<int>& out);
+
 #endif

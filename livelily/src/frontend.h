@@ -2,6 +2,7 @@
 #define FRONTEND_H
 
 #include <string>
+#include <utility>
 #include <vector>
 
 // what the engine (the parser and the sequencer) asks of the user interface, which the front end implements (ofApp for now)
@@ -47,6 +48,24 @@ class FrontendHost
 		// a method of \score that concerns only what is shown (colors, show, hide, beattype, movex, movey, recenter, numbars, update)
 		// with its arguments, which the parser has evaluated, and returns an error message, or an empty string
 		virtual std::string scoreViewCommand(const std::vector<std::string>& methodAndArgs) = 0;
+		// the layout of the score after bars are defined: the notes of a bar for the score, the positions of the notes of one bar
+		// or of the bars of \bars, and the positions of the staves
+		virtual void setScoreNotes(int bar) = 0;
+		virtual void setNotePositions(int bar) = 0;
+		virtual void setNotePositions(int bar, int numBars) = 0;
+		virtual void calculateStaffPositions(int bar, bool windowChanged) = 0;
+		// the score draws the loop again (a loop is called while the sequencer plays)
+		virtual void scoreMustUpdate() = 0;
+		// an instrument is created, or removed (the instruments after it get the indexes before), for what the front end shows of it
+		virtual void instrumentCreated(int instNdx) = 0;
+		virtual void instrumentRemoved(int instNdx) = 0;
+		virtual void instrumentsCleared() = 0;
+		// the position of the mouse over the window (\mousex, \mousey, \mouse)
+		virtual std::pair<int, int> mousePosition() = 0;
+		// a pane gets what is typed in it from OSC messages to an address (\fromosc)
+		virtual void setPaneFromOsc(int pane, const std::string& address) = 0;
+		// the tokens of the line of a pane that play the notes of an instrument in a bar, for highlighting them (see ofApp)
+		virtual void storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNotes) = 0;
 };
 
 #endif
