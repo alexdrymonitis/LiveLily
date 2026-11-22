@@ -842,7 +842,7 @@ void Editor::drawText()
 				// the main ofApp stores the following LiveLily commands: \insts, \bar, \bars, \loop, \function, \list and \group
 				// we use this to determine if we should further tokenize each token of our string
 				// if a line starts with one of these commands, then we won't tokenize the token further
-				tokenizeDigits1 = find(((ofApp*)ofGetAppPtr())->commandsToNotTokenize.begin(), ((ofApp*)ofGetAppPtr())->commandsToNotTokenize.end(), tokens[0]) == ((ofApp*)ofGetAppPtr())->commandsToNotTokenize.end();
+				tokenizeDigits1 = find(((ofApp*)ofGetAppPtr())->session.commandsToNotTokenize.begin(), ((ofApp*)ofGetAppPtr())->session.commandsToNotTokenize.end(), tokens[0]) == ((ofApp*)ofGetAppPtr())->session.commandsToNotTokenize.end();
 			}
 			for (auto it = tokens.begin(); it != tokens.end(); ++it) {
 				// tokenizing has already been done, but to separate digits properly
@@ -851,7 +851,7 @@ void Editor::drawText()
 				bool tokenizeDigits2 = false;
 				if (thisLang == 0) {
 					// the main ofApp also stores all the bar, loop, function and list names to the keywords vector
-					tokenizeDigits2 = find(((ofApp*)ofGetAppPtr())->keywords.begin(), ((ofApp*)ofGetAppPtr())->keywords.end(), *it) == ((ofApp*)ofGetAppPtr())->keywords.end();
+					tokenizeDigits2 = find(((ofApp*)ofGetAppPtr())->session.keywords.begin(), ((ofApp*)ofGetAppPtr())->session.keywords.end(), *it) == ((ofApp*)ofGetAppPtr())->session.keywords.end();
 				}
 				// if the token starts with a backslash, then we don't tokenize based on digits
 				if (thisLang == 0 && startsWith(*it, "\\")) tokenizeDigits2 = false;
@@ -922,8 +922,8 @@ void Editor::drawText()
 							int firstCharNdx = 0;
 							ofColor color;
 							if (startsWith(*subit, "\\") && (*subit).size() > 1) firstCharNdx = 1;
-							if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang][(*subit)[firstCharNdx]].find(*subit) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang][(*subit)[firstCharNdx]].end()) {
-								color = toOf(((ofApp*)ofGetAppPtr())->commandsMap[thisLang][(*subit)[firstCharNdx]][*subit]);
+							if (((ofApp*)ofGetAppPtr())->session.commandsMap[thisLang][(*subit)[firstCharNdx]].find(*subit) != ((ofApp*)ofGetAppPtr())->session.commandsMap[thisLang][(*subit)[firstCharNdx]].end()) {
+								color = toOf(((ofApp*)ofGetAppPtr())->session.commandsMap[thisLang][(*subit)[firstCharNdx]][*subit]);
 								if (isCursorInsideKeyword && !cursorDrawn) {
 									cursorColor = color;
 									drawCursor(cursorX, cursorColor);
@@ -1309,8 +1309,8 @@ void Editor::setMaxCharactersPerString()
 	lineNumberWidth = getNumDigitsOfLineCount() * oneCharacterWidth;
 	int width = frameWidth;
 	if (((ofApp*)ofGetAppPtr())->isScoreVisible()) {
-		if (frameWidth > ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX && ((ofApp*)ofGetAppPtr())->scoreOrientation == 0) {
-			width = ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX;
+		if (frameWidth > ((ofApp*)ofGetAppPtr())->session.sharedData.middleOfScreenX && ((ofApp*)ofGetAppPtr())->scoreOrientation == 0) {
+			width = ((ofApp*)ofGetAppPtr())->session.sharedData.middleOfScreenX;
 		}
 	}
 	maxCharactersPerString = (width-lineNumberWidth-oneAndHalfCharacterWidth) / oneCharacterWidth;
@@ -1917,16 +1917,16 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 					// execute the Python line in verbose mode with the last argument set to 1
 					// check if we want to execute this line in the main thread
 					// a help that help(name) stored in code executed elsewhere (e.g. sent from LiveLily) is not for this pane
-					((ofApp*)ofGetAppPtr())->sharedData.pyo.takeHelp();
+					((ofApp*)ofGetAppPtr())->session.sharedData.pyo.takeHelp();
 					if (startsWith(pyStr, "main ")) {
-						err = ((ofApp*)ofGetAppPtr())->sharedData.pyo.exec_main(pyStr.substr(5).c_str());
+						err = ((ofApp*)ofGetAppPtr())->session.sharedData.pyo.exec_main(pyStr.substr(5).c_str());
 					}
 					else {
-						err = ((ofApp*)ofGetAppPtr())->sharedData.pyo.exec(pyStr.c_str());
+						err = ((ofApp*)ofGetAppPtr())->session.sharedData.pyo.exec(pyStr.c_str());
 					}
 					if (err) {
 						// get the error message
-						std::string errStr = ((ofApp*)ofGetAppPtr())->sharedData.pyo.getErrorMsg();
+						std::string errStr = ((ofApp*)ofGetAppPtr())->session.sharedData.pyo.getErrorMsg();
 						// get the position of the end of the word "line"
 						size_t lineNdx = errStr.find("line")+ 5;
 						// insert the line number of the editor and not the Python interpreter
@@ -1935,7 +1935,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 						setTraceback(3, errStr, executingLineLocal, lineNdx);
 					}
 					else {
-						std::vector<std::string> pyStdout = ((ofApp*)ofGetAppPtr())->sharedData.pyo.getStdout();
+						std::vector<std::string> pyStdout = ((ofApp*)ofGetAppPtr())->session.sharedData.pyo.getStdout();
 						if (pyStdout.size() > 1) {
 							bool sendToLily = false;
 							int whichPane = objID;
@@ -1958,7 +1958,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 									}
 								}
 								else {
-									whichPane = ((ofApp*)ofGetAppPtr())->whichPane;
+									whichPane = ((ofApp*)ofGetAppPtr())->session.whichPane;
 									startChar = pyStdout[0].find(" ") + 1;
 									if (startChar >= pyStdout[0].size()) {
 										sendToLily = false;
@@ -1970,22 +1970,22 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 								if (i < pyStdout.size()-2 && !endsWith(pyStdout[i], "\n")) s += "\n";
 								if (sendToLily) {
 									startChar = (i == 0 ? startChar : 0);
-									((ofApp*)ofGetAppPtr())->sharedData.pyStdoutStr += s.substr(startChar);
+									((ofApp*)ofGetAppPtr())->session.sharedData.pyStdoutStr += s.substr(startChar);
 								}
 								else {
 									setTraceback(1, s, executingLineLocal);
 								}
 							}
 							if (sendToLily) {
-								((ofApp*)ofGetAppPtr())->sharedData.whichPyPane = whichPane;
-								((ofApp*)ofGetAppPtr())->sharedData.typePyStr = true;
+								((ofApp*)ofGetAppPtr())->session.sharedData.whichPyPane = whichPane;
+								((ofApp*)ofGetAppPtr())->session.sharedData.typePyStr = true;
 							}
 						}
 						else {
 							releaseTraceback(executingLineLocal);
 						}
 						// help(name) in the executed code opens its help in this pane, as \help does in LiveLily
-						std::string help = ((ofApp*)ofGetAppPtr())->sharedData.pyo.takeHelp();
+						std::string help = ((ofApp*)ofGetAppPtr())->session.sharedData.pyo.takeHelp();
 						size_t nameEnd = help.find('\n');
 						if (nameEnd != std::string::npos) loadHelpText(help.substr(0, nameEnd), help.substr(nameEnd + 1));
 					}
@@ -2305,17 +2305,17 @@ void Editor::setString(std::string s)
 	if (s == "\n" || s == "\b") {
 		int ascii = int(s[0]);
 		if (ascii == 10) ascii = 13;
-		int tempPaneNdx = ((ofApp*)ofGetAppPtr())->whichPane;
+		int tempPaneNdx = ((ofApp*)ofGetAppPtr())->session.whichPane;
 		// if we're executing code from another pane that runs Python
 		// we must change the current active pane of the editor to the one receiving the string from Python
 		// because parseStrings() in ofApp.cpp executes lines from the currently active pane
 		if (ascii == 13 && (ctrlPressed || shiftPressed)) {
-			((ofApp*)ofGetAppPtr())->whichPane = ((ofApp*)ofGetAppPtr())->sharedData.whichPyPane;
+			((ofApp*)ofGetAppPtr())->session.whichPane = ((ofApp*)ofGetAppPtr())->session.sharedData.whichPyPane;
 		}
 		allOtherKeys(ascii);
 		// if we have executed code, we must reset the active pane
 		if (ascii == 13 && (ctrlPressed || shiftPressed)) {
-			((ofApp*)ofGetAppPtr())->whichPane = tempPaneNdx;
+			((ofApp*)ofGetAppPtr())->session.whichPane = tempPaneNdx;
 		}
 	}
 	else {
@@ -4177,7 +4177,7 @@ bool Editor::loadFile(std::string fileName)
 		thisLang = 0;
 	}
 	else if (endsWith(loadedFileStr, ".py")) {
-		((ofApp*)ofGetAppPtr())->initPyo();
+		((ofApp*)ofGetAppPtr())->session.initPyo();
 		thisLang = 1;
 	}
 	else if (endsWith(loadedFileStr, ".lua")) {

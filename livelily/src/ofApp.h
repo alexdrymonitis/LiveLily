@@ -38,9 +38,12 @@ struct PendingTraceback
 	std::string boundFunction;
 };
 
-class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, public Session
+class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 {
 	public:
+		// the engine of LiveLily (see session.h): the state of the session, the parser, and the sequencer
+		// declared first, so that it is destroyed after everything else of the app (e.g. the sequencer's thread calls the app)
+		Session session;
 		// basic OF program structure
 		//---------------------------------
 		void setup();

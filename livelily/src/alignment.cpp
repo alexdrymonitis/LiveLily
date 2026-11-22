@@ -289,10 +289,10 @@ bool ofApp::alignBarLines(int pane, int firstLine, int lastLine, int cursorLine,
 		}
 		line.tokens = separated;
 		const std::string& name = line.tokens[0].text;
-		if (name.size() < 2 || name[0] != '\\' || name.find('.') != std::string::npos || commandTable().count(name)) continue;
-		NameKind kind = nameKind(name);
-		if (kind != NameKind::none && kind != NameKind::instrument && kind != NameKind::group) continue;
-		if (!readCells(line, seqResolution)) {
+		if (name.size() < 2 || name[0] != '\\' || name.find('.') != std::string::npos || session.commandTable().count(name)) continue;
+		Session::NameKind kind = session.nameKind(name);
+		if (kind != Session::NameKind::none && kind != Session::NameKind::instrument && kind != Session::NameKind::group) continue;
+		if (!readCells(line, session.seqResolution)) {
 			// a line that is being edited and can't be read yet (e.g. c14 while typing c16) leaves the bar as it is
 			// otherwise the other lines would be aligned without it, and move back when it can be read again
 			if (keepInToken && l == cursorLine) return false;
@@ -532,7 +532,7 @@ void ofApp::unalignBars(int pane)
 			auto it = editor.allLines.find(l);
 			if (it == editor.allLines.end()) continue;
 			std::vector<PositionedToken> tokens = positionedTokens(it->second.str);
-			if (tokens.empty() || tokens[0].text.size() < 2 || tokens[0].text[0] != '\\' || commandTable().count(tokens[0].text)) continue;
+			if (tokens.empty() || tokens[0].text.size() < 2 || tokens[0].text[0] != '\\' || session.commandTable().count(tokens[0].text)) continue;
 			std::string single = singleSpaces(it->second.str);
 			if (single != it->second.str) {
 				// the tokens are the same, closer together, so the highlighted tokens move with them

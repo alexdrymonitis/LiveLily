@@ -65,7 +65,7 @@ void ofApp::runTest()
 		std::cerr << "livelily test: could not write to " << testOut << std::endl;
 		return;
 	}
-	Editor& editor = editors[whichPane];
+	Editor& editor = editors[session.whichPane];
 	if (!editor.loadFile(testFile)) {
 		out << "could not load " << testFile << "\n";
 		return;
@@ -94,9 +94,9 @@ void ofApp::runTest()
 		}
 	}
 	// playback: what the sequencer sends, if the file started it, from the state at the end of the file
-	if (startSequencer) {
-		startSequencer = false;
-		std::vector<std::string> playback = sequencer.dryRun();
+	if (session.startSequencer) {
+		session.startSequencer = false;
+		std::vector<std::string> playback = session.sequencer.dryRun();
 		out << "=== playback\n";
 		for (const std::string& line : playback) out << line << "\n";
 	}
@@ -108,31 +108,31 @@ void ofApp::dumpState(std::ostream& out)
 {
 	out << std::fixed << std::setprecision(4);
 	out << "=== bars\n";
-	for (const auto& bar : sharedData.barsOrdered) {
+	for (const auto& bar : session.sharedData.barsOrdered) {
 		int ndx = bar.first;
 		out << "bar " << ndx << " " << bar.second;
-		if (sharedData.numerator.count(ndx)) out << " time " << sharedData.numerator[ndx] << "/" << sharedData.denominator[ndx];
-		if (sharedData.tempoMs.count(ndx)) out << " tempoMs " << sharedData.tempoMs[ndx];
-		if (sharedData.tempo.count(ndx)) out << " tempo " << sharedData.tempo[ndx];
-		if (sharedData.beatAtValues.count(ndx)) out << " beatat " << join(sharedData.beatAtValues[ndx]);
+		if (session.sharedData.numerator.count(ndx)) out << " time " << session.sharedData.numerator[ndx] << "/" << session.sharedData.denominator[ndx];
+		if (session.sharedData.tempoMs.count(ndx)) out << " tempoMs " << session.sharedData.tempoMs[ndx];
+		if (session.sharedData.tempo.count(ndx)) out << " tempo " << session.sharedData.tempo[ndx];
+		if (session.sharedData.beatAtValues.count(ndx)) out << " beatat " << join(session.sharedData.beatAtValues[ndx]);
 		out << "\n";
-		auto lines = sharedData.barLines.find(bar.second);
-		if (lines != sharedData.barLines.end()) out << "  text " << escaped(lines->second) << "\n";
+		auto lines = session.sharedData.barLines.find(bar.second);
+		if (lines != session.sharedData.barLines.end()) out << "  text " << escaped(lines->second) << "\n";
 	}
 	out << "=== loops\n";
-	for (const auto& loop : sharedData.loopsOrdered) {
+	for (const auto& loop : session.sharedData.loopsOrdered) {
 		out << "loop " << loop.first << " " << loop.second << ":";
-		auto data = sharedData.loopData.find(loop.first);
-		if (data != sharedData.loopData.end()) {
+		auto data = session.sharedData.loopData.find(loop.first);
+		if (data != session.sharedData.loopData.end()) {
 			for (int bar : data->second) {
-				auto name = sharedData.loopsOrdered.find(bar);
-				out << " " << (name != sharedData.loopsOrdered.end() ? name->second : std::to_string(bar));
+				auto name = session.sharedData.loopsOrdered.find(bar);
+				out << " " << (name != session.sharedData.loopsOrdered.end() ? name->second : std::to_string(bar));
 			}
 		}
 		out << "\n";
 	}
 	out << "=== instruments\n";
-	for (auto& instIt : sharedData.instruments) {
+	for (auto& instIt : session.sharedData.instruments) {
 		Instrument& inst = instIt.second;
 		out << "inst " << instIt.first << " " << inst.getName() << (inst.isRhythm() ? " rhythm" : "") << (inst.isMuted() ? " muted" : "")
 			<< (inst.isToBeMuted() ? " tomute" : "") << (inst.isToBeUnmuted() ? " tounmute" : "");
@@ -158,29 +158,29 @@ void ofApp::dumpState(std::ostream& out)
 		dumpBarMap(out, "scoreDynamics", inst.scoreDynamics);
 	}
 	out << "=== settings\n";
-	out << "ppqn " << sharedData.PPQN << "\n";
+	out << "ppqn " << session.sharedData.PPQN << "\n";
 	out << "framerate " << ofGetTargetFrameRate() << "\n";
-	out << "audio samplerate " << sampleRate << " buffersize " << bufferSize << " inchannels " << inChannels << " outchannels " << outChannels << "\n";
-	out << "clicktrack " << (sharedData.clickTrack.isOn() ? "on" : "off") << " tune " << sharedData.clickTrack.getTune() << " volume " << sharedData.clickTrack.getVolume() << "\n";
-	out << "accoffset " << (accOffsetSet ? std::to_string(accOffsetCoef) : std::string("default")) << "\n";
-	out << "session " << (editors[whichPane].getSessionActivity() ? "active" : "inactive") << "\n";
+	out << "audio samplerate " << session.sampleRate << " buffersize " << session.bufferSize << " inchannels " << session.inChannels << " outchannels " << session.outChannels << "\n";
+	out << "clicktrack " << (session.sharedData.clickTrack.isOn() ? "on" : "off") << " tune " << session.sharedData.clickTrack.getTune() << " volume " << session.sharedData.clickTrack.getVolume() << "\n";
+	out << "accoffset " << (session.accOffsetSet ? std::to_string(session.accOffsetCoef) : std::string("default")) << "\n";
+	out << "session " << (editors[session.whichPane].getSessionActivity() ? "active" : "inactive") << "\n";
 	out << "instorder";
-	for (const auto& ordered : sharedData.instrumentIndexesOrdered) out << " " << ordered.second;
+	for (const auto& ordered : session.sharedData.instrumentIndexesOrdered) out << " " << ordered.second;
 	out << "\n";
 	out << "notedur";
-	for (const auto& noteDur : noteDurSettings) out << " " << noteDur.first << " " << noteDur.second;
+	for (const auto& noteDur : session.noteDurSettings) out << " " << noteDur.first << " " << noteDur.second;
 	out << "\n";
 	out << "=== lists\n";
-	for (const auto& list : listIndexes) {
+	for (const auto& list : session.listIndexes) {
 		out << "list " << list.first << ":";
-		auto items = listMap.find(list.second);
-		if (items != listMap.end()) {
+		auto items = session.listMap.find(list.second);
+		if (items != session.listMap.end()) {
 			for (const std::string& item : items->second) out << " " << item;
 		}
 		out << "\n";
 	}
 	out << "=== functions\n";
-	for (const auto& func : functionIndexes) out << "function " << func.first << "\n";
+	for (const auto& func : session.functionIndexes) out << "function " << func.first << "\n";
 	// the tokens of the editor every note highlights, by instrument and bar (see storeEditorNoteSpans()), e.g. c'4 or \1+c'4 for a copied bar
 	out << "=== editor highlights\n";
 	for (const auto& bar : editorNoteSpans) {
@@ -193,11 +193,11 @@ void ofApp::dumpState(std::ostream& out)
 	}
 	// every highlighted token must be in the editor where the note highlights it, also after its line changed (e.g. by \editor.alignment)
 	std::map<int, std::string> linesById;
-	for (auto& line : editors[whichPane].allLines) linesById[editors[whichPane].getLineId(line.first)] = line.second.str;
+	for (auto& line : editors[session.whichPane].allLines) linesById[editors[session.whichPane].getLineId(line.first)] = line.second.str;
 	for (const auto& bar : editorNoteSpans) {
 		for (size_t n = 0; n < bar.second.size(); n++) {
 			for (const EditorNoteSpan& span : bar.second[n]) {
-				if (span.pane != whichPane) continue;
+				if (span.pane != session.whichPane) continue;
 				auto line = linesById.find(span.lineId);
 				std::string shown = (line == linesById.end() || span.start < 0 || span.start >= (int)line->second.size() ? std::string("(no line)") : line->second.substr(span.start, span.length));
 				if (shown != span.text) {
@@ -209,5 +209,5 @@ void ofApp::dumpState(std::ostream& out)
 	}
 	// the text of the editor at the end, which commands like \editor.alignment change
 	out << "=== editor\n";
-	for (const auto& line : editors[whichPane].allLines) out << line.second.str << "\n";
+	for (const auto& line : editors[session.whichPane].allLines) out << line.second.str << "\n";
 }

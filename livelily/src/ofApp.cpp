@@ -34,9 +34,9 @@ void ofApp::setup()
 	// setup() runs on the main thread, store its id to detect calls from other threads
 	mainThreadId = std::this_thread::get_id();
 	// the engine reaches the user interface through this app (see frontend.h), and its audio stream calls this app (see audio.h)
-	frontend = this;
-	audioCallback = this;
-	dataDirectory = ofToDataPath("", true);
+	session.frontend = this;
+	session.audioCallback = this;
+	session.dataDirectory = ofToDataPath("", true);
 	brightnessCoeff = 0.85;
 	backgroundColor = ofColor::black;
 	foregroundColor = ofColor::white;
@@ -50,38 +50,38 @@ void ofApp::setup()
 
 	unsigned int framerate = 60;
 
-	sequencer.setup(&sharedData);
-	sequencer.setMidiOutput(midi.get());
-	sequencer.setFrontend(this);
+	session.sequencer.setup(&session.sharedData);
+	session.sequencer.setMidiOutput(session.midi.get());
+	session.sequencer.setFrontend(this);
 
 	// define audio properties
-	sampleRate = 48000;
-	bufferSize = 256;
-	inChannels = 2;
-	outChannels = 2;
+	session.sampleRate = 48000;
+	session.bufferSize = 256;
+	session.inChannels = 2;
+	session.outChannels = 2;
 	//audioDevID = 1;
-	inSoundDeviceSet = false;
-	outSoundDeviceSet = false;
-	pyoSet = false;
+	session.inSoundDeviceSet = false;
+	session.outSoundDeviceSet = false;
+	session.pyoSet = false;
 
-	startSequencer = false;
+	session.startSequencer = false;
 
 	notesID = 0;
-	parsingBar = false;
-	parsingBars = false;
-	parsingLoop = false;
-	storingFunction = false;
-	storingList = false;
-	barsIterCounter = 0;
-	numBarsToParse = 0;
-	numBarsToParseSet = false;
-	barsCmdNumBars = 0;
-	firstInstForBarsIndex = 0;
-	firstInstForBarsSet = false;
-	checkIfAllPartsReceivedBarData = false;
-	lastFunctionIndex = 0;
-	storingFunctionIndex = 0;
-	functionBodyDepth = 0;
+	session.parsingBar = false;
+	session.parsingBars = false;
+	session.parsingLoop = false;
+	session.storingFunction = false;
+	session.storingList = false;
+	session.barsIterCounter = 0;
+	session.numBarsToParse = 0;
+	session.numBarsToParseSet = false;
+	session.barsCmdNumBars = 0;
+	session.firstInstForBarsIndex = 0;
+	session.firstInstForBarsSet = false;
+	session.checkIfAllPartsReceivedBarData = false;
+	session.lastFunctionIndex = 0;
+	session.storingFunctionIndex = 0;
+	session.functionBodyDepth = 0;
 	fullScreen = false;
 	isWindowResized = false;
 	windowResizeTimeStamp = 0;
@@ -93,19 +93,19 @@ void ofApp::setup()
 	ofSetWindowTitle("LiveLily");
 
 	//oscReceiver->setup(OSCPORT);
-	oscReceiverIsSet = false;
+	session.oscReceiverIsSet = false;
 	// waiting time to receive a response from a score part server is one frame at 60 FPS
-	scorePartResponseTime = (uint64_t)((1000.0 / 60.0) + 0.5);
+	session.scorePartResponseTime = (uint64_t)((1000.0 / 60.0) + 0.5);
 
-	sharedData.screenWidth = ofGetWindowWidth();
-	sharedData.screenHeight = ofGetWindowHeight();
-	sharedData.middleOfScreenX = sharedData.screenWidth / 2;
-	sharedData.middleOfScreenY = sharedData.screenHeight / 2;
-	sharedData.staffXOffset = sharedData.middleOfScreenX;
-	sharedData.staffWidth = sharedData.screenWidth;
+	session.sharedData.screenWidth = ofGetWindowWidth();
+	session.sharedData.screenHeight = ofGetWindowHeight();
+	session.sharedData.middleOfScreenX = session.sharedData.screenWidth / 2;
+	session.sharedData.middleOfScreenY = session.sharedData.screenHeight / 2;
+	session.sharedData.staffXOffset = session.sharedData.middleOfScreenX;
+	session.sharedData.staffWidth = session.sharedData.screenWidth;
 	numBarsToDisplay = 2;
 
-	sharedData.numInstruments = 0;
+	session.sharedData.numInstruments = 0;
 
 	shiftPressed = false;
 	ctrlPressed = false;
@@ -122,7 +122,7 @@ void ofApp::setup()
 
 	ofTrueTypeFont::setGlobalDpi(72);
 	fontSize = 18;
-	whichPane = 0;
+	session.whichPane = 0;
 	Editor editor;
 	editors[0] = editor;
 	editors[0].setActivity(true);
@@ -135,25 +135,25 @@ void ofApp::setup()
 	// the function below calls setFontSize() which in turn sets various values
 	// including the tracebackBase variable that is used to determine the coordinates and offsets of the panes
 	setFontSize(true);
-	screenSplitHorizontal = sharedData.screenWidth;
+	screenSplitHorizontal = session.sharedData.screenWidth;
 
-	sharedData.tempoMs[0] = 500;
-	sharedData.BPMMultiplier[0] = 1;
-	sharedData.beatAtDifferentThanDivisor[0] = false;
-	sharedData.beatAtValCounter = 0;
-	sharedData.numerator[0] = 4;
-	sharedData.denominator[0] = 4;
-	sharedData.numBeats[0] = 4;
+	session.sharedData.tempoMs[0] = 500;
+	session.sharedData.BPMMultiplier[0] = 1;
+	session.sharedData.beatAtDifferentThanDivisor[0] = false;
+	session.sharedData.beatAtValCounter = 0;
+	session.sharedData.numerator[0] = 4;
+	session.sharedData.denominator[0] = 4;
+	session.sharedData.numBeats[0] = 4;
 
-	barError = false;
+	session.barError = false;
 
-	sharedData.loopIndex = 0;
-	sharedData.tempLoopIndex = 0;
-	sharedData.thisBarIndex = 0;
-	sharedData.beatCounter = 0; // this is controlled by the sequencer
-	sharedData.barCounter = 0; // also controlled by the sequencer
-	sharedData.numBars = sharedData.prevNumBars = 1;
-	sharedData.thisPosition = sharedData.prevPosition = 0;
+	session.sharedData.loopIndex = 0;
+	session.sharedData.tempLoopIndex = 0;
+	session.sharedData.thisBarIndex = 0;
+	session.sharedData.beatCounter = 0; // this is controlled by the sequencer
+	session.sharedData.barCounter = 0; // also controlled by the sequencer
+	session.sharedData.numBars = session.sharedData.prevNumBars = 1;
+	session.sharedData.thisPosition = session.sharedData.prevPosition = 0;
 	showBarCount = false;
 	showTempo = false;
 
@@ -162,77 +162,77 @@ void ofApp::setup()
 	//showScope = false;
 	showScore = false;
 	scoreType = 0;
-	seqResolution = 16;
-	sharedData.longestInstNameWidth = 0;
-	sharedData.staffLinesDist = 10.0;
-	sharedData.scoreFontSize = 35;
-	instFontSize = sharedData.scoreFontSize/3.5;
+	session.seqResolution = 16;
+	session.sharedData.longestInstNameWidth = 0;
+	session.sharedData.staffLinesDist = 10.0;
+	session.sharedData.scoreFontSize = 35;
+	instFontSize = session.sharedData.scoreFontSize/3.5;
 	instFont.load("Monaco.ttf", instFontSize);
-	sharedData.notesXStartPnt = 0;
-	sharedData.blankSpace = 10;
-	sharedData.animate = false;
-	sharedData.setAnimation = false;
-	sharedData.beatAnimate = false;
-	sharedData.setBeatAnimation = false;
-	sharedData.beatViz = false;
-	sharedData.beatTypeCommand = false;
-	sharedData.beatVizType = 1;
-	sharedData.beatVizDegrade = BEATVIZBRIGHTNESS;
-	sharedData.beatVizTimeStamp = 0;
-	sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData.tempoMs[0] / 4.0);
-	sharedData.beatVizRampStart = sharedData.tempoMs[0] / 4;
-	sharedData.beatUpdated = false;
-	sharedData.noteWidth = 0;
-	sharedData.noteHeight = 0;
-	sharedData.allStaffDiffs = 0;
-	sharedData.yStartPnts[0] = sharedData.yStartPnts[1] = sharedData.yStartPnts[2] = 0;
-	sharedData.maxBarFirstStaffAnchor = 0;
+	session.sharedData.notesXStartPnt = 0;
+	session.sharedData.blankSpace = 10;
+	session.sharedData.animate = false;
+	session.sharedData.setAnimation = false;
+	session.sharedData.beatAnimate = false;
+	session.sharedData.setBeatAnimation = false;
+	session.sharedData.beatViz = false;
+	session.sharedData.beatTypeCommand = false;
+	session.sharedData.beatVizType = 1;
+	session.sharedData.beatVizDegrade = BEATVIZBRIGHTNESS;
+	session.sharedData.beatVizTimeStamp = 0;
+	session.sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)session.sharedData.tempoMs[0] / 4.0);
+	session.sharedData.beatVizRampStart = session.sharedData.tempoMs[0] / 4;
+	session.sharedData.beatUpdated = false;
+	session.sharedData.noteWidth = 0;
+	session.sharedData.noteHeight = 0;
+	session.sharedData.allStaffDiffs = 0;
+	session.sharedData.yStartPnts[0] = session.sharedData.yStartPnts[1] = session.sharedData.yStartPnts[2] = 0;
+	session.sharedData.maxBarFirstStaffAnchor = 0;
 
 	// various score variables
 	scoreOrientation = 0;
-	scoreXOffset = sharedData.screenWidth / 2;
+	scoreXOffset = session.sharedData.screenWidth / 2;
 	scoreYOffset = 0;
 	scoreXStartPnt = 0;
-	scoreBackgroundWidth = sharedData.screenWidth/2;
-	scoreBackgroundHeight = sharedData.tracebackBase; // - cursorHeight;
+	scoreBackgroundWidth = session.sharedData.screenWidth/2;
+	scoreBackgroundHeight = session.sharedData.tracebackBase; // - cursorHeight;
 	scoreMoveXCommand = false;
 	scoreMoveYCommand = false;
 	mustUpdateScore = false;
 	scoreUpdated = false;
 	scoreChangeOnLastBar = false;
 	// piano roll variables, with the keys of a piano, from A0 to C8 (see setPianoRollRange())
-	sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+	session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
 	setPianoRollRange(21, 108);
-	sharedData.pianoRollMinDur = (scoreBackgroundWidth - sharedData.pianoRollKeysWidth) / (float)MINDUR;
+	session.sharedData.pianoRollMinDur = (scoreBackgroundWidth - session.sharedData.pianoRollKeysWidth) / (float)MINDUR;
 
-	maestroToggleSet = false;
-	receivingMaestro = false;
-	maestroValNdx = 0;
-	maestroInitialized = false;
-	maestroBeatsIn = 1;
-	maestroValThresh = 7.5;
-	maestroTimeStamp = ofGetElapsedTimeMillis();
-	maestroAddress = "/maestro";
-	maestroToggleAddress = "/toggle";
-	maestroLevareAddress = "/levare";
+	session.maestroToggleSet = false;
+	session.receivingMaestro = false;
+	session.maestroValNdx = 0;
+	session.maestroInitialized = false;
+	session.maestroBeatsIn = 1;
+	session.maestroValThresh = 7.5;
+	session.maestroTimeStamp = ofGetElapsedTimeMillis();
+	session.maestroAddress = "/maestro";
+	session.maestroToggleAddress = "/toggle";
+	session.maestroLevareAddress = "/levare";
 
-	sharedData.pyStdoutStr = "";
-	sharedData.pyStdoutStrNdx = 0;
-	sharedData.typePyStrCharByChar = true;
-	sharedData.typePyStrLineByLine = false;
-	sharedData.typePyStr = false;
-	sharedData.whichPyPane = 0;
-	sharedData.pyStdoutKeyModNdx = 0;
-	sharedData.pyStdoutStrVecNdx = 0;
+	session.sharedData.pyStdoutStr = "";
+	session.sharedData.pyStdoutStrNdx = 0;
+	session.sharedData.typePyStrCharByChar = true;
+	session.sharedData.typePyStrLineByLine = false;
+	session.sharedData.typePyStr = false;
+	session.sharedData.whichPyPane = 0;
+	session.sharedData.pyStdoutKeyModNdx = 0;
+	session.sharedData.pyStdoutStrVecNdx = 0;
 
-	correctOnSameOctaveOnly = true;
+	session.correctOnSameOctaveOnly = true;
 
-	serialPortOpen = false;
+	session.serialPortOpen = false;
 
-	sharedData.PPQN = 24;
-	sharedData.PPQNCounter = 0;
+	session.sharedData.PPQN = 24;
+	session.sharedData.PPQNCounter = 0;
 	// get the ms duration of the PPQM
-	sharedData.PPQNPerUs[0] = (uint64_t)(sharedData.tempoMs[0] / (float)sharedData.PPQN) * 1000;
+	session.sharedData.PPQNPerUs[0] = (uint64_t)(session.sharedData.tempoMs[0] / (float)session.sharedData.PPQN) * 1000;
 
 	exiting = false;
 
@@ -241,20 +241,20 @@ void ofApp::setup()
 
 	// set the notes chars
 	for (int i = 2; i < 9; i++) {
-		noteChars[i-2] = char((i%7)+97);
+		session.noteChars[i-2] = char((i%7)+97);
 	}
-	noteChars[7] = char(114); // "r" for rest
+	session.noteChars[7] = char(114); // "r" for rest
 
 	// store the articulation names std::strings
 	std::string articulSymsLocal[8] = {"none", "marcato", "trill", "tenuto", \
 								  "staccatissimo", "accent", "staccato", "portando"};
 	for (int i = 0; i < 8; i++) {
-		sharedData.articulSyms[i] = articulSymsLocal[i];
+		session.sharedData.articulSyms[i] = articulSymsLocal[i];
 	}
 
 	// create the beat rectangle transparency cosine table
 	for (int i = 0; i <= BEATVIZBRIGHTNESS; i++) {
-		sharedData.beatVizCosTab[i] = (int)(((cos(((float)i/(float)(BEATVIZBRIGHTNESS+1))*M_PI) * -0.5) + 0.5) * 255);
+		session.sharedData.beatVizCosTab[i] = (int)(((cos(((float)i/(float)(BEATVIZBRIGHTNESS+1))*M_PI) * -0.5) + 0.5) * 255);
 	}
 
 	/* Colors used for syntax highlighting for LiveLily
@@ -281,287 +281,287 @@ void ofApp::setup()
 	// first level commands
 	// the commands of LiveLily, from the table of commands (see commandTable() in parser.cpp)
 	// so that a command added there is colored, autocompleted, and reserved as a name (see reservedNames below)
-	for (const auto& command : commandTable()) commandsMap[livelily][command.first[1]][command.first] = Colors::fuchsia;
-	commandsMap[livelily]['j'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['q'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['x'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['z'][""] = toColor(foregroundColor);
+	for (const auto& command : session.commandTable()) session.commandsMap[Session::livelily][command.first[1]][command.first] = Colors::fuchsia;
+	session.commandsMap[Session::livelily]['j'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['q'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['x'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['z'][""] = toColor(foregroundColor);
 
 	// methods
-	commandsMap[livelily]['a']["accoffset"] = Colors::violet;
-	commandsMap[livelily]['a']["add"] = Colors::violet;
-	commandsMap[livelily]['a']["alignment"] = Colors::violet;
-	commandsMap[livelily]['a']["autobrackets"] = Colors::violet;
-	commandsMap[livelily]['a']["autocomplete"] = Colors::violet;
-	commandsMap[livelily]['a']["animation"] = Colors::violet;
-	commandsMap[livelily]['b']["beatsin"] = Colors::violet;
-	commandsMap[livelily]['b']["beattype"] = Colors::violet;
-	commandsMap[livelily]['b']["bind"] = Colors::violet;
-	commandsMap[livelily]['c']["check"] = Colors::violet;
-	commandsMap[livelily]['c']["clear"] = Colors::violet;
-	commandsMap[livelily]['c']["colors"] = Colors::violet;
-	commandsMap[livelily]['c']["correct"] = Colors::violet;
-	commandsMap[livelily]['c']["cursor"] = Colors::violet;
-	commandsMap[livelily]['d']["delay"] = Colors::violet;
-	commandsMap[livelily]['f']["finish"] = Colors::violet;
-	commandsMap[livelily]['f']["fullscreen"] = Colors::violet;
-	commandsMap[livelily]['g']["goto"] = Colors::violet;
-	commandsMap[livelily]['h']["hide"] = Colors::violet;
-	commandsMap[livelily]['i']["init"] = Colors::violet;
-	commandsMap[livelily]['l']["levareaddr"] = Colors::violet;
-	commandsMap[livelily]['l']["locate"] = Colors::violet;
-	commandsMap[livelily]['m']["mainaddr"] = Colors::violet;
-	commandsMap[livelily]['m']["map"] = Colors::violet;
-	commandsMap[livelily]['m']["midichan"] = Colors::violet;
-	commandsMap[livelily]['m']["midiport"] = Colors::violet;
-	commandsMap[livelily]['m']["movex"] = Colors::violet;
-	commandsMap[livelily]['m']["movey"] = Colors::violet;
-	commandsMap[livelily]['n']["normal"] = Colors::violet;
-	commandsMap[livelily]['n']["numbars"] = Colors::violet;
-	commandsMap[livelily]['o']["onrelease"] = Colors::violet;
-	commandsMap[livelily]['p']["play"] = Colors::violet;
-	commandsMap[livelily]['r']["recenter"] = Colors::violet;
-	commandsMap[livelily]['r']["release"] = Colors::violet;
-	commandsMap[livelily]['r']["remove"] = Colors::violet;
-	commandsMap[livelily]['s']["send"] = Colors::violet;
-	commandsMap[livelily]['s']["sendmidi"] = Colors::violet;
-	commandsMap[livelily]['s']["setargs"] = Colors::violet;
-	commandsMap[livelily]['s']["setup"] = Colors::violet;
-	commandsMap[livelily]['s']["sendto"] = Colors::violet;
-	commandsMap[livelily]['s']["seqres"] = Colors::violet;
-	commandsMap[livelily]['s']["show"] = Colors::violet;
-	commandsMap[livelily]['s']["showbeat"] = Colors::violet;
-	commandsMap[livelily]['s']["sndfont"] = Colors::violet;
-	commandsMap[livelily]['s']["stop"] = Colors::violet;
-	commandsMap[livelily]['s']["stopnow"] = Colors::violet;
-	commandsMap[livelily]['t']["toggleaddr"] = Colors::violet;
-	commandsMap[livelily]['t']["transpose"] = Colors::violet;
-	commandsMap[livelily]['t']["traverse"] = Colors::violet;
-	commandsMap[livelily]['t']["tune"] = Colors::violet;
-	commandsMap[livelily]['u']["unbind"] = Colors::violet;
-	commandsMap[livelily]['u']["update"] = Colors::violet;
-	commandsMap[livelily]['v']["val"] = Colors::violet;
-	commandsMap[livelily]['v']["valndx"] = Colors::violet;
-	commandsMap[livelily]['v']["valthresh"] = Colors::violet;
-	commandsMap[livelily]['v']["volume"] = Colors::violet;
+	session.commandsMap[Session::livelily]['a']["accoffset"] = Colors::violet;
+	session.commandsMap[Session::livelily]['a']["add"] = Colors::violet;
+	session.commandsMap[Session::livelily]['a']["alignment"] = Colors::violet;
+	session.commandsMap[Session::livelily]['a']["autobrackets"] = Colors::violet;
+	session.commandsMap[Session::livelily]['a']["autocomplete"] = Colors::violet;
+	session.commandsMap[Session::livelily]['a']["animation"] = Colors::violet;
+	session.commandsMap[Session::livelily]['b']["beatsin"] = Colors::violet;
+	session.commandsMap[Session::livelily]['b']["beattype"] = Colors::violet;
+	session.commandsMap[Session::livelily]['b']["bind"] = Colors::violet;
+	session.commandsMap[Session::livelily]['c']["check"] = Colors::violet;
+	session.commandsMap[Session::livelily]['c']["clear"] = Colors::violet;
+	session.commandsMap[Session::livelily]['c']["colors"] = Colors::violet;
+	session.commandsMap[Session::livelily]['c']["correct"] = Colors::violet;
+	session.commandsMap[Session::livelily]['c']["cursor"] = Colors::violet;
+	session.commandsMap[Session::livelily]['d']["delay"] = Colors::violet;
+	session.commandsMap[Session::livelily]['f']["finish"] = Colors::violet;
+	session.commandsMap[Session::livelily]['f']["fullscreen"] = Colors::violet;
+	session.commandsMap[Session::livelily]['g']["goto"] = Colors::violet;
+	session.commandsMap[Session::livelily]['h']["hide"] = Colors::violet;
+	session.commandsMap[Session::livelily]['i']["init"] = Colors::violet;
+	session.commandsMap[Session::livelily]['l']["levareaddr"] = Colors::violet;
+	session.commandsMap[Session::livelily]['l']["locate"] = Colors::violet;
+	session.commandsMap[Session::livelily]['m']["mainaddr"] = Colors::violet;
+	session.commandsMap[Session::livelily]['m']["map"] = Colors::violet;
+	session.commandsMap[Session::livelily]['m']["midichan"] = Colors::violet;
+	session.commandsMap[Session::livelily]['m']["midiport"] = Colors::violet;
+	session.commandsMap[Session::livelily]['m']["movex"] = Colors::violet;
+	session.commandsMap[Session::livelily]['m']["movey"] = Colors::violet;
+	session.commandsMap[Session::livelily]['n']["normal"] = Colors::violet;
+	session.commandsMap[Session::livelily]['n']["numbars"] = Colors::violet;
+	session.commandsMap[Session::livelily]['o']["onrelease"] = Colors::violet;
+	session.commandsMap[Session::livelily]['p']["play"] = Colors::violet;
+	session.commandsMap[Session::livelily]['r']["recenter"] = Colors::violet;
+	session.commandsMap[Session::livelily]['r']["release"] = Colors::violet;
+	session.commandsMap[Session::livelily]['r']["remove"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["send"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["sendmidi"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["setargs"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["setup"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["sendto"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["seqres"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["show"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["showbeat"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["sndfont"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["stop"] = Colors::violet;
+	session.commandsMap[Session::livelily]['s']["stopnow"] = Colors::violet;
+	session.commandsMap[Session::livelily]['t']["toggleaddr"] = Colors::violet;
+	session.commandsMap[Session::livelily]['t']["transpose"] = Colors::violet;
+	session.commandsMap[Session::livelily]['t']["traverse"] = Colors::violet;
+	session.commandsMap[Session::livelily]['t']["tune"] = Colors::violet;
+	session.commandsMap[Session::livelily]['u']["unbind"] = Colors::violet;
+	session.commandsMap[Session::livelily]['u']["update"] = Colors::violet;
+	session.commandsMap[Session::livelily]['v']["val"] = Colors::violet;
+	session.commandsMap[Session::livelily]['v']["valndx"] = Colors::violet;
+	session.commandsMap[Session::livelily]['v']["valthresh"] = Colors::violet;
+	session.commandsMap[Session::livelily]['v']["volume"] = Colors::violet;
 
 	// arguments
-	commandsMap[livelily]['a']["all"] = Colors::skyBlue;
-	commandsMap[livelily]['a']["alto"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["barcount"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["barstart"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["bass"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["beat"] = Colors::skyBlue;
-	commandsMap[livelily]['c']["char"] = Colors::skyBlue;
-	commandsMap[livelily]['f']["fr"] = Colors::skyBlue;
-	commandsMap[livelily]['f']["framerate"] = Colors::skyBlue;
-	commandsMap[livelily]['h']["hor"] = Colors::skyBlue;
-	commandsMap[livelily]['i']["immediately"] = Colors::skyBlue;
-	commandsMap[livelily]['i']["invert"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["line"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["localhost"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["loopstart"] = Colors::skyBlue;
-	commandsMap[livelily]['n']["notes"] = Colors::skyBlue;
-	commandsMap[livelily]['o']["off"] = Colors::skyBlue;
-	commandsMap[livelily]['o']["on"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['a']["all"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['a']["alto"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["barcount"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["barstart"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["bass"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["beat"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['c']["char"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['f']["fr"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['f']["framerate"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['h']["hor"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['i']["immediately"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['i']["invert"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["line"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["localhost"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["loopstart"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['n']["notes"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['o']["off"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['o']["on"] = Colors::skyBlue;
 	// the widths of the units of \editor.alignment
-	commandsMap[livelily]['s']["short"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["long"] = Colors::skyBlue;
-	commandsMap[livelily]['o']["onlast"] = Colors::skyBlue;
-	commandsMap[livelily]['o']["onoctave"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["perc"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["percussion"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["pianoroll"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["sequencer"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["seq"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["python"] = Colors::skyBlue;
-	commandsMap[livelily]['r']["reset"] = Colors::skyBlue;
-	commandsMap[livelily]['r']["rhythm"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["scope"] = Colors::skyBlue;
-	commandsMap[livelily]['t']["tempo"] = Colors::skyBlue;
-	commandsMap[livelily]['t']["treble"] = Colors::skyBlue;
-	commandsMap[livelily]['v']["vert"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["short"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["long"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['o']["onlast"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['o']["onoctave"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["perc"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["percussion"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["pianoroll"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["sequencer"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["seq"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["python"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['r']["reset"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['r']["rhythm"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["scope"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['t']["tempo"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['t']["treble"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['v']["vert"] = Colors::skyBlue;
 
 	// color names, same color as arguments above
-	commandsMap[livelily]['a']["aliceBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['a']["antiqueWhite"] = Colors::skyBlue;
-	commandsMap[livelily]['a']["aqua"] = Colors::skyBlue;
-	commandsMap[livelily]['a']["aquamarine"] = Colors::skyBlue;
-	commandsMap[livelily]['a']["azure"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["black"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["blue"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["beige"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["bisque"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["blanchedAlmond"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["blueViolet"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["brown"] = Colors::skyBlue;
-	commandsMap[livelily]['b']["burlyWood"] = Colors::skyBlue;
-	commandsMap[livelily]['c']["cyan"] = Colors::skyBlue;
-	commandsMap[livelily]['c']["cadetBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['c']["chartreuse"] = Colors::skyBlue;
-	commandsMap[livelily]['c']["chocolate"] = Colors::skyBlue;
-	commandsMap[livelily]['c']["coral"] = Colors::skyBlue;
-	commandsMap[livelily]['c']["cornflowerBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['c']["cornsilk"] = Colors::skyBlue;
-	commandsMap[livelily]['c']["crimson"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkCyan"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkGoldenRod"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkGray"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkGrey"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkKhaki"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkMagenta"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkOliveGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkOrange"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkOrchid"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkRed"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkSalmon"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkSeaGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkSlateBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkSlateGray"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkSlateGrey"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkTurquoise"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["darkViolet"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["deepPink"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["deepSkyBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["dimGray"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["dimGrey"] = Colors::skyBlue;
-	commandsMap[livelily]['d']["dodgerBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['f']["fireBrick"] = Colors::skyBlue;
-	commandsMap[livelily]['f']["floralWhite"] = Colors::skyBlue;
-	commandsMap[livelily]['f']["forestGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['f']["fuchsia"] = Colors::skyBlue;
-	commandsMap[livelily]['g']["green"] = Colors::skyBlue;
-	commandsMap[livelily]['g']["gray"] = Colors::skyBlue;
-	commandsMap[livelily]['g']["gainsboro"] = Colors::skyBlue;
-	commandsMap[livelily]['g']["ghostWhite"] = Colors::skyBlue;
-	commandsMap[livelily]['g']["gold"] = Colors::skyBlue;
-	commandsMap[livelily]['g']["goldenRod"] = Colors::skyBlue;
-	commandsMap[livelily]['g']["grey"] = Colors::skyBlue;
-	commandsMap[livelily]['g']["greenYellow"] = Colors::skyBlue;
-	commandsMap[livelily]['h']["honeyDew"] = Colors::skyBlue;
-	commandsMap[livelily]['h']["hotPink"] = Colors::skyBlue;
-	commandsMap[livelily]['i']["indianRed "] = Colors::skyBlue;
-	commandsMap[livelily]['i']["indigo "] = Colors::skyBlue;
-	commandsMap[livelily]['i']["ivory"] = Colors::skyBlue;
-	commandsMap[livelily]['k']["khaki"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lavender"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lavenderBlush"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lawnGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lemonChiffon"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightCoral"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightCyan"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightGoldenRodYellow"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightGray"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightGrey"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightPink"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightSalmon"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightSeaGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightSkyBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightSlateGray"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightSlateGrey"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightSteelBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lightYellow"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["lime"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["limeGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['l']["linen"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["magenta"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["maroon"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mediumAquaMarine"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mediumBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mediumOrchid"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mediumPurple"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mediumSeaGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mediumSlateBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mediumSpringGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mediumTurquoise"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mediumVioletRed"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["midnightBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mintCream"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["mistyRose"] = Colors::skyBlue;
-	commandsMap[livelily]['m']["moccasin"] = Colors::skyBlue;
-	commandsMap[livelily]['n']["navajoWhite"] = Colors::skyBlue;
-	commandsMap[livelily]['n']["navy"] = Colors::skyBlue;
-	commandsMap[livelily]['o']["oldLace"] = Colors::skyBlue;
-	commandsMap[livelily]['o']["olive"] = Colors::skyBlue;
-	commandsMap[livelily]['o']["oliveDrab"] = Colors::skyBlue;
-	commandsMap[livelily]['o']["orange"] = Colors::skyBlue;
-	commandsMap[livelily]['o']["orangeRed"] = Colors::skyBlue;
-	commandsMap[livelily]['o']["orchid"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["paleGoldenRod"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["paleGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["paleTurquoise"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["paleVioletRed"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["papayaWhip"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["peachPuff"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["peru"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["pink"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["plum"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["powderBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['p']["purple"] = Colors::skyBlue;
-	commandsMap[livelily]['r']["red"] = Colors::skyBlue;
-	commandsMap[livelily]['r']["rosyBrown"] = Colors::skyBlue;
-	commandsMap[livelily]['r']["royalBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["saddleBrown"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["salmon"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["sandyBrown"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["seaGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["seaShell"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["sienna"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["silver"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["skyBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["slateBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["slateGray"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["slateGrey"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["snow"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["springGreen"] = Colors::skyBlue;
-	commandsMap[livelily]['s']["steelBlue"] = Colors::skyBlue;
-	commandsMap[livelily]['t']["tan"] = Colors::skyBlue;
-	commandsMap[livelily]['t']["teal"] = Colors::skyBlue;
-	commandsMap[livelily]['t']["thistle"] = Colors::skyBlue;
-	commandsMap[livelily]['t']["tomato"] = Colors::skyBlue;
-	commandsMap[livelily]['t']["turquoise"] = Colors::skyBlue;
-	commandsMap[livelily]['v']["violet"] = Colors::skyBlue;
-	commandsMap[livelily]['w']["white"] = Colors::skyBlue;
-	commandsMap[livelily]['w']["wheat"] = Colors::skyBlue;
-	commandsMap[livelily]['w']["whiteSmoke"] = Colors::skyBlue;
-	commandsMap[livelily]['y']["yellow"] = Colors::skyBlue;
-	commandsMap[livelily]['y']["yellowGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['a']["aliceBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['a']["antiqueWhite"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['a']["aqua"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['a']["aquamarine"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['a']["azure"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["black"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["blue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["beige"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["bisque"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["blanchedAlmond"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["blueViolet"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["brown"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['b']["burlyWood"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['c']["cyan"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['c']["cadetBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['c']["chartreuse"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['c']["chocolate"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['c']["coral"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['c']["cornflowerBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['c']["cornsilk"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['c']["crimson"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkCyan"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkGoldenRod"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkGray"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkGrey"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkKhaki"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkMagenta"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkOliveGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkOrange"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkOrchid"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkRed"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkSalmon"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkSeaGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkSlateBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkSlateGray"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkSlateGrey"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkTurquoise"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["darkViolet"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["deepPink"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["deepSkyBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["dimGray"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["dimGrey"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['d']["dodgerBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['f']["fireBrick"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['f']["floralWhite"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['f']["forestGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['f']["fuchsia"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['g']["green"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['g']["gray"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['g']["gainsboro"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['g']["ghostWhite"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['g']["gold"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['g']["goldenRod"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['g']["grey"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['g']["greenYellow"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['h']["honeyDew"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['h']["hotPink"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['i']["indianRed "] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['i']["indigo "] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['i']["ivory"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['k']["khaki"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lavender"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lavenderBlush"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lawnGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lemonChiffon"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightCoral"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightCyan"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightGoldenRodYellow"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightGray"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightGrey"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightPink"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightSalmon"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightSeaGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightSkyBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightSlateGray"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightSlateGrey"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightSteelBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lightYellow"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["lime"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["limeGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['l']["linen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["magenta"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["maroon"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mediumAquaMarine"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mediumBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mediumOrchid"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mediumPurple"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mediumSeaGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mediumSlateBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mediumSpringGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mediumTurquoise"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mediumVioletRed"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["midnightBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mintCream"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["mistyRose"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['m']["moccasin"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['n']["navajoWhite"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['n']["navy"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['o']["oldLace"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['o']["olive"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['o']["oliveDrab"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['o']["orange"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['o']["orangeRed"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['o']["orchid"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["paleGoldenRod"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["paleGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["paleTurquoise"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["paleVioletRed"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["papayaWhip"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["peachPuff"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["peru"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["pink"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["plum"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["powderBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['p']["purple"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['r']["red"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['r']["rosyBrown"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['r']["royalBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["saddleBrown"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["salmon"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["sandyBrown"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["seaGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["seaShell"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["sienna"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["silver"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["skyBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["slateBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["slateGray"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["slateGrey"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["snow"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["springGreen"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['s']["steelBlue"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['t']["tan"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['t']["teal"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['t']["thistle"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['t']["tomato"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['t']["turquoise"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['v']["violet"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['w']["white"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['w']["wheat"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['w']["whiteSmoke"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['y']["yellow"] = Colors::skyBlue;
+	session.commandsMap[Session::livelily]['y']["yellowGreen"] = Colors::skyBlue;
 
 	// dummy upper case letters (the LiveLily language doesn't have keywords with upper case letters)
-	commandsMap[livelily]['A'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['B'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['C'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['D'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['E'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['F'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['G'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['H'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['I'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['J'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['K'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['L'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['M'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['N'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['O'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['P'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['Q'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['R'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['S'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['T'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['U'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['V'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['W'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['X'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['Y'][""] = toColor(foregroundColor);
-	commandsMap[livelily]['Z'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['A'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['B'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['C'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['D'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['E'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['F'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['G'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['H'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['I'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['J'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['K'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['L'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['M'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['N'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['O'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['P'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['Q'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['R'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['S'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['T'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['U'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['V'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['W'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['X'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['Y'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::livelily]['Z'][""] = toColor(foregroundColor);
 	// the commands of LiveLily are reserved names (see isReservedName()), which are stored before any name is defined
-	for (const auto& byChar : commandsMap[livelily]) {
+	for (const auto& byChar : session.commandsMap[Session::livelily]) {
 		for (const auto& cmd : byChar.second) {
-			if (cmd.first.size() > 1 && cmd.first[0] == '\\') reservedNames.insert(cmd.first);
+			if (cmd.first.size() > 1 && cmd.first[0] == '\\') session.reservedNames.insert(cmd.first);
 		}
 	}
 
@@ -580,544 +580,544 @@ void ofApp::setup()
 	   -- paleGreen is used for the pulse of the beat
 	*/
 	// keywords
-	commandsMap[python]['a']["as"] = Colors::violet;
-	commandsMap[python]['a']["assert"] = Colors::violet;
-	commandsMap[python]['a']["and"] = Colors::violet;
-	commandsMap[python]['b']["break"] = Colors::violet;
-	commandsMap[python]['c']["class"] = Colors::violet;
-	commandsMap[python]['c']["continue"] = Colors::violet;
-	commandsMap[python]['d']["def"] = Colors::violet;
-	commandsMap[python]['d']["del"] = Colors::violet;
-	commandsMap[python]['e']["elif"] = Colors::violet;
-	commandsMap[python]['e']["else"] = Colors::violet;
-	commandsMap[python]['e']["except"] = Colors::violet;
-	commandsMap[python]['f']["for"] = Colors::violet;
-	commandsMap[python]['f']["from"] = Colors::violet;
-	commandsMap[python]['f']["finally"] = Colors::violet;
-	commandsMap[python]['g']["global"] = Colors::violet;
-	commandsMap[python]['h'][""] = toColor(foregroundColor);
-	commandsMap[python]['i']["if"] = Colors::violet;
-	commandsMap[python]['i']["is"] = Colors::violet;
-	commandsMap[python]['i']["import"] = Colors::violet;
-	commandsMap[python]['i']["in"] = Colors::violet;
-	commandsMap[python]['j'][""] = toColor(foregroundColor);
-	commandsMap[python]['k'][""] = toColor(foregroundColor);
-	commandsMap[python]['l']["lambda"] = Colors::violet;
-	commandsMap[python]['m'][""] = toColor(foregroundColor);
-	commandsMap[python]['n']["not"] = Colors::violet;
-	commandsMap[python]['n']["nonlocal"] = Colors::violet;
-	commandsMap[python]['n']["not"] = Colors::violet;
-	commandsMap[python]['o']["or"] = Colors::violet;
-	commandsMap[python]['p']["pass"] = Colors::violet;
-	commandsMap[python]['q'][""] = toColor(foregroundColor);
-	commandsMap[python]['r']["raise"] = Colors::violet;
-	commandsMap[python]['r']["return"] = Colors::violet;
-	commandsMap[python]['s'][""] = toColor(foregroundColor);
-	commandsMap[python]['t']["try"] = Colors::violet;
-	commandsMap[python]['u'][""] = toColor(foregroundColor);
-	commandsMap[python]['v'][""] = toColor(foregroundColor);
-	commandsMap[python]['w']["while"] = Colors::violet;
-	commandsMap[python]['w']["with"] = Colors::violet;
-	commandsMap[python]['x'][""] = toColor(foregroundColor);
-	commandsMap[python]['y']["yield"] = Colors::violet;
-	commandsMap[python]['z'][""] = toColor(foregroundColor);
-	commandsMap[python]['F']["False"] = Colors::violet;
-	commandsMap[python]['J'][""] = toColor(foregroundColor);
-	commandsMap[python]['K'][""] = toColor(foregroundColor);
-	commandsMap[python]['N']["None"] = Colors::violet;
-	commandsMap[python]['Q'][""] = toColor(foregroundColor);
-	commandsMap[python]['T']["True"] = Colors::violet;
+	session.commandsMap[Session::python]['a']["as"] = Colors::violet;
+	session.commandsMap[Session::python]['a']["assert"] = Colors::violet;
+	session.commandsMap[Session::python]['a']["and"] = Colors::violet;
+	session.commandsMap[Session::python]['b']["break"] = Colors::violet;
+	session.commandsMap[Session::python]['c']["class"] = Colors::violet;
+	session.commandsMap[Session::python]['c']["continue"] = Colors::violet;
+	session.commandsMap[Session::python]['d']["def"] = Colors::violet;
+	session.commandsMap[Session::python]['d']["del"] = Colors::violet;
+	session.commandsMap[Session::python]['e']["elif"] = Colors::violet;
+	session.commandsMap[Session::python]['e']["else"] = Colors::violet;
+	session.commandsMap[Session::python]['e']["except"] = Colors::violet;
+	session.commandsMap[Session::python]['f']["for"] = Colors::violet;
+	session.commandsMap[Session::python]['f']["from"] = Colors::violet;
+	session.commandsMap[Session::python]['f']["finally"] = Colors::violet;
+	session.commandsMap[Session::python]['g']["global"] = Colors::violet;
+	session.commandsMap[Session::python]['h'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['i']["if"] = Colors::violet;
+	session.commandsMap[Session::python]['i']["is"] = Colors::violet;
+	session.commandsMap[Session::python]['i']["import"] = Colors::violet;
+	session.commandsMap[Session::python]['i']["in"] = Colors::violet;
+	session.commandsMap[Session::python]['j'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['k'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['l']["lambda"] = Colors::violet;
+	session.commandsMap[Session::python]['m'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['n']["not"] = Colors::violet;
+	session.commandsMap[Session::python]['n']["nonlocal"] = Colors::violet;
+	session.commandsMap[Session::python]['n']["not"] = Colors::violet;
+	session.commandsMap[Session::python]['o']["or"] = Colors::violet;
+	session.commandsMap[Session::python]['p']["pass"] = Colors::violet;
+	session.commandsMap[Session::python]['q'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['r']["raise"] = Colors::violet;
+	session.commandsMap[Session::python]['r']["return"] = Colors::violet;
+	session.commandsMap[Session::python]['s'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['t']["try"] = Colors::violet;
+	session.commandsMap[Session::python]['u'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['v'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['w']["while"] = Colors::violet;
+	session.commandsMap[Session::python]['w']["with"] = Colors::violet;
+	session.commandsMap[Session::python]['x'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['y']["yield"] = Colors::violet;
+	session.commandsMap[Session::python]['z'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['F']["False"] = Colors::violet;
+	session.commandsMap[Session::python]['J'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['K'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['N']["None"] = Colors::violet;
+	session.commandsMap[Session::python]['Q'][""] = toColor(foregroundColor);
+	session.commandsMap[Session::python]['T']["True"] = Colors::violet;
 
 	// Pyo classes
-	commandsMap[python]['A']["Abs"] = Colors::deepSkyBlue;
-	commandsMap[python]['A']["Atan2"] = Colors::deepSkyBlue;
-	commandsMap[python]['A']["Adsr"] = Colors::deepSkyBlue;
-	commandsMap[python]['A']["AllpassWV"] = Colors::deepSkyBlue;
-	commandsMap[python]['A']["Allpass"] = Colors::deepSkyBlue;
-	commandsMap[python]['A']["Allpass2"] = Colors::deepSkyBlue;
-	commandsMap[python]['A']["Atone"] = Colors::deepSkyBlue;
-	commandsMap[python]['A']["AToDB"] = Colors::deepSkyBlue;
-	commandsMap[python]['A']["AtanTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['A']["AttackDetector"] = Colors::deepSkyBlue;
-	commandsMap[python]['A']["Average"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["Balance"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["Biquad"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["Biquadx"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["Biquada"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["BandSplit"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["ButLP"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["ButHP"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["ButBP"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["ButBR"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["Blit"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["BrownNoise"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["Between"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["Beat"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["Bendin"] = Colors::deepSkyBlue;
-	commandsMap[python]['B']["Binaural"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Centroid"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Cos"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Ceil"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Clip"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Convolve"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Chorus"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["ComplexRes"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["CarToPol"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["CvlVerb"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["ChenLee"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["CrossFM"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["CallAfter"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["CtlScan"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["CtlScan2"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Change"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Cloud"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Count"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Counter"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["CentsToTranspo"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Clean_objects"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Compare"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["ConotrolRead"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["ConotrolRec"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["ChebyTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["CosLogTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["CosTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["CurvyTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['C']["Compress"] = Colors::deepSkyBlue;
-	commandsMap[python]['D']["Div"] = Colors::deepSkyBlue;
-	commandsMap[python]['D']["Degrade"] = Colors::deepSkyBlue;
-	commandsMap[python]['D']["Disto"] = Colors::deepSkyBlue;
-	commandsMap[python]['D']["Delay"] = Colors::deepSkyBlue;
-	commandsMap[python]['D']["Delay1"] = Colors::deepSkyBlue;
-	commandsMap[python]['D']["DCBlock"] = Colors::deepSkyBlue;
-	commandsMap[python]['D']["DBToA"] = Colors::deepSkyBlue;
-	commandsMap[python]['D']["Denorm"] = Colors::deepSkyBlue;
-	commandsMap[python]['D']["DataTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['D']["Dummy"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["Expseg"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["Exp"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventScale"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventGenerator"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventDummy"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventFilter"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventKey"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventSeq"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventSlide"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventIndex"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventMarkov"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventChoice"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventDrunk"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventNoise"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventCall"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventConditional"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EventInstrument"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["Events"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["EQ"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["Euclide"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["ExpTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['E']["Expand"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["Fader"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["Follower"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["Follower2"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["Floor"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["FreqShift"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["FFT"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["FrameAccum"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["FrameDelta"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["FastSine"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["FM"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["FToM"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["FourBand"] = Colors::deepSkyBlue;
-	commandsMap[python]['F']["Freeverb"] = Colors::deepSkyBlue;
-	commandsMap[python]['G']["Gate"] = Colors::deepSkyBlue;
-	commandsMap[python]['G']["Granulator"] = Colors::deepSkyBlue;
-	commandsMap[python]['G']["Granule"] = Colors::deepSkyBlue;
-	commandsMap[python]['H']["Hilbert"] = Colors::deepSkyBlue;
-	commandsMap[python]['H']["HannTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['H']["HarmTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['H']["HRTF"] = Colors::deepSkyBlue;
-	commandsMap[python]['H']["Harmonizer"] = Colors::deepSkyBlue;
-	commandsMap[python]['I']["IRWinSync"] = Colors::deepSkyBlue;
-	commandsMap[python]['I']["IRAverage"] = Colors::deepSkyBlue;
-	commandsMap[python]['I']["IRPulse"] = Colors::deepSkyBlue;
-	commandsMap[python]['I']["IRFM"] = Colors::deepSkyBlue;
-	commandsMap[python]['I']["IFFTMatrix"] = Colors::deepSkyBlue;
-	commandsMap[python]['I']["Input"] = Colors::deepSkyBlue;
-	commandsMap[python]['I']["InputFader"] = Colors::deepSkyBlue;
-	commandsMap[python]['I']["Iter"] = Colors::deepSkyBlue;
-	commandsMap[python]['I']["IFFT"] = Colors::deepSkyBlue;
-	commandsMap[python]['I']["Interp"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["Log"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["Log2"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["Log10"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["Linseg"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["LFO"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["Lorenz"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["LogiMap"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["Lookup"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["Looper"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["LinTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['L']["LogTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MidiListener"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MidiDispatcher"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["Mirror"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["Min"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["Max"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MultiBand"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["Mix"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MatrixMorph"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MatrixPointer"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MatrixRec"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MatrixRecLoop"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MidiAdsr"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MidiDelAdsr"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MidiCtl"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["Metro"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MToF"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MToT"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["Map"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MoogLP"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["Mixer"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MidiLinseg"] = Colors::deepSkyBlue;
-	commandsMap[python]['M']["MML"] = Colors::deepSkyBlue;
-	commandsMap[python]['N']["Noise"] = Colors::deepSkyBlue;
-	commandsMap[python]['N']["Notein"] = Colors::deepSkyBlue;
-	commandsMap[python]['N']["NextTrig"] = Colors::deepSkyBlue;
-	commandsMap[python]['N']["NoteinRead"] = Colors::deepSkyBlue;
-	commandsMap[python]['N']["NoteinRec"] = Colors::deepSkyBlue;
-	commandsMap[python]['N']["NewTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['N']["NewMatrix"] = Colors::deepSkyBlue;
-	commandsMap[python]['O']["OscListener"] = Colors::deepSkyBlue;
-	commandsMap[python]['O']["OscDataReceive"] = Colors::deepSkyBlue;
-	commandsMap[python]['O']["OscDataSend"] = Colors::deepSkyBlue;
-	commandsMap[python]['O']["OscListReceive"] = Colors::deepSkyBlue;
-	commandsMap[python]['O']["OscReceive"] = Colors::deepSkyBlue;
-	commandsMap[python]['O']["OscSend"] = Colors::deepSkyBlue;
-	commandsMap[python]['O']["Osc"] = Colors::deepSkyBlue;
-	commandsMap[python]['O']["OscBank"] = Colors::deepSkyBlue;
-	commandsMap[python]['O']["OscLoop"] = Colors::deepSkyBlue;
-	commandsMap[python]['O']["OscTrig"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyoBaseObject"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyoObject"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyoTableObject"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyoMatrixObject"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyoPVObject"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PeakAmp"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PolToCar"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVAnal"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVSynth"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVAddSynth"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVTranspose"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVVerb"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVGate"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVCross"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVMult"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVMorph"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVFilter"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVDelay"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVBuffer"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVShift"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVAmpMod"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVFreqMod"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVBufLoops"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVBufTabLoops"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PVMix"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Phasor"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PinkNoise"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Particle"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Particle2"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Pointer"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Pointer2"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Pulsar"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Percent"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyGuiControlSlider"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyGuiVuMeter"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyGuiGrapher"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyGuiMultiSlider"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyGuiSpectrum"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyGuiScope"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyGuiSndView"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PyGuiKeyboard"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["ParaTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PartialTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Port"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Phaser"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["PadSynthTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Print"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Pan"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Pow"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Programin"] = Colors::deepSkyBlue;
-	commandsMap[python]['P']["Pattern"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["RawMidi"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["RandDur"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["RandInt"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["Randh"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["Randi"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["Record"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["Resample"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["RMS"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["Round"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["Reson"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["Resonx"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["RCOsc"] = Colors::deepSkyBlue;
-	commandsMap[python]['R']["Rossler"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Server"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Spectrum"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Scope"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Sin"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Sqrt"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Sub"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Sig"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SigTo"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SDelay"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SVF"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SVF2"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["STRev"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SmoothDelay"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Sine"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SineLoop"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SumOsc"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SuperSaw"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Stream"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SPan"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Selector"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Switch"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Score"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SfPlayer"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SfMarkerLooper"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SfMarkerShuffler"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SampHold"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Scale"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Snap"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SawTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SyncTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SndTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SquareTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SharedTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SLMap"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SLMapFreq"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SLMapMul"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SLMapPhase"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SLMapQ"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SLMapDur"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["SLMapPan"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Select"] = Colors::deepSkyBlue;
-	commandsMap[python]['S']["Seq"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["Tan"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["Tanh"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["Tone"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["Touchin"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TableIndex"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TableMorph"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TablePut"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TableRead"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TableRec"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TableWrite"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TableScale"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TableFill"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TableScan"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["Thresh"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["Timer"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["Trig"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigBurst"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigChoice"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigEnv"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigExpseg"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigFunc"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigLinseg"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigRand"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigRandInt"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigTableRec"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigVal"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigXnoise"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrigXnoiseMidi"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TranspoToCents"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TrackHold"] = Colors::deepSkyBlue;
-	commandsMap[python]['T']["TriangleTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['U']["Urn"] = Colors::deepSkyBlue;
-	commandsMap[python]['V']["Vocoder"] = Colors::deepSkyBlue;
-	commandsMap[python]['V']["Vectral"] = Colors::deepSkyBlue;
-	commandsMap[python]['V']["VarPort"] = Colors::deepSkyBlue;
-	commandsMap[python]['V']["VoiceManager"] = Colors::deepSkyBlue;
-	commandsMap[python]['W']["Wrap"] = Colors::deepSkyBlue;
-	commandsMap[python]['W']["Waveguide"] = Colors::deepSkyBlue;
-	commandsMap[python]['W']["WGVerb"] = Colors::deepSkyBlue;
-	commandsMap[python]['W']["WinTable"] = Colors::deepSkyBlue;
-	commandsMap[python]['X']["XNoise"] = Colors::deepSkyBlue;
-	commandsMap[python]['X']["XNoiseDur"] = Colors::deepSkyBlue;
-	commandsMap[python]['X']["XNoiseMidi"] = Colors::deepSkyBlue;
-	commandsMap[python]['Y']["Yin"] = Colors::deepSkyBlue;
-	commandsMap[python]['Z']["ZCross"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["Abs"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["Atan2"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["Adsr"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["AllpassWV"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["Allpass"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["Allpass2"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["Atone"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["AToDB"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["AtanTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["AttackDetector"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['A']["Average"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["Balance"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["Biquad"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["Biquadx"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["Biquada"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["BandSplit"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["ButLP"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["ButHP"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["ButBP"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["ButBR"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["Blit"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["BrownNoise"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["Between"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["Beat"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["Bendin"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['B']["Binaural"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Centroid"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Cos"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Ceil"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Clip"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Convolve"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Chorus"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["ComplexRes"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["CarToPol"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["CvlVerb"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["ChenLee"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["CrossFM"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["CallAfter"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["CtlScan"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["CtlScan2"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Change"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Cloud"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Count"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Counter"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["CentsToTranspo"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Clean_objects"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Compare"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["ConotrolRead"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["ConotrolRec"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["ChebyTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["CosLogTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["CosTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["CurvyTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['C']["Compress"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['D']["Div"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['D']["Degrade"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['D']["Disto"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['D']["Delay"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['D']["Delay1"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['D']["DCBlock"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['D']["DBToA"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['D']["Denorm"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['D']["DataTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['D']["Dummy"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["Expseg"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["Exp"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventScale"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventGenerator"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventDummy"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventFilter"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventKey"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventSeq"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventSlide"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventIndex"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventMarkov"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventChoice"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventDrunk"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventNoise"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventCall"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventConditional"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EventInstrument"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["Events"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["EQ"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["Euclide"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["ExpTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['E']["Expand"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["Fader"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["Follower"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["Follower2"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["Floor"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["FreqShift"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["FFT"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["FrameAccum"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["FrameDelta"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["FastSine"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["FM"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["FToM"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["FourBand"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['F']["Freeverb"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['G']["Gate"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['G']["Granulator"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['G']["Granule"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['H']["Hilbert"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['H']["HannTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['H']["HarmTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['H']["HRTF"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['H']["Harmonizer"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['I']["IRWinSync"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['I']["IRAverage"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['I']["IRPulse"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['I']["IRFM"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['I']["IFFTMatrix"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['I']["Input"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['I']["InputFader"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['I']["Iter"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['I']["IFFT"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['I']["Interp"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["Log"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["Log2"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["Log10"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["Linseg"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["LFO"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["Lorenz"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["LogiMap"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["Lookup"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["Looper"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["LinTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['L']["LogTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MidiListener"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MidiDispatcher"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["Mirror"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["Min"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["Max"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MultiBand"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["Mix"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MatrixMorph"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MatrixPointer"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MatrixRec"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MatrixRecLoop"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MidiAdsr"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MidiDelAdsr"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MidiCtl"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["Metro"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MToF"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MToT"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["Map"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MoogLP"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["Mixer"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MidiLinseg"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['M']["MML"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['N']["Noise"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['N']["Notein"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['N']["NextTrig"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['N']["NoteinRead"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['N']["NoteinRec"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['N']["NewTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['N']["NewMatrix"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['O']["OscListener"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['O']["OscDataReceive"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['O']["OscDataSend"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['O']["OscListReceive"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['O']["OscReceive"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['O']["OscSend"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['O']["Osc"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['O']["OscBank"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['O']["OscLoop"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['O']["OscTrig"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyoBaseObject"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyoObject"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyoTableObject"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyoMatrixObject"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyoPVObject"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PeakAmp"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PolToCar"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVAnal"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVSynth"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVAddSynth"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVTranspose"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVVerb"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVGate"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVCross"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVMult"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVMorph"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVFilter"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVDelay"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVBuffer"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVShift"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVAmpMod"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVFreqMod"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVBufLoops"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVBufTabLoops"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PVMix"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Phasor"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PinkNoise"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Particle"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Particle2"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Pointer"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Pointer2"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Pulsar"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Percent"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyGuiControlSlider"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyGuiVuMeter"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyGuiGrapher"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyGuiMultiSlider"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyGuiSpectrum"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyGuiScope"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyGuiSndView"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PyGuiKeyboard"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["ParaTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PartialTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Port"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Phaser"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["PadSynthTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Print"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Pan"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Pow"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Programin"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['P']["Pattern"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["RawMidi"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["RandDur"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["RandInt"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["Randh"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["Randi"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["Record"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["Resample"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["RMS"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["Round"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["Reson"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["Resonx"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["RCOsc"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['R']["Rossler"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Server"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Spectrum"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Scope"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Sin"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Sqrt"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Sub"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Sig"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SigTo"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SDelay"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SVF"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SVF2"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["STRev"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SmoothDelay"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Sine"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SineLoop"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SumOsc"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SuperSaw"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Stream"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SPan"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Selector"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Switch"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Score"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SfPlayer"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SfMarkerLooper"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SfMarkerShuffler"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SampHold"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Scale"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Snap"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SawTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SyncTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SndTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SquareTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SharedTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SLMap"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SLMapFreq"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SLMapMul"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SLMapPhase"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SLMapQ"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SLMapDur"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["SLMapPan"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Select"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['S']["Seq"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["Tan"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["Tanh"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["Tone"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["Touchin"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TableIndex"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TableMorph"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TablePut"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TableRead"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TableRec"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TableWrite"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TableScale"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TableFill"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TableScan"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["Thresh"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["Timer"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["Trig"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigBurst"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigChoice"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigEnv"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigExpseg"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigFunc"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigLinseg"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigRand"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigRandInt"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigTableRec"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigVal"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigXnoise"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrigXnoiseMidi"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TranspoToCents"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TrackHold"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['T']["TriangleTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['U']["Urn"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['V']["Vocoder"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['V']["Vectral"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['V']["VarPort"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['V']["VoiceManager"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['W']["Wrap"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['W']["Waveguide"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['W']["WGVerb"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['W']["WinTable"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['X']["XNoise"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['X']["XNoiseDur"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['X']["XNoiseMidi"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['Y']["Yin"] = Colors::deepSkyBlue;
+	session.commandsMap[Session::python]['Z']["ZCross"] = Colors::deepSkyBlue;
 
 	// push commands that won't let the editor tokenize based on digits
-	commandsToNotTokenize.push_back("\\insts");
-	commandsToNotTokenize.push_back("\\bar");
-	commandsToNotTokenize.push_back("\\bars");
-	commandsToNotTokenize.push_back("\\loop");
-	commandsToNotTokenize.push_back("\\function");
-	commandsToNotTokenize.push_back("\\std::list");
-	commandsToNotTokenize.push_back("\\group");
+	session.commandsToNotTokenize.push_back("\\insts");
+	session.commandsToNotTokenize.push_back("\\bar");
+	session.commandsToNotTokenize.push_back("\\bars");
+	session.commandsToNotTokenize.push_back("\\loop");
+	session.commandsToNotTokenize.push_back("\\function");
+	session.commandsToNotTokenize.push_back("\\std::list");
+	session.commandsToNotTokenize.push_back("\\group");
 
 	// commands that the editor needs to check in case of multi-line executing
 	// but starting on the first line that is not indented
-	noIndentCheck[livelily].push_back("\\bar");
-	noIndentCheck[livelily].push_back("\\bars");
-	noIndentCheck[livelily].push_back("\\loop");
-	noIndentCheck[livelily].push_back("\\function");
-	noIndentCheck[livelily].push_back("\\std::list");
-	noIndentCheck[python].push_back("class");
-	noIndentCheck[python].push_back("def");
-	noIndentCheck[python].push_back("for");
-	noIndentCheck[python].push_back("while");
-	noIndentCheck[python].push_back("if");
+	noIndentCheck[Session::livelily].push_back("\\bar");
+	noIndentCheck[Session::livelily].push_back("\\bars");
+	noIndentCheck[Session::livelily].push_back("\\loop");
+	noIndentCheck[Session::livelily].push_back("\\function");
+	noIndentCheck[Session::livelily].push_back("\\std::list");
+	noIndentCheck[Session::python].push_back("class");
+	noIndentCheck[Session::python].push_back("def");
+	noIndentCheck[Session::python].push_back("for");
+	noIndentCheck[Session::python].push_back("while");
+	noIndentCheck[Session::python].push_back("if");
 
 	// a map with the color names, copied from the colorsExtendedExample
-	colorNameMap["white"] = Colors::white;
-	colorNameMap["gray"] = Colors::gray;
-	colorNameMap["black"] = Colors::black;
-	colorNameMap["red"] = Colors::red;
-	colorNameMap["green"] = Colors::green;
-	colorNameMap["blue"] = Colors::blue;
-	colorNameMap["cyan"] = Colors::cyan;
-	colorNameMap["magenta"] = Colors::magenta;
-	colorNameMap["yellow"] = Colors::yellow;
-	colorNameMap["aliceBlue"] = Colors::aliceBlue;
-	colorNameMap["antiqueWhite"] = Colors::antiqueWhite;
-	colorNameMap["aqua"] = Colors::aqua;
-	colorNameMap["aquamarine"] = Colors::aquamarine;
-	colorNameMap["azure"] = Colors::azure;
-	colorNameMap["beige"] = Colors::beige;
-	colorNameMap["bisque"] = Colors::bisque;
-	colorNameMap["blanchedAlmond"] = Colors::blanchedAlmond;
-	colorNameMap["blueViolet"] = Colors::blueViolet;
-	colorNameMap["brown"] = Colors::brown;
-	colorNameMap["burlyWood"] = Colors::burlyWood;
-	colorNameMap["cadetBlue"] = Colors::cadetBlue;
-	colorNameMap["chartreuse"] = Colors::chartreuse;
-	colorNameMap["chocolate"] = Colors::chocolate;
-	colorNameMap["coral"] = Colors::coral;
-	colorNameMap["cornflowerBlue"] = Colors::cornflowerBlue;
-	colorNameMap["cornsilk"] = Colors::cornsilk;
-	colorNameMap["crimson"] = Colors::crimson;
-	colorNameMap["darkBlue"] = Colors::darkBlue;
-	colorNameMap["darkCyan"] = Colors::darkCyan;
-	colorNameMap["darkGoldenRod"] = Colors::darkGoldenRod;
-	colorNameMap["darkGray"] = Colors::darkGray;
-	colorNameMap["darkGrey"] = Colors::darkGrey;
-	colorNameMap["darkGreen"] = Colors::darkGreen;
-	colorNameMap["darkKhaki"] = Colors::darkKhaki;
-	colorNameMap["darkMagenta"] = Colors::darkMagenta;
-	colorNameMap["darkOliveGreen"] = Colors::darkOliveGreen;
-	colorNameMap["darkOrange"] = Colors::darkOrange;
-	colorNameMap["darkOrchid"] = Colors::darkOrchid;
-	colorNameMap["darkRed"] = Colors::darkRed;
-	colorNameMap["darkSalmon"] = Colors::darkSalmon;
-	colorNameMap["darkSeaGreen"] = Colors::darkSeaGreen;
-	colorNameMap["darkSlateBlue"] = Colors::darkSlateBlue;
-	colorNameMap["darkSlateGray"] = Colors::darkSlateGray;
-	colorNameMap["darkSlateGrey"] = Colors::darkSlateGrey;
-	colorNameMap["darkTurquoise"] = Colors::darkTurquoise;
-	colorNameMap["darkViolet"] = Colors::darkViolet;
-	colorNameMap["deepPink"] = Colors::deepPink;
-	colorNameMap["deepSkyBlue"] = Colors::deepSkyBlue;
-	colorNameMap["dimGray"] = Colors::dimGray;
-	colorNameMap["dimGrey"] = Colors::dimGrey;
-	colorNameMap["dodgerBlue"] = Colors::dodgerBlue;
-	colorNameMap["fireBrick"] = Colors::fireBrick;
-	colorNameMap["floralWhite"] = Colors::floralWhite;
-	colorNameMap["forestGreen"] = Colors::forestGreen;
-	colorNameMap["fuchsia"] = Colors::fuchsia;
-	colorNameMap["gainsboro"] = Colors::gainsboro;
-	colorNameMap["ghostWhite"] = Colors::ghostWhite;
-	colorNameMap["gold"] = Colors::gold;
-	colorNameMap["goldenRod"] = Colors::goldenRod;
-	colorNameMap["grey"] = Colors::grey;
-	colorNameMap["greenYellow"] = Colors::greenYellow;
-	colorNameMap["honeyDew"] = Colors::honeyDew;
-	colorNameMap["hotPink"] = Colors::hotPink;
-	colorNameMap["indianRed "] = Colors::indianRed;
-	colorNameMap["indigo "] = Colors::indigo;
-	colorNameMap["ivory"] = Colors::ivory;
-	colorNameMap["khaki"] = Colors::khaki;
-	colorNameMap["lavender"] = Colors::lavender;
-	colorNameMap["lavenderBlush"] = Colors::lavenderBlush;
-	colorNameMap["lawnGreen"] = Colors::lawnGreen;
-	colorNameMap["lemonChiffon"] = Colors::lemonChiffon;
-	colorNameMap["lightBlue"] = Colors::lightBlue;
-	colorNameMap["lightCoral"] = Colors::lightCoral;
-	colorNameMap["lightCyan"] = Colors::lightCyan;
-	colorNameMap["lightGoldenRodYellow"] = Colors::lightGoldenRodYellow;
-	colorNameMap["lightGray"] = Colors::lightGray;
-	colorNameMap["lightGrey"] = Colors::lightGrey;
-	colorNameMap["lightGreen"] = Colors::lightGreen;
-	colorNameMap["lightPink"] = Colors::lightPink;
-	colorNameMap["lightSalmon"] = Colors::lightSalmon;
-	colorNameMap["lightSeaGreen"] = Colors::lightSeaGreen;
-	colorNameMap["lightSkyBlue"] = Colors::lightSkyBlue;
-	colorNameMap["lightSlateGray"] = Colors::lightSlateGray;
-	colorNameMap["lightSlateGrey"] = Colors::lightSlateGrey;
-	colorNameMap["lightSteelBlue"] = Colors::lightSteelBlue;
-	colorNameMap["lightYellow"] = Colors::lightYellow;
-	colorNameMap["lime"] = Colors::lime;
-	colorNameMap["limeGreen"] = Colors::limeGreen;
-	colorNameMap["linen"] = Colors::linen;
-	colorNameMap["maroon"] = Colors::maroon;
-	colorNameMap["mediumAquaMarine"] = Colors::mediumAquaMarine;
-	colorNameMap["mediumBlue"] = Colors::mediumBlue;
-	colorNameMap["mediumOrchid"] = Colors::mediumOrchid;
-	colorNameMap["mediumPurple"] = Colors::mediumPurple;
-	colorNameMap["mediumSeaGreen"] = Colors::mediumSeaGreen;
-	colorNameMap["mediumSlateBlue"] = Colors::mediumSlateBlue;
-	colorNameMap["mediumSpringGreen"] = Colors::mediumSpringGreen;
-	colorNameMap["mediumTurquoise"] = Colors::mediumTurquoise;
-	colorNameMap["mediumVioletRed"] = Colors::mediumVioletRed;
-	colorNameMap["midnightBlue"] = Colors::midnightBlue;
-	colorNameMap["mintCream"] = Colors::mintCream;
-	colorNameMap["mistyRose"] = Colors::mistyRose;
-	colorNameMap["moccasin"] = Colors::moccasin;
-	colorNameMap["navajoWhite"] = Colors::navajoWhite;
-	colorNameMap["navy"] = Colors::navy;
-	colorNameMap["oldLace"] = Colors::oldLace;
-	colorNameMap["olive"] = Colors::olive;
-	colorNameMap["oliveDrab"] = Colors::oliveDrab;
-	colorNameMap["orange"] = Colors::orange;
-	colorNameMap["orangeRed"] = Colors::orangeRed;
-	colorNameMap["orchid"] = Colors::orchid;
-	colorNameMap["paleGoldenRod"] = Colors::paleGoldenRod;
-	colorNameMap["paleGreen"] = Colors::paleGreen;
-	colorNameMap["paleTurquoise"] = Colors::paleTurquoise;
-	colorNameMap["paleVioletRed"] = Colors::paleVioletRed;
-	colorNameMap["papayaWhip"] = Colors::papayaWhip;
-	colorNameMap["peachPuff"] = Colors::peachPuff;
-	colorNameMap["peru"] = Colors::peru;
-	colorNameMap["pink"] = Colors::pink;
-	colorNameMap["plum"] = Colors::plum;
-	colorNameMap["powderBlue"] = Colors::powderBlue;
-	colorNameMap["purple"] = Colors::purple;
-	colorNameMap["rosyBrown"] = Colors::rosyBrown;
-	colorNameMap["royalBlue"] = Colors::royalBlue;
-	colorNameMap["saddleBrown"] = Colors::saddleBrown;
-	colorNameMap["salmon"] = Colors::salmon;
-	colorNameMap["sandyBrown"] = Colors::sandyBrown;
-	colorNameMap["seaGreen"] = Colors::seaGreen;
-	colorNameMap["seaShell"] = Colors::seaShell;
-	colorNameMap["sienna"] = Colors::sienna;
-	colorNameMap["silver"] = Colors::silver;
-	colorNameMap["skyBlue"] = Colors::skyBlue;
-	colorNameMap["slateBlue"] = Colors::slateBlue;
-	colorNameMap["slateGray"] = Colors::slateGray;
-	colorNameMap["slateGrey"] = Colors::slateGrey;
-	colorNameMap["snow"] = Colors::snow;
-	colorNameMap["springGreen"] = Colors::springGreen;
-	colorNameMap["steelBlue"] = Colors::steelBlue;
-	colorNameMap["tan"] = Colors::tan;
-	colorNameMap["teal"] = Colors::teal;
-	colorNameMap["thistle"] = Colors::thistle;
-	colorNameMap["tomato"] = Colors::tomato;
-	colorNameMap["turquoise"] = Colors::turquoise;
-	colorNameMap["violet"] = Colors::violet;
-	colorNameMap["wheat"] = Colors::wheat;
-	colorNameMap["whiteSmoke"] = Colors::whiteSmoke;
-	colorNameMap["yellowGreen"] = Colors::yellowGreen;
+	session.colorNameMap["white"] = Colors::white;
+	session.colorNameMap["gray"] = Colors::gray;
+	session.colorNameMap["black"] = Colors::black;
+	session.colorNameMap["red"] = Colors::red;
+	session.colorNameMap["green"] = Colors::green;
+	session.colorNameMap["blue"] = Colors::blue;
+	session.colorNameMap["cyan"] = Colors::cyan;
+	session.colorNameMap["magenta"] = Colors::magenta;
+	session.colorNameMap["yellow"] = Colors::yellow;
+	session.colorNameMap["aliceBlue"] = Colors::aliceBlue;
+	session.colorNameMap["antiqueWhite"] = Colors::antiqueWhite;
+	session.colorNameMap["aqua"] = Colors::aqua;
+	session.colorNameMap["aquamarine"] = Colors::aquamarine;
+	session.colorNameMap["azure"] = Colors::azure;
+	session.colorNameMap["beige"] = Colors::beige;
+	session.colorNameMap["bisque"] = Colors::bisque;
+	session.colorNameMap["blanchedAlmond"] = Colors::blanchedAlmond;
+	session.colorNameMap["blueViolet"] = Colors::blueViolet;
+	session.colorNameMap["brown"] = Colors::brown;
+	session.colorNameMap["burlyWood"] = Colors::burlyWood;
+	session.colorNameMap["cadetBlue"] = Colors::cadetBlue;
+	session.colorNameMap["chartreuse"] = Colors::chartreuse;
+	session.colorNameMap["chocolate"] = Colors::chocolate;
+	session.colorNameMap["coral"] = Colors::coral;
+	session.colorNameMap["cornflowerBlue"] = Colors::cornflowerBlue;
+	session.colorNameMap["cornsilk"] = Colors::cornsilk;
+	session.colorNameMap["crimson"] = Colors::crimson;
+	session.colorNameMap["darkBlue"] = Colors::darkBlue;
+	session.colorNameMap["darkCyan"] = Colors::darkCyan;
+	session.colorNameMap["darkGoldenRod"] = Colors::darkGoldenRod;
+	session.colorNameMap["darkGray"] = Colors::darkGray;
+	session.colorNameMap["darkGrey"] = Colors::darkGrey;
+	session.colorNameMap["darkGreen"] = Colors::darkGreen;
+	session.colorNameMap["darkKhaki"] = Colors::darkKhaki;
+	session.colorNameMap["darkMagenta"] = Colors::darkMagenta;
+	session.colorNameMap["darkOliveGreen"] = Colors::darkOliveGreen;
+	session.colorNameMap["darkOrange"] = Colors::darkOrange;
+	session.colorNameMap["darkOrchid"] = Colors::darkOrchid;
+	session.colorNameMap["darkRed"] = Colors::darkRed;
+	session.colorNameMap["darkSalmon"] = Colors::darkSalmon;
+	session.colorNameMap["darkSeaGreen"] = Colors::darkSeaGreen;
+	session.colorNameMap["darkSlateBlue"] = Colors::darkSlateBlue;
+	session.colorNameMap["darkSlateGray"] = Colors::darkSlateGray;
+	session.colorNameMap["darkSlateGrey"] = Colors::darkSlateGrey;
+	session.colorNameMap["darkTurquoise"] = Colors::darkTurquoise;
+	session.colorNameMap["darkViolet"] = Colors::darkViolet;
+	session.colorNameMap["deepPink"] = Colors::deepPink;
+	session.colorNameMap["deepSkyBlue"] = Colors::deepSkyBlue;
+	session.colorNameMap["dimGray"] = Colors::dimGray;
+	session.colorNameMap["dimGrey"] = Colors::dimGrey;
+	session.colorNameMap["dodgerBlue"] = Colors::dodgerBlue;
+	session.colorNameMap["fireBrick"] = Colors::fireBrick;
+	session.colorNameMap["floralWhite"] = Colors::floralWhite;
+	session.colorNameMap["forestGreen"] = Colors::forestGreen;
+	session.colorNameMap["fuchsia"] = Colors::fuchsia;
+	session.colorNameMap["gainsboro"] = Colors::gainsboro;
+	session.colorNameMap["ghostWhite"] = Colors::ghostWhite;
+	session.colorNameMap["gold"] = Colors::gold;
+	session.colorNameMap["goldenRod"] = Colors::goldenRod;
+	session.colorNameMap["grey"] = Colors::grey;
+	session.colorNameMap["greenYellow"] = Colors::greenYellow;
+	session.colorNameMap["honeyDew"] = Colors::honeyDew;
+	session.colorNameMap["hotPink"] = Colors::hotPink;
+	session.colorNameMap["indianRed "] = Colors::indianRed;
+	session.colorNameMap["indigo "] = Colors::indigo;
+	session.colorNameMap["ivory"] = Colors::ivory;
+	session.colorNameMap["khaki"] = Colors::khaki;
+	session.colorNameMap["lavender"] = Colors::lavender;
+	session.colorNameMap["lavenderBlush"] = Colors::lavenderBlush;
+	session.colorNameMap["lawnGreen"] = Colors::lawnGreen;
+	session.colorNameMap["lemonChiffon"] = Colors::lemonChiffon;
+	session.colorNameMap["lightBlue"] = Colors::lightBlue;
+	session.colorNameMap["lightCoral"] = Colors::lightCoral;
+	session.colorNameMap["lightCyan"] = Colors::lightCyan;
+	session.colorNameMap["lightGoldenRodYellow"] = Colors::lightGoldenRodYellow;
+	session.colorNameMap["lightGray"] = Colors::lightGray;
+	session.colorNameMap["lightGrey"] = Colors::lightGrey;
+	session.colorNameMap["lightGreen"] = Colors::lightGreen;
+	session.colorNameMap["lightPink"] = Colors::lightPink;
+	session.colorNameMap["lightSalmon"] = Colors::lightSalmon;
+	session.colorNameMap["lightSeaGreen"] = Colors::lightSeaGreen;
+	session.colorNameMap["lightSkyBlue"] = Colors::lightSkyBlue;
+	session.colorNameMap["lightSlateGray"] = Colors::lightSlateGray;
+	session.colorNameMap["lightSlateGrey"] = Colors::lightSlateGrey;
+	session.colorNameMap["lightSteelBlue"] = Colors::lightSteelBlue;
+	session.colorNameMap["lightYellow"] = Colors::lightYellow;
+	session.colorNameMap["lime"] = Colors::lime;
+	session.colorNameMap["limeGreen"] = Colors::limeGreen;
+	session.colorNameMap["linen"] = Colors::linen;
+	session.colorNameMap["maroon"] = Colors::maroon;
+	session.colorNameMap["mediumAquaMarine"] = Colors::mediumAquaMarine;
+	session.colorNameMap["mediumBlue"] = Colors::mediumBlue;
+	session.colorNameMap["mediumOrchid"] = Colors::mediumOrchid;
+	session.colorNameMap["mediumPurple"] = Colors::mediumPurple;
+	session.colorNameMap["mediumSeaGreen"] = Colors::mediumSeaGreen;
+	session.colorNameMap["mediumSlateBlue"] = Colors::mediumSlateBlue;
+	session.colorNameMap["mediumSpringGreen"] = Colors::mediumSpringGreen;
+	session.colorNameMap["mediumTurquoise"] = Colors::mediumTurquoise;
+	session.colorNameMap["mediumVioletRed"] = Colors::mediumVioletRed;
+	session.colorNameMap["midnightBlue"] = Colors::midnightBlue;
+	session.colorNameMap["mintCream"] = Colors::mintCream;
+	session.colorNameMap["mistyRose"] = Colors::mistyRose;
+	session.colorNameMap["moccasin"] = Colors::moccasin;
+	session.colorNameMap["navajoWhite"] = Colors::navajoWhite;
+	session.colorNameMap["navy"] = Colors::navy;
+	session.colorNameMap["oldLace"] = Colors::oldLace;
+	session.colorNameMap["olive"] = Colors::olive;
+	session.colorNameMap["oliveDrab"] = Colors::oliveDrab;
+	session.colorNameMap["orange"] = Colors::orange;
+	session.colorNameMap["orangeRed"] = Colors::orangeRed;
+	session.colorNameMap["orchid"] = Colors::orchid;
+	session.colorNameMap["paleGoldenRod"] = Colors::paleGoldenRod;
+	session.colorNameMap["paleGreen"] = Colors::paleGreen;
+	session.colorNameMap["paleTurquoise"] = Colors::paleTurquoise;
+	session.colorNameMap["paleVioletRed"] = Colors::paleVioletRed;
+	session.colorNameMap["papayaWhip"] = Colors::papayaWhip;
+	session.colorNameMap["peachPuff"] = Colors::peachPuff;
+	session.colorNameMap["peru"] = Colors::peru;
+	session.colorNameMap["pink"] = Colors::pink;
+	session.colorNameMap["plum"] = Colors::plum;
+	session.colorNameMap["powderBlue"] = Colors::powderBlue;
+	session.colorNameMap["purple"] = Colors::purple;
+	session.colorNameMap["rosyBrown"] = Colors::rosyBrown;
+	session.colorNameMap["royalBlue"] = Colors::royalBlue;
+	session.colorNameMap["saddleBrown"] = Colors::saddleBrown;
+	session.colorNameMap["salmon"] = Colors::salmon;
+	session.colorNameMap["sandyBrown"] = Colors::sandyBrown;
+	session.colorNameMap["seaGreen"] = Colors::seaGreen;
+	session.colorNameMap["seaShell"] = Colors::seaShell;
+	session.colorNameMap["sienna"] = Colors::sienna;
+	session.colorNameMap["silver"] = Colors::silver;
+	session.colorNameMap["skyBlue"] = Colors::skyBlue;
+	session.colorNameMap["slateBlue"] = Colors::slateBlue;
+	session.colorNameMap["slateGray"] = Colors::slateGray;
+	session.colorNameMap["slateGrey"] = Colors::slateGrey;
+	session.colorNameMap["snow"] = Colors::snow;
+	session.colorNameMap["springGreen"] = Colors::springGreen;
+	session.colorNameMap["steelBlue"] = Colors::steelBlue;
+	session.colorNameMap["tan"] = Colors::tan;
+	session.colorNameMap["teal"] = Colors::teal;
+	session.colorNameMap["thistle"] = Colors::thistle;
+	session.colorNameMap["tomato"] = Colors::tomato;
+	session.colorNameMap["turquoise"] = Colors::turquoise;
+	session.colorNameMap["violet"] = Colors::violet;
+	session.colorNameMap["wheat"] = Colors::wheat;
+	session.colorNameMap["whiteSmoke"] = Colors::whiteSmoke;
+	session.colorNameMap["yellowGreen"] = Colors::yellowGreen;
 }
 
 //--------------------------------------------------------------
@@ -1138,81 +1138,81 @@ void ofApp::update()
 	applyPendingTracebacks();
 	// check for OSC messages
 	static float prevVal = 0;
-	while (oscReceiver->hasWaitingMessages()) {
+	while (session.oscReceiver->hasWaitingMessages()) {
 		OscMessage m;
-		oscReceiver->getNextMessage(m);
+		session.oscReceiver->getNextMessage(m);
 		std::string address = m.getAddress();
-		if (address == maestroAddress) {
-			if (!sequencer.isThreadRunning() && sharedData.setBeatAnimation) {
-				sharedData.beatAnimate = true;
-				sharedData.setBeatAnimation = false;
+		if (address == session.maestroAddress) {
+			if (!session.sequencer.isThreadRunning() && session.sharedData.setBeatAnimation) {
+				session.sharedData.beatAnimate = true;
+				session.sharedData.setBeatAnimation = false;
 			}
-			float val = m.getArgAsFloat(maestroValNdx);
-			if (receivingMaestro) {
-				if (val > maestroValThresh) {
-					if (!sharedData.beatUpdated && ofGetElapsedTimeMillis() - maestroTimeStamp > MAESTROTHRESH) {
-						if (maestroInitialized) {
-							int bar = getPlayingBarIndex();
-							sharedData.beatCounter++;
-							if (sharedData.beatCounter >= sharedData.numerator[bar]) {
-								sharedData.beatCounter = 0;
-								sharedData.thisBarIndex++;
-								if (sharedData.thisBarIndex >= sharedData.loopData[sharedData.loopIndex].size()) {
-									sharedData.thisBarIndex = 0;
+			float val = m.getArgAsFloat(session.maestroValNdx);
+			if (session.receivingMaestro) {
+				if (val > session.maestroValThresh) {
+					if (!session.sharedData.beatUpdated && ofGetElapsedTimeMillis() - session.maestroTimeStamp > MAESTROTHRESH) {
+						if (session.maestroInitialized) {
+							int bar = session.getPlayingBarIndex();
+							session.sharedData.beatCounter++;
+							if (session.sharedData.beatCounter >= session.sharedData.numerator[bar]) {
+								session.sharedData.beatCounter = 0;
+								session.sharedData.thisBarIndex++;
+								if (session.sharedData.thisBarIndex >= session.sharedData.loopData[session.sharedData.loopIndex].size()) {
+									session.sharedData.thisBarIndex = 0;
 								}
-								bar = getPlayingBarIndex();
+								bar = session.getPlayingBarIndex();
 							}
-							sharedData.BPMTempi[bar] = msToBPM(ofGetElapsedTimeMillis() - maestroTimeStamp);
+							session.sharedData.BPMTempi[bar] = session.msToBPM(ofGetElapsedTimeMillis() - session.maestroTimeStamp);
 							sendBeatVizInfo(bar);
 						}
 						else {
-							maestroInitialized = true;
+							session.maestroInitialized = true;
 						}
-						sharedData.beatUpdated = true;
-						maestroTimeStamp = ofGetElapsedTimeMillis();
+						session.sharedData.beatUpdated = true;
+						session.maestroTimeStamp = ofGetElapsedTimeMillis();
 						//cout << sharedData.beatCounter << endl;
 						//printVector(maestroVec);
 						float accum = 0;
-						for (auto it = maestroVec.begin(); it != maestroVec.end(); ++it) {
+						for (auto it = session.maestroVec.begin(); it != session.maestroVec.end(); ++it) {
 							accum += *it;
 						}
-						accum /= (float)maestroVec.size();
+						accum /= (float)session.maestroVec.size();
 						//cout << "accum: " << accum << endl;
-						maestroVec.clear();
+						session.maestroVec.clear();
 					}
 				}
 				else {
-					sharedData.beatUpdated = false;
+					session.sharedData.beatUpdated = false;
 					if (prevVal != 0) {
-						maestroVec.push_back(abs(val - prevVal));
+						session.maestroVec.push_back(abs(val - prevVal));
 					}
 					prevVal = val;
 				}
 			}
 		}
-		else if (address == maestroToggleAddress) {
+		else if (address == session.maestroToggleAddress) {
 			if (m.getArgType(0) == OscArgType::Int32) {
 				int val = m.getArgAsInt32(0);
-				if (val) receivingMaestro = true;
-				else receivingMaestro = false;
+				if (val) session.receivingMaestro = true;
+				else session.receivingMaestro = false;
 			}
 			else if (m.getArgType(0) == OscArgType::Float) {
 				int val = (int)m.getArgAsFloat(0);
-				if (val) receivingMaestro = true;
-				else receivingMaestro = false;
+				if (val) session.receivingMaestro = true;
+				else session.receivingMaestro = false;
 			}
 			else if (m.getArgType(0) == OscArgType::True || m.getArgType(0) == OscArgType::False) {
-				receivingMaestro = m.getArgAsBool(0);
+				session.receivingMaestro = m.getArgAsBool(0);
 			}
-			if (!receivingMaestro) {
-				maestroInitialized = false;
+			if (!session.receivingMaestro) {
+				session.maestroInitialized = false;
 			}
 			else {
-				parseString("\\score.beatsin " + std::to_string(maestroBeatsIn), 1, 1); // dummy 2nd and 3rd args
+				session.parseString("\\score.beatsin " + std::to_string(session.maestroBeatsIn), 1, 1); // dummy 2nd and 3rd args
 			}
 		}
-		else if (address == maestroLevareAddress) {
-			maestroBeatsIn = m.getArgAsInt32(0);
+		else if (address == session.maestroLevareAddress) {
+			session.maestroBeatsIn = m.getArgAsInt32(0);
 		}
 		else {
 			for (std::map<int, std::string>::iterator it = fromOscAddr.begin(); it != fromOscAddr.end(); ++it) {
@@ -1277,13 +1277,13 @@ void ofApp::update()
 		}
 	}
 
-	for (auto it = oscServers.begin(); it != oscServers.end(); ++it) {
+	for (auto it = session.oscServers.begin(); it != session.oscServers.end(); ++it) {
 		while (it->second->hasWaitingMessages()) {
 			OscMessage m;
 			it->second->getNextMessage(m);
 			std::string address = m.getAddress();
-			if (oscServerFuncs.find(it->first) != oscServerFuncs.end()) {
-				for (auto it2 = oscServerFuncs.at(it->first).begin(); it2 != oscServerFuncs.at(it->first).end(); ++it2) {
+			if (session.oscServerFuncs.find(it->first) != session.oscServerFuncs.end()) {
+				for (auto it2 = session.oscServerFuncs.at(it->first).begin(); it2 != session.oscServerFuncs.at(it->first).end(); ++it2) {
 					// the first item of the pair inside the vector is the OSC address
 					if (address == it2->first) {
 						// the arguments of the message are the arguments of the mapped function ($1, $2, etc.)
@@ -1328,7 +1328,7 @@ void ofApp::update()
 						}
 						// the second item of the pair inside the vector is the mapped function
 						// it is called like a bound function, so that its errors go to the line where it is defined
-						callBoundFunction(it2->second, args);
+						session.callBoundFunction(it2->second, args);
 					}
 				}
 			}
@@ -1336,7 +1336,7 @@ void ofApp::update()
 	}
 
 	// check if any instrument has a delay for receiving OSC messages
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 		if (it->second.oscFifo.size() > 0) {
 			uint64_t stamp = ofGetElapsedTimeMillis();
 			if (stamp >= it->second.oscFifo.back().second) {
@@ -1349,17 +1349,17 @@ void ofApp::update()
 	// and call them after releasing it, as calling a function locks it again
 	std::vector<std::string> framerateFuncs;
 	{
-		std::lock_guard<std::mutex> lock(sharedData.functionsMutex);
-		for (auto func = sharedData.functions.begin(); func != sharedData.functions.end(); ++func) {
+		std::lock_guard<std::mutex> lock(session.sharedData.functionsMutex);
+		for (auto func = session.sharedData.functions.begin(); func != session.sharedData.functions.end(); ++func) {
 			// binding a function to the number of instruments + 2, binds to the framerate
-			if (func->second.getBoundInst() == (int)sharedData.instruments.size() + 2) {
+			if (func->second.getBoundInst() == (int)session.sharedData.instruments.size() + 2) {
 				framerateFuncs.push_back(func->second.getName());
 			}
 		}
 	}
 	for (const std::string& funcName : framerateFuncs) {
 		//parseCommand(genCmdInput(funcName), 1, 1);
-		callBoundFunction(funcName);
+		session.callBoundFunction(funcName);
 	}
 
 	if (isWindowResized) {
@@ -1368,70 +1368,70 @@ void ofApp::update()
 			resizeWindow();
 		}
 	}
-	if (startSequencer) {
-		startSequencer = false;
+	if (session.startSequencer) {
+		session.startSequencer = false;
 		// in test mode the sequencer plays a dry run instead, at the end of the test (see testmode.cpp)
-		if (!sequencer.isThreadRunning() && testFile.empty()) {
-			sequencer.start();
+		if (!session.sequencer.isThreadRunning() && testFile.empty()) {
+			session.sequencer.start();
 		}
 	}
 
-	if (sharedData.typePyStr && ((sharedData.pyStdoutStrNdx == 0 && !ctrlPressed && !shiftPressed) || sharedData.pyStdoutStrNdx > 0)) {
-		if (sharedData.typePyStrCharByChar) {
-			pyStdoutStrKeyModifier keyMod = checkPyStdoutKeyModifier(sharedData.pyStdoutStrNdx);
-			sharedData.pyStdoutStrNdx += keyMod.ndxInc;
+	if (session.sharedData.typePyStr && ((session.sharedData.pyStdoutStrNdx == 0 && !ctrlPressed && !shiftPressed) || session.sharedData.pyStdoutStrNdx > 0)) {
+		if (session.sharedData.typePyStrCharByChar) {
+			pyStdoutStrKeyModifier keyMod = checkPyStdoutKeyModifier(session.sharedData.pyStdoutStrNdx);
+			session.sharedData.pyStdoutStrNdx += keyMod.ndxInc;
 			if (keyMod.isModifier) {
 				handleKeyModifier(keyMod);
 			}
 			else {
-				int charToType = (int)sharedData.pyStdoutStr[sharedData.pyStdoutStrNdx];
-				if (sharedData.pyStdoutStr[sharedData.pyStdoutStrNdx] == '\n') {
+				int charToType = (int)session.sharedData.pyStdoutStr[session.sharedData.pyStdoutStrNdx];
+				if (session.sharedData.pyStdoutStr[session.sharedData.pyStdoutStrNdx] == '\n') {
 					charToType = 13;
 				}
-				if (sharedData.whichPyPane == whichPane) {
+				if (session.sharedData.whichPyPane == session.whichPane) {
 					keyPressed(charToType);
 				}
 				else {
-					keyPressedOsc(charToType, sharedData.whichPyPane);
+					keyPressedOsc(charToType, session.sharedData.whichPyPane);
 				}
-				sharedData.pyStdoutStrNdx++;
+				session.sharedData.pyStdoutStrNdx++;
 			}
-			if (sharedData.pyStdoutStrNdx >= sharedData.pyStdoutStr.size()) {
-				sharedData.pyStdoutStr.clear();
-				sharedData.pyStdoutStrNdx = 0;
-				sharedData.typePyStr = false;
+			if (session.sharedData.pyStdoutStrNdx >= session.sharedData.pyStdoutStr.size()) {
+				session.sharedData.pyStdoutStr.clear();
+				session.sharedData.pyStdoutStrNdx = 0;
+				session.sharedData.typePyStr = false;
 			}
 		}
-		else if (sharedData.typePyStrLineByLine) {
+		else if (session.sharedData.typePyStrLineByLine) {
 			// check if we have a key modifier at the very beginning
-			if (sharedData.pyStdoutStrVecNdx == 0 && sharedData.pyStdoutKeyModNdxs.size() > 0 && sharedData.pyStdoutStrVecNdx == sharedData.pyStdoutKeyModNdxs[sharedData.pyStdoutKeyModNdx]) {
-				handleKeyModifier(sharedData.pyStdoutKeyModifiers[sharedData.pyStdoutKeyModNdx]);
-				sharedData.pyStdoutKeyModNdx++;
+			if (session.sharedData.pyStdoutStrVecNdx == 0 && session.sharedData.pyStdoutKeyModNdxs.size() > 0 && session.sharedData.pyStdoutStrVecNdx == session.sharedData.pyStdoutKeyModNdxs[session.sharedData.pyStdoutKeyModNdx]) {
+				handleKeyModifier(session.sharedData.pyStdoutKeyModifiers[session.sharedData.pyStdoutKeyModNdx]);
+				session.sharedData.pyStdoutKeyModNdx++;
 				// if we have a key modifier, we increment the char by char index so that the test in which typing Python strings is included is true
-				sharedData.pyStdoutStrNdx++;
+				session.sharedData.pyStdoutStrNdx++;
 			}
-			editors[sharedData.whichPyPane].setString(sharedData.pyStdoutStrVec[sharedData.pyStdoutStrVecNdx]);
-			sharedData.pyStdoutStrVecNdx++;
+			editors[session.sharedData.whichPyPane].setString(session.sharedData.pyStdoutStrVec[session.sharedData.pyStdoutStrVecNdx]);
+			session.sharedData.pyStdoutStrVecNdx++;
 			// then check if we have a key modifier after the current string chunk
-			if (sharedData.pyStdoutKeyModNdxs.size() > 0 && sharedData.pyStdoutStrVecNdx == sharedData.pyStdoutKeyModNdxs[sharedData.pyStdoutKeyModNdx]) {
-				handleKeyModifier(sharedData.pyStdoutKeyModifiers[sharedData.pyStdoutKeyModNdx]);
-				sharedData.pyStdoutKeyModNdx++;
+			if (session.sharedData.pyStdoutKeyModNdxs.size() > 0 && session.sharedData.pyStdoutStrVecNdx == session.sharedData.pyStdoutKeyModNdxs[session.sharedData.pyStdoutKeyModNdx]) {
+				handleKeyModifier(session.sharedData.pyStdoutKeyModifiers[session.sharedData.pyStdoutKeyModNdx]);
+				session.sharedData.pyStdoutKeyModNdx++;
 				// if we have a key modifier, we increment the char by char index so that the test in which typing Python strings is included is true
-				sharedData.pyStdoutStrNdx++;
+				session.sharedData.pyStdoutStrNdx++;
 			}
-			if (sharedData.pyStdoutStrVecNdx >= (int)sharedData.pyStdoutStrVec.size()) {
-				sharedData.typePyStrLineByLine = false;
-				sharedData.pyStdoutStrVec.clear();
-				sharedData.pyStdoutKeyModifiers.clear();
-				sharedData.pyStdoutKeyModNdxs.clear();
-				sharedData.typePyStr = false;
-				sharedData.pyStdoutStrVecNdx = 0;
-				sharedData.pyStdoutKeyModNdx = 0;
-				sharedData.pyStdoutStrNdx = 0;
+			if (session.sharedData.pyStdoutStrVecNdx >= (int)session.sharedData.pyStdoutStrVec.size()) {
+				session.sharedData.typePyStrLineByLine = false;
+				session.sharedData.pyStdoutStrVec.clear();
+				session.sharedData.pyStdoutKeyModifiers.clear();
+				session.sharedData.pyStdoutKeyModNdxs.clear();
+				session.sharedData.typePyStr = false;
+				session.sharedData.pyStdoutStrVecNdx = 0;
+				session.sharedData.pyStdoutKeyModNdx = 0;
+				session.sharedData.pyStdoutStrNdx = 0;
 			}
 		}
 		else {
-			std::vector<int> angleBracketNdxs = findIndexesOfCharInStr(sharedData.pyStdoutStr, "<");
+			std::vector<int> angleBracketNdxs = session.findIndexesOfCharInStr(session.sharedData.pyStdoutStr, "<");
 			bool hasModifiers = false;
 			std::vector<pyStdoutStrKeyModifier> keyModifiers;
 			// run through the indexes of the angle brackets and test each one separately for a key modifier
@@ -1442,10 +1442,10 @@ void ofApp::update()
 				}
 			}
 			if (!hasModifiers) {
-				std::vector<std::string> v = tokenizeString(sharedData.pyStdoutStr, "\n", true);
+				std::vector<std::string> v = session.tokenizeString(session.sharedData.pyStdoutStr, "\n", true);
 				for (std::string s : v) {
-					std::vector<std::string> v2 = tokenizeString(s, "\b", true);
-					sharedData.pyStdoutStrVec.insert(sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
+					std::vector<std::string> v2 = session.tokenizeString(s, "\b", true);
+					session.sharedData.pyStdoutStrVec.insert(session.sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
 				}
 				//editors[whichPane].setString(sharedData.pyStdoutStr);
 			}
@@ -1457,48 +1457,48 @@ void ofApp::update()
 						int bracketStart = angleBracketNdxs[i];
 						int bracketEnd = bracketStart + keyModifiers[i].ndxInc;
 						if (bracketStart > prevEnd) {
-							std::vector<std::string> v = tokenizeString(sharedData.pyStdoutStr.substr(prevEnd, bracketStart-prevEnd), "\n", true);
+							std::vector<std::string> v = session.tokenizeString(session.sharedData.pyStdoutStr.substr(prevEnd, bracketStart-prevEnd), "\n", true);
 							for (std::string s : v) {
-								std::vector<std::string> v2 = tokenizeString(s, "\b", true);
-								sharedData.pyStdoutStrVec.insert(sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
+								std::vector<std::string> v2 = session.tokenizeString(s, "\b", true);
+								session.sharedData.pyStdoutStrVec.insert(session.sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
 							}
 							int keyModNdx = 0;
-							if (sharedData.pyStdoutKeyModNdxs.size() > 0) keyModNdx = sharedData.pyStdoutKeyModNdxs.back();
-							sharedData.pyStdoutKeyModNdxs.push_back((int)v.size() + keyModNdx);
+							if (session.sharedData.pyStdoutKeyModNdxs.size() > 0) keyModNdx = session.sharedData.pyStdoutKeyModNdxs.back();
+							session.sharedData.pyStdoutKeyModNdxs.push_back((int)v.size() + keyModNdx);
 							//editors[sharedData.whichPyPane].setString(sharedData.pyStdoutStr.substr(prevEnd, bracketStart-prevEnd));
 						}
 						// if we start with a key modifier, the modifiers indexes vector will be empty
 						// so we populate it with a 0
-						if (sharedData.pyStdoutKeyModNdxs.empty()) sharedData.pyStdoutKeyModNdxs.push_back(0);
-						sharedData.pyStdoutKeyModifiers.push_back(keyModifiers[i]);
+						if (session.sharedData.pyStdoutKeyModNdxs.empty()) session.sharedData.pyStdoutKeyModNdxs.push_back(0);
+						session.sharedData.pyStdoutKeyModifiers.push_back(keyModifiers[i]);
 						//handleKeyModifier(keyModifiers[i]);
 						prevEnd = bracketEnd;
 						lastModifierNdx = i;
 					}
 				}
 				// check if there is anything remaining in the string after the last modifier key
-				if ((int)sharedData.pyStdoutStr.size() > angleBracketNdxs[lastModifierNdx] + keyModifiers[lastModifierNdx].ndxInc + 1) {
+				if ((int)session.sharedData.pyStdoutStr.size() > angleBracketNdxs[lastModifierNdx] + keyModifiers[lastModifierNdx].ndxInc + 1) {
 					int substrStart = angleBracketNdxs[lastModifierNdx] + keyModifiers[lastModifierNdx].ndxInc;
-					std::vector<std::string> v = tokenizeString(sharedData.pyStdoutStr.substr(substrStart), "\n", true);
+					std::vector<std::string> v = session.tokenizeString(session.sharedData.pyStdoutStr.substr(substrStart), "\n", true);
 					for (std::string s : v) {
-						std::vector<std::string> v2 = tokenizeString(s, "\b", true);
-						sharedData.pyStdoutStrVec.insert(sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
+						std::vector<std::string> v2 = session.tokenizeString(s, "\b", true);
+						session.sharedData.pyStdoutStrVec.insert(session.sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
 					}
 					//editors[sharedData.whichPyPane].setString(sharedData.pyStdoutStr.substr(substrStart));
 				}
 			}
-			sharedData.typePyStrLineByLine = true;
-			sharedData.pyStdoutStr.clear();
-			sharedData.pyStdoutStrNdx = 0;
+			session.sharedData.typePyStrLineByLine = true;
+			session.sharedData.pyStdoutStr.clear();
+			session.sharedData.pyStdoutStrNdx = 0;
 			//sharedData.typePyStr = false;
 		}
 	}
 
-	if (showScope && pyoSet) {
-		for (int i = 0; i < outChannels; i++) {
+	if (showScope && session.pyoSet) {
+		for (int i = 0; i < session.outChannels; i++) {
 			scopeWaveforms[i].clear();
 		}
-		if ((int)scopeWaveforms.size() != outChannels) scopeWaveforms.resize(outChannels);
+		if ((int)scopeWaveforms.size() != session.outChannels) scopeWaveforms.resize(session.outChannels);
 		// the last output buffer, copied from the audio thread
 		std::vector<float> samples;
 		int channels;
@@ -1513,7 +1513,7 @@ void ofApp::update()
 		for (float sample : samples) squares += (double)sample * sample;
 		scopeRms = (samples.empty() ? 0.0f : (float)std::sqrt(squares / samples.size()));
 		for(size_t i = 0; i < numFrames; i++) {
-			for (int j = 0; j < outChannels && j < channels; j++) {
+			for (int j = 0; j < session.outChannels && j < channels; j++) {
 				float sample = samples[i * channels + j];
 				float x = ofMap(i, 0, numFrames, scoreXOffset, scoreBackgroundWidth+scoreXOffset);
 				float y = ((sample * (scoreBackgroundHeight / 2)) * scopeRms) + (scoreBackgroundHeight / 2);
@@ -1543,14 +1543,14 @@ void ofApp::draw()
 	float paneWidth = 0, paneHeight = 0;
 	// depending on the orientation, we must first create either the height or the width of the editors
 	if (paneSplitOrientation == 0) {
-		paneHeight = sharedData.tracebackBase / (float)numPanes.size();
+		paneHeight = session.sharedData.tracebackBase / (float)numPanes.size();
 	}
 	else {
-		paneWidth = (float)sharedData.screenWidth / (float)numPanes.size();
+		paneWidth = (float)session.sharedData.screenWidth / (float)numPanes.size();
 	}
 	for (std::map<int, int>::iterator it = numPanes.begin(); it != numPanes.end(); ++it) {
 		if (paneSplitOrientation == 0) {
-			paneWidth = (float)sharedData.screenWidth / (float)it->second;
+			paneWidth = (float)session.sharedData.screenWidth / (float)it->second;
 			// we start the following loop from 1 because if we have one column only
 			// we don't need to draw any separating lines
 			for (int col = 1; col < it->second; col++) {
@@ -1560,9 +1560,9 @@ void ofApp::draw()
 		else {
 			// if the orientation is switched, we treat rows as columns and vice versa
 			if (it->first > 0) {
-				ofDrawLine(paneWidth*(float)it->first, 0, paneWidth*(float)it->first, sharedData.tracebackYCoord);
+				ofDrawLine(paneWidth*(float)it->first, 0, paneWidth*(float)it->first, session.sharedData.tracebackYCoord);
 			}
-			paneHeight = sharedData.tracebackBase / (float)it->second;
+			paneHeight = session.sharedData.tracebackBase / (float)it->second;
 		}
 	}
 	//if (sharedData.showNotes) {
@@ -1599,17 +1599,17 @@ void ofApp::draw()
 	}
 	// draw a horizontal line to separate the panes and score from the traceback area
 	ofSetColor(foregroundColor*brightnessCoeff);
-	ofDrawLine(0, sharedData.tracebackYCoord, sharedData.screenWidth, sharedData.tracebackYCoord);
+	ofDrawLine(0, session.sharedData.tracebackYCoord, session.sharedData.screenWidth, session.sharedData.tracebackYCoord);
 	// when the shell stops being shown (e.g. a new error message replaces the output of a command)
 	// the area below the panes goes back to its size for error messages, as it does when pressing Esc
-	bool shellShown = editors[whichPane].showingShell();
+	bool shellShown = editors[session.whichPane].showingShell();
 	if (shellWasShown && !shellShown) {
 		shellStr = "";
 		numShellLines = numShellLsOutputLines = 0;
 		shellScroll = 0;
-		sharedData.tracebackYCoord = sharedData.tracebackBase;
+		session.sharedData.tracebackYCoord = session.sharedData.tracebackBase;
 		restorePaneLayout();
-		editors[whichPane].resetMaxNumLines();
+		editors[session.whichPane].resetMaxNumLines();
 		// the sizes of the areas below the panes are calculated again in drawTraceback() and drawShell()
 		tracebackNumLinesShown = shellNumLinesShown = -1;
 	}
@@ -1621,7 +1621,7 @@ void ofApp::draw()
 		drawTraceback();
 	}
 	// the pop-up of autocompletion is drawn last, so that it is on top of everything
-	editors[whichPane].drawCompletions();
+	editors[session.whichPane].drawCompletions();
 	// in test mode with a screenshot, the window is saved a few frames after the file has run, and the program quits (see testmode.cpp)
 	if (!testScreenshot.empty() && testDone && ofGetFrameNum() > testDoneFrame + 3) {
 		ofSaveScreen(testScreenshot);
@@ -1633,8 +1633,8 @@ void ofApp::draw()
 void ofApp::drawTraceback()
 {
 	int tracebackCounter = 0;
-	uint64_t stamps[editors[whichPane].allLines.size()];
-	int ndxs[editors[whichPane].allLines.size()];
+	uint64_t stamps[editors[session.whichPane].allLines.size()];
+	int ndxs[editors[session.whichPane].allLines.size()];
 	int i = 0;
 	int paneNdx = 0;
 	//for (auto it = numPanes.begin(); it != numPanes.end(); ++it) {
@@ -1643,17 +1643,17 @@ void ofApp::drawTraceback()
 	//	}
 	//}
 	// we must first determine which traceback string was initiated first, so we can print this on top
-	for (auto it = editors[whichPane].getAllLinesBegin(); it != editors[whichPane].getAllLinesEnd(); ++it) {
-		if ((ofGetElapsedTimeMillis() - editors[whichPane].getTracebackTimeStamp(it->first)) < editors[whichPane].getTracebackDur() && editors[whichPane].getTracebackStr(it->first).size() > 0) {
+	for (auto it = editors[session.whichPane].getAllLinesBegin(); it != editors[session.whichPane].getAllLinesEnd(); ++it) {
+		if ((ofGetElapsedTimeMillis() - editors[session.whichPane].getTracebackTimeStamp(it->first)) < editors[session.whichPane].getTracebackDur() && editors[session.whichPane].getTracebackStr(it->first).size() > 0) {
 			// exclude the line of the cursor as this is check below
-			if (it->first != editors[whichPane].getCursorLineIndex()) {
+			if (it->first != editors[session.whichPane].getCursorLineIndex()) {
 				ndxs[i] = it->first;
-				stamps[i] = editors[whichPane].getTracebackTimeStamp(it->first);
+				stamps[i] = editors[session.whichPane].getTracebackTimeStamp(it->first);
 				i++;
 			}
 		}
 		else {
-			editors[whichPane].setTracebackTimeStamp(it->first, 0);
+			editors[session.whichPane].setTracebackTimeStamp(it->first, 0);
 		}
 	}
 	// sort indexes based on time stamps (the smaller the time stamp, the higher it should be in the traceback)
@@ -1661,24 +1661,24 @@ void ofApp::drawTraceback()
 	int numTracebackLines = 0;
 	bool numTracebackLinesChanged = false;
 	for (int j = 0; j < i; j++) {
-		numTracebackLines += editors[whichPane].getTracebackNumLines(ndxs[j]);
+		numTracebackLines += editors[session.whichPane].getTracebackNumLines(ndxs[j]);
 	}
 	if (numTracebackLines > 0) {
 		numTracebackLinesChanged = true;
 	}
 	// once we check the traceback messages of lines other than that where the cursor is
 	// we check the line of the cursor too
-	if (editors[whichPane].getTracebackStr(editors[whichPane].getCursorLineIndex()).size() > 0) {
+	if (editors[session.whichPane].getTracebackStr(editors[session.whichPane].getCursorLineIndex()).size() > 0) {
 		// if there was something in the traceback, accumulate
 		if (numTracebackLinesChanged) {
-			numTracebackLines += editors[whichPane].getTracebackNumLines(editors[whichPane].getCursorLineIndex());
+			numTracebackLines += editors[session.whichPane].getTracebackNumLines(editors[session.whichPane].getCursorLineIndex());
 		}
 		// otherwise just set this number of lines
 		else {
-			numTracebackLines = editors[whichPane].getTracebackNumLines(editors[whichPane].getCursorLineIndex());
+			numTracebackLines = editors[session.whichPane].getTracebackNumLines(editors[session.whichPane].getCursorLineIndex());
 		}
 		// add the line index of the cursor to ndxs
-		ndxs[i] = editors[whichPane].getCursorLineIndex();
+		ndxs[i] = editors[session.whichPane].getCursorLineIndex();
 		// increment i so the loop below includes the line of the cursor as well
 		i++;
 	}
@@ -1711,18 +1711,18 @@ void ofApp::drawTraceback()
 			}
 		}
 		if (numTracebackLines > MINTRACEBACKLINES) {
-			float prevTracebackYCoord = sharedData.tracebackYCoord;
-			sharedData.tracebackYCoord = sharedData.tracebackBase - (cursorHeight * (numTracebackLines - MINTRACEBACKLINES));
-			sharedData.tracebackYCoord = std::min(sharedData.tracebackYCoord, sharedData.tracebackBase);
+			float prevTracebackYCoord = session.sharedData.tracebackYCoord;
+			session.sharedData.tracebackYCoord = session.sharedData.tracebackBase - (cursorHeight * (numTracebackLines - MINTRACEBACKLINES));
+			session.sharedData.tracebackYCoord = std::min(session.sharedData.tracebackYCoord, session.sharedData.tracebackBase);
 			moveScoreWithTraceback(prevTracebackYCoord);
 		}
 		else {
-			sharedData.tracebackYCoord = sharedData.tracebackBase;
+			session.sharedData.tracebackYCoord = session.sharedData.tracebackBase;
 			resetScoreYOffset();
 		}
 	}
 	for (int j = 0; j < i; j++) {
-		switch (editors[whichPane].getTracebackColor(ndxs[j])) {
+		switch (editors[session.whichPane].getTracebackColor(ndxs[j])) {
 			case 0:
 				ofSetColor(ofColor::white*brightnessCoeff);
 				break;
@@ -1738,12 +1738,12 @@ void ofApp::drawTraceback()
 		}
 		std::string tracebackStr = "";
 		// if the stderr message is a warning or error in LiveLily (not Python), prepend the line number
-		if (editors[whichPane].getTracebackColor(ndxs[j]) > 0 && editors[whichPane].getLanguage() != 1) {
+		if (editors[session.whichPane].getTracebackColor(ndxs[j]) > 0 && editors[session.whichPane].getLanguage() != 1) {
 			tracebackStr += "line " + ofToString(ndxs[j]+1) + ": ";
 		}
-		tracebackStr += editors[whichPane].getTracebackStr(ndxs[j]);
-		drawLines(tracebackStr, halfCharacterWidth, sharedData.tracebackYCoord+(cursorHeight*(tracebackCounter+1)));
-		tracebackCounter += editors[whichPane].getTracebackNumLines(ndxs[j]);
+		tracebackStr += editors[session.whichPane].getTracebackStr(ndxs[j]);
+		drawLines(tracebackStr, halfCharacterWidth, session.sharedData.tracebackYCoord+(cursorHeight*(tracebackCounter+1)));
+		tracebackCounter += editors[session.whichPane].getTracebackNumLines(ndxs[j]);
 	}
 }
 
@@ -1769,35 +1769,35 @@ void ofApp::drawShell()
 	// the strings of the shell are broken into lines to fit the width of the window as it is now, so that they fit it also after it is resized
 	// a command that is typed has no newlines, so its cursor is on the row of its position, and it can be on a row of its own
 	// right after the last character of a row
-	maxShellChars = std::max((size_t)1, (size_t)(sharedData.screenWidth / oneCharacterWidth));
+	maxShellChars = std::max((size_t)1, (size_t)(session.sharedData.screenWidth / oneCharacterWidth));
 	std::string shellLines, shellLsOutputLines;
 	if (!shellStr.empty()) {
 		shellLines = wrapShellLines(shellStr, numShellLines);
-		if (editors[whichPane].isTypingShell()) numShellLines = std::max(numShellLines, (int)(shellStrCursorPos / maxShellChars) + 1);
+		if (editors[session.whichPane].isTypingShell()) numShellLines = std::max(numShellLines, (int)(shellStrCursorPos / maxShellChars) + 1);
 	}
 	if (!shellLsOutputStr.empty()) shellLsOutputLines = wrapShellLines(shellLsOutputStr, numShellLsOutputLines);
 	// at least two lines, so that the line that separates the panes from the area below them has one line of text under it
 	int numShellLinesWanted = std::max(numShellLines + numShellLsOutputLines, MINTRACEBACKLINES);
 	// the panes are made shorter when the number of lines changes, or when another pane becomes active, which then keeps its height the longest
-	if (numShellLinesWanted != shellNumLinesShown || whichPane != shellLayoutPane) {
+	if (numShellLinesWanted != shellNumLinesShown || session.whichPane != shellLayoutPane) {
 		shellNumLinesShown = numShellLinesWanted;
-		shellLayoutPane = whichPane;
+		shellLayoutPane = session.whichPane;
 		shellVisibleLines = layoutPanesForShell(numShellLinesWanted);
 		if (shellVisibleLines > MINTRACEBACKLINES) {
-			float prevTracebackYCoord = sharedData.tracebackYCoord;
-			sharedData.tracebackYCoord = sharedData.tracebackBase - (cursorHeight * (shellVisibleLines - MINTRACEBACKLINES));
-			sharedData.tracebackYCoord = std::min(sharedData.tracebackYCoord, sharedData.tracebackBase);
+			float prevTracebackYCoord = session.sharedData.tracebackYCoord;
+			session.sharedData.tracebackYCoord = session.sharedData.tracebackBase - (cursorHeight * (shellVisibleLines - MINTRACEBACKLINES));
+			session.sharedData.tracebackYCoord = std::min(session.sharedData.tracebackYCoord, session.sharedData.tracebackBase);
 			moveScoreWithTraceback(prevTracebackYCoord);
 		}
 		else {
-			sharedData.tracebackYCoord = sharedData.tracebackBase;
+			session.sharedData.tracebackYCoord = session.sharedData.tracebackBase;
 			resetScoreYOffset();
 		}
 	}
 	// the lines of the command and of its output, of which the lines from shellScroll on are shown, as many as fit
 	// (a command that is typed is short, so it is always shown from its start)
 	shellTotalLines = numShellLines + numShellLsOutputLines;
-	if (editors[whichPane].isTypingShell()) shellScroll = 0;
+	if (editors[session.whichPane].isTypingShell()) shellScroll = 0;
 	shellScroll = std::max(0, std::min(shellScroll, shellTotalLines - shellVisibleLines));
 	std::vector<std::string> rows;
 	auto addRows = [&rows](const std::string& lines, int numLines) {
@@ -1820,10 +1820,10 @@ void ofApp::drawShell()
 		shownRows += rows[i];
 	}
 	// the area below the panes has already moved up to fit all the lines, so the first line is right below its top
-	float y = sharedData.tracebackYCoord + cursorHeight;
+	float y = session.sharedData.tracebackYCoord + cursorHeight;
 	ofSetColor(shellStrColor*brightnessCoeff);
 	drawLines(shownRows, halfCharacterWidth, y);
-	if (editors[whichPane].isTypingShell()) {
+	if (editors[session.whichPane].isTypingShell()) {
 		float cursorX = halfCharacterWidth + ((shellStrCursorPos % maxShellChars) * oneCharacterWidth);
 		float cursorY = y + ((shellStrCursorPos / maxShellChars) * cursorHeight);
 		ofDrawRectangle(cursorX, cursorY - (cursorHeight * 0.85), oneCharacterWidth, cursorHeight);
@@ -1885,7 +1885,7 @@ int ofApp::layoutPanesForShell(int wanted)
 		// the row of the active pane, if it is in this column
 		int activeRow = -1;
 		for (int r = 0; r < numRows; r++) {
-			if (std::find(column[r].begin(), column[r].end(), whichPane) != column[r].end()) activeRow = r;
+			if (std::find(column[r].begin(), column[r].end(), session.whichPane) != column[r].end()) activeRow = r;
 		}
 		// the rows give lines from the bottom up, and the row of the active pane last
 		std::vector<int> order;
@@ -1938,7 +1938,7 @@ void ofApp::moveScoreWithTraceback(float prevTracebackYCoord)
 	// a score shown at the top of the window in horizontal view is not reached by the traceback
 	// so it is not moved, as moving it would push its upper part out of the window
 	if (scoreOrientation == 1 && scoreYOffset <= 0) return;
-	scoreYOffset += (sharedData.tracebackYCoord - prevTracebackYCoord);
+	scoreYOffset += (session.sharedData.tracebackYCoord - prevTracebackYCoord);
 }
 
 //--------------------------------------------------------------
@@ -1948,31 +1948,31 @@ void ofApp::drawScore()
 	ofSetColor(scoreBackgroundColor * brightnessCoeff);
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
 	// safety test to avoid crashes when changing the window size before creating any bars
-	if (sharedData.loopIndex >= (int)sharedData.loopData.size()) return;
+	if (session.sharedData.loopIndex >= (int)session.sharedData.loopData.size()) return;
 	//------------- variables for horizontal score view ------------------
 	//int numBars = 1;
 	bool drawLoopStartEnd = true;
 	int bar; //, prevBar = 0;
-	int ndx = sharedData.thisBarIndex;
+	int ndx = session.sharedData.thisBarIndex;
 	if (scoreOrientation > 0) {
 		// numBars is part of the ofApp class and it's used to be compared to the previous number of bars displayed
 		// which is necessary to properly position single bars in horizontal view
-		sharedData.numBars = std::min(numBarsToDisplay, (int)sharedData.loopData[sharedData.loopIndex].size());
+		session.sharedData.numBars = std::min(numBarsToDisplay, (int)session.sharedData.loopData[session.sharedData.loopIndex].size());
 		drawLoopStartEnd = false;
 		// the equation below yields the first bar to display
 		// the rest will be calculated by adding the loop variable i
 		// e.g. for an 8-bar loop with two bars being displayed
 		// the line below yields 0, 2, 4, 6, every other index (it actually ignores the odd indexes)
-		ndx = ((sharedData.thisBarIndex - (sharedData.thisBarIndex % sharedData.numBars)) / sharedData.numBars) * sharedData.numBars;
+		ndx = ((session.sharedData.thisBarIndex - (session.sharedData.thisBarIndex % session.sharedData.numBars)) / session.sharedData.numBars) * session.sharedData.numBars;
 		// in the if test below we set the number of bars to be displayed to fit the remaining bars
 		// e.g. in a six-bar loop, when the first four bars have been played, we need to display two bars only
 		// not four bars which is the maximum number of bars to display (these numbers are hypothetical)
 		if (ndx > 0) {
-			sharedData.numBars -= ((int)sharedData.loopData[sharedData.loopIndex].size() - ndx);
+			session.sharedData.numBars -= ((int)session.sharedData.loopData[session.sharedData.loopIndex].size() - ndx);
 		}
 	}
 	else {
-		sharedData.numBars = 1;
+		session.sharedData.numBars = 1;
 	}
 	//--------------- end of horizontal score view variables --------------
 	//---------------- variables for the beat visualization ---------------
@@ -1983,51 +1983,51 @@ void ofApp::drawScore()
 	float beatPulseSizeY = 0;
 	//------------ end of variables for the beat visualization ------------
 	// show the animated beat
-	if (sharedData.instruments.size() > 0) {
-		if (sharedData.beatAnimate) {
-			beatPulseMinPosY = sharedData.yStartPnts[scoreOrientation] - sharedData.noteHeight;
-			beatPulseMaxPosY = sharedData.yStartPnts[scoreOrientation] + (sharedData.staffLinesDist * 4);
+	if (session.sharedData.instruments.size() > 0) {
+		if (session.sharedData.beatAnimate) {
+			beatPulseMinPosY = session.sharedData.yStartPnts[scoreOrientation] - session.sharedData.noteHeight;
+			beatPulseMaxPosY = session.sharedData.yStartPnts[scoreOrientation] + (session.sharedData.staffLinesDist * 4);
 			// one staff for every instrument that is not merged into the staff of another one (see \merge)
 			bool firstStaff = true;
-			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				if (mergeHostOf(it->first) != it->first) continue;
-				if (!firstStaff) beatPulseMaxPosY += (sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2));
+			for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
+				if (session.mergeHostOf(it->first) != it->first) continue;
+				if (!firstStaff) beatPulseMaxPosY += (session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2));
 				firstStaff = false;
 			}
-			beatPulseMaxPosY += sharedData.noteHeight;
+			beatPulseMaxPosY += session.sharedData.noteHeight;
 			beatPulseSizeY = beatPulseMaxPosY - beatPulseMinPosY;
-			if (sharedData.beatViz) {
-				switch (sharedData.beatVizType) {
+			if (session.sharedData.beatViz) {
+				switch (session.sharedData.beatVizType) {
 					case 1:
 						beatPulseStartX = scoreXStartPnt + scoreXOffset;
-						beatPulseEndX = scoreXStartPnt + scoreXOffset + sharedData.instruments.begin()->second.getStaffXLength();
+						beatPulseEndX = scoreXStartPnt + scoreXOffset + session.sharedData.instruments.begin()->second.getStaffXLength();
 						if (scoreOrientation == 1) {
-							beatPulseEndX += (sharedData.instruments.begin()->second.getStaffXLength() * (sharedData.numBars-1));
-							beatPulseEndX -= (sharedData.instruments.begin()->second.getClefXOffset() * (sharedData.numBars-1));
-							beatPulseEndX -= (sharedData.instruments.begin()->second.getMeterXOffset() * (sharedData.numBars-1));
+							beatPulseEndX += (session.sharedData.instruments.begin()->second.getStaffXLength() * (session.sharedData.numBars-1));
+							beatPulseEndX -= (session.sharedData.instruments.begin()->second.getClefXOffset() * (session.sharedData.numBars-1));
+							beatPulseEndX -= (session.sharedData.instruments.begin()->second.getMeterXOffset() * (session.sharedData.numBars-1));
 						}
-						beatPulsePosX = beatPulseStartX - sharedData.staffLinesDist;
+						beatPulsePosX = beatPulseStartX - session.sharedData.staffLinesDist;
 						beatPulseSizeX = beatPulseEndX - beatPulseStartX;
-						beatPulseSizeX += sharedData.staffLinesDist;
+						beatPulseSizeX += session.sharedData.staffLinesDist;
 						beatPulseMinPosY += scoreYOffset;
 						ofSetColor(beatColor.r*brightnessCoeff,
 								   beatColor.g*brightnessCoeff,
 								   beatColor.b*brightnessCoeff,
-								   sharedData.beatVizCosTab[sharedData.beatVizDegrade] * BEATVIZCOEFF);
+								   session.sharedData.beatVizCosTab[session.sharedData.beatVizDegrade] * BEATVIZCOEFF);
 						ofDrawRectangle(beatPulsePosX, beatPulseMinPosY, beatPulseSizeX, beatPulseSizeY);
 						break;
 					default:
 						break;
 				}
 				// regardless of the beattype, we calculate the alpha value here
-				if ((ofGetElapsedTimeMillis() - sharedData.beatVizTimeStamp) >= sharedData.beatVizRampStart) {
+				if ((ofGetElapsedTimeMillis() - session.sharedData.beatVizTimeStamp) >= session.sharedData.beatVizRampStart) {
 					// calculate how many steps the brightness has to dim, depending on the elapsed time and the steps per millisecond
-					int brightnessDegrade = (int)((ofGetElapsedTimeMillis()-(sharedData.beatVizTimeStamp+sharedData.beatVizRampStart))*sharedData.beatVizStepsPerMs);
-					sharedData.beatVizDegrade = BEATVIZBRIGHTNESS - brightnessDegrade;
-					if (sharedData.beatVizDegrade < 0) {
-						sharedData.beatVizDegrade = 0;
-						sharedData.beatViz = false;
-						sharedData.beatVizDegrade = BEATVIZBRIGHTNESS;
+					int brightnessDegrade = (int)((ofGetElapsedTimeMillis()-(session.sharedData.beatVizTimeStamp+session.sharedData.beatVizRampStart))*session.sharedData.beatVizStepsPerMs);
+					session.sharedData.beatVizDegrade = BEATVIZBRIGHTNESS - brightnessDegrade;
+					if (session.sharedData.beatVizDegrade < 0) {
+						session.sharedData.beatVizDegrade = 0;
+						session.sharedData.beatViz = false;
+						session.sharedData.beatVizDegrade = BEATVIZBRIGHTNESS;
 					}
 				}
 			}
@@ -2037,48 +2037,48 @@ void ofApp::drawScore()
 		float notesOffsetX = staffOffsetX;
 		//notesOffsetX += sharedData.instruments.begin()->second.getClefXOffset();
 		//notesOffsetX += sharedData.instruments.begin()->second.getMeterXOffset();
-		notesOffsetX += (sharedData.staffLinesDist * NOTESXOFFSETCOEF);
+		notesOffsetX += (session.sharedData.staffLinesDist * NOTESXOFFSETCOEF);
 		//float prevNotesOffsetX = notesOffsetX;
 		//float notesXCoef = (sharedData.instruments.begin()->second.getStaffXLength() + staffOffsetX - notesOffsetX) / notesLength;
-		if (showBarCount && sharedData.instruments.size() > 0) {
-			ofColor color = toOf(sharedData.instruments[0].getStaffColor());
+		if (showBarCount && session.sharedData.instruments.size() > 0) {
+			ofColor color = toOf(session.sharedData.instruments[0].getStaffColor());
 			ofSetColor(color.r*brightnessCoeff, color.g*brightnessCoeff, color.b*brightnessCoeff);
-			std::string barCountStr = "(" + std::to_string(sharedData.thisBarIndex+1) + "/" + std::to_string(sharedData.loopData[sharedData.loopIndex].size()) + ") " + std::to_string(sharedData.barCounter);
+			std::string barCountStr = "(" + std::to_string(session.sharedData.thisBarIndex+1) + "/" + std::to_string(session.sharedData.loopData[session.sharedData.loopIndex].size()) + ") " + std::to_string(session.sharedData.barCounter);
 			font.drawString(barCountStr, scoreXOffset+scoreBackgroundWidth-font.stringWidth(barCountStr)-20, scoreYOffset+20);
 		}
 		std::pair prevMeter = std::make_pair(4, 4);
 		std::pair prevTempo = std::make_pair(0, 0);
-		std::vector<int> prevClefs (sharedData.instruments.size(), 0);
+		std::vector<int> prevClefs (session.sharedData.instruments.size(), 0);
 		bool prevDrawClef = false, prevDrawMeter = false;
-		for (int i = 0; i < sharedData.numBars; i++) {
+		for (int i = 0; i < session.sharedData.numBars; i++) {
 			bool drawClef = false, drawMeter = false, animate = false;
 			bool drawTempo = false;
 			bool showBar = true;
 			// safety test to avoid division by zero, in case something went wrong when setting a loop
-			if (sharedData.loopData[sharedData.loopIndex].size() == 0) break;
-			int barNdx = (ndx + i) % (int)sharedData.loopData[sharedData.loopIndex].size();
-			bar = sharedData.loopData[sharedData.loopIndex][barNdx];
+			if (session.sharedData.loopData[session.sharedData.loopIndex].size() == 0) break;
+			int barNdx = (ndx + i) % (int)session.sharedData.loopData[session.sharedData.loopIndex].size();
+			bar = session.sharedData.loopData[session.sharedData.loopIndex][barNdx];
 			if (i == 0) {
 				drawClef = true;
-				for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+				for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 					prevClefs[it->first] = it->second.getClef(bar);
 				}
 			}
 			else {
 				drawClef = false;
-				for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+				for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 					if (prevClefs[it->first] != it->second.getClef(bar)) {
 						drawClef = true;
 						break;
 					}
 				}
-				for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+				for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 					prevClefs[it->first] = it->second.getClef(bar);
 				}
 			}
 			// get the meter of this bar to determine if it has changed and thus it has be to written
-			std::pair<int, int> thisMeter = sharedData.instruments.begin()->second.getMeter(bar);
-			std::pair<int, int> thisTempo = std::make_pair(sharedData.tempoBaseForScore[bar], sharedData.BPMTempi[bar]);
+			std::pair<int, int> thisMeter = session.sharedData.instruments.begin()->second.getMeter(bar);
+			std::pair<int, int> thisTempo = std::make_pair(session.sharedData.tempoBaseForScore[bar], session.sharedData.BPMTempi[bar]);
 			if (i > 0 && scoreOrientation > 0) {
 				if (prevMeter.first != thisMeter.first || prevMeter.second != thisMeter.second) {
 					drawMeter = true;
@@ -2095,37 +2095,37 @@ void ofApp::drawScore()
 					drawTempo = true;
 				}
 			}
-			if (barNdx == (int)sharedData.thisBarIndex) animate = true;
+			if (barNdx == (int)session.sharedData.thisBarIndex) animate = true;
 			// the index below is used in insertNaturalSigns() in Notes() in score.cpp to deterimine if we must
 			// insert a natural sign at the beginning of a bar in case the same note appears
 			// in a previous bar with an accidental (this concerns only the visible bars, e.g. 4 bars in one row)
 			// mainly used in LiveLily Part
-			int insertNaturalsNdx = sharedData.loopIndex;
+			int insertNaturalsNdx = session.sharedData.loopIndex;
 			// determine which notes all bars but the last must display in case of horizontal view
 			// this is so that when the last bar of the displayed line is played, in case there are performers following the score
 			// they should be able to look at the left side of the score to see what notes come right after the current playing bar
 			// if we are calling a new loop, all bars but the last should display the first bars of the next loop
 			// unless we set scoreChangeOnLast to false, where on the last run (e.g. an eight-bar loop will run twice with four bars being display)
 			// every bar that finishes playing must display the respective bar of the upcoming loop
-			int threshold = (int)sharedData.loopData[sharedData.loopIndex].size() - sharedData.numBars + i;
-			if (scoreChangeOnLastBar) threshold = (int)sharedData.loopData[sharedData.loopIndex].size() - 2;
-			if (mustUpdateScore && (int)sharedData.thisBarIndex > threshold && i < sharedData.numBars - 1) {
-				if (i >= (int)sharedData.loopData[sharedData.tempLoopIndex].size()) {
+			int threshold = (int)session.sharedData.loopData[session.sharedData.loopIndex].size() - session.sharedData.numBars + i;
+			if (scoreChangeOnLastBar) threshold = (int)session.sharedData.loopData[session.sharedData.loopIndex].size() - 2;
+			if (mustUpdateScore && (int)session.sharedData.thisBarIndex > threshold && i < session.sharedData.numBars - 1) {
+				if (i >= (int)session.sharedData.loopData[session.sharedData.tempLoopIndex].size()) {
 					showBar = false;
 				}
 				else {
-					bar = sharedData.loopData[sharedData.tempLoopIndex][i];
-					insertNaturalsNdx = sharedData.tempLoopIndex;
+					bar = session.sharedData.loopData[session.sharedData.tempLoopIndex][i];
+					insertNaturalsNdx = session.sharedData.tempLoopIndex;
 				}
 				scoreUpdated = true;
 			}
-			else if (mustUpdateScore && scoreUpdated && sharedData.thisBarIndex == 0) {
+			else if (mustUpdateScore && scoreUpdated && session.sharedData.thisBarIndex == 0) {
 				mustUpdateScore = scoreUpdated = false;
 			}
 			// if we're staying in the same loop, when the currently playing bar is displayed at the right-most staff
 			// all the other bars must display the next bars of the loop (if there are any)
-			else if (((int)sharedData.thisBarIndex % sharedData.numBars) == sharedData.numBars - 1 && i < sharedData.numBars - 1) {
-				bar = sharedData.loopData[sharedData.loopIndex][(barNdx+sharedData.numBars)%(int)sharedData.loopData[sharedData.loopIndex].size()];
+			else if (((int)session.sharedData.thisBarIndex % session.sharedData.numBars) == session.sharedData.numBars - 1 && i < session.sharedData.numBars - 1) {
+				bar = session.sharedData.loopData[session.sharedData.loopIndex][(barNdx+session.sharedData.numBars)%(int)session.sharedData.loopData[session.sharedData.loopIndex].size()];
 				// the calculations below determine whether the remaining bars are less than sharedData.numBars - 1
 				// (we subtract one because in the last slot, we display the bar of the current loop chunk)
 				// in which case, we should leave the remaining slots empty
@@ -2133,10 +2133,10 @@ void ofApp::drawScore()
 				// we need to display two bars
 				// when at the last bar of the first chunk, we display the 5th and 6th bar on the left side
 				// and the 4th bar on the right side, with the 3rd slot being blank
-				int loopIndexLocal = sharedData.thisBarIndex + 1;
-				if (loopIndexLocal >= (int)sharedData.loopData[sharedData.loopIndex].size()) loopIndexLocal = 0;
-				int ndxLocal = (((loopIndexLocal) - ((loopIndexLocal) % sharedData.numBars)) / sharedData.numBars) * sharedData.numBars;
-				int numBarsLocal = (ndxLocal > 0 ? sharedData.numBars - ((int)sharedData.loopData[sharedData.loopIndex].size() - ndxLocal) : sharedData.numBars);
+				int loopIndexLocal = session.sharedData.thisBarIndex + 1;
+				if (loopIndexLocal >= (int)session.sharedData.loopData[session.sharedData.loopIndex].size()) loopIndexLocal = 0;
+				int ndxLocal = (((loopIndexLocal) - ((loopIndexLocal) % session.sharedData.numBars)) / session.sharedData.numBars) * session.sharedData.numBars;
+				int numBarsLocal = (ndxLocal > 0 ? session.sharedData.numBars - ((int)session.sharedData.loopData[session.sharedData.loopIndex].size() - ndxLocal) : session.sharedData.numBars);
 				if (i >= numBarsLocal) showBar = false;
 				else showBar = true;
 			}
@@ -2144,59 +2144,59 @@ void ofApp::drawScore()
 			if (i > 0) {
 				// only the notes need to go back some pixels, in case the clef or meter is not drawn
 				// so we use a separate value for the X coordinate
-				staffOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
-				notesOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
+				staffOffsetX += session.sharedData.instruments.begin()->second.getStaffXLength();
+				notesOffsetX += session.sharedData.instruments.begin()->second.getStaffXLength();
 			}
 			if (prevDrawClef != drawClef) {
-				if (drawClef) notesOffsetX += sharedData.instruments.begin()->second.getClefXOffset();
-				else notesOffsetX -= sharedData.instruments.begin()->second.getClefXOffset();
+				if (drawClef) notesOffsetX += session.sharedData.instruments.begin()->second.getClefXOffset();
+				else notesOffsetX -= session.sharedData.instruments.begin()->second.getClefXOffset();
 			}
 			if (prevDrawMeter != drawMeter) {
-				if (drawMeter) notesOffsetX += sharedData.instruments.begin()->second.getMeterXOffset();
-				else notesOffsetX -= sharedData.instruments.begin()->second.getMeterXOffset();
+				if (drawMeter) notesOffsetX += session.sharedData.instruments.begin()->second.getMeterXOffset();
+				else notesOffsetX -= session.sharedData.instruments.begin()->second.getMeterXOffset();
 			}
 			// set position of single bars based on the position of the bars of the previous loop
-			if (sharedData.numBars == 1 && scoreOrientation > 0) {
+			if (session.sharedData.numBars == 1 && scoreOrientation > 0) {
 				// initially display the single bar at the second position, and alternate with the third one
 				// but only with positions that are inside the score, as there are numBarsToDisplay positions
 				// (with two bars, the third position would be outside of the window, and the score would disappear)
 				int firstSlot = (numBarsToDisplay > 1 ? 1 : 0);
 				int secondSlot = (numBarsToDisplay > 2 ? 2 : 0);
 				int slot = firstSlot;
-				if ((sharedData.prevNumBars > 1 || (sharedData.prevNumBars == 1 && sharedData.prevPosition == 0)) && sequencer.isThreadRunning()) {
+				if ((session.sharedData.prevNumBars > 1 || (session.sharedData.prevNumBars == 1 && session.sharedData.prevPosition == 0)) && session.sequencer.isThreadRunning()) {
 					// but the previous loop was a single bar at the first of these positions, display the current single bar at the other one
 					slot = secondSlot;
-					sharedData.thisPosition = 1;
+					session.sharedData.thisPosition = 1;
 				}
 				else {
-					sharedData.thisPosition = 0;
+					session.sharedData.thisPosition = 0;
 				}
-				staffOffsetX += sharedData.instruments.begin()->second.getStaffXLength() * (float)slot;
-				notesOffsetX += sharedData.instruments.begin()->second.getStaffXLength() * (float)slot;
+				staffOffsetX += session.sharedData.instruments.begin()->second.getStaffXLength() * (float)slot;
+				notesOffsetX += session.sharedData.instruments.begin()->second.getStaffXLength() * (float)slot;
 			}
-			float notesXCoef = notesLength * sharedData.instruments.begin()->second.getXCoef(); // sharedData.instruments.begin()->second.getStaffXLength();
-			if (drawClef) notesXCoef -= sharedData.instruments.begin()->second.getClefXOffset();
-			if (drawMeter) notesXCoef -= sharedData.instruments.begin()->second.getMeterXOffset();
+			float notesXCoef = notesLength * session.sharedData.instruments.begin()->second.getXCoef(); // sharedData.instruments.begin()->second.getStaffXLength();
+			if (drawClef) notesXCoef -= session.sharedData.instruments.begin()->second.getClefXOffset();
+			if (drawMeter) notesXCoef -= session.sharedData.instruments.begin()->second.getMeterXOffset();
 			notesXCoef /= notesLength; // (notesLength * sharedData.instruments.begin()->second.getXCoef());
 			// if we're displaying the beat pulse on each beat instead of a rectangle that encloses the whole score
 			// we need to display it here, in case we display the score horizontally, where we need to give
 			// an offset to the pulse so it is displayed on top of the currently playing bar
-			if (sharedData.beatAnimate && sharedData.beatViz && sharedData.beatVizType == 2) {
+			if (session.sharedData.beatAnimate && session.sharedData.beatViz && session.sharedData.beatVizType == 2) {
 				// draw only for the currenlty playing bar, whichever that is in the horizontal line
-				if (barNdx == (int)sharedData.thisBarIndex) {
-					beatPulseStartX = notesOffsetX + ((notesLength  / sharedData.numerator[getPlayingBarIndex()]) * sharedData.beatCounter) * notesXCoef;
+				if (barNdx == (int)session.sharedData.thisBarIndex) {
+					beatPulseStartX = notesOffsetX + ((notesLength  / session.sharedData.numerator[session.getPlayingBarIndex()]) * session.sharedData.beatCounter) * notesXCoef;
 					//beatPulseStartX = ((notesLength * notesXCoef)  / sharedData.numerator[getPlayingBarIndex()]) * sharedData.beatCounter;
 					//beatPulseStartX *= notesXCoef;
 					//beatPulseStartX += notesOffsetX;
-					if (sharedData.beatCounter == -1) beatPulseStartX = notesOffsetX - sharedData.instruments.begin()->second.getClefXOffset();
-					noteSize = sharedData.instruments.begin()->second.getNoteWidth();
+					if (session.sharedData.beatCounter == -1) beatPulseStartX = notesOffsetX - session.sharedData.instruments.begin()->second.getClefXOffset();
+					noteSize = session.sharedData.instruments.begin()->second.getNoteWidth();
 					beatPulsePosX = beatPulseStartX - noteSize;
 					beatPulseSizeX = noteSize * 2;
 					beatPulseMinPosY += scoreYOffset;
 					ofSetColor(beatColor.r*brightnessCoeff,
 							   beatColor.g*brightnessCoeff,
 							   beatColor.b*brightnessCoeff,
-							   sharedData.beatVizCosTab[sharedData.beatVizDegrade] * BEATVIZCOEFF);
+							   session.sharedData.beatVizCosTab[session.sharedData.beatVizDegrade] * BEATVIZCOEFF);
 					ofDrawRectangle(beatPulsePosX, beatPulseMinPosY, beatPulseSizeX, beatPulseSizeY);
 				}
 			}
@@ -2204,39 +2204,39 @@ void ofApp::drawScore()
 			// it is the next bar of the loop this bar is shown from, or the first bar of a loop that has been called, at the end of the loop
 			int nextBarOfScore = -1;
 			{
-				const std::vector<int>& loop = sharedData.loopData[insertNaturalsNdx];
+				const std::vector<int>& loop = session.sharedData.loopData[insertNaturalsNdx];
 				size_t pos = loop.size();
-				if (insertNaturalsNdx == sharedData.loopIndex && barNdx < (int)loop.size() && loop[barNdx] == bar) pos = barNdx;
+				if (insertNaturalsNdx == session.sharedData.loopIndex && barNdx < (int)loop.size() && loop[barNdx] == bar) pos = barNdx;
 				else pos = std::find(loop.begin(), loop.end(), bar) - loop.begin();
 				if (pos < loop.size()) {
 					if (pos + 1 < loop.size()) nextBarOfScore = loop[pos+1];
-					else if (insertNaturalsNdx == sharedData.loopIndex && sharedData.tempLoopIndex != sharedData.loopIndex &&
-							sequencer.isThreadRunning() && !sharedData.loopData[sharedData.tempLoopIndex].empty()) {
-						nextBarOfScore = sharedData.loopData[sharedData.tempLoopIndex].front();
+					else if (insertNaturalsNdx == session.sharedData.loopIndex && session.sharedData.tempLoopIndex != session.sharedData.loopIndex &&
+							session.sequencer.isThreadRunning() && !session.sharedData.loopData[session.sharedData.tempLoopIndex].empty()) {
+						nextBarOfScore = session.sharedData.loopData[session.sharedData.tempLoopIndex].front();
 					}
 					else nextBarOfScore = loop.front();
 				}
 			}
-			float yStartPnt = sharedData.yStartPnts[scoreOrientation];
+			float yStartPnt = session.sharedData.yStartPnts[scoreOrientation];
 			// the Y coordinate of every staff, by the instrument it belongs to
 			// instruments merged into the staff of another one (see \merge) are drawn on that staff, below
 			std::map<int, float> staffYOf;
 			{
 				float staffY = yStartPnt;
-				for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-					if (mergeHostOf(it->first) != it->first) continue;
+				for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
+					if (session.mergeHostOf(it->first) != it->first) continue;
 					staffYOf[it->first] = staffY;
-					staffY += (sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2));
+					staffY += (session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2));
 				}
 			}
 			unsigned j = 0;
 			std::map<int, Instrument>::iterator prevInst;
-			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				int host = mergeHostOf(it->first);
+			for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
+				int host = session.mergeHostOf(it->first);
 				if (host != it->first) {
 					// a voice of the staff of another instrument has no staff, name, or connecting lines of its own
 					if (showBar && staffYOf.find(host) != staffYOf.end()) {
-						it->second.drawNotes(bar, i, &sharedData.loopData[insertNaturalsNdx], notesOffsetX, staffYOf[host], scoreYOffset, animate, notesXCoef, nextBarOfScore);
+						it->second.drawNotes(bar, i, &session.sharedData.loopData[insertNaturalsNdx], notesOffsetX, staffYOf[host], scoreYOffset, animate, notesXCoef, nextBarOfScore);
 					}
 					continue;
 				}
@@ -2246,14 +2246,14 @@ void ofApp::drawScore()
 					// a staff with merged instruments (see \merge) has their names one below the other, in the order of their voices
 					// centered on the staff, where the name of a single instrument is
 					std::vector<int> staffInsts = {it->first};
-					for (const auto& group : mergeGroups) {
+					for (const auto& group : session.mergeGroups) {
 						if (group.size() > 1 && group.front() == it->first) staffInsts = group;
 					}
 					float lineHeight = instFont.getLineHeight();
-					float firstYPos = yStartPnt + (sharedData.staffLinesDist*2.5) + scoreYOffset - (lineHeight * (float)(staffInsts.size() - 1) / 2.0f);
+					float firstYPos = yStartPnt + (session.sharedData.staffLinesDist*2.5) + scoreYOffset - (lineHeight * (float)(staffInsts.size() - 1) / 2.0f);
 					for (size_t k = 0; k < staffInsts.size(); k++) {
-						Instrument& inst = sharedData.instruments[staffInsts[k]];
-						float xPos = scoreXOffset + (sharedData.blankSpace * 0.75) + (sharedData.longestInstNameWidth - instNameWidths[staffInsts[k]]);
+						Instrument& inst = session.sharedData.instruments[staffInsts[k]];
+						float xPos = scoreXOffset + (session.sharedData.blankSpace * 0.75) + (session.sharedData.longestInstNameWidth - instNameWidths[staffInsts[k]]);
 						float yPos = firstYPos + (lineHeight * (float)k);
 						ofColor color = toOf(inst.getStaffColor());
 						ofSetColor(color.r*brightnessCoeff, color.g*brightnessCoeff, color.b*brightnessCoeff);
@@ -2269,7 +2269,7 @@ void ofApp::drawScore()
 				// the start of the staff can also be moved with \movex, so we include this too
 				float connectingLineX = staffOffsetX + it->second.getStaffXStartOffset();
 				float connectingLineY1 = yStartPnt + scoreYOffset;
-				float connectingLineY2 = connectingLineY1 - sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2);
+				float connectingLineY2 = connectingLineY1 - session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2);
 				// each staff draws its own vertical lines at its sides (from its top to its bottom line) in Staff::drawStaff()
 				// here we draw the lines between the staves:
 				// on the left side of the score (the first bar), all staves are connected, from the top line of the top staff
@@ -2281,7 +2281,7 @@ void ofApp::drawScore()
 					}
 					// if this instrument is groupped with the previous one, connect them at the end of the bar
 					if (it->second.getGroup() == prevInst->second.getID() && it->second.getGroup() > -1) {
-						float connectingLineXEnd = staffOffsetX + sharedData.instruments.begin()->second.getStaffXLength();
+						float connectingLineXEnd = staffOffsetX + session.sharedData.instruments.begin()->second.getStaffXLength();
 						ofDrawLine(connectingLineXEnd, connectingLineY1, connectingLineXEnd, connectingLineY2);
 					}
 				}
@@ -2290,9 +2290,9 @@ void ofApp::drawScore()
 				bool drawTempoLocal = (showTempo && drawTempo && j == 0);
 				if (showBar) {
 					it->second.drawStaff(bar, staffOffsetX, yStartPnt, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempoLocal);
-					it->second.drawNotes(bar, i, &sharedData.loopData[insertNaturalsNdx], notesOffsetX, yStartPnt, scoreYOffset, animate, notesXCoef, nextBarOfScore);
+					it->second.drawNotes(bar, i, &session.sharedData.loopData[insertNaturalsNdx], notesOffsetX, yStartPnt, scoreYOffset, animate, notesXCoef, nextBarOfScore);
 				}
-				yStartPnt += (sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2));
+				yStartPnt += (session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2));
 				j++;
 				prevInst = it;
 			}
@@ -2317,10 +2317,10 @@ void ofApp::drawScore()
 		if (color != backgroundColor) {
 			ofSetColor(color * brightnessCoeff);
 			if (scoreOrientation == 0) {
-				ofDrawLine(sharedData.middleOfScreenX, 0, sharedData.middleOfScreenX, sharedData.screenHeight);
+				ofDrawLine(session.sharedData.middleOfScreenX, 0, session.sharedData.middleOfScreenX, session.sharedData.screenHeight);
 			}
 			else {
-				ofDrawLine(0, scoreBackgroundHeight, sharedData.screenWidth, scoreBackgroundHeight);
+				ofDrawLine(0, scoreBackgroundHeight, session.sharedData.screenWidth, scoreBackgroundHeight);
 			}
 		}
 	}
@@ -2339,7 +2339,7 @@ int ofApp::noteNameToMidi(const std::string& name)
 		ndx += 2;
 	}
 	std::string octave = name.substr(ndx);
-	if (!isNumber(octave)) return -1;
+	if (!session.isNumber(octave)) return -1;
 	// the octaves are numbered as in scientific pitch notation, where c4 is the middle C (MIDI 60)
 	int midi = (std::stoi(octave) + 1) * 12 + pitch;
 	return (midi >= 0 && midi <= 127 ? midi : -1);
@@ -2349,28 +2349,28 @@ int ofApp::noteNameToMidi(const std::string& name)
 void ofApp::setPianoRollRange(int lowestKey, int highestKey)
 {
 	auto isBlack = [](int note) { int pc = note % 12; return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10; };
-	sharedData.pianoRollLowestKey = std::max(0, lowestKey);
-	sharedData.pianoRollHighestKey = std::min(127, highestKey);
+	session.sharedData.pianoRollLowestKey = std::max(0, lowestKey);
+	session.sharedData.pianoRollHighestKey = std::min(127, highestKey);
 	int numWhiteKeys = 0;
-	for (int note = sharedData.pianoRollLowestKey; note <= sharedData.pianoRollHighestKey; note++) {
+	for (int note = session.sharedData.pianoRollLowestKey; note <= session.sharedData.pianoRollHighestKey; note++) {
 		if (!isBlack(note)) numWhiteKeys++;
 	}
-	sharedData.pianoRollNumWhiteKeys = std::max(1, numWhiteKeys);
+	session.sharedData.pianoRollNumWhiteKeys = std::max(1, numWhiteKeys);
 	// the keyboard goes from the start of its lowest key to the end of its highest key
 	// a white key takes the whole width of a white key, and a black key the width of its lane (see pianoRollLane())
 	// so a keyboard can start or end with a black key (e.g. c1 cis4), without the white key next to it
-	sharedData.pianoRollOrigin = 0;
-	std::pair<float, float> lowest = pianoRollLane(sharedData.pianoRollLowestKey);
-	std::pair<float, float> highest = pianoRollLane(sharedData.pianoRollHighestKey);
+	session.sharedData.pianoRollOrigin = 0;
+	std::pair<float, float> lowest = pianoRollLane(session.sharedData.pianoRollLowestKey);
+	std::pair<float, float> highest = pianoRollLane(session.sharedData.pianoRollHighestKey);
 	static const int whiteIndex[12] = {0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6};
 	auto whiteStart = [&](int note) { return (float)((note / 12) * 7 + whiteIndex[note % 12]); };
-	float start = (isBlack(sharedData.pianoRollLowestKey) ? lowest.first : whiteStart(sharedData.pianoRollLowestKey));
-	float end = (isBlack(sharedData.pianoRollHighestKey) ? highest.first + highest.second : whiteStart(sharedData.pianoRollHighestKey) + 1);
-	sharedData.pianoRollOrigin = start;
-	sharedData.pianoRollLength = std::max(1.0f, end - start);
+	float start = (isBlack(session.sharedData.pianoRollLowestKey) ? lowest.first : whiteStart(session.sharedData.pianoRollLowestKey));
+	float end = (isBlack(session.sharedData.pianoRollHighestKey) ? highest.first + highest.second : whiteStart(session.sharedData.pianoRollHighestKey) + 1);
+	session.sharedData.pianoRollOrigin = start;
+	session.sharedData.pianoRollLength = std::max(1.0f, end - start);
 	// the keys fill the length of the keyboard, which is the height of the score in vertical view, and its width in horizontal view
-	if (scoreOrientation == 0) sharedData.pianoRollKeysHeight = scoreBackgroundHeight / sharedData.pianoRollLength;
-	else sharedData.pianoRollKeysWidth = scoreBackgroundWidth / sharedData.pianoRollLength;
+	if (scoreOrientation == 0) session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / session.sharedData.pianoRollLength;
+	else session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / session.sharedData.pianoRollLength;
 }
 
 //--------------------------------------------------------------
@@ -2384,7 +2384,7 @@ std::pair<float, float> ofApp::pianoRollLane(int note)
 	};
 	// relative to the start of the keyboard (see setPianoRollRange())
 	std::pair<float, float> lane = laneInOctave(note % 12);
-	return std::make_pair((float)((note / 12) * 7) + lane.first - sharedData.pianoRollOrigin, lane.second);
+	return std::make_pair((float)((note / 12) * 7) + lane.first - session.sharedData.pianoRollOrigin, lane.second);
 }
 
 //--------------------------------------------------------------
@@ -2396,8 +2396,8 @@ void ofApp::drawPianoRoll()
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
 	bool vertical = (scoreOrientation == 0);
 	// the width of a white key along the keyboard, and the depth of the keys (from the side of the notes to the front of the keys)
-	float whiteKeyWidth = (vertical ? sharedData.pianoRollKeysHeight : sharedData.pianoRollKeysWidth);
-	float keysDepth = (vertical ? sharedData.pianoRollKeysWidth : sharedData.pianoRollKeysHeight);
+	float whiteKeyWidth = (vertical ? session.sharedData.pianoRollKeysHeight : session.sharedData.pianoRollKeysWidth);
+	float keysDepth = (vertical ? session.sharedData.pianoRollKeysWidth : session.sharedData.pianoRollKeysHeight);
 	// the keyboard is at the right side of the score in vertical view, with the lowest key at the bottom
 	// and at the bottom of the score in horizontal view, with the lowest key on the left
 	// the black keys are at the side of the keyboard that faces the notes, two thirds of its depth
@@ -2417,9 +2417,9 @@ void ofApp::drawPianoRoll()
 	auto isBlack = [](int note) { int pc = note % 12; return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10; };
 	static const int whiteIndex[12] = {0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6};
 	auto whiteKeyStart = [&](int note) {
-		return (float)((note / 12) * 7 + whiteIndex[note % 12]) - sharedData.pianoRollOrigin;
+		return (float)((note / 12) * 7 + whiteIndex[note % 12]) - session.sharedData.pianoRollOrigin;
 	};
-	float keyboardLength = sharedData.pianoRollLength;
+	float keyboardLength = session.sharedData.pianoRollLength;
 	// the notes that play, highlighted on the keyboard with the color of their instrument, as opaque as their velocity
 	// by key and by instrument, so that a key that more instruments play is highlighted with their colors mixed (see highlightKey below)
 	struct ActiveKey {
@@ -2439,39 +2439,39 @@ void ofApp::drawPianoRoll()
 	};
 	std::vector<RollNote> rollNotes;
 	// then draw the notes of all instruments
-	if (sharedData.instruments.size() > 0 && sharedData.loopData.size() > 0) {
+	if (session.sharedData.instruments.size() > 0 && session.sharedData.loopData.size() > 0) {
 		uint64_t timeStamp = ofGetElapsedTimeMillis();
 		// the movement of the notes depends on the tempo of the currently playing bar
-		int thisBar = sharedData.loopData[sharedData.loopIndex][sharedData.thisBarIndex];
+		int thisBar = session.sharedData.loopData[session.sharedData.loopIndex][session.sharedData.thisBarIndex];
 		// the length of the area of the notes, from the edge of the score to the keyboard
-		float rollLength = (vertical ? scoreBackgroundWidth - sharedData.pianoRollKeysWidth : scoreBackgroundHeight - sharedData.pianoRollKeysHeight);
+		float rollLength = (vertical ? scoreBackgroundWidth - session.sharedData.pianoRollKeysWidth : scoreBackgroundHeight - session.sharedData.pianoRollKeysHeight);
 		float rollStart = (vertical ? scoreXOffset : scoreYOffset);
 		// with the piano roll we show one bar only
 		// but as the notes roll, we start showing the next bar too
 		// so we need two bars (or the same bar twice, in case of a single-bar loop)
 		// hence the two iteration loop below
 		for (int i = 0; i < 2; i++) {
-			int bar = sharedData.loopData[sharedData.loopIndex][sharedData.thisBarIndex];
-			if (mustUpdateScore && sharedData.thisBarIndex == sharedData.loopData[sharedData.loopIndex].size()-1 && i > 0) {
+			int bar = session.sharedData.loopData[session.sharedData.loopIndex][session.sharedData.thisBarIndex];
+			if (mustUpdateScore && session.sharedData.thisBarIndex == session.sharedData.loopData[session.sharedData.loopIndex].size()-1 && i > 0) {
 				scoreUpdated = true;
 			}
-			else if (mustUpdateScore && sequencer.isUpdated() && sharedData.thisBarIndex == 0) {
+			else if (mustUpdateScore && session.sequencer.isUpdated() && session.sharedData.thisBarIndex == 0) {
 				mustUpdateScore = scoreUpdated = false;
 			}
 			if (i) {
 				if (scoreUpdated) {
-					bar = sharedData.loopData[sharedData.tempLoopIndex][0];
+					bar = session.sharedData.loopData[session.sharedData.tempLoopIndex][0];
 				}
 				else {
-					if (sharedData.thisBarIndex+1 >= sharedData.loopData[sharedData.loopIndex].size()) {
-						bar = sharedData.loopData[sharedData.loopIndex][0];
+					if (session.sharedData.thisBarIndex+1 >= session.sharedData.loopData[session.sharedData.loopIndex].size()) {
+						bar = session.sharedData.loopData[session.sharedData.loopIndex][0];
 					}
 					else {
-						bar = sharedData.loopData[sharedData.loopIndex][sharedData.thisBarIndex+1];
+						bar = session.sharedData.loopData[session.sharedData.loopIndex][session.sharedData.thisBarIndex+1];
 					}
 				}
 			}
-			for (auto instIt = sharedData.instruments.begin(); instIt != sharedData.instruments.end(); ++instIt) {
+			for (auto instIt = session.sharedData.instruments.begin(); instIt != session.sharedData.instruments.end(); ++instIt) {
 				// a muted instrument is not shown, as it doesn't play
 				if (instIt->second.isMuted()) continue;
 				ofSetColor(toOf(instIt->second.getColor()) * brightnessCoeff);
@@ -2481,14 +2481,14 @@ void ofApp::drawPianoRoll()
 					continue;
 				}
 				for (size_t j = 0; j < instIt->second.notes.at(bar).size(); j++) {
-					float noteLength = (float)instIt->second.durs.at(bar).at(j) * sharedData.pianoRollMinDur;
+					float noteLength = (float)instIt->second.durs.at(bar).at(j) * session.sharedData.pianoRollMinDur;
 					float durPercentage = instIt->second.durPercentages[instIt->second.articulations[bar][j][0]];
 					// the position of the note along the roll, towards the keyboard
 					// the ADSR release part is removed from the length of the note, so its start moves by as much
 					float pos = rollStart + rollLength - posAccum - noteLength + (noteLength * (1 - durPercentage));
-					if (sequencer.isThreadRunning()) {
+					if (session.sequencer.isThreadRunning()) {
 						// advance according to the elapsed time since the start of the bar
-						pos += ((rollLength * (timeStamp - sharedData.pianoRollTimeStamp)) / (sharedData.tempoMs[thisBar] * sharedData.numerator[thisBar]));
+						pos += ((rollLength * (timeStamp - session.sharedData.pianoRollTimeStamp)) / (session.sharedData.tempoMs[thisBar] * session.sharedData.numerator[thisBar]));
 					}
 					float length = noteLength * durPercentage;
 					if (i == 0) {
@@ -2502,14 +2502,14 @@ void ofApp::drawPianoRoll()
 						length = std::min(length, pos - (rollStart - length));
 						pos = std::max(pos, rollStart);
 					}
-					bool active = sequencer.isThreadRunning() && bar == thisBar &&
+					bool active = session.sequencer.isThreadRunning() && bar == thisBar &&
 						((instIt->second.getSeqToggle() && (int)j == instIt->second.getBarDataCounter()) ||
 						 (instIt->second.getDurPercentage(bar) == 100 && (int)j == instIt->second.getBarDataCounter()-1));
 					const std::vector<int>& velocities = instIt->second.midiVels[bar];
 					int velocity = (j < velocities.size() ? velocities[j] : 127);
 					for (size_t k = 0; k < instIt->second.notes.at(bar).at(j).size(); k++) {
 						int note = (int)instIt->second.notes.at(bar).at(j).at(k);
-						if (note < sharedData.pianoRollLowestKey || note > sharedData.pianoRollHighestKey) continue; // -1 is a rest
+						if (note < session.sharedData.pianoRollLowestKey || note > session.sharedData.pianoRollHighestKey) continue; // -1 is a rest
 						if (length <= 0) continue;
 						rollNotes.push_back({instIt->first, note, pos, length, toOf(instIt->second.getColor()) * brightnessCoeff, velocity});
 						if (active) activeKeys[note][instIt->first] = {toOf(instIt->second.getColor()) * brightnessCoeff, velocity};
@@ -2587,11 +2587,11 @@ void ofApp::drawPianoRoll()
 		// within the keyboard, which might start or end with a black key
 		highlightKey(key.second, std::max(0.0f, start), std::min(keyboardLength, start + 1), blackKeysDepth, 1);
 		float backStart = std::max(0.0f, start), backEnd = std::min(keyboardLength, start + 1);
-		if (key.first - 1 >= sharedData.pianoRollLowestKey && isBlack(key.first - 1)) {
+		if (key.first - 1 >= session.sharedData.pianoRollLowestKey && isBlack(key.first - 1)) {
 			std::pair<float, float> below = pianoRollLane(key.first - 1);
 			backStart = below.first + below.second;
 		}
-		if (key.first + 1 <= sharedData.pianoRollHighestKey && isBlack(key.first + 1)) {
+		if (key.first + 1 <= session.sharedData.pianoRollHighestKey && isBlack(key.first + 1)) {
 			backEnd = pianoRollLane(key.first + 1).first;
 		}
 		highlightKey(key.second, backStart, backEnd, 0, blackKeysDepth);
@@ -2600,7 +2600,7 @@ void ofApp::drawPianoRoll()
 	ofSetColor((backgroundColor == ofColor::white ? ofColor(0) : backgroundColor) * brightnessCoeff);
 	// at the start of every white key of the range, except at the start of the keyboard
 	// and at the end of its last white key, if it ends with a black key (e.g. at the end of c4, when the keyboard ends with cis4)
-	for (int note = sharedData.pianoRollLowestKey; note <= sharedData.pianoRollHighestKey + 1; note++) {
+	for (int note = session.sharedData.pianoRollLowestKey; note <= session.sharedData.pianoRollHighestKey + 1; note++) {
 		if (isBlack(note)) continue;
 		float k = whiteKeyStart(note);
 		if (k <= 0.001f || k >= keyboardLength - 0.001f) continue;
@@ -2614,7 +2614,7 @@ void ofApp::drawPianoRoll()
 		}
 	}
 	// the black keys, each over its lane, with the notes that play highlighted
-	for (int note = sharedData.pianoRollLowestKey; note <= sharedData.pianoRollHighestKey; note++) {
+	for (int note = session.sharedData.pianoRollLowestKey; note <= session.sharedData.pianoRollHighestKey; note++) {
 		if (!isBlack(note)) continue;
 		std::pair<float, float> lane = pianoRollLane(note);
 		auto activeIt = activeKeys.find(note);
@@ -2652,30 +2652,30 @@ void ofApp::drawScope()
 	// draw the background
 	ofSetColor(backgroundColor * brightnessCoeff);
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
-	if (pyoSet) {
+	if (session.pyoSet) {
 		// draw the legend
 		std::string chanStr = "chan ";
 		// get the number of digits of the number of channels
 		int numDigits = 0;
 		int timesTen = 1;
-		while (timesTen <= outChannels) {
+		while (timesTen <= session.outChannels) {
 			timesTen *= 10;
 			numDigits++;
 		}
 		float strWidth = font.stringWidth(chanStr) + (oneCharacterWidth * numDigits);
 		float strHeight = font.stringHeight(chanStr);
-		for (int i = 0; i < outChannels; i++) {
+		for (int i = 0; i < session.outChannels; i++) {
 			// use the same colors we use for the piano roll
-			ofSetColor(toOf(colorNameMap[instrumentColors[i%(int)instrumentColors.size()]]));
+			ofSetColor(toOf(session.colorNameMap[session.instrumentColors[i%(int)session.instrumentColors.size()]]));
 			float x = scoreXOffset+scoreBackgroundWidth-strWidth-10;
 			float y = scoreYOffset+(strHeight*(i+1)) + ((strHeight/2)*(i > 0 ? 1 : 0));
 			ofDrawLine(x-oneCharacterWidth, y, x-oneCharacterWidth-10, y);
 			font.drawString(chanStr + std::to_string(i+1), x, y+(strHeight/2));
 		}
 		ofSetLineWidth(lineWidth*2);
-		for (int i = 0; i < outChannels; i++) {
+		for (int i = 0; i < session.outChannels; i++) {
 			// draw the actual waveforms
-			ofSetColor(toOf(colorNameMap[instrumentColors[i%(int)instrumentColors.size()]]));
+			ofSetColor(toOf(session.colorNameMap[session.instrumentColors[i%(int)session.instrumentColors.size()]]));
 			scopeWaveforms[i].draw();
 		}
 		ofSetLineWidth(lineWidth);
@@ -2701,23 +2701,23 @@ void ofApp::drawSequencer()
 	ofEnableAlphaBlending();
 	ofSetColor(backgroundColor * brightnessCoeff);
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
-	if (sharedData.instruments.empty()) return;
-	auto loopIt = sharedData.loopData.find(sharedData.loopIndex);
-	if (loopIt == sharedData.loopData.end() || loopIt->second.empty()) return;
-	int bar = loopIt->second[std::min((size_t)sharedData.thisBarIndex, loopIt->second.size() - 1)];
+	if (session.sharedData.instruments.empty()) return;
+	auto loopIt = session.sharedData.loopData.find(session.sharedData.loopIndex);
+	if (loopIt == session.sharedData.loopData.end() || loopIt->second.empty()) return;
+	int bar = loopIt->second[std::min((size_t)session.sharedData.thisBarIndex, loopIt->second.size() - 1)];
 	// the length of the bar and of a step, in units of the minimum duration, and the steps of the bar (e.g. 12 in 3/4 with 16ths)
-	int barLength = (sharedData.numBeats.count(bar) ? sharedData.numBeats[bar] : MINDUR);
-	int stepLength = std::max(1, MINDUR / std::max(1, seqResolution));
+	int barLength = (session.sharedData.numBeats.count(bar) ? session.sharedData.numBeats[bar] : MINDUR);
+	int stepLength = std::max(1, MINDUR / std::max(1, session.seqResolution));
 	int numSteps = std::max(1, (barLength + stepLength - 1) / stepLength);
 	// the instruments in the order of the score
 	std::vector<int> order;
-	for (const auto& ordered : sharedData.instrumentIndexesOrdered) {
-		if (sharedData.instruments.count(ordered.second)) order.push_back(ordered.second);
+	for (const auto& ordered : session.sharedData.instrumentIndexesOrdered) {
+		if (session.sharedData.instruments.count(ordered.second)) order.push_back(ordered.second);
 	}
 	if (order.empty()) return;
 	// the squares are as large as they can be, after the names of the instruments, and they are centered vertically
 	float margin = 10;
-	float nameWidth = (float)sharedData.longestInstNameWidth + (margin * 2);
+	float nameWidth = (float)session.sharedData.longestInstNameWidth + (margin * 2);
 	float square = std::min((scoreBackgroundWidth - nameWidth - margin) / (float)numSteps, (scoreBackgroundHeight - (margin * 2)) / (float)order.size());
 	if (square <= 0) return;
 	float gridX = scoreXOffset + nameWidth;
@@ -2730,7 +2730,7 @@ void ofApp::drawSequencer()
 		int velocity;
 	};
 	for (size_t row = 0; row < order.size(); row++) {
-		Instrument& inst = sharedData.instruments[order[row]];
+		Instrument& inst = session.sharedData.instruments[order[row]];
 		float y = gridY + (square * (float)row);
 		ofSetColor(foreground);
 		instFont.drawString(inst.getName(), scoreXOffset + margin, y + ((square + instFont.stringHeight("A")) / 2.0f));
@@ -2781,10 +2781,10 @@ void ofApp::drawSequencer()
 		}
 	}
 	// the step that plays, while the sequencer plays, as a red rectangle over the steps of all the rows, with 25% transparency
-	if (sequencer.isThreadRunning() && sharedData.tempoMs.count(bar) && sharedData.numerator.count(bar)) {
-		float barMs = (float)(sharedData.tempoMs[bar] * sharedData.numerator[bar]);
+	if (session.sequencer.isThreadRunning() && session.sharedData.tempoMs.count(bar) && session.sharedData.numerator.count(bar)) {
+		float barMs = (float)(session.sharedData.tempoMs[bar] * session.sharedData.numerator[bar]);
 		if (barMs > 0) {
-			float progress = std::clamp((float)(ofGetElapsedTimeMillis() - sharedData.pianoRollTimeStamp) / barMs, 0.0f, 1.0f);
+			float progress = std::clamp((float)(ofGetElapsedTimeMillis() - session.sharedData.pianoRollTimeStamp) / barMs, 0.0f, 1.0f);
 			int step = std::min(numSteps - 1, (int)(progress * (float)barLength / (float)stepLength));
 			ofColor red = ofColor::red * brightnessCoeff;
 			ofSetColor(red.r, red.g, red.b, 191);
@@ -2801,7 +2801,7 @@ void ofApp::drawSequencer()
 // after moving the cursor, the Shift state of the editor is restored with setShiftPressed(shiftPressed)
 void ofApp::setNormalModeShift()
 {
-	if (!editors[whichPane].getInserting()) editors[whichPane].setShiftPressed(editors[whichPane].getVisualMode());
+	if (!editors[session.whichPane].getInserting()) editors[session.whichPane].setShiftPressed(editors[session.whichPane].getVisualMode());
 }
 
 
@@ -2811,7 +2811,7 @@ void ofApp::setNormalModeShift()
 std::vector<std::string> ofApp::getCommandCompletions()
 {
 	std::set<std::string> names;
-	for (const auto& byChar : commandsMap[livelily]) {
+	for (const auto& byChar : session.commandsMap[Session::livelily]) {
 		for (const auto& cmd : byChar.second) {
 			if (cmd.first.size() > 1 && cmd.first[0] == '\\') names.insert(cmd.first);
 		}
@@ -2823,7 +2823,7 @@ std::vector<std::string> ofApp::getCommandCompletions()
 std::vector<std::string> ofApp::getArgumentCompletions()
 {
 	std::set<std::string> names;
-	for (const auto& byChar : commandsMap[livelily]) {
+	for (const auto& byChar : session.commandsMap[Session::livelily]) {
 		for (const auto& cmd : byChar.second) {
 			if (!cmd.first.empty() && cmd.first[0] != '\\') names.insert(cmd.first);
 		}
@@ -2834,7 +2834,7 @@ std::vector<std::string> ofApp::getArgumentCompletions()
 //--------------------------------------------------------------
 bool ofApp::startsMelodicLine(const std::string& word)
 {
-	return sharedData.instrumentIndexes.find(word) != sharedData.instrumentIndexes.end() || instGroups.find(word) != instGroups.end();
+	return session.sharedData.instrumentIndexes.find(word) != session.sharedData.instrumentIndexes.end() || session.instGroups.find(word) != session.instGroups.end();
 }
 
 //--------------------------------------------------------------
@@ -2855,10 +2855,10 @@ static std::vector<std::string> pythonLines(const std::string& str)
 bool ofApp::refreshPythonTable()
 {
 #ifdef USEPYO
-	if (!pyoSet || !sharedData.pyo.isSetup()) return false;
-	unsigned executions = sharedData.pyo.getExecutions();
+	if (!session.pyoSet || !session.sharedData.pyo.isSetup()) return false;
+	unsigned executions = session.sharedData.pyo.getExecutions();
 	if (!pythonTable.made || pythonTable.executions != executions) {
-		std::vector<std::string> names = pythonLines(sharedData.pyo.globalNames());
+		std::vector<std::string> names = pythonLines(session.sharedData.pyo.globalNames());
 		pythonTable.names = std::set<std::string>(names.begin(), names.end());
 		pythonTable.attributes.clear();
 		pythonTable.signatures.clear();
@@ -2880,7 +2880,7 @@ std::vector<std::string> ofApp::pythonNames(const std::string& dotted)
 	if (pythonTable.names.find(dotted.substr(0, dotted.find('.'))) == pythonTable.names.end()) return {};
 	auto it = pythonTable.attributes.find(dotted);
 	if (it != pythonTable.attributes.end()) return it->second;
-	std::vector<std::string> attributes = pythonLines(sharedData.pyo.names(dotted));
+	std::vector<std::string> attributes = pythonLines(session.sharedData.pyo.names(dotted));
 	pythonTable.attributes[dotted] = attributes;
 	return attributes;
 #else
@@ -2896,7 +2896,7 @@ std::vector<std::string> ofApp::pythonSignature(const std::string& dotted)
 	if (pythonTable.names.find(dotted.substr(0, dotted.find('.'))) == pythonTable.names.end()) return {};
 	auto it = pythonTable.signatures.find(dotted);
 	if (it != pythonTable.signatures.end()) return it->second;
-	std::vector<std::string> params = pythonLines(sharedData.pyo.signature(dotted));
+	std::vector<std::string> params = pythonLines(session.sharedData.pyo.signature(dotted));
 	pythonTable.signatures[dotted] = params;
 	return params;
 #else
@@ -2932,13 +2932,13 @@ std::vector<std::string> ofApp::getMethodCompletions(const std::string& name)
 	// some of the maps below store names with their backslash and some without it
 	std::string plainName = (startsWith(name, "\\") ? name.substr(1) : name);
 	auto has = [&](const auto& m) { return m.find(name) != m.end() || m.find(plainName) != m.end(); };
-	if (has(sharedData.instrumentIndexes) || has(instGroups)) return instrumentMethods;
-	if (has(functionIndexes)) return functionMethods;
-	if (has(listIndexes)) return listMethods;
-	if (has(sharedData.barsIndexes) || has(sharedData.loopsIndexes)) return barLoopMethods;
-	if (has(oscClients)) return oscClientMethods;
-	if (has(oscServers)) return oscServerMethods;
-	if (has(variables)) return variableMethods;
+	if (has(session.sharedData.instrumentIndexes) || has(session.instGroups)) return instrumentMethods;
+	if (has(session.functionIndexes)) return functionMethods;
+	if (has(session.listIndexes)) return listMethods;
+	if (has(session.sharedData.barsIndexes) || has(session.sharedData.loopsIndexes)) return barLoopMethods;
+	if (has(session.oscClients)) return oscClientMethods;
+	if (has(session.oscServers)) return oscServerMethods;
+	if (has(session.variables)) return variableMethods;
 	return {};
 }
 
@@ -2957,7 +2957,7 @@ void ofApp::executeKeyPressed(int key)
 	}
 	// the output of a shell command that doesn't fit the area below the panes scrolls with the up and down arrows
 	// and with Page Up and Page Down by the lines that are shown (see drawShell()), until Esc clears it
-	if (editors[whichPane].showingShell() && !editors[whichPane].isTypingShell() && shellTotalLines > shellVisibleLines &&
+	if (editors[session.whichPane].showingShell() && !editors[session.whichPane].isTypingShell() && shellTotalLines > shellVisibleLines &&
 			(key == 57357 || key == 57359 || key == 57360 || key == 57361)) {
 		if (key == 57357) shellScroll--;
 		else if (key == 57359) shellScroll++;
@@ -2970,15 +2970,15 @@ void ofApp::executeKeyPressed(int key)
 		case 0: // caps lock
 			break;
 		case 1:
-			editors[whichPane].setShiftPressed(true);
+			editors[session.whichPane].setShiftPressed(true);
 			shiftPressed = true;
 			break;
 		case 2:
-			editors[whichPane].setCtrlPressed(true);
+			editors[session.whichPane].setCtrlPressed(true);
 			ctrlPressed = true;
 			break;
 		case 4:
-			editors[whichPane].setAltPressed(true);
+			editors[session.whichPane].setAltPressed(true);
 			altPressed = true;
 			break;
 		// below are codes of the Ctl, Alt, and Shift keys
@@ -3002,24 +3002,24 @@ void ofApp::executeKeyPressed(int key)
 		case 3681:
 			break;
 		case 57357:
-			if (!editors[whichPane].isTypingShell()) {
+			if (!editors[session.whichPane].isTypingShell()) {
 				setNormalModeShift();
-				editors[whichPane].upArrow(-1); // -1 for single increment
-				editors[whichPane].setShiftPressed(shiftPressed);
+				editors[session.whichPane].upArrow(-1); // -1 for single increment
+				editors[session.whichPane].setShiftPressed(shiftPressed);
 			}
 			break;
 		case 57359:
-			if (!editors[whichPane].isTypingShell()) {
+			if (!editors[session.whichPane].isTypingShell()) {
 				setNormalModeShift();
-				editors[whichPane].downArrow(-1); // -1 for single decrement
-				editors[whichPane].setShiftPressed(shiftPressed);
+				editors[session.whichPane].downArrow(-1); // -1 for single decrement
+				editors[session.whichPane].setShiftPressed(shiftPressed);
 			}
 			break;
 		case 57358:
-			if (!editors[whichPane].isTypingShell()) {
+			if (!editors[session.whichPane].isTypingShell()) {
 				setNormalModeShift();
-				editors[whichPane].rightArrow();
-				editors[whichPane].setShiftPressed(shiftPressed);
+				editors[session.whichPane].rightArrow();
+				editors[session.whichPane].setShiftPressed(shiftPressed);
 			}
 			else {
 				shellStrCursorPos++;
@@ -3027,10 +3027,10 @@ void ofApp::executeKeyPressed(int key)
 			}
 			break;
 		case 57356:
-			if (!editors[whichPane].isTypingShell()) {
+			if (!editors[session.whichPane].isTypingShell()) {
 				setNormalModeShift();
-				editors[whichPane].leftArrow();
-				editors[whichPane].setShiftPressed(shiftPressed);
+				editors[session.whichPane].leftArrow();
+				editors[session.whichPane].setShiftPressed(shiftPressed);
 			}
 			else {
 				shellStrCursorPos--;
@@ -3038,34 +3038,34 @@ void ofApp::executeKeyPressed(int key)
 			}
 			break;
 		case 57360:
-			if (!editors[whichPane].isTypingShell()) {
+			if (!editors[session.whichPane].isTypingShell()) {
 				setNormalModeShift();
-				editors[whichPane].pageUp();
-				editors[whichPane].setShiftPressed(shiftPressed);
+				editors[session.whichPane].pageUp();
+				editors[session.whichPane].setShiftPressed(shiftPressed);
 			}
 			break;
 		case 57361:
-			if (!editors[whichPane].isTypingShell()) {
+			if (!editors[session.whichPane].isTypingShell()) {
 				setNormalModeShift();
-				editors[whichPane].pageDown();
-				editors[whichPane].setShiftPressed(shiftPressed);
+				editors[session.whichPane].pageDown();
+				editors[session.whichPane].setShiftPressed(shiftPressed);
 			}
 			break;
 		case 27: // esc
-			editors[whichPane].setInserting(false);
-			editors[whichPane].setTypingShell(false);
-			editors[whichPane].setShowingShell(false);
+			editors[session.whichPane].setInserting(false);
+			editors[session.whichPane].setTypingShell(false);
+			editors[session.whichPane].setShowingShell(false);
 			// the output of a command is cleared, and the panes get back the lines they gave to it (see layoutPanesForShell())
 			shellStr = "";
 			shellLsOutputStr = "";
 			shellScroll = 0;
 			restorePaneLayout();
-			editors[whichPane].resetMaxNumLines();
-			if (editors[whichPane].getVisualMode()) editors[whichPane].setVisualMode(false);
-			if (editors[whichPane].highlightManyChars) editors[whichPane].highlightManyChars = false;
+			editors[session.whichPane].resetMaxNumLines();
+			if (editors[session.whichPane].getVisualMode()) editors[session.whichPane].setVisualMode(false);
+			if (editors[session.whichPane].highlightManyChars) editors[session.whichPane].highlightManyChars = false;
 			// if we have typed commands and their output is greater than two lines
 			// then sharedData.tracebackYCoord will have changed so we need to reset it
-			sharedData.tracebackYCoord = sharedData.tracebackBase;
+			session.sharedData.tracebackYCoord = session.sharedData.tracebackBase;
 			// the same applies to the number of lines for commands and their output
 			numShellLines = numShellLsOutputLines = 0;
 			// and the sizes of the areas are calculated again the next time they are shown
@@ -3083,7 +3083,7 @@ void ofApp::executeKeyPressed(int key)
 			// q and c close the pane, and any other key (e.g. Esc) cancels Ctrl+w
 			bool ctrlWWasPressed = ctrlWPressed;
 			ctrlWPressed = false;
-			if (ctrlWWasPressed && !editors[whichPane].getInserting() && !editors[whichPane].isTypingShell()) {
+			if (ctrlWWasPressed && !editors[session.whichPane].getInserting() && !editors[session.whichPane].isTypingShell()) {
 				switch (key) {
 					case 'h': moveToPane(0); break;
 					case 'j': moveToPane(1); break;
@@ -3091,7 +3091,7 @@ void ofApp::executeKeyPressed(int key)
 					case 'l': moveToPane(3); break;
 					case 'q':
 					case 'c':
-						if (editors[whichPane].isHelpFileOpen()) editors[whichPane].closeHelpFile();
+						if (editors[session.whichPane].isHelpFileOpen()) editors[session.whichPane].closeHelpFile();
 						else removePane();
 						break;
 					default:
@@ -3099,94 +3099,94 @@ void ofApp::executeKeyPressed(int key)
 				}
 				return;
 			}
-			editors[whichPane].setDPressed(false);
+			editors[session.whichPane].setDPressed(false);
 			int pendingBindingKey = editorBindingKey;
 			int pendingBindingArg = editorBindingArg;
 			bool pendingBindingIsDollar = editorBindingIsDollar;
 			gPressed = false;
 			editorBindingArg = editorBindingKey = -1;
 			editorBindingIsDollar = false;
-			if (key == 61 && editors[whichPane].isCtrlPressed() && !editors[whichPane].isAltPressed()) { // +
+			if (key == 61 && editors[session.whichPane].isCtrlPressed() && !editors[session.whichPane].isAltPressed()) { // +
 				fontSize += 2;
 				fontLoaded = false;
 				setFontSize(true); // set font size and calculate pane coordinates
 			}
-			else if (key == 45 && editors[whichPane].isCtrlPressed() && !editors[whichPane].isAltPressed()) { // -
+			else if (key == 45 && editors[session.whichPane].isCtrlPressed() && !editors[session.whichPane].isAltPressed()) { // -
 				fontSize -= 2;
 				if (fontSize == 0) fontSize = 2;
 				fontLoaded = false;
 				setFontSize(true);
 			}
-			else if (key == 43 && editors[whichPane].isCtrlPressed()) { // + with shift pressed
-				sharedData.staffLinesDist += 2;
-				sharedData.scoreFontSize = (int)(35.0 * sharedData.staffLinesDist / 10.0);
-				instFontSize = sharedData.scoreFontSize / 3.5;
+			else if (key == 43 && editors[session.whichPane].isCtrlPressed()) { // + with shift pressed
+				session.sharedData.staffLinesDist += 2;
+				session.sharedData.scoreFontSize = (int)(35.0 * session.sharedData.staffLinesDist / 10.0);
+				instFontSize = session.sharedData.scoreFontSize / 3.5;
 				instFont.load("Monaco.ttf", instFontSize);
 				setScoreSizes();
 			}
-			else if (key == 95 && editors[whichPane].isCtrlPressed()) { // - with shift pressed
-				sharedData.staffLinesDist -= 2;
-				if (sharedData.staffLinesDist < 4) sharedData.staffLinesDist = 4;
-				sharedData.scoreFontSize = (int)(35.0 * sharedData.staffLinesDist / 10.0);
-				instFontSize = sharedData.scoreFontSize / 3.5;
+			else if (key == 95 && editors[session.whichPane].isCtrlPressed()) { // - with shift pressed
+				session.sharedData.staffLinesDist -= 2;
+				if (session.sharedData.staffLinesDist < 4) session.sharedData.staffLinesDist = 4;
+				session.sharedData.scoreFontSize = (int)(35.0 * session.sharedData.staffLinesDist / 10.0);
+				instFontSize = session.sharedData.scoreFontSize / 3.5;
 				instFont.load("Monaco.ttf", instFontSize);
 				setScoreSizes();
 			}
-			else if (key == 61 && editors[whichPane].isCtrlPressed() && editors[whichPane].isAltPressed()) { // + (actually =)
+			else if (key == 61 && editors[session.whichPane].isCtrlPressed() && editors[session.whichPane].isAltPressed()) { // + (actually =)
 				brightnessCoeff += 0.01;
 				if (brightnessCoeff > 1) brightnessCoeff = 1;
 			}
-			else if (key == 45 && editors[whichPane].isCtrlPressed() && editors[whichPane].isAltPressed()) { // -
+			else if (key == 45 && editors[session.whichPane].isCtrlPressed() && editors[session.whichPane].isAltPressed()) { // -
 				brightnessCoeff -= 0.01;
 				if (brightnessCoeff < 0) brightnessCoeff = 0;
 			}
-			else if (key == 102 && editors[whichPane].isCtrlPressed()) { // f
-				if (editors[whichPane].getInserting()) {
+			else if (key == 102 && editors[session.whichPane].isCtrlPressed()) { // f
+				if (editors[session.whichPane].getInserting()) {
 					ofToggleFullscreen();
 					fullScreen = !fullScreen;
 				}
 				else {
 					setNormalModeShift();
-					editors[whichPane].pageDown();
-					editors[whichPane].setShiftPressed(shiftPressed);
+					editors[session.whichPane].pageDown();
+					editors[session.whichPane].setShiftPressed(shiftPressed);
 				}
 			}
-			else if (char(key) == 'q' && editors[whichPane].isCtrlPressed()) {
+			else if (char(key) == 'q' && editors[session.whichPane].isCtrlPressed()) {
 				requestQuit();
 			}
-			else if (char(key) == 'n' && editors[whichPane].isCtrlPressed()) {
+			else if (char(key) == 'n' && editors[session.whichPane].isCtrlPressed()) {
 				// remove all panes but one
 				for (size_t i = 0; i < editors.size()-1; i++) {
 					removePane();
 				}
 				{
 					// the sequencer might be playing, so the instruments are not cleared while it goes through them
-					std::lock_guard<std::recursive_mutex> instrumentsLock(sharedData.instrumentsMutex);
-					clearBars();
-					clearLoops();
-					clearLists();
-					clearFunctions();
-					clearInstruments();
+					std::lock_guard<std::recursive_mutex> instrumentsLock(session.sharedData.instrumentsMutex);
+					session.clearBars();
+					session.clearLoops();
+					session.clearLists();
+					session.clearFunctions();
+					session.clearInstruments();
 				}
 				// hide score
 				setShowScore(-1);
-				editors[whichPane].clearText();
-				editors[whichPane].createNewLine("", 1);
+				editors[session.whichPane].clearText();
+				editors[session.whichPane].createNewLine("", 1);
 				// a new session starts a new history
-				editors[whichPane].clearUndoHistory();
+				editors[session.whichPane].clearUndoHistory();
 			}
 			// add panes. V for vertical, H for horizontal (with shift pressed)
-			else if (((key == 86) || (key == 72)) && editors[whichPane].isCtrlPressed()) {
+			else if (((key == 86) || (key == 72)) && editors[session.whichPane].isCtrlPressed()) {
 				addPane(key);
 			}
 			// remove panes. Ctrl+w, where if only one pane, we quit
 			// in normal mode Ctrl+w waits for a key to move to another pane, or to close this one, as in Vim (see above)
-			else if (key == 119 && editors[whichPane].isCtrlPressed() && !editors[whichPane].getInserting() && !editors[whichPane].isTypingShell()) {
+			else if (key == 119 && editors[session.whichPane].isCtrlPressed() && !editors[session.whichPane].getInserting() && !editors[session.whichPane].isTypingShell()) {
 				ctrlWPressed = true;
 			}
-			else if (key == 119 && editors[whichPane].isCtrlPressed()) {
-				if (editors[whichPane].isHelpFileOpen()) {
-					editors[whichPane].closeHelpFile();
+			else if (key == 119 && editors[session.whichPane].isCtrlPressed()) {
+				if (editors[session.whichPane].isHelpFileOpen()) {
+					editors[session.whichPane].closeHelpFile();
 				}
 				else {
 					removePane();
@@ -3211,151 +3211,151 @@ void ofApp::executeKeyPressed(int key)
 			else if ((key == 80) && ctrlPressed && altPressed) {
 				swapScorePosition(2);
 			}
-			else if (key == 105 && !editors[whichPane].getInserting() && !editors[whichPane].isTypingShell()) { // i
-				editors[whichPane].setInserting(true);
+			else if (key == 105 && !editors[session.whichPane].getInserting() && !editors[session.whichPane].isTypingShell()) { // i
+				editors[session.whichPane].setInserting(true);
 				shellStr = "";
-				editors[whichPane].resetMaxNumLines();
+				editors[session.whichPane].resetMaxNumLines();
 			}
-			else if (!editors[whichPane].getInserting() && ((key == 58 && !editors[whichPane].getVisualMode()) || editors[whichPane].isTypingShell())) { // :
+			else if (!editors[session.whichPane].getInserting() && ((key == 58 && !editors[session.whichPane].getVisualMode()) || editors[session.whichPane].isTypingShell())) { // :
 				typeShellCommand(key);
 			}
-			else if (!editors[whichPane].getInserting() && !editors[whichPane].isTypingShell()) {
+			else if (!editors[session.whichPane].getInserting() && !editors[session.whichPane].isTypingShell()) {
 				// bindings are not checked for Ctrl+key and Enter
-				bool bindingKey = !editors[whichPane].isCtrlPressed() && key != 13;
+				bool bindingKey = !editors[session.whichPane].isCtrlPressed() && key != 13;
 				// if we are holding a key bound with a second key and we now press the second key
 				// this is checked first, so that the second key can be a reserved key, without the function it has in normal mode
 				if (bindingKey && pendingBindingKey >= 0 && (key == pendingBindingArg || (pendingBindingIsDollar && key >= 48 && key <= 57))) {
 					if (pendingBindingIsDollar) {
-						shellStr = editors[whichPane].bindings[pendingBindingKey].actionVec[0] + " " + std::to_string(key - 48);
+						shellStr = editors[session.whichPane].bindings[pendingBindingKey].actionVec[0] + " " + std::to_string(key - 48);
 					}
 					else {
-						shellStr = genStrFromVec(editors[whichPane].bindings[pendingBindingKey].actionVec);
+						shellStr = session.genStrFromVec(editors[session.whichPane].bindings[pendingBindingKey].actionVec);
 					}
 					executingBind = true;
 					shellTabCounter = 0;
 					shellStrCursorPos = (int)shellStr.size();
-					editors[whichPane].setTypingShell(true);
-					editors[whichPane].setShowingShell(true);
+					editors[session.whichPane].setTypingShell(true);
+					editors[session.whichPane].setShowingShell(true);
 				}
 				// enable executing chunks of code in normal mode too
-				else if ((editors[whichPane].isCtrlPressed() || editors[whichPane].isShiftPressed()) && key == 13) {
-					editors[whichPane].allOtherKeys(key);
+				else if ((editors[session.whichPane].isCtrlPressed() || editors[session.whichPane].isShiftPressed()) && key == 13) {
+					editors[session.whichPane].allOtherKeys(key);
 				}
 				// Ctrl+r redoes and u undoes in normal mode, as in Vim (in insert mode these are Ctrl+y and Ctrl+z, see Editor::allOtherKeys())
-				else if (key == 114 && editors[whichPane].isCtrlPressed()) { // r
-					editors[whichPane].redo();
+				else if (key == 114 && editors[session.whichPane].isCtrlPressed()) { // r
+					editors[session.whichPane].redo();
 				}
-				else if (key == 117 && !editors[whichPane].isCtrlPressed()) { // u
-					editors[whichPane].undo();
+				else if (key == 117 && !editors[session.whichPane].isCtrlPressed()) { // u
+					editors[session.whichPane].undo();
 				}
 				else if ((key == 106 || key == 74)) { // j  or J
 					setNormalModeShift();
-					editors[whichPane].downArrow(-1); // -1 for single increment
-					editors[whichPane].setShiftPressed(shiftPressed);
+					editors[session.whichPane].downArrow(-1); // -1 for single increment
+					editors[session.whichPane].setShiftPressed(shiftPressed);
 				}
 				else if ((key == 107 || key == 75)) { // k or K
 					setNormalModeShift();
-					editors[whichPane].upArrow(-1); // -1 for single decrement
-					editors[whichPane].setShiftPressed(shiftPressed);
+					editors[session.whichPane].upArrow(-1); // -1 for single decrement
+					editors[session.whichPane].setShiftPressed(shiftPressed);
 				}
 				else if ((key == 104 || key == 72)) { // h or H
 					setNormalModeShift();
-					editors[whichPane].leftArrow();
-					editors[whichPane].setShiftPressed(shiftPressed);
+					editors[session.whichPane].leftArrow();
+					editors[session.whichPane].setShiftPressed(shiftPressed);
 				}
 				else if ((key == 108 || key == 76)) { // l or L
 					setNormalModeShift();
-					editors[whichPane].rightArrow();
-					editors[whichPane].setShiftPressed(shiftPressed);
+					editors[session.whichPane].rightArrow();
+					editors[session.whichPane].setShiftPressed(shiftPressed);
 				}
-				else if ((key == 98 && editors[whichPane].isCtrlPressed())) { // b
+				else if ((key == 98 && editors[session.whichPane].isCtrlPressed())) { // b
 					setNormalModeShift();
-					editors[whichPane].pageUp();
-					editors[whichPane].setShiftPressed(shiftPressed);
+					editors[session.whichPane].pageUp();
+					editors[session.whichPane].setShiftPressed(shiftPressed);
 				}
 				else if (key == 121) { // y
-					editors[whichPane].copyString(1); // 1 is index for yanking a string
+					editors[session.whichPane].copyString(1); // 1 is index for yanking a string
 				}
 				else if (key == 112) { // p
-					editors[whichPane].pasteString(1); //  1 is index for pasting a yanked string
+					editors[session.whichPane].pasteString(1); //  1 is index for pasting a yanked string
 				}
-				else if (key == 118 && editors[whichPane].isCtrlPressed()) {
+				else if (key == 118 && editors[session.whichPane].isCtrlPressed()) {
 					// Ctrl+v selects a block of columns, as in Vim (in insert mode Ctrl+v pastes, see Editor::allOtherKeys())
-					editors[whichPane].startVisualSelection(2);
+					editors[session.whichPane].startVisualSelection(2);
 				}
 				else if (key == 118) {
 					// letter v
-					editors[whichPane].startVisualSelection(0); // immitating Vim's Visual mode
+					editors[session.whichPane].startVisualSelection(0); // immitating Vim's Visual mode
 				}
-				else if (key == 86 && !editors[whichPane].isCtrlPressed()) {
+				else if (key == 86 && !editors[session.whichPane].isCtrlPressed()) {
 					// V selects whole lines, as in Vim (Ctrl+V adds a pane, see above)
-					editors[whichPane].startVisualSelection(1);
+					editors[session.whichPane].startVisualSelection(1);
 				}
-				else if (key == 68 && !editors[whichPane].isCtrlPressed()) { // D
+				else if (key == 68 && !editors[session.whichPane].isCtrlPressed()) { // D
 					// in visual mode D deletes whole lines, otherwise it deletes from the cursor to the end of the line, as in Vim
 					// in visual mode D deletes the lines of the selection, as in Vim (see Editor::deleteVisualLines())
-					if (editors[whichPane].getVisualMode()) {
-						editors[whichPane].deleteVisualLines();
+					if (editors[session.whichPane].getVisualMode()) {
+						editors[session.whichPane].deleteVisualLines();
 					}
 					else {
-						editors[whichPane].deleteToLineEnd();
+						editors[session.whichPane].deleteToLineEnd();
 					}
 				}
-				else if (key == 73 && !editors[whichPane].isCtrlPressed()) { // I
+				else if (key == 73 && !editors[session.whichPane].isCtrlPressed()) { // I
 					// after Ctrl+v, I inserts the same text in all lines of the block, otherwise it inserts at the start of the line
-					if (editors[whichPane].getVisualMode() && editors[whichPane].getSelectionMode() == 2) {
-						editors[whichPane].startBlockInsert();
+					if (editors[session.whichPane].getVisualMode() && editors[session.whichPane].getSelectionMode() == 2) {
+						editors[session.whichPane].startBlockInsert();
 					}
 					else {
-						editors[whichPane].insertAtLineStart();
+						editors[session.whichPane].insertAtLineStart();
 					}
 				}
 				else if (key == 65) {
 					// capital A when in normal mode sets pane to insert mode and moves cursor to end of line
-					editors[whichPane].setCursorPos(editors[whichPane].maxCursorPos()+1);
-					editors[whichPane].setInserting(true);
+					editors[session.whichPane].setCursorPos(editors[session.whichPane].maxCursorPos()+1);
+					editors[session.whichPane].setInserting(true);
 				}
 				else if (key == 100) { // d
-					if (editors[whichPane].highlightManyChars) {
+					if (editors[session.whichPane].highlightManyChars) {
 						// the selection is yanked without clearing it (false), so that deleteString() deletes all of it
 						// and not only the character under the cursor (deleteString() clears it afterwards)
-						editors[whichPane].copyString(1, false); // 1 is index for yanking a string
-						editors[whichPane].deleteString();
-						if (editors[whichPane].getVisualMode()) editors[whichPane].setVisualMode(false);
+						editors[session.whichPane].copyString(1, false); // 1 is index for yanking a string
+						editors[session.whichPane].deleteString();
+						if (editors[session.whichPane].getVisualMode()) editors[session.whichPane].setVisualMode(false);
 					}
 					// right after v, before the cursor moves, the selection is the character under the cursor, as in Vim
-					else if (editors[whichPane].getVisualMode()) {
-						editors[whichPane].copyString(1); // 1 is index for yanking a string
-						editors[whichPane].deleteString();
-						editors[whichPane].setVisualMode(false);
+					else if (editors[session.whichPane].getVisualMode()) {
+						editors[session.whichPane].copyString(1); // 1 is index for yanking a string
+						editors[session.whichPane].deleteString();
+						editors[session.whichPane].setVisualMode(false);
 					}
 					// without a selection, dd deletes the line, as in Vim
 					else if (dWasPressed) {
-						editors[whichPane].deleteCurrentLine();
-						if (editors[whichPane].getVisualMode()) editors[whichPane].setVisualMode(false);
-						editors[whichPane].setDPressed(false);
+						editors[session.whichPane].deleteCurrentLine();
+						if (editors[session.whichPane].getVisualMode()) editors[session.whichPane].setVisualMode(false);
+						editors[session.whichPane].setDPressed(false);
 					}
 					else {
 						dPressed = true;
-						editors[whichPane].setDPressed(true);
+						editors[session.whichPane].setDPressed(true);
 					}
 				}
-				else if (key == 120 && !editors[whichPane].isCtrlPressed()) { // x
+				else if (key == 120 && !editors[session.whichPane].isCtrlPressed()) { // x
 					// x deletes the character under the cursor, as in Vim
-					editors[whichPane].copyString(1); // 1 is index for yanking a string
-					editors[whichPane].deleteString();
+					editors[session.whichPane].copyString(1); // 1 is index for yanking a string
+					editors[session.whichPane].deleteString();
 				}
 				else if (key == 48) { // 0
-					editors[whichPane].setCursorPos(0);
+					editors[session.whichPane].setCursorPos(0);
 				}
 				else if (key == 36) { // dollar sign
-					editors[whichPane].setCursorPos(editors[whichPane].maxCursorPos());
+					editors[session.whichPane].setCursorPos(editors[session.whichPane].maxCursorPos());
 				}
 				else if (key == 103) { // g, twice moves the cursor to the first line
 					if (gWasPressed) {
 						setNormalModeShift();
-						editors[whichPane].upArrow(0);
-						editors[whichPane].setShiftPressed(shiftPressed);
+						editors[session.whichPane].upArrow(0);
+						editors[session.whichPane].setShiftPressed(shiftPressed);
 					}
 					else {
 						gPressed = true;
@@ -3365,30 +3365,30 @@ void ofApp::executeKeyPressed(int key)
 					// G is typed with Shift, which makes the editor select text when moving the cursor
 					// so Shift is considered pressed only in visual mode, where the selection extends
 					setNormalModeShift();
-					editors[whichPane].downArrow(editors[whichPane].lineCount-1);
-					editors[whichPane].setShiftPressed(shiftPressed);
+					editors[session.whichPane].downArrow(editors[session.whichPane].lineCount-1);
+					editors[session.whichPane].setShiftPressed(shiftPressed);
 				}
 				// bound keys (the keys of normal mode above are reserved and can't be bound)
-				else if (bindingKey && editors[whichPane].bindings.find(key) != editors[whichPane].bindings.end()) {
+				else if (bindingKey && editors[session.whichPane].bindings.find(key) != editors[session.whichPane].bindings.end()) {
 					// if the binding is two keys, we execute on the press of the second
-					if (editors[whichPane].bindings[key].bindingVec[0].size() > 0) {
-						editorBindingIsDollar = editors[whichPane].bindings[key].bindingVec[0].compare("$") == 0;
+					if (editors[session.whichPane].bindings[key].bindingVec[0].size() > 0) {
+						editorBindingIsDollar = editors[session.whichPane].bindings[key].bindingVec[0].compare("$") == 0;
 						editorBindingKey = key;
-						editorBindingArg = static_cast<int>(editors[whichPane].bindings[key].bindingVec[0][0]);
+						editorBindingArg = static_cast<int>(editors[session.whichPane].bindings[key].bindingVec[0][0]);
 					}
 					// otherwise we execute on the press of the first
 					else {
-						shellStr = genStrFromVec(editors[whichPane].bindings[key].actionVec);
+						shellStr = session.genStrFromVec(editors[session.whichPane].bindings[key].actionVec);
 						executingBind = true;
 						shellTabCounter = 0;
 						shellStrCursorPos = (int)shellStr.size();
-						editors[whichPane].setTypingShell(true);
-						editors[whichPane].setShowingShell(true);
+						editors[session.whichPane].setTypingShell(true);
+						editors[session.whichPane].setShowingShell(true);
 					}
 				}
 			}
-			else if (editors[whichPane].getInserting()) {
-				editors[whichPane].allOtherKeys(key);
+			else if (editors[session.whichPane].getInserting()) {
+				editors[session.whichPane].allOtherKeys(key);
 			}
 			break;
 		}
@@ -3402,15 +3402,15 @@ void ofApp::executeKeyReleased(int key)
 {
 	switch (key) {
 		case 1:
-			editors[whichPane].setShiftPressed(false);
+			editors[session.whichPane].setShiftPressed(false);
 			shiftPressed = false;
 			break;
 		case 2:
-			editors[whichPane].setCtrlPressed(false);
+			editors[session.whichPane].setCtrlPressed(false);
 			ctrlPressed = false;
 			break;
 		case 4:
-			editors[whichPane].setAltPressed(false);
+			editors[session.whichPane].setAltPressed(false);
 			altPressed = false;
 			break;
 		default:
@@ -3428,15 +3428,15 @@ void ofApp::executeKeyReleased(int key)
 void ofApp::keyPressedOsc(int key, int thisEditor)
 {
 	mutex.lock();
-	int whichPaneBackup = whichPane;
+	int whichPaneBackup = session.whichPane;
 	// change the currently active editor temporarily
 	// because this overloaded function is called from an editor
 	// when it receives input from OSC
 	// this way, even if an editor is out of focus
 	// we're still able to type in it properly
-	whichPane = thisEditor;
+	session.whichPane = thisEditor;
 	executeKeyPressed(key);
-	whichPane = whichPaneBackup;
+	session.whichPane = whichPaneBackup;
 	mutex.unlock();
 }
 
@@ -3446,10 +3446,10 @@ void ofApp::keyReleasedOsc(int key, int thisPane)
 {
 	// the same applies to releasing a key
 	mutex.lock();
-	int whichPaneBackup = whichPane;
-	whichPane = thisPane;
+	int whichPaneBackup = session.whichPane;
+	session.whichPane = thisPane;
 	executeKeyReleased(key);
-	whichPane = whichPaneBackup;
+	session.whichPane = whichPaneBackup;
 	mutex.unlock();
 }
 
@@ -3458,11 +3458,11 @@ void ofApp::keyReleasedOsc(int key, int thisPane)
 void ofApp::keyPressed(int key)
 {
 	mutex.lock();
-	if (editors[whichPane].getSendKeys()) {
+	if (editors[session.whichPane].getSendKeys()) {
 		OscMessage m;
-		m.setAddress("/livelily"+std::to_string(editors[whichPane].getSendKeysPaneNdx())+"/press");
+		m.setAddress("/livelily"+std::to_string(editors[session.whichPane].getSendKeysPaneNdx())+"/press");
 		m.addIntArg(key);
-		editors[whichPane].oscKeys->send(m);
+		editors[session.whichPane].oscKeys->send(m);
 	}
 	executeKeyPressed(key);
 	mutex.unlock();
@@ -3473,11 +3473,11 @@ void ofApp::keyPressed(int key)
 void ofApp::keyReleased(int key)
 {
 	mutex.lock();
-	if (editors[whichPane].getSendKeys()) {
+	if (editors[session.whichPane].getSendKeys()) {
 		OscMessage m;
-		m.setAddress("/livelily"+std::to_string(editors[whichPane].getSendKeysPaneNdx())+"/release");
+		m.setAddress("/livelily"+std::to_string(editors[session.whichPane].getSendKeysPaneNdx())+"/release");
 		m.addIntArg(key);
-		editors[whichPane].oscKeys->send(m);
+		editors[session.whichPane].oscKeys->send(m);
 	}
 	executeKeyReleased(key);
 	mutex.unlock();
@@ -3488,11 +3488,11 @@ void ofApp::keyReleased(int key)
 pyStdoutStrKeyModifier ofApp::checkPyStdoutKeyModifier(int ndx)
 {
 	pyStdoutStrKeyModifier keyMod = {false, 0, 0, 0};
-	if (sharedData.pyStdoutStr[ndx] == '<' && ((ndx > 0 && sharedData.pyStdoutStr[ndx-1] != '\\') || ndx == 0)) {
-		if (sharedData.pyStdoutStr.substr(ndx).find(">") == std::string::npos) {
+	if (session.sharedData.pyStdoutStr[ndx] == '<' && ((ndx > 0 && session.sharedData.pyStdoutStr[ndx-1] != '\\') || ndx == 0)) {
+		if (session.sharedData.pyStdoutStr.substr(ndx).find(">") == std::string::npos) {
 			return keyMod;
 		}
-		std::string s = sharedData.pyStdoutStr.substr(ndx+1, sharedData.pyStdoutStr.substr(ndx+1).find(">"));
+		std::string s = session.sharedData.pyStdoutStr.substr(ndx+1, session.sharedData.pyStdoutStr.substr(ndx+1).find(">"));
 		int modifierKey = 0;
 		int action = 0;
 		if (s.compare("SHIFT_DOWN") == 0) {
@@ -3534,19 +3534,19 @@ pyStdoutStrKeyModifier ofApp::checkPyStdoutKeyModifier(int ndx)
 void ofApp::handleKeyModifier(pyStdoutStrKeyModifier modifierStruct)
 {
 	if (modifierStruct.action == 1) {
-		if (sharedData.whichPyPane == whichPane) {
+		if (session.sharedData.whichPyPane == session.whichPane) {
 			keyPressed(modifierStruct.modifier);
 		}
 		else {
-			keyPressedOsc(modifierStruct.modifier, sharedData.whichPyPane);
+			keyPressedOsc(modifierStruct.modifier, session.sharedData.whichPyPane);
 		}
 	}
 	else {
-		if (sharedData.whichPyPane == whichPane) {
+		if (session.sharedData.whichPyPane == session.whichPane) {
 			keyReleased(modifierStruct.modifier);
 		}
 		else {
-			keyReleasedOsc(modifierStruct.modifier, sharedData.whichPyPane);
+			keyReleasedOsc(modifierStruct.modifier, session.sharedData.whichPyPane);
 		}
 	}
 }
@@ -3572,7 +3572,7 @@ void ofApp::setPanesRowsAndCols()
 //--------------------------------------------------------------
 void ofApp::moveToPane(int direction)
 {
-	Editor& current = editors[whichPane];
+	Editor& current = editors[session.whichPane];
 	float left = current.getFrameXOffset();
 	float right = left + current.getFrameWidth();
 	float top = current.getFrameYOffset();
@@ -3585,7 +3585,7 @@ void ofApp::moveToPane(int direction)
 	float bestDistance = FLT_MAX;
 	bool bestByCursor = false;
 	for (auto& editor : editors) {
-		if (editor.first == whichPane) continue;
+		if (editor.first == session.whichPane) continue;
 		Editor& other = editor.second;
 		float oLeft = other.getFrameXOffset();
 		float oRight = oLeft + other.getFrameWidth();
@@ -3641,12 +3641,12 @@ void ofApp::revealActivePane()
 {
 	if (!showScore) return;
 	if (scoreOrientation == 0 && paneSplitOrientation == 1 && numPanes.size() == 2) {
-		if ((scoreXOffset == 0 && whichPane < numPanes[0]) || (scoreXOffset > 0 && whichPane >= numPanes[0])) {
+		if ((scoreXOffset == 0 && session.whichPane < numPanes[0]) || (scoreXOffset > 0 && session.whichPane >= numPanes[0])) {
 			swapScorePosition(0);
 		}
 	}
 	if (scoreOrientation == 1 && paneSplitOrientation == 0 && numPanes.size() == 2) {
-		if ((scoreYOffset == 0 && whichPane < numPanes[0]) || (scoreYOffset > 0 && whichPane >= numPanes[0])) {
+		if ((scoreYOffset == 0 && session.whichPane < numPanes[0]) || (scoreYOffset > 0 && session.whichPane >= numPanes[0])) {
 			swapScorePosition(1);
 		}
 	}
@@ -3663,12 +3663,12 @@ void ofApp::addPane(int key)
 		if (key == 86) paneSplitOrientation = 1;
 		else paneSplitOrientation = 0;
 	}
-	int paneRowWithCursor = editors[whichPane].getPaneRow();
+	int paneRowWithCursor = editors[session.whichPane].getPaneRow();
 	bool sameRow = ((paneSplitOrientation == 0 && key == 86) || (paneSplitOrientation == 1 && key == 72));
 	// the key of the new pane, right after the active pane in its row, or after the last pane of its row, at the start of a new row
 	int newKey;
 	if (sameRow) {
-		newKey = whichPane + 1;
+		newKey = session.whichPane + 1;
 		numPanes[paneRowWithCursor]++;
 	}
 	else {
@@ -3694,14 +3694,14 @@ void ofApp::addPane(int key)
 	editors[newKey].setID(newKey);
 	setFontSize(false); // set the size for the font of the new editor but don't calculate the coordinates yet
 	setPanesRowsAndCols();
-	editors[whichPane].setActivity(false);
+	editors[session.whichPane].setActivity(false);
 	// release the Ctrl key from the previous pane before moving to the new one
-	editors[whichPane].setCtrlPressed(false);
+	editors[session.whichPane].setCtrlPressed(false);
 	// for safety, set also the shift and alt keys to released
-	editors[whichPane].setShiftPressed(false);
-	editors[whichPane].setAltPressed(false);
-	whichPane = newKey;
-	editors[whichPane].setActivity(true);
+	editors[session.whichPane].setShiftPressed(false);
+	editors[session.whichPane].setAltPressed(false);
+	session.whichPane = newKey;
+	editors[session.whichPane].setActivity(true);
 	// if we add a second pane with the score visible
 	// if the panes are split vertically and the score is also vertical (opposite values)
 	// or both are horizontal
@@ -3732,12 +3732,12 @@ void ofApp::removePane()
 		requestQuit();
 		return;
 	}
-	int paneRowWithCursor = editors[whichPane].getPaneRow();
+	int paneRowWithCursor = editors[session.whichPane].getPaneRow();
 	int lastKey = editors.rbegin()->first;
-	bool isLastPane = (lastKey == whichPane);
-	editors.erase(whichPane);
+	bool isLastPane = (lastKey == session.whichPane);
+	editors.erase(session.whichPane);
 	// the panes after the removed one move one key down
-	for (int key = whichPane + 1; key <= lastKey; key++) {
+	for (int key = session.whichPane + 1; key <= lastKey; key++) {
 		auto nodeHolder = editors.extract(key);
 		if (nodeHolder.empty()) continue;
 		nodeHolder.key() = key - 1;
@@ -3757,10 +3757,10 @@ void ofApp::removePane()
 	setPanesRowsAndCols();
 	// if we deleted the last pane we must decrement the pane index
 	// otherwise it stays as it is, and the next pane becomes active
-	if (isLastPane) whichPane--;
-	if (whichPane < 0) whichPane = 0;
-	if (whichPane > editors.rbegin()->first) whichPane = editors.rbegin()->first;
-	editors[whichPane].setActivity(true);
+	if (isLastPane) session.whichPane--;
+	if (session.whichPane < 0) session.whichPane = 0;
+	if (session.whichPane > editors.rbegin()->first) session.whichPane = editors.rbegin()->first;
+	editors[session.whichPane].setActivity(true);
 	// if we're left with one pane only, reset paneSplitOrientation
 	// (with more panes in one row or column the orientation stays, as it sets whether they are side by side or one above the other)
 	if (editors.size() == 1) {
@@ -3815,7 +3815,7 @@ std::vector<EditorNoteSpan> ofApp::getActiveEditorNoteSpans(int paneNdx)
 {
 	// the tokens in a pane of the notes that play, for highlighting them
 	std::vector<EditorNoteSpan> spans;
-	if (!sequencer.isThreadRunning()) {
+	if (!session.sequencer.isThreadRunning()) {
 		std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
 		activeEditorNotes.clear();
 		return spans;
@@ -3846,7 +3846,7 @@ std::vector<EditorNoteSpan> ofApp::getActiveEditorNoteSpans(int paneNdx)
 				else if (span.text != "\\transpose") {
 					// a copied bar, e.g. \1 or \1.\inst
 					std::string barName = span.text.substr(0, span.text.find('.'));
-					if (sharedData.barsIndexes.find(barName) == sharedData.barsIndexes.end()) written = false;
+					if (session.sharedData.barsIndexes.find(barName) == session.sharedData.barsIndexes.end()) written = false;
 				}
 			}
 			if (!written || !hasRestToken) continue;
@@ -3909,7 +3909,7 @@ void ofApp::completeShellCommand()
 			if (cmd.size() > 1 && startsWith(cmd.substr(1), prefix)) names.insert(cmd.substr(1));
 		}
 		const char* pathEnv = getenv("PATH");
-		std::vector<std::string> pathDirs = tokenizeString(pathEnv ? std::string(pathEnv) : std::string(), ":");
+		std::vector<std::string> pathDirs = session.tokenizeString(pathEnv ? std::string(pathEnv) : std::string(), ":");
 		for (const std::string& dir : pathDirs) {
 			if (dir.empty()) continue;
 			for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
@@ -4019,12 +4019,12 @@ void ofApp::typeShellCommand(int key)
 {
 	if (key == 13) {
 		executeShellCommand();
-		editors[whichPane].setTypingShell(false);
+		editors[session.whichPane].setTypingShell(false);
 		shellTabCounter = 0;
 		// a command without output (e.g. :w or :set wrap) leaves nothing to show
 		// so the area below the panes shows the error messages again, which it doesn't while it shows the shell
 		if (shellStr.empty() && numShellLsOutputLines == 0) {
-			editors[whichPane].setShowingShell(false);
+			editors[session.whichPane].setShowingShell(false);
 		}
 	}
 	else if (key == 8) {
@@ -4037,8 +4037,8 @@ void ofApp::typeShellCommand(int key)
 			shellStrCursorPos = 0;
 		}
 		if (shellStr.empty()) {
-			editors[whichPane].setTypingShell(false);
-			editors[whichPane].setShowingShell(false);
+			editors[session.whichPane].setTypingShell(false);
+			editors[session.whichPane].setShowingShell(false);
 		}
 	}
 	else if (key == 127) {
@@ -4046,15 +4046,15 @@ void ofApp::typeShellCommand(int key)
 			shellStr.erase(shellStrCursorPos, 1);
 		}
 		if (shellStr.empty()) {
-			editors[whichPane].setTypingShell(false);
-			editors[whichPane].setShowingShell(false);
+			editors[session.whichPane].setTypingShell(false);
+			editors[session.whichPane].setShowingShell(false);
 		}
 	}
 	else if (key == 105 && shellStr.size() == 0) {
-		editors[whichPane].setTypingShell(false);
-		editors[whichPane].setShowingShell(false);
+		editors[session.whichPane].setTypingShell(false);
+		editors[session.whichPane].setShowingShell(false);
 		shellTabCounter = 0;
-		editors[whichPane].resetMaxNumLines();
+		editors[session.whichPane].resetMaxNumLines();
 	}
 	else if (key == 9) {
 		completeShellCommand();
@@ -4067,8 +4067,8 @@ void ofApp::typeShellCommand(int key)
 			numShellLines = 1;
 			shellStrColor = ofColor::white;
 			numShellLsOutputLines = 0;
-			editors[whichPane].setTypingShell(true);
-			editors[whichPane].setShowingShell(true);
+			editors[session.whichPane].setTypingShell(true);
+			editors[session.whichPane].setShowingShell(true);
 		}
 		if (shellStrCursorPos < (int)shellStr.size()) shellStr.insert(shellStr.begin()+shellStrCursorPos, char(key));
 		else shellStr += char(key);
@@ -4140,10 +4140,10 @@ int ofApp::run_command(const std::string& cmd, std::string& output) {
 void ofApp::executeShellCommand()
 {
 	if (executingBind) {
-		std::vector<std::string> v = tokenizeString(shellStr, " ");
+		std::vector<std::string> v = session.tokenizeString(shellStr, " ");
 		shellStr.clear();
 		executingBind = false;
-		parseCommand(CmdInput(v, std::vector<std::string>{}, false, true), 1, 1); // dummy second and third arguments
+		session.parseCommand(CmdInput(v, std::vector<std::string>{}, false, true), 1, 1); // dummy second and third arguments
 		return;
 	}
 	shellStrColor = ofColor::white;
@@ -4209,12 +4209,12 @@ void ofApp::executeShellCommand()
 			numShellLines = 1;
 			return;
 		}
-		editors[whichPane].saveFile(arg);
+		editors[session.whichPane].saveFile(arg);
 		shellStr.clear();
 		numShellLines = 0;
 	}
 	else if (shellStr.compare(":w") == 0) {
-		editors[whichPane].saveExistingFile();
+		editors[session.whichPane].saveExistingFile();
 		shellStr.clear();
 		numShellLines = 0;
 	}
@@ -4223,7 +4223,7 @@ void ofApp::executeShellCommand()
 	// :x does the same, as in Vim, but writes the file only if it has changes that are not saved
 	else if (shellStr == ":wq" || startsWith(shellStr, ":wq ") || shellStr == ":x" || startsWith(shellStr, ":x ")) {
 		bool onlyIfEdited = startsWith(shellStr, ":x");
-		Editor& editor = editors[whichPane];
+		Editor& editor = editors[session.whichPane];
 		if (editor.isHelpFileOpen()) {
 			// a help file is not saved, it is closed
 			editor.closeHelpFile();
@@ -4252,8 +4252,8 @@ void ofApp::executeShellCommand()
 		}
 		shellStr.clear();
 		numShellLines = 0;
-		editors[whichPane].setTypingShell(false);
-		editors[whichPane].setShowingShell(false);
+		editors[session.whichPane].setTypingShell(false);
+		editors[session.whichPane].setShowingShell(false);
 		removePane();
 	}
 	// :wa saves the files of all panes that have changes that are not saved, and :wqa saves them and quits
@@ -4302,7 +4302,7 @@ void ofApp::executeShellCommand()
 			numShellLines = 1;
 			return;
 		}
-		editors[whichPane].loadFile(arg);
+		editors[session.whichPane].loadFile(arg);
 		shellStr.clear();
 		numShellLines = 0;
 	}
@@ -4321,15 +4321,15 @@ void ofApp::executeShellCommand()
 		}
 		shellStr.clear();
 		int counter = 0;
-		for (auto it = editors[whichPane].bindings.begin(); it != editors[whichPane].bindings.end(); ++it) {
+		for (auto it = editors[session.whichPane].bindings.begin(); it != editors[session.whichPane].bindings.end(); ++it) {
 			if (counter > 0) shellStr += "\n";
 			counter++;
 			shellStr += {static_cast<char>(it->first)};
-			if (!it->second.bindingVec.empty()) shellStr += genStrFromVec(it->second.bindingVec);
+			if (!it->second.bindingVec.empty()) shellStr += session.genStrFromVec(it->second.bindingVec);
 			shellStr += " -> ";
-			shellStr += genStrFromVec(it->second.actionVec);
+			shellStr += session.genStrFromVec(it->second.actionVec);
 		}
-		numShellLines = editors[whichPane].bindings.size();
+		numShellLines = editors[session.whichPane].bindings.size();
 	}
 	else if (shellStr == ":bind" || startsWith(shellStr, ":bind ")) {
 		if (whiteSpace == std::string::npos && shellStr.size() > 5) {
@@ -4344,7 +4344,7 @@ void ofApp::executeShellCommand()
 			numShellLines = 1;
 			return;
 		}
-		std::vector<std::string> v = tokenizeString(arg, " ");
+		std::vector<std::string> v = session.tokenizeString(arg, " ");
 		if (std::find(v.begin(), v.end(), "->") == v.end()) {
 			shellStr = "wrong formatting for bind";
 			shellStrColor = ofColor::red;
@@ -4401,13 +4401,13 @@ void ofApp::executeShellCommand()
 			numShellLines = 1;
 			return;
 		}
-		if (editors[whichPane].bindings.find(key) != editors[whichPane].bindings.end()) {
+		if (editors[session.whichPane].bindings.find(key) != editors[session.whichPane].bindings.end()) {
 			shellStr = v1[0] + " is already bound";
 			shellStrColor = ofColor::red;
 			numShellLines = 1;
 			return;
 		}
-		editors[whichPane].bindings[key] = {v1.size() > 1 ? std::vector<std::string>(v1.begin()+1, v1.end()) : std::vector<std::string>{""}, std::move(v2), false};
+		editors[session.whichPane].bindings[key] = {v1.size() > 1 ? std::vector<std::string>(v1.begin()+1, v1.end()) : std::vector<std::string>{""}, std::move(v2), false};
 		shellStr.clear();
 		shellStrColor = ofColor::white;
 		return;
@@ -4425,16 +4425,16 @@ void ofApp::executeShellCommand()
 			numShellLines = 1;
 			return;
 		}
-		std::vector<std::string> v = tokenizeString(arg, " ");
+		std::vector<std::string> v = session.tokenizeString(arg, " ");
 		int key = static_cast<int>(v[0][0]);
-		auto it = editors[whichPane].bindings.find(key);
-		if (it == editors[whichPane].bindings.end()) {
+		auto it = editors[session.whichPane].bindings.find(key);
+		if (it == editors[session.whichPane].bindings.end()) {
 			shellStr = v[0] + " is not bound";
 			shellStrColor = ofColor::red;
 			numShellLines = 1;
 			return;
 		}
-		editors[whichPane].bindings.erase(it);
+		editors[session.whichPane].bindings.erase(it);
 		shellStr.clear();
 		shellStrColor = ofColor::white;
 		return;
@@ -4452,7 +4452,7 @@ void ofApp::executeShellCommand()
 		std::string lsOutput = systemCommandOutput("ls -p " + (startsWith(rawArgs, "-") ? rawArgs : arg));
 		shellStr.clear();
 		numShellLines = 0;
-		formatShellLsOutput(tokenizeString(lsOutput, "\n"));
+		formatShellLsOutput(session.tokenizeString(lsOutput, "\n"));
 	}
 	else if (shellStr.compare(":pwd") == 0) {
 		shellStr = systemCommandOutput("pwd");
@@ -4505,8 +4505,8 @@ void ofApp::executeShellCommand()
 		numShellLines = 0;
 	}
 	else if (shellStr.compare(":q") == 0) {
-		if (editors[whichPane].isHelpFileOpen()) {
-			editors[whichPane].closeHelpFile();
+		if (editors[session.whichPane].isHelpFileOpen()) {
+			editors[session.whichPane].closeHelpFile();
 			// the command leaves nothing to show, so the area below the panes shows the error messages again (see typeShellCommand())
 			shellStr.clear();
 			numShellLines = 0;
@@ -4524,12 +4524,12 @@ void ofApp::executeShellCommand()
 		// the shell of this pane closes, as the new pane becomes the active one
 		shellStr.clear();
 		numShellLines = 0;
-		editors[whichPane].setTypingShell(false);
-		editors[whichPane].setShowingShell(false);
+		editors[session.whichPane].setTypingShell(false);
+		editors[session.whichPane].setShowingShell(false);
 		addPane(vertical ? 86 : 72);
 		// the new pane starts in normal mode, as a pane does in Vim
-		editors[whichPane].setInserting(false);
-		if (hasFile) editors[whichPane].loadFile(arg);
+		editors[session.whichPane].setInserting(false);
+		if (hasFile) editors[session.whichPane].loadFile(arg);
 	}
 	else if (shellStr.compare(":qa") == 0) {
 		requestQuit();
@@ -4537,8 +4537,8 @@ void ofApp::executeShellCommand()
 	// :q! and :qa! quit without asking to save the files that have changes that are not saved, as in Vim
 	// :q! closes the pane when there are more panes (or the help file, if one is open), as :q does
 	else if (shellStr.compare(":q!") == 0) {
-		if (editors[whichPane].isHelpFileOpen()) {
-			editors[whichPane].closeHelpFile();
+		if (editors[session.whichPane].isHelpFileOpen()) {
+			editors[session.whichPane].closeHelpFile();
 			// the command leaves nothing to show, so the area below the panes shows the error messages again (see typeShellCommand())
 			shellStr.clear();
 			numShellLines = 0;
@@ -4561,10 +4561,10 @@ void ofApp::executeShellCommand()
 		option.erase(0, option.find_first_not_of(" \t\n"));
 		if (option.find_last_not_of(" \t\n") != std::string::npos) option.erase(option.find_last_not_of(" \t\n") + 1);
 		if (option == "wrap") {
-			editors[whichPane].setWrapLines(true);
+			editors[session.whichPane].setWrapLines(true);
 		}
 		else if (option == "wrap!" || option == "nowrap") {
-			editors[whichPane].setWrapLines(false);
+			editors[session.whichPane].setWrapLines(false);
 		}
 		else {
 			shellStr = (option.empty() ? std::string(":set needs an option") : option + ": unknown option");
@@ -4719,22 +4719,22 @@ void ofApp::sendBeatVizInfo(int bar)
 {
 	// calculate the time stamp regardless of whether we're showing the beat
 	// or not in the editor, in case we have connected score parts
-	sharedData.beatVizTimeStamp = ofGetElapsedTimeMillis();
-	sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData.tempoMs[bar] / 4.0);
-	sharedData.beatVizRampStart = sharedData.tempoMs[bar] / 4;
-	if (sharedData.beatAnimate) {
-		sharedData.beatViz = true;
+	session.sharedData.beatVizTimeStamp = ofGetElapsedTimeMillis();
+	session.sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)session.sharedData.tempoMs[bar] / 4.0);
+	session.sharedData.beatVizRampStart = session.sharedData.tempoMs[bar] / 4;
+	if (session.sharedData.beatAnimate) {
+		session.sharedData.beatViz = true;
 	}
 	// notify all score parts of the time stamp and the beat visualization counter
 	OscMessage m;
 	m.setAddress("/beatinfo");
-	m.addFloatArg(sharedData.beatVizStepsPerMs);
-	m.addIntArg((int)sharedData.beatVizRampStart);
-	sendToParts(m, false);
+	m.addFloatArg(session.sharedData.beatVizStepsPerMs);
+	m.addIntArg((int)session.sharedData.beatVizRampStart);
+	session.sendToParts(m, false);
 	m.clear();
 	m.setAddress("/beat");
-	m.addIntArg(sharedData.beatCounter);
-	sendToParts(m, false);
+	m.addIntArg(session.sharedData.beatCounter);
+	session.sendToParts(m, false);
 	m.clear();
 }
 
@@ -4806,7 +4806,7 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 		int itemCounter = 0;
 		int colorCounter = 0;
 		for (size_t i = 1; i < commands.size(); i++) {
-			if (isNumber(commands[i])) {
+			if (session.isNumber(commands[i])) {
 				rgbVal = stoi(commands[i]);
 				if (rgbVal < 0 || rgbVal > 255) {
 					return "RGB values must be between 0 and 255";
@@ -4828,13 +4828,13 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 						}
 						break;
 					case 1:
-						for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+						for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 							it->second.setStaffColor(colorCounter, rgbVal);
 							it->second.setNotesColor(colorCounter, rgbVal);
 						}
 						break;
 					case 2:
-						for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+						for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 							it->second.setActiveNotesColor(colorCounter, rgbVal);
 						}
 						break;
@@ -4870,14 +4870,14 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 					beatColor.r = 255 - beatColor.r;
 					beatColor.g = 255 - beatColor.g;
 					beatColor.b = 255 - beatColor.b;
-					for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+					for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 						it->second.invertColor();
 					}
 				}
 				else if (commands[i].compare("reset") == 0){
 					scoreBackgroundColor = ofColor::white;
 					beatColor = ofColor::paleGreen;
-					for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+					for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 						it->second.setStaffColor(Colors::black);
 						it->second.setNotesColor(Colors::black);
 						it->second.setActiveNotesColor(Colors::red);
@@ -4885,20 +4885,20 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 				}
 				else {
 					Color color;
-					if (colorNameMap.find(commands[i]) != colorNameMap.end()) {
-						color = colorNameMap[commands[i]];
+					if (session.colorNameMap.find(commands[i]) != session.colorNameMap.end()) {
+						color = session.colorNameMap[commands[i]];
 						switch (itemCounter) {
 							case 0:
 								scoreBackgroundColor = toOf(color);
 								break;
 							case 1:
-								for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+								for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 									it->second.setStaffColor(color);
 									it->second.setNotesColor(color);
 								}
 								break;
 							case 2:
-								for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+								for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 									it->second.setActiveNotesColor(color);
 								}
 								break;
@@ -4946,11 +4946,11 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 				showTempo = true;
 			}
 			else if (commands[1].compare("beat") == 0) {
-				if (sequencer.isThreadRunning()) {
-					sharedData.beatAnimate = true;
+				if (session.sequencer.isThreadRunning()) {
+					session.sharedData.beatAnimate = true;
 				}
 				else {
-					sharedData.setBeatAnimation = true;
+					session.sharedData.setBeatAnimation = true;
 				}
 			}
 			else if (commands[1].compare("notes") == 0) {
@@ -4986,8 +4986,8 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 				showTempo = false;
 			}
 			else if (commands[1].compare("beat") == 0) {
-				sharedData.beatAnimate = false;
-				sharedData.setBeatAnimation = false;
+				session.sharedData.beatAnimate = false;
+				session.sharedData.setBeatAnimation = false;
 			}
 			else {
 				return "unknown argument";
@@ -5002,23 +5002,23 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 		if (commands.size() < 2) {
 			return "\"beattype\" takes a 1 or a 2 as an argument";
 		}
-		if (!isNumber(commands[1])) {
+		if (!session.isNumber(commands[1])) {
 			return "\"beattype\" takes a 1 or a 2 as an argument";
 		}
 		int beattype = stoi(commands[1]);
 		if (beattype < 1 || beattype > 2) {
 			return "unknown beat vizualization type";
 		}
-		sharedData.beatVizType = beattype;
+		session.sharedData.beatVizType = beattype;
 	}
 
 	else if (commands[0].compare("movex") == 0) {
 		if (commands.size() < 2) {
 			return "\"movex\" takes a number as an argument";
 		}
-		if (!isNumber(commands[1])) return "\"movex\" takes a number as an argument";
+		if (!session.isNumber(commands[1])) return "\"movex\" takes a number as an argument";
 		int numPixels = stoi(commands[1]);
-		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 			it->second.moveScoreX(numPixels);
 		}
 	}
@@ -5027,9 +5027,9 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 		if (commands.size() < 2) {
 			return "\"movey\" takes a number as an argument";
 		}
-		if (!isNumber(commands[1])) return "\"movey\" takes a number as an argument";
+		if (!session.isNumber(commands[1])) return "\"movey\" takes a number as an argument";
 		int numPixels = stoi(commands[1]);
-		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 			it->second.moveScoreY(numPixels);
 		}
 	}
@@ -5038,7 +5038,7 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 		if (commands.size() > 1) {
 			return "\"recenter\" takes no arguments";
 		}
-		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 			it->second.recenterScore();
 		}
 	}
@@ -5047,13 +5047,13 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 		if (commands.size() < 2) {
 			return "\"numbars\" takes a number as an argument";
 		}
-		if (!isNumber(commands[1])) return "\"numbars\" takes a number as an argument";
+		if (!session.isNumber(commands[1])) return "\"numbars\" takes a number as an argument";
 		int numBarsLocal = stoi(commands[1]);
 		if (numBarsLocal < 1) {
 			return "number of bars to display must be 1 or greater";
 		}
 		numBarsToDisplay = numBarsLocal;
-		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 			it->second.setNumBarsToDisplay(numBarsToDisplay);
 		}
 		// the length of the staves depends on the number of bars displayed, so set it and the note positions again
@@ -5085,12 +5085,12 @@ void ofApp::setShowScore(int ndx)
 	if (ndx >= 0) {
 		showScore = true;
 		scoreType = ndx;
-		if (ndx == 0) sharedData.showNotes = true;
-		else sharedData.showNotes = false;
+		if (ndx == 0) session.sharedData.showNotes = true;
+		else session.sharedData.showNotes = false;
 	}
 	else {
 		showScore = false;
-		sharedData.showNotes = false;
+		session.sharedData.showNotes = false;
 	}
 
 	//switch (ndx) {
@@ -5120,7 +5120,7 @@ void ofApp::setShowScore(int ndx)
 	//		break;
 	//}
 	setPaneCoords();
-	editors[whichPane].setMaxCharactersPerString();
+	editors[session.whichPane].setMaxCharactersPerString();
 }
 
 
@@ -5147,7 +5147,7 @@ void ofApp::setFontSize(bool calculateCoords)
 		cursorHeight = font.stringHeight("q");
 		float heightDiff = font.stringHeight("l") - font.stringHeight("o");
 		cursorHeight += heightDiff;
-		maxShellChars = (size_t)(sharedData.screenWidth / oneCharacterWidth);
+		maxShellChars = (size_t)(session.sharedData.screenWidth / oneCharacterWidth);
 	}
 	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 		it->second.setFontSize(fontSize, oneCharacterWidth, cursorHeight);
@@ -5162,14 +5162,14 @@ void ofApp::setPaneCoords()
 	// MINTRACEBACKLINES lines of the current font, with their baselines one and two lines below the panes (see drawTraceback() and drawShell())
 	// and the part of the last line below its baseline, as low as the cursor reaches (0.15 of a line, see drawShell())
 	// the panes get a whole number of lines in the rest of the window, so the area below them is at least this high
-	sharedData.tracebackBase = (float)sharedData.screenHeight - (cursorHeight * ((float)MINTRACEBACKLINES + 0.15f));
+	session.sharedData.tracebackBase = (float)session.sharedData.screenHeight - (cursorHeight * ((float)MINTRACEBACKLINES + 0.15f));
 	// we need the anchor so we can change the traceback height in case the traceback
 	// has more than two lines
 	// get the width and height for each pane
 	// initializing 0 to avoid warning messages during compilation
 	float paneWidth = 0, paneHeight = 0;
 	// we compute the maximum number of lines for a pane with the height of the window
-	int maxNumLines = sharedData.tracebackBase / cursorHeight;
+	int maxNumLines = session.sharedData.tracebackBase / cursorHeight;
 	// we need an even number of lines so that more than one panes in a column can halve this number
 	if (maxNumLines % 2) {
 		if (maxNumLines > 1) maxNumLines--;
@@ -5180,7 +5180,7 @@ void ofApp::setPaneCoords()
 		paneHeight = ((float)maxNumLines * cursorHeight) / (float)numPanes.size();
 	}
 	else {
-		paneWidth = (float)sharedData.screenWidth / (float)numPanes.size();
+		paneWidth = (float)session.sharedData.screenWidth / (float)numPanes.size();
 	}
 	int paneNdx = 0;
 	for (std::map<int, int>::iterator it = numPanes.begin(); it != numPanes.end(); ++it) {
@@ -5233,7 +5233,7 @@ void ofApp::setPaneCoords()
 			additionalLines = maxNumLines - (numLines * numLinesMultiplier);
 		}
 		if (paneSplitOrientation == 0) {
-			paneWidth = sharedData.screenWidth / widthDivisor;
+			paneWidth = session.sharedData.screenWidth / widthDivisor;
 			for (int col = 0; col < it->second; col++) {
 				editors[paneNdx].setFrameWidth(paneWidth); // - (float)(lineWidth / 2));
 				editors[paneNdx].setFrameXOffset(paneWidth * (float)col);
@@ -5272,8 +5272,8 @@ void ofApp::setPaneCoords()
 	//for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 	//	maxNumLines = max(maxNumLines, it->second.getMaxNumLines());
 	//}
-	sharedData.tracebackBase = (float)maxNumLines * cursorHeight;
-	sharedData.tracebackYCoord = sharedData.tracebackBase;
+	session.sharedData.tracebackBase = (float)maxNumLines * cursorHeight;
+	session.sharedData.tracebackYCoord = session.sharedData.tracebackBase;
 	// the panes have a new layout, which the shell makes shorter again if it needs to (see layoutPanesForShell())
 	paneBase.clear();
 	// the area below the panes is reset, so its size is calculated again in drawTraceback() and drawShell()
@@ -5284,19 +5284,19 @@ void ofApp::setPaneCoords()
 //--------------------------------------------------------------
 void ofApp::setScoreCoords()
 {
-	scoreXStartPnt = sharedData.longestInstNameWidth + (sharedData.blankSpace * 1.5);
-	float staffLength = scoreBackgroundWidth - sharedData.blankSpace - scoreXStartPnt;
+	scoreXStartPnt = session.sharedData.longestInstNameWidth + (session.sharedData.blankSpace * 1.5);
+	float staffLength = scoreBackgroundWidth - session.sharedData.blankSpace - scoreXStartPnt;
 	if (scoreOrientation > 0) staffLength /= std::min(2, numBarsToDisplay);
-	sharedData.notesXStartPnt = 0;
-	notesLength = staffLength - (sharedData.staffLinesDist * NOTESXOFFSETCOEF);
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		it->second.setStaffCoords(staffLength, sharedData.staffLinesDist);
-		it->second.setNoteCoords(notesLength, sharedData.staffLinesDist, sharedData.scoreFontSize);
+	session.sharedData.notesXStartPnt = 0;
+	notesLength = staffLength - (session.sharedData.staffLinesDist * NOTESXOFFSETCOEF);
+	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
+		it->second.setStaffCoords(staffLength, session.sharedData.staffLinesDist);
+		it->second.setNoteCoords(notesLength, session.sharedData.staffLinesDist, session.sharedData.scoreFontSize);
 	}
 	// get the note width from the first instrument, as they all have the same size
-	if (sharedData.instruments.size() > 0) {
-		sharedData.noteWidth = sharedData.instruments[0].getNoteWidth();
-		sharedData.noteHeight = sharedData.instruments[0].getNoteHeight();
+	if (session.sharedData.instruments.size() > 0) {
+		session.sharedData.noteWidth = session.sharedData.instruments[0].getNoteWidth();
+		session.sharedData.noteHeight = session.sharedData.instruments[0].getNoteHeight();
 	}
 }
 
@@ -5309,16 +5309,16 @@ void ofApp::resetScoreYOffset()
 	// call swapScorePosition() twice to reset the score position without actually swapping its position
 	// swapScorePosition() also makes the pane on the other side of the score active (e.g. with two panes side by side)
 	// which the two calls can leave on the first pane, so the active pane is kept as it was (e.g. when Esc resets the traceback area)
-	int activePane = whichPane;
+	int activePane = session.whichPane;
 	swapScorePosition(scoreOrientation);
 	swapScorePosition(scoreOrientation);
-	if (whichPane != activePane && editors.find(activePane) != editors.end()) setActivePane(activePane);
+	if (session.whichPane != activePane && editors.find(activePane) != editors.end()) setActivePane(activePane);
 }
 
 //--------------------------------------------------------------
 void ofApp::setNotePositions(int barIndex)
 {
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 		if (!it->second.getCopied(barIndex)) it->second.setNotePositions(barIndex);
 	}
 	applyMergeLayout(barIndex);
@@ -5327,7 +5327,7 @@ void ofApp::setNotePositions(int barIndex)
 //--------------------------------------------------------------
 void ofApp::setNotePositions(int barIndex, int numBars)
 {
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 		if (!it->second.getCopied(barIndex)) it->second.setNotePositions(barIndex, numBars);
 	}
 	for (int i = 0; i < numBars; i++) applyMergeLayout(barIndex + i);
@@ -5347,18 +5347,18 @@ void ofApp::applyMergeLayout(int bar)
 	//   (voices 3 and 4 by one note head, 5 and 6 by two, etc.), so that their stems and beams don't run into each other
 	//   voices with stems up move to the right, and voices with stems down to the left
 	const float sameTime = 0.5;
-	for (const auto& group : mergeGroups) {
+	for (const auto& group : session.mergeGroups) {
 		if (group.size() < 2) continue;
 		std::vector<std::vector<Notes::NoteColumn>> columns;
 		std::vector<int> dirs;
 		for (int inst : group) {
-			auto it = sharedData.instruments.find(inst);
-			if (it == sharedData.instruments.end()) return;
+			auto it = session.sharedData.instruments.find(inst);
+			if (it == session.sharedData.instruments.end()) return;
 			columns.push_back(it->second.getNoteColumns(bar));
 			dirs.push_back(it->second.getForcedStemDir());
 		}
-		float noteWidth = sharedData.instruments[group.front()].getScoreNoteWidth();
-		float halfStaffDist = sharedData.staffLinesDist / 2.0f;
+		float noteWidth = session.sharedData.instruments[group.front()].getScoreNoteWidth();
+		float halfStaffDist = session.sharedData.staffLinesDist / 2.0f;
 		// the column of a voice that starts at the X coordinate, or -1
 		auto columnAt = [&](size_t voice, float x) {
 			for (size_t k = 0; k < columns[voice].size(); k++) {
@@ -5392,7 +5392,7 @@ void ofApp::applyMergeLayout(int bar)
 						if (!sharedHead && shift < noteWidth) shift = noteWidth;
 					}
 				}
-				if (shift != 0) sharedData.instruments[group[v]].shiftNoteColumn(bar, (int)i, shift);
+				if (shift != 0) session.sharedData.instruments[group[v]].shiftNoteColumn(bar, (int)i, shift);
 			}
 		}
 	}
@@ -5416,24 +5416,24 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 	// instruments merged into the staff of another one (see \merge) have no staff of their own
 	// so only the staves are counted, and each staff reaches as far as all its voices
 	size_t numInsts = 0;
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		if (mergeHostOf(it->first) == it->first) numInsts++;
+	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
+		if (session.mergeHostOf(it->first) == it->first) numInsts++;
 	}
 	if (numInsts == 0) return;
 	float requiredDiff = 0;
 	// how far the first staff reaches up, and how far the last one reaches down, in any bar
 	float firstMinPosition = 0;
-	float lastMaxPosition = sharedData.staffLinesDist * 4;
-	for (auto barIt = sharedData.barsIndexes.begin(); barIt != sharedData.barsIndexes.end(); ++barIt) {
+	float lastMaxPosition = session.sharedData.staffLinesDist * 4;
+	for (auto barIt = session.sharedData.barsIndexes.begin(); barIt != session.sharedData.barsIndexes.end(); ++barIt) {
 		int barNdx = barIt->second;
 		float prevMaxPosition = 0;
 		bool firstInst = true;
-		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-			if (mergeHostOf(it->first) != it->first) continue;
+		for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
+			if (session.mergeHostOf(it->first) != it->first) continue;
 			float maxPosition = it->second.getMaxYPos(barNdx);
 			float minPosition = it->second.getMinYPos(barNdx);
-			for (auto voiceIt = sharedData.instruments.begin(); voiceIt != sharedData.instruments.end(); ++voiceIt) {
-				if (voiceIt->first == it->first || mergeHostOf(voiceIt->first) != it->first) continue;
+			for (auto voiceIt = session.sharedData.instruments.begin(); voiceIt != session.sharedData.instruments.end(); ++voiceIt) {
+				if (voiceIt->first == it->first || session.mergeHostOf(voiceIt->first) != it->first) continue;
 				maxPosition = std::max(maxPosition, voiceIt->second.getMaxYPos(barNdx));
 				minPosition = std::min(minPosition, voiceIt->second.getMinYPos(barNdx));
 			}
@@ -5453,14 +5453,14 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 	// the clefs reach about two staff spaces above the top line and below the bottom line of the staff
 	// so the first and last staves include them, and the gap between two staves must be large enough
 	// for the clefs of neighbouring staves not to touch, even when the bars are empty
-	firstMinPosition = std::min(firstMinPosition, -(sharedData.staffLinesDist * 2));
-	lastMaxPosition = std::max(lastMaxPosition, sharedData.staffLinesDist * 6);
+	firstMinPosition = std::min(firstMinPosition, -(session.sharedData.staffLinesDist * 2));
+	lastMaxPosition = std::max(lastMaxPosition, session.sharedData.staffLinesDist * 6);
 	// the staves must not overlap each other, even if the score doesn't fit
 	// the gap between two staves is (allStaffDiffs - staffLinesDist * 2), so this leaves four staff spaces between them
-	float minDiff = sharedData.staffLinesDist * 6;
+	float minDiff = session.sharedData.staffLinesDist * 6;
 	requiredDiff = std::max(requiredDiff, minDiff);
 	// the score is displayed in the whole height (vertical view), or in the upper half (horizontal view)
-	float fullHeight = sharedData.tracebackBase - cursorHeight;
+	float fullHeight = session.sharedData.tracebackBase - cursorHeight;
 	// in horizontal view, the height of the score background depends on the pane configuration
 	// (see swapScorePosition()), so we use that, if the score is currently displayed horizontally
 	float horizontalHeight = fullHeight / 2;
@@ -5471,30 +5471,30 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 	// so the most the distance between the staves can be for the score to fit is
 	float fittingDiff = requiredDiff;
 	if (numInsts > 1) {
-		fittingDiff = ((availableHeight - (lastMaxPosition - firstMinPosition)) / (float)(numInsts - 1)) - (sharedData.staffLinesDist * 2);
+		fittingDiff = ((availableHeight - (lastMaxPosition - firstMinPosition)) / (float)(numInsts - 1)) - (session.sharedData.staffLinesDist * 2);
 	}
-	sharedData.allStaffDiffs = std::max(minDiff, std::min(requiredDiff, fittingDiff));
-	float staffDistance = sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2);
+	session.sharedData.allStaffDiffs = std::max(minDiff, std::min(requiredDiff, fittingDiff));
+	float staffDistance = session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2);
 	float totalHeight = (staffDistance * (float)(numInsts - 1)) + (lastMaxPosition - firstMinPosition);
 	// index 0 is for the vertical view, 1 for the horizontal view (upper half of the window), 2 is the same as 0
 	for (int i = 0; i < 2; i++) {
 		float height = (i == 0 ? fullHeight : horizontalHeight);
 		if (totalHeight < height) {
 			// center the score, with whatever sticks out above the first staff included
-			sharedData.yStartPnts[i] = ((height - totalHeight) / 2.0) - firstMinPosition;
+			session.sharedData.yStartPnts[i] = ((height - totalHeight) / 2.0) - firstMinPosition;
 		}
 		else {
 			// if the full score exceeds the screen just place it 10 pixels below the top part of the window
-			sharedData.yStartPnts[i] = 10 - firstMinPosition;
+			session.sharedData.yStartPnts[i] = 10 - firstMinPosition;
 		}
 	}
-	sharedData.yStartPnts[2] = sharedData.yStartPnts[0];
+	session.sharedData.yStartPnts[2] = session.sharedData.yStartPnts[0];
 }
 
 //--------------------------------------------------------------
 void ofApp::swapScorePosition(int orientation)
 {
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 		it->second.setScoreOrientation(orientation);
 	}
 	// use a boolean to determine whether before exiting the function we will calculate coords for the score
@@ -5506,27 +5506,27 @@ void ofApp::swapScorePosition(int orientation)
 		case 0:
 			scoreYOffset = 0;
 			// if we have one pane only or two panes in horizontal split
-			scoreBackgroundWidth = sharedData.screenWidth / 2;
+			scoreBackgroundWidth = session.sharedData.screenWidth / 2;
 			if ((numPanes.size() == 1 && numPanes[0] == 1) || (paneSplitOrientation == 0 && (numPanes.size() == 2 && (numPanes[0] == 1 && numPanes[1] == 1)))) {
 				// we set the space between the top of the window the beginning of the traceback as the height of the score
 				// in this pane configuration we don't mind which pane index we'll use, so the first is the safest
 				// we add one to the number of editor lines to include the pane separating line
-				scoreBackgroundHeight = sharedData.tracebackBase;
+				scoreBackgroundHeight = session.sharedData.tracebackBase;
 			}
 			else {
-				scoreBackgroundHeight = sharedData.tracebackBase - cursorHeight;
+				scoreBackgroundHeight = session.sharedData.tracebackBase - cursorHeight;
 			}
-			sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
-			sharedData.pianoRollKeysHeight = scoreBackgroundHeight / sharedData.pianoRollLength;
-			sharedData.pianoRollMinDur = (scoreBackgroundWidth - sharedData.pianoRollKeysWidth) / (float)MINDUR;
-			if (scoreXOffset == 0) scoreXOffset = sharedData.screenWidth / 2;
+			session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+			session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / session.sharedData.pianoRollLength;
+			session.sharedData.pianoRollMinDur = (scoreBackgroundWidth - session.sharedData.pianoRollKeysWidth) / (float)MINDUR;
+			if (scoreXOffset == 0) scoreXOffset = session.sharedData.screenWidth / 2;
 			else scoreXOffset = 0;
 			// check if the editor is split in panes and change the active pane accordingly
 			if (paneSplitOrientation == 1 && numPanes.size() == 2) {
-				if (scoreXOffset == 0 && whichPane < numPanes[0]) {
+				if (scoreXOffset == 0 && session.whichPane < numPanes[0]) {
 					setActivePane(numPanes[0]);
 				}
-				else if (scoreXOffset > 0 && whichPane >= numPanes[0]) {
+				else if (scoreXOffset > 0 && session.whichPane >= numPanes[0]) {
 					setActivePane(0);
 				}
 			}
@@ -5534,8 +5534,8 @@ void ofApp::swapScorePosition(int orientation)
 			else if (paneSplitOrientation == 0 && numPanes.size() < 3 &&
 					(numPanes.size() == 1 || (numPanes[0] == 1 && numPanes[1] == 1))) {
 				if (scoreXOffset == 0) {
-					editors[0].setFrameXOffset(sharedData.screenWidth / 2);
-					if (numPanes.size() > 1) editors[1].setFrameXOffset(sharedData.screenWidth / 2);
+					editors[0].setFrameXOffset(session.sharedData.screenWidth / 2);
+					if (numPanes.size() > 1) editors[1].setFrameXOffset(session.sharedData.screenWidth / 2);
 				}
 				else {
 					editors[0].setFrameXOffset(0);
@@ -5547,7 +5547,7 @@ void ofApp::swapScorePosition(int orientation)
 			break;
 		case 1:
 			scoreXOffset = 0;
-			scoreBackgroundWidth = sharedData.screenWidth;
+			scoreBackgroundWidth = session.sharedData.screenWidth;
 			// if we have one pane only or two panes in vertical split
 			if ((numPanes.size() == 1 && numPanes[0] == 1) || (paneSplitOrientation == 1 && (numPanes.size() == 2 && (numPanes[0] == 1 && numPanes[1] == 1)))) {
 				// we first calculate the panes coordinates because in case we have one pane only
@@ -5559,7 +5559,7 @@ void ofApp::swapScorePosition(int orientation)
 				// getMaxNumLines() returns the number of lines minus 1 for the pane separator
 				// but in this case we need this additional line for the score height so we add it
 				int numLines = editors[0].getMaxNumLines() + 1;
-				scoreBackgroundHeight = sharedData.tracebackBase - (numLines * cursorHeight);
+				scoreBackgroundHeight = session.sharedData.tracebackBase - (numLines * cursorHeight);
 				if (scoreYOffset == 0) {
 					scoreYOffset = numLines * cursorHeight;
 				}
@@ -5587,7 +5587,7 @@ void ofApp::swapScorePosition(int orientation)
 				if (setCoords) setPaneCoords();
 			}
 			else {
-				scoreBackgroundHeight = (sharedData.tracebackBase / 2) - cursorHeight;
+				scoreBackgroundHeight = (session.sharedData.tracebackBase / 2) - cursorHeight;
 				// in horizontal view of the score, the height of the score background is rounded half the editor lines
 				// this is because the number of lines of an editor is always odd, so that the line with the file name
 				// and pane index is also included, which makes the total number of lines even
@@ -5597,30 +5597,30 @@ void ofApp::swapScorePosition(int orientation)
 				// but when viewed on the lower side, it should touch the white line of the editor
 				// hence the scoreYOffset is not the same as the scoreBackgroundHeith
 				// as is the case with scoreXOffset and scoreBarckgroundWidth, in the case above
-				if (scoreYOffset == 0) scoreYOffset = (sharedData.tracebackBase / 2);
+				if (scoreYOffset == 0) scoreYOffset = (session.sharedData.tracebackBase / 2);
 				else scoreYOffset = 0;
 				// check if the editor is split in panes and change the active pane accordingly
 				if (paneSplitOrientation == 0 && numPanes.size() == 2) {
-					if (scoreYOffset == 0 && whichPane < numPanes[0]) {
+					if (scoreYOffset == 0 && session.whichPane < numPanes[0]) {
 						setActivePane(numPanes[0]);
 					}
-					else if (scoreYOffset > 0 && whichPane >= numPanes[0]) {
+					else if (scoreYOffset > 0 && session.whichPane >= numPanes[0]) {
 						setActivePane(0);
 					}
 				}
 			}
-			sharedData.pianoRollKeysWidth = scoreBackgroundWidth / sharedData.pianoRollLength;
-			sharedData.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
-			sharedData.pianoRollMinDur = (scoreBackgroundHeight - sharedData.pianoRollKeysHeight) / (float)MINDUR;
+			session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / session.sharedData.pianoRollLength;
+			session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
+			session.sharedData.pianoRollMinDur = (scoreBackgroundHeight - session.sharedData.pianoRollKeysHeight) / (float)MINDUR;
 			break;
 		case 2:
 			scoreXOffset = 0;
 			scoreYOffset = 0;
-			scoreBackgroundWidth = sharedData.screenWidth;
-			scoreBackgroundHeight = sharedData.tracebackBase - cursorHeight;
-			sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
-			sharedData.pianoRollKeysHeight = scoreBackgroundHeight / sharedData.pianoRollLength;
-			sharedData.pianoRollMinDur = (scoreBackgroundWidth - sharedData.pianoRollKeysWidth) / (float)MINDUR;
+			scoreBackgroundWidth = session.sharedData.screenWidth;
+			scoreBackgroundHeight = session.sharedData.tracebackBase - cursorHeight;
+			session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+			session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / session.sharedData.pianoRollLength;
+			session.sharedData.pianoRollMinDur = (scoreBackgroundWidth - session.sharedData.pianoRollKeysWidth) / (float)MINDUR;
 		default:
 			break;
 	}
@@ -5628,7 +5628,7 @@ void ofApp::swapScorePosition(int orientation)
 		// the length of the staves changes with the orientation, so the notes must be positioned again
 		// and the available height changes too, so the distance between the staves must be calculated again
 		setScoreSizes();
-		calculateStaffPositions(getLastBarIndex(), true);
+		calculateStaffPositions(session.getLastBarIndex(), true);
 	}
 }
 
@@ -5636,22 +5636,22 @@ void ofApp::swapScorePosition(int orientation)
 void ofApp::setScoreSizes()
 {
 	// for a 35 font size the staff lines distance is 10
-	sharedData.longestInstNameWidth = 0;
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		it->second.setNotesFontSize(sharedData.scoreFontSize, sharedData.staffLinesDist);
+	session.sharedData.longestInstNameWidth = 0;
+	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
+		it->second.setNotesFontSize(session.sharedData.scoreFontSize, session.sharedData.staffLinesDist);
 		size_t nameWidth = instFont.stringWidth(it->second.getName());
 		instNameWidths[it->first] = nameWidth;
-		if ((int)nameWidth > sharedData.longestInstNameWidth) {
-			sharedData.longestInstNameWidth = nameWidth;
+		if ((int)nameWidth > session.sharedData.longestInstNameWidth) {
+			session.sharedData.longestInstNameWidth = nameWidth;
 		}
 	}
-	scoreXStartPnt = sharedData.longestInstNameWidth + (sharedData.blankSpace * 1.5);
+	scoreXStartPnt = session.sharedData.longestInstNameWidth + (session.sharedData.blankSpace * 1.5);
 	setScoreCoords();
-	if (sharedData.barsIndexes.size() > 0) {
-		for (auto it = sharedData.barsIndexes.begin(); it != sharedData.barsIndexes.end(); ++it) {
-			for (auto it2 = sharedData.instruments.begin(); it2 != sharedData.instruments.end(); ++it2) {
-				it2->second.setMeter(it->second, sharedData.numerator[it->second],
-						sharedData.denominator[it->second], sharedData.numBeats[it->second]);
+	if (session.sharedData.barsIndexes.size() > 0) {
+		for (auto it = session.sharedData.barsIndexes.begin(); it != session.sharedData.barsIndexes.end(); ++it) {
+			for (auto it2 = session.sharedData.instruments.begin(); it2 != session.sharedData.instruments.end(); ++it2) {
+				it2->second.setMeter(it->second, session.sharedData.numerator[it->second],
+						session.sharedData.denominator[it->second], session.sharedData.numBeats[it->second]);
 				it2->second.setNotePositions(it->second);
 			}
 			applyMergeLayout(it->second);
@@ -5662,25 +5662,25 @@ void ofApp::setScoreSizes()
 //--------------------------------------------------------------
 void ofApp::setScoreNotes(int barIndex)
 {
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		it->second.setScoreNotes(barIndex, sharedData.numerator[barIndex],
-								 sharedData.denominator[barIndex], sharedData.numBeats[barIndex],
-								 sharedData.BPMTempi[barIndex], sharedData.tempoBaseForScore[barIndex],
-								 sharedData.BPMDisplayHasDot[barIndex], sharedData.BPMMultiplier[barIndex]);
+	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
+		it->second.setScoreNotes(barIndex, session.sharedData.numerator[barIndex],
+								 session.sharedData.denominator[barIndex], session.sharedData.numBeats[barIndex],
+								 session.sharedData.BPMTempi[barIndex], session.sharedData.tempoBaseForScore[barIndex],
+								 session.sharedData.BPMDisplayHasDot[barIndex], session.sharedData.BPMMultiplier[barIndex]);
 	}
 }
 
 //--------------------------------------------------------------
 void ofApp::setActivePane(int activePane)
 {
-	editors[whichPane].setActivity(false);
+	editors[session.whichPane].setActivity(false);
 	// set all hot keys to false
-	editors[whichPane].setShiftPressed(false);
-	editors[whichPane].setCtrlPressed(false);
-	editors[whichPane].setAltPressed(false);
-	if (editors[whichPane].highlightManyChars) editors[whichPane].highlightManyChars = false;
-	whichPane = activePane;
-	editors[whichPane].setActivity(true);
+	editors[session.whichPane].setShiftPressed(false);
+	editors[session.whichPane].setCtrlPressed(false);
+	editors[session.whichPane].setAltPressed(false);
+	if (editors[session.whichPane].highlightManyChars) editors[session.whichPane].highlightManyChars = false;
+	session.whichPane = activePane;
+	editors[session.whichPane].setActivity(true);
 }
 
 //--------------------------------------------------------------
@@ -5709,16 +5709,16 @@ void ofApp::quitPromptNext()
 		editor.second.setShowingShell(false);
 	}
 	// the pane that is asked for becomes the active one, so it can be seen which file it is
-	if (pane != whichPane && editors.find(pane) != editors.end()) setActivePane(pane);
+	if (pane != session.whichPane && editors.find(pane) != editors.end()) setActivePane(pane);
 	quitPromptState = 1;
-	shellStr = "save " + editors[whichPane].getFileName() + "? y/n";
+	shellStr = "save " + editors[session.whichPane].getFileName() + "? y/n";
 	shellStrColor = ofColor::yellow;
 	shellStrCursorPos = (int)shellStr.size();
 	shellLsOutputStr.clear();
 	numShellLsOutputLines = 0;
 	numShellLines = 1;
-	editors[whichPane].setTypingShell(false);
-	editors[whichPane].setShowingShell(true);
+	editors[session.whichPane].setTypingShell(false);
+	editors[session.whichPane].setShowingShell(true);
 }
 
 //--------------------------------------------------------------
@@ -5731,8 +5731,8 @@ void ofApp::quitPromptKey(int key)
 		shellStr.clear();
 		shellLsOutputStr.clear();
 		numShellLines = numShellLsOutputLines = 0;
-		editors[whichPane].setTypingShell(false);
-		editors[whichPane].setShowingShell(false);
+		editors[session.whichPane].setTypingShell(false);
+		editors[session.whichPane].setShowingShell(false);
 		return;
 	}
 	if (quitPromptState == 1) {
@@ -5742,8 +5742,8 @@ void ofApp::quitPromptKey(int key)
 		}
 		else if (key == 'y' || key == 'Y') {
 			// a file that has a path is saved to it, otherwise (or if it can't be saved there) the path is asked for
-			if (editors[whichPane].fileLoaded) editors[whichPane].saveExistingFile();
-			if (!editors[whichPane].isFileEdited()) {
+			if (editors[session.whichPane].fileLoaded) editors[session.whichPane].saveExistingFile();
+			if (!editors[session.whichPane].isFileEdited()) {
 				quitPromptPanes.erase(quitPromptPanes.begin());
 				quitPromptNext();
 				return;
@@ -5755,8 +5755,8 @@ void ofApp::quitPromptKey(int key)
 			shellStrCursorPos = (int)shellStr.size();
 			shellTabCounter = 0;
 			numShellLines = 1;
-			editors[whichPane].setTypingShell(true);
-			editors[whichPane].setShowingShell(true);
+			editors[session.whichPane].setTypingShell(true);
+			editors[session.whichPane].setShowingShell(true);
 		}
 		return;
 	}
@@ -5767,7 +5767,7 @@ void ofApp::quitPromptKey(int key)
 		if (path.find_first_not_of(" \t") == std::string::npos) return;
 		// :save expands ~ and relative paths, and saves the file
 		executeShellCommand();
-		if (!editors[whichPane].isFileEdited()) {
+		if (!editors[session.whichPane].isFileEdited()) {
 			quitPromptPanes.erase(quitPromptPanes.begin());
 			quitPromptNext();
 		}
@@ -5776,11 +5776,11 @@ void ofApp::quitPromptKey(int key)
 			shellStr = ":save ";
 			shellStrColor = ofColor::white;
 			shellStrCursorPos = (int)shellStr.size();
-			shellLsOutputStr = "could not save " + editors[whichPane].getFileName() + " there, type another path, or Esc to cancel quitting";
+			shellLsOutputStr = "could not save " + editors[session.whichPane].getFileName() + " there, type another path, or Esc to cancel quitting";
 			numShellLsOutputLines = 1;
 			numShellLines = 1;
-			editors[whichPane].setTypingShell(true);
-			editors[whichPane].setShowingShell(true);
+			editors[session.whichPane].setTypingShell(true);
+			editors[session.whichPane].setShowingShell(true);
 		}
 		return;
 	}
@@ -5795,23 +5795,23 @@ void ofApp::quitPromptKey(int key)
 void ofApp::exit()
 {
 	// should print a warning message first
-	sequencer.stopNow();
+	session.sequencer.stopNow();
 	// the sequencer's thread calls the app (e.g. to highlight the notes that play), and it is held by Session
 	// which is destroyed after the members of the app, so the thread ends here
-	sequencer.waitForThread(false);
+	session.sequencer.waitForThread(false);
 	OscMessage m;
 	m.setAddress("/exit");
 	m.addIntArg(1);
-	sendToParts(m, false);
+	session.sendToParts(m, false);
 	m.clear();
-	midi->closeAll();
-	if (serialPortOpen) {
-		serial->close();
+	session.midi->closeAll();
+	if (session.serialPortOpen) {
+		session.serial->close();
 	}
 	exiting = true;
 	// the audio stream stops before the app is destroyed, as its callback uses members of the app (e.g. sharedData)
 	// and the stream is held by Session, which is destroyed after them
-	if (soundStreamSet) audioStream->close();
+	if (session.soundStreamSet) session.audioStream->close();
 	ofExit();
 }
 
@@ -5858,42 +5858,42 @@ void ofApp::resizeWindow()
 {
 	setPaneCoords();
 	if (scoreOrientation == 0) {
-		scoreBackgroundWidth = sharedData.screenWidth / 2;
-		scoreBackgroundHeight = sharedData.tracebackBase - cursorHeight;
-		sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
-		sharedData.pianoRollKeysHeight = scoreBackgroundHeight / sharedData.pianoRollLength;
-		sharedData.pianoRollMinDur = (scoreBackgroundWidth - sharedData.pianoRollKeysWidth) / (float)MINDUR;
-		if (scoreXOffset > 0) scoreXOffset = sharedData.screenWidth / 2;
+		scoreBackgroundWidth = session.sharedData.screenWidth / 2;
+		scoreBackgroundHeight = session.sharedData.tracebackBase - cursorHeight;
+		session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+		session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / session.sharedData.pianoRollLength;
+		session.sharedData.pianoRollMinDur = (scoreBackgroundWidth - session.sharedData.pianoRollKeysWidth) / (float)MINDUR;
+		if (scoreXOffset > 0) scoreXOffset = session.sharedData.screenWidth / 2;
 	}
 	else {
-		scoreBackgroundWidth = sharedData.screenWidth;
-		scoreBackgroundHeight = (sharedData.tracebackBase / 2) - cursorHeight;
-		sharedData.pianoRollKeysWidth = scoreBackgroundWidth / sharedData.pianoRollLength;
-		sharedData.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
-		sharedData.pianoRollMinDur = (scoreBackgroundHeight - sharedData.pianoRollKeysHeight) / (float)MINDUR;
+		scoreBackgroundWidth = session.sharedData.screenWidth;
+		scoreBackgroundHeight = (session.sharedData.tracebackBase / 2) - cursorHeight;
+		session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / session.sharedData.pianoRollLength;
+		session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
+		session.sharedData.pianoRollMinDur = (scoreBackgroundHeight - session.sharedData.pianoRollKeysHeight) / (float)MINDUR;
 	}
 	resetScoreYOffset();
 	setScoreSizes();
-	calculateStaffPositions(getLastBarIndex(), true);
+	calculateStaffPositions(session.getLastBarIndex(), true);
 }
 
 //--------------------------------------------------------------
 void ofApp::windowResized(int w, int h)
 {
 	// hold the previous middle of screen value so the score is also properly updated
-	int prevMiddleOfScreenX = sharedData.middleOfScreenX;
-	sharedData.screenWidth = w;
-	sharedData.screenHeight = h;
-	sharedData.middleOfScreenX = sharedData.screenWidth / 2;
-	sharedData.middleOfScreenY = sharedData.screenHeight / 2;
+	int prevMiddleOfScreenX = session.sharedData.middleOfScreenX;
+	session.sharedData.screenWidth = w;
+	session.sharedData.screenHeight = h;
+	session.sharedData.middleOfScreenX = session.sharedData.screenWidth / 2;
+	session.sharedData.middleOfScreenY = session.sharedData.screenHeight / 2;
 	// once the screen coordinates have been updated, update the score coordinates too
-	if (sharedData.staffXOffset == prevMiddleOfScreenX) {
-		sharedData.staffXOffset = 0;
-		sharedData.staffWidth = sharedData.screenWidth / 2;
+	if (session.sharedData.staffXOffset == prevMiddleOfScreenX) {
+		session.sharedData.staffXOffset = 0;
+		session.sharedData.staffWidth = session.sharedData.screenWidth / 2;
 	}
 	else {
-		sharedData.staffXOffset = sharedData.middleOfScreenX;
-		sharedData.staffWidth = sharedData.screenWidth;
+		session.sharedData.staffXOffset = session.sharedData.middleOfScreenX;
+		session.sharedData.staffWidth = session.sharedData.screenWidth;
 	}
 	windowResizeTimeStamp = ofGetElapsedTimeMillis();
 	isWindowResized = true;
@@ -5917,9 +5917,9 @@ void ofApp::dragEvent(ofDragInfo dragInfo)
 void ofApp::onAudioIn(const float* in, int numFrames, int numChannels)
 {
 #ifdef USEPYO
-	if (pyoSet && !exiting) {
+	if (session.pyoSet && !exiting) {
 		// send audio samples to pyo
-		sharedData.pyo.fillin(const_cast<float*>(in));
+		session.sharedData.pyo.fillin(const_cast<float*>(in));
 	}
 #endif
 }
@@ -5929,9 +5929,9 @@ void ofApp::onAudioOut(float* out, int numFrames, int numChannels, int sampleRat
 {
 	bool pyoProcessed = false;
 #ifdef USEPYO
-	if (pyoSet && !exiting) {
+	if (session.pyoSet && !exiting) {
 		// process and get new audio samples from pyo
-		sharedData.pyo.process(out);
+		session.sharedData.pyo.process(out);
 		if (showScope) {
 			std::lock_guard<std::mutex> lock(scopeMutex);
 			scopeSamples.assign(out, out + (size_t)numFrames * numChannels);
@@ -5943,7 +5943,7 @@ void ofApp::onAudioOut(float* out, int numFrames, int numChannels, int sampleRat
 	// without pyo, the stream plays the click track only
 	if (!pyoProcessed) std::fill(out, out + (size_t)numFrames * numChannels, 0.0f);
 	// the click track is added to the output (see \clicktrack)
-	if (!exiting) sharedData.clickTrack.process(out, numFrames, numChannels, sampleRate);
+	if (!exiting) session.sharedData.clickTrack.process(out, numFrames, numChannels, sampleRate);
 }
 
 
@@ -5951,34 +5951,34 @@ void ofApp::onAudioOut(float* out, int numFrames, int numChannels, int sampleRat
 //--------------------------------------------------------------
 void ofApp::parseStrings(int index, int numLines)
 {
-	barError = false;
+	session.barError = false;
 	// an unmatched curly bracket (e.g. a bar definition that is not finished) is an error
 	// and in this case none of the lines is parsed
 	std::string bracketError;
-	int unmatchedBracketLine = editors[whichPane].findUnmatchedBracket(index, numLines, bracketError);
+	int unmatchedBracketLine = editors[session.whichPane].findUnmatchedBracket(index, numLines, bracketError);
 	if (unmatchedBracketLine > -1) {
-		editors[whichPane].setTraceback(3, bracketError, unmatchedBracketLine);
+		editors[session.whichPane].setTraceback(3, bracketError, unmatchedBracketLine);
 		return;
 	}
 	// collect the lines to parse from the editor
 	std::vector<std::pair<int, std::string>> lines;
 	for (int i = index; i < (index+numLines); i++) {
-		if (editors[whichPane].getSessionActivity()) {
-			lines.push_back(std::make_pair(i, editors[whichPane].allLines[i].str));
-			if (editors[whichPane].getSendLines()) {
+		if (editors[session.whichPane].getSessionActivity()) {
+			lines.push_back(std::make_pair(i, editors[session.whichPane].allLines[i].str));
+			if (editors[session.whichPane].getSendLines()) {
 				OscMessage m;
-				m.setAddress("/livelily"+std::to_string(editors[whichPane].getSendLinesPaneNdx())+"/press");
-				m.addStringArg(editors[whichPane].allLines[i].str);
-				editors[whichPane].oscKeys->send(m);
+				m.setAddress("/livelily"+std::to_string(editors[session.whichPane].getSendLinesPaneNdx())+"/press");
+				m.addStringArg(editors[session.whichPane].allLines[i].str);
+				editors[session.whichPane].oscKeys->send(m);
 			}
 		}
 		else {
-			if (editors[whichPane].allLines[i].str == "\\active") {
-				lines.push_back(std::make_pair(i, editors[whichPane].allLines[i].str));
+			if (editors[session.whichPane].allLines[i].str == "\\active") {
+				lines.push_back(std::make_pair(i, editors[session.whichPane].allLines[i].str));
 			}
 		}
 	}
-	parseLines(lines, numLines, false);
+	session.parseLines(lines, numLines, false);
 }
 
 //--------------------------------------------------------------
@@ -6027,11 +6027,11 @@ std::pair<int, int> ofApp::findFunctionDefinitionLine(const std::string& funcNam
 {
 	int pane, defLine;
 	{
-		std::lock_guard<std::mutex> lock(sharedData.functionsMutex);
-		auto funcIndexIt = functionIndexes.find(funcName);
-		if (funcIndexIt == functionIndexes.end()) return std::make_pair(-1, -1);
-		auto funcIt = sharedData.functions.find(funcIndexIt->second);
-		if (funcIt == sharedData.functions.end()) return std::make_pair(-1, -1);
+		std::lock_guard<std::mutex> lock(session.sharedData.functionsMutex);
+		auto funcIndexIt = session.functionIndexes.find(funcName);
+		if (funcIndexIt == session.functionIndexes.end()) return std::make_pair(-1, -1);
+		auto funcIt = session.sharedData.functions.find(funcIndexIt->second);
+		if (funcIt == session.sharedData.functions.end()) return std::make_pair(-1, -1);
 		pane = funcIt->second.getDefinitionPane();
 		defLine = funcIt->second.getDefinitionLine();
 	}
@@ -6060,12 +6060,12 @@ std::pair<int, int> ofApp::findFunctionDefinitionLine(const std::string& funcNam
 	if (foundLine < 0) return std::make_pair(-1, -1);
 	// store the new line, so the next lookup finds it without searching
 	{
-		std::lock_guard<std::mutex> lock(sharedData.functionsMutex);
-		auto funcIndexIt = functionIndexes.find(funcName);
-		if (funcIndexIt != functionIndexes.end()) {
-			auto funcIt = sharedData.functions.find(funcIndexIt->second);
+		std::lock_guard<std::mutex> lock(session.sharedData.functionsMutex);
+		auto funcIndexIt = session.functionIndexes.find(funcName);
+		if (funcIndexIt != session.functionIndexes.end()) {
+			auto funcIt = session.sharedData.functions.find(funcIndexIt->second);
 			// only if the function hasn't been redefined elsewhere in the meantime
-			if (funcIt != sharedData.functions.end() && funcIt->second.getDefinitionPane() == pane && funcIt->second.getDefinitionLine() == defLine) {
+			if (funcIt != session.sharedData.functions.end() && funcIt->second.getDefinitionPane() == pane && funcIt->second.getDefinitionLine() == defLine) {
 				funcIt->second.setDefinitionLocation(pane, foundLine);
 			}
 		}
@@ -6130,10 +6130,10 @@ void ofApp::setEditorOption(int pane, const std::string& option, const std::stri
 bool ofApp::openHelp(int pane, const std::string& filePath, int newPane)
 {
 	// a new pane beside or below the active one (as Ctrl+v and Ctrl+h do), which becomes the active one
-	if (pane != whichPane) setActivePane(pane);
+	if (pane != session.whichPane) setActivePane(pane);
 	if (newPane == 1) addPane(86);
 	else if (newPane == 2) addPane(72);
-	bool fileOpened = editors[whichPane].loadHelpFile(filePath, newPane);
+	bool fileOpened = editors[session.whichPane].loadHelpFile(filePath, newPane);
 	if (!fileOpened && newPane > 0) removePane();
 	return fileOpened;
 }
@@ -6147,12 +6147,12 @@ void ofApp::storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNo
 	// if the notes can't be matched to the tokens of the line (e.g. a line in a function), nothing is stored for the bar
 	std::vector<std::vector<EditorNoteSpan>>& spans = editorNoteSpans[std::make_pair(instNdx, barNdx)];
 	spans.clear();
-	auto editorIt = editors.find(whichPane);
+	auto editorIt = editors.find(session.whichPane);
 	if (editorIt == editors.end() || editorIt->second.allLines.find(lineNum) == editorIt->second.allLines.end()) return;
 	const std::string& str = editorIt->second.allLines[lineNum].str;
 	std::vector<PositionedToken> tokens = positionedTokens(str);
 	// the melodic line starts after the name of the instrument, which can be at the start of the line or after \bar (e.g. \bar 1 { \inst c'1 })
-	std::string instName = "\\" + sharedData.instruments[instNdx].getName();
+	std::string instName = "\\" + session.sharedData.instruments[instNdx].getName();
 	size_t first = 0;
 	while (first < tokens.size() && tokens[first].text != instName && tokens[first].text.substr(0, instName.size() + 1) != instName + ".") first++;
 	if (first >= tokens.size()) return;
@@ -6163,7 +6163,7 @@ void ofApp::storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNo
 		if (word == "\\time" || word == "\\tempo" || word == "\\beatat") return true;
 		if (word.size() < 2 || word[0] != '\\') return false;
 		std::string name = word.substr(1, word.find('.') == std::string::npos ? std::string::npos : word.find('.') - 1);
-		return sharedData.instrumentIndexes.find("\\" + name) != sharedData.instrumentIndexes.end() || instGroups.find("\\" + name) != instGroups.end();
+		return session.sharedData.instrumentIndexes.find("\\" + name) != session.sharedData.instrumentIndexes.end() || session.instGroups.find("\\" + name) != session.instGroups.end();
 	};
 	size_t last = first;
 	int braceDepth = 0;
@@ -6178,12 +6178,12 @@ void ofApp::storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNo
 	}
 	std::vector<PositionedToken> melodic(tokens.begin() + first, tokens.begin() + last);
 	// with \bars, the bars are separated by |, and the notes are those of the bar being parsed
-	if (parsingBars) {
+	if (session.parsingBars) {
 		std::vector<PositionedToken> segment;
 		int barCounter = 1;
 		for (const PositionedToken& t : melodic) {
 			if (t.text == "|") barCounter++;
-			else if (barCounter == barsIterCounter) segment.push_back(t);
+			else if (barCounter == session.barsIterCounter) segment.push_back(t);
 		}
 		melodic = segment;
 	}
@@ -6215,7 +6215,7 @@ void ofApp::storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNo
 		}
 		else if (isTranspose) {
 			for (size_t j = i + 1; j < melodic.size(); j++) {
-				if (isFloat(melodic[j].text)) {
+				if (session.isFloat(melodic[j].text)) {
 					end = j;
 					break;
 				}
@@ -6232,7 +6232,7 @@ void ofApp::storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNo
 			if (!hasCommand) {
 				size_t amountNdx = (melodic[end].text == "}" ? end - 1 : end);
 				skipToken[i] = true;
-				if (amountNdx > i && isFloat(melodic[amountNdx].text)) skipToken[amountNdx] = true;
+				if (amountNdx > i && session.isFloat(melodic[amountNdx].text)) skipToken[amountNdx] = true;
 				continue;
 			}
 		}
@@ -6243,7 +6243,7 @@ void ofApp::storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNo
 	std::vector<int> order;
 	size_t ndx = 0;
 	expandRepetitions(melodic, ndx, false, order);
-	int pane = whichPane;
+	int pane = session.whichPane;
 	int lineId = editorIt->second.getLineId(lineNum);
 	auto spanOf = [&](int tokenNdx) {
 		if (groupEnd[tokenNdx] >= 0) {
@@ -6287,18 +6287,18 @@ void ofApp::storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNo
 		// a bar that is copied, with the instrument of this line or another one, e.g. \1 or \1.\inst
 		size_t dot = t.find('.');
 		std::string barName = t.substr(0, dot);
-		auto barIt = sharedData.barsIndexes.find(barName);
-		if (barIt != sharedData.barsIndexes.end()) {
+		auto barIt = session.sharedData.barsIndexes.find(barName);
+		if (barIt != session.sharedData.barsIndexes.end()) {
 			int sourceInst = instNdx;
 			if (dot != std::string::npos) {
 				std::string sourceName = t.substr(dot + 1);
 				if (!startsWith(sourceName, "\\")) sourceName = "\\" + sourceName;
-				auto instIt = sharedData.instrumentIndexes.find(sourceName);
-				if (instIt == sharedData.instrumentIndexes.end()) return;
+				auto instIt = session.sharedData.instrumentIndexes.find(sourceName);
+				if (instIt == session.sharedData.instrumentIndexes.end()) return;
 				sourceInst = instIt->second;
 			}
 			auto sourceIt = editorNoteSpans.find(std::make_pair(sourceInst, barIt->second));
-			int numSourceNotes = (int)sharedData.instruments[sourceInst].notes[barIt->second].size();
+			int numSourceNotes = (int)session.sharedData.instruments[sourceInst].notes[barIt->second].size();
 			for (int n = 0; n < numSourceNotes; n++) {
 				std::vector<EditorNoteSpan> noteSpans = spansOf(order[k]);
 				if (sourceIt != editorNoteSpans.end() && n < (int)sourceIt->second.size()) {
@@ -6325,14 +6325,14 @@ void ofApp::storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNo
 //--------------------------------------------------------------
 void ofApp::instrumentCreated(int instNdx)
 {
-	Instrument& inst = sharedData.instruments[instNdx];
+	Instrument& inst = session.sharedData.instruments[instNdx];
 	// the width of its name, for the space of the names left of the score
 	int thisInstNameWidth = instFont.stringWidth(inst.getName());
 	instNameWidths[instNdx] = thisInstNameWidth;
-	if (thisInstNameWidth > sharedData.longestInstNameWidth) {
-		sharedData.longestInstNameWidth = thisInstNameWidth;
+	if (thisInstNameWidth > session.sharedData.longestInstNameWidth) {
+		session.sharedData.longestInstNameWidth = thisInstNameWidth;
 	}
-	inst.setNotesFontSize(sharedData.scoreFontSize, sharedData.staffLinesDist);
+	inst.setNotesFontSize(session.sharedData.scoreFontSize, session.sharedData.staffLinesDist);
 	// a new instrument must be displayed like the existing ones, in case the score is not in its default state
 	inst.setScoreOrientation(scoreOrientation);
 	inst.setNumBarsToDisplay(numBarsToDisplay);
@@ -6346,11 +6346,11 @@ void ofApp::instrumentRemoved(int instNdx)
 	auto newIndex = [instNdx](int ndx) { return (ndx > instNdx ? ndx - 1 : ndx); };
 	// the widths of the names, for the space of the names left of the score
 	instNameWidths.clear();
-	sharedData.longestInstNameWidth = 0;
-	for (auto& inst : sharedData.instruments) {
+	session.sharedData.longestInstNameWidth = 0;
+	for (auto& inst : session.sharedData.instruments) {
 		int width = instFont.stringWidth(inst.second.getName());
 		instNameWidths[inst.first] = width;
-		sharedData.longestInstNameWidth = std::max(sharedData.longestInstNameWidth, width);
+		session.sharedData.longestInstNameWidth = std::max(session.sharedData.longestInstNameWidth, width);
 	}
 	// the tokens of the editor that play the notes of the instruments (\editor.animate)
 	std::map<std::pair<int, int>, std::vector<std::vector<EditorNoteSpan>>> spans;
