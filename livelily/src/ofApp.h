@@ -835,16 +835,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		std::map<int, std::vector<int>> allStringTabs;
 		//std::vector<std::vector<int>> curlyIndexes;
 
-		// map of function names and indexes
-		// the map with int and Function objects is in SharedData
-		std::map<std::string, int> functionIndexes;
-		bool storingFunction;
-		// index of the function whose body is being stored, used only by the main thread
-		// kept separate from lastFunctionIndex, which is also set when a function is called from the sequencer thread
-		int storingFunctionIndex;
-		// the curly bracket depth while storing a function body, the function's own brackets included
-		int functionBodyDepth;
-		int lastFunctionIndex;
 
 		int fontSize; // the size of the font of the editor
 		int instFontSize; // the size of the font of the instrument display

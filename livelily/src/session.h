@@ -38,6 +38,16 @@ class Session
 		// the lines of \list.traverse, with their line numbers, and how many curly brackets are still open while they are collected
 		std::vector<std::pair<int, std::string>> traverseLines;
 		int traverseDepth = 0;
+
+		// functions (\function): their indexes by their names (the Function objects are in SharedData)
+		std::map<std::string, int> functionIndexes;
+		bool storingFunction;
+		// index of the function whose body is being stored, used only by the main thread
+		// kept separate from lastFunctionIndex, which is also set when a function is called from the sequencer thread
+		int storingFunctionIndex;
+		// the curly bracket depth while storing a function body, the function's own brackets included
+		int functionBodyDepth;
+		int lastFunctionIndex;
 };
 
 #endif
