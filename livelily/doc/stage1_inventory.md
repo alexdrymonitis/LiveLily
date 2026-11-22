@@ -4,6 +4,17 @@ Stage 1 of the migration plan moves LiveLily's engine out of `ofApp` and away fr
 This inventory sorts what is there today into engine, editor and front end, and turns stage 1 into an ordered list of small steps.
 Each step is one commit, checked with the snapshot tests, which include the dry run of playback.
 
+## Progress
+
+- [x] Step 1: plain C++ utilities in the parser
+- [x] Step 2: a color type of LiveLily's own (`color.h`, converted in `of_color.h`)
+- [x] Step 3: interfaces for MIDI (`midi.h`), OSC (`osc.h`), serial (`serial.h`), audio (`audio.h`) and system commands (`system_command.h`), implemented with openFrameworks in the `of_*` files
+- [ ] Step 4: `FrontendHost`
+- [ ] Step 5: `Session`
+- [ ] Step 6: split `Instrument`
+- [ ] Step 7: split `SharedData`
+- [ ] Step 8: headless tests
+
 ## Where the coupling is
 
 - **`ofApp` is the engine and the front end at once.** The parser is already `ofApp` member functions (`parser.cpp`, 7,555 lines), next to the drawing, the keys, the panes and the shell (`ofApp.cpp`, 7,894 lines). `ofApp.h` declares about 400 members.
