@@ -7736,6 +7736,9 @@ void ofApp::exit()
 		serial->close();
 	}
 	exiting = true;
+	// the audio stream stops before the app is destroyed, as its callback uses members of the app (e.g. sharedData)
+	// and the stream is held by Session, which is destroyed after them
+	if (soundStreamSet) audioStream->close();
 	ofExit();
 }
 

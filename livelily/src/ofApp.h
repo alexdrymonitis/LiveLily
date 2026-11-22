@@ -597,24 +597,10 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		SharedData sharedData;
 		Sequencer sequencer;
 
-		// Pyo stuff
-		// the audio stream for pyo and the click track (see audio.h), with openFrameworks for now
-		std::unique_ptr<AudioStream> audioStream = makeAudioStream();
-		// the settings of the stream, from \samplerate, \buffersize, the channels, and the devices
+		// the settings of the audio stream, from \samplerate, \buffersize, the channels, and the devices
 		AudioSettings audioSettings();
-		// whether the sound stream has been set up, by pyo or by the click track (see startSoundStream())
-		bool soundStreamSet = false;
 		// sets up the sound stream for the click track, if pyo hasn't set it up already
 		void startSoundStream();
-		bool pyoSet;
-		int sampleRate;
-		int bufferSize;
-		int inChannels;
-		int outChannels;
-		AudioDevice inSoundDevice;
-		AudioDevice outSoundDevice;
-		bool inSoundDeviceSet;
-		bool outSoundDeviceSet;
 		// oscilloscope drawing stuff
 		// the last output buffer, copied by the audio thread for the oscilloscope, and its number of channels
 		std::vector<float> scopeSamples;

@@ -11,6 +11,7 @@
 #include "midi.h"
 #include "osc.h"
 #include "serial.h"
+#include "audio.h"
 #include <string>
 
 // a variable of a session (x = 5), with its value as a string and its type
@@ -156,6 +157,21 @@ class Session
 		unsigned long maestroTimeStamp;
 		float maestroValThresh;
 		std::vector<float> maestroVec;
+
+		// Python (pyo) and audio
+		bool pyoSet;
+		// the audio stream for pyo and the click track (see audio.h), and whether it has been set up (see startSoundStream())
+		std::unique_ptr<AudioStream> audioStream = makeAudioStream();
+		bool soundStreamSet = false;
+		// \samplerate, \buffersize, \inchannels, \outchannels, and the devices of \setaudiodev, \setinaudiodev and \setoutaudiodev
+		int sampleRate;
+		int bufferSize;
+		int inChannels;
+		int outChannels;
+		AudioDevice inSoundDevice;
+		AudioDevice outSoundDevice;
+		bool inSoundDeviceSet;
+		bool outSoundDeviceSet;
 };
 
 #endif
