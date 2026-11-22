@@ -80,10 +80,10 @@ void ofApp::parseStrings(int index, int numLines)
 		if (editors[whichPane].getSessionActivity()) {
 			lines.push_back(std::make_pair(i, editors[whichPane].allLines[i].str));
 			if (editors[whichPane].getSendLines()) {
-				ofxOscMessage m;
+				OscMessage m;
 				m.setAddress("/livelily"+std::to_string(editors[whichPane].getSendLinesPaneNdx())+"/press");
 				m.addStringArg(editors[whichPane].allLines[i].str);
-				editors[whichPane].oscKeys.sendMessage(m, false);
+				editors[whichPane].oscKeys->send(m);
 			}
 		}
 		else {
@@ -1557,7 +1557,7 @@ CmdOutput ofApp::cmdTime(CmdInput& cmdInput, int lineNum, int numLines)
 		//if (it->second.sendToPart) {
 		//	sendBarIndexBeatMeterToPart(it->first, bar);
 		//}
-		ofxOscMessage m;
+		OscMessage m;
 		m.setAddress("/time");
 		m.addIntArg(bar);
 		m.addIntArg(sharedData.numerator[bar]);
@@ -1993,11 +1993,11 @@ CmdOutput ofApp::cmdClef(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("unknown clef");
 	}
 	if (sharedData.instruments[lastInstrumentIndex].sendToPart) {
-		ofxOscMessage m;
+		OscMessage m;
 		m.setAddress("/clef");
 		m.addStringArg("\\"+sharedData.instruments[lastInstrumentIndex].getName());
 		m.addIntArg(clefNdx);
-		sharedData.instruments[lastInstrumentIndex].scorePartSender.sendMessage(m, false);
+		sharedData.instruments[lastInstrumentIndex].scorePartSender->send(m);
 		m.clear();
 	}
 	return CmdOutput();
@@ -2279,7 +2279,7 @@ CmdOutput ofApp::cmdOsc(CmdInput& cmdInput, int lineNum, int numLines)
 	}
 	std::string taken = nameTakenError(oscClientName, NameKind::oscClient);
 	if (!taken.empty()) return genError(taken);
-	oscClients[oscClientName] = ofxOscSender();
+	oscClients[oscClientName] = makeOscSender();
 	commandsMap[livelily][oscClientName.substr(1)[0]][oscClientName] = Colors::lightSeaGreen;
 	return CmdOutput();
 }
@@ -2300,7 +2300,7 @@ CmdOutput ofApp::cmdOscserver(CmdInput& cmdInput, int lineNum, int numLines)
 	if (oscServers.find(oscServerName) != oscServers.end()) {
 		return genError("OSC server already exists");
 	}
-	oscServers[oscServerName] = ofxOscReceiver();
+	oscServers[oscServerName] = makeOscReceiver();
 	commandsMap[livelily][oscServerName.substr(1)[0]][oscServerName] = Colors::lightSeaGreen;
 	return CmdOutput();
 }
@@ -2578,7 +2578,7 @@ CmdOutput ofApp::cmdGroup(CmdInput& cmdInput, int lineNum, int numLines)
 	for (unsigned i = 2; i < loopIter; i++) {
 		sharedData.instruments[sharedData.instrumentIndexes[cmdInput.inputVec[i]]].setGroup(sharedData.instruments[sharedData.instrumentIndexes[cmdInput.inputVec[i-1]]].getID());
 	}
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/group");
 	for (unsigned i = 1; i < loopIter; i++) {
 		m.addStringArg(cmdInput.inputVec[i]);
@@ -2944,7 +2944,7 @@ CmdOutput ofApp::cmdFromosc(CmdInput& cmdInput, int lineNum, int numLines)
 	}
 	fromOsc[whichPane] = true;
 	if (!oscReceiverIsSet) {
-		oscReceiver.setup(OSCPORT);
+		oscReceiver->setup(OSCPORT);
 		oscReceiverIsSet = true;
 	}
 	return CmdOutput();
@@ -3733,7 +3733,7 @@ CmdOutput ofApp::cmdSendkeys(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("pane index of host is not a number");
 	}
 	paneNdx = stoi(cmdInput.inputVec[2]);
-	editors[whichPane].oscKeys.setup(hostIP, OSCPORT);
+	editors[whichPane].oscKeys->setup(hostIP, OSCPORT);
 	editors[whichPane].setSendKeys(paneNdx);
 	return CmdOutput();
 }
@@ -3750,7 +3750,7 @@ CmdOutput ofApp::cmdSendlines(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("pane index of host is not a number");
 	}
 	paneNdx = stoi(cmdInput.inputVec[2]);
-	editors[whichPane].oscKeys.setup(hostIP, OSCPORT);
+	editors[whichPane].oscKeys->setup(hostIP, OSCPORT);
 	editors[whichPane].setSendLines(paneNdx);
 	return CmdOutput();
 }
@@ -6486,13 +6486,13 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 					}
 					instrumentOSCHostPorts[lastInstrumentIndex] = IPAndPort;
 					sharedData.instruments[lastInstrumentIndex].sendToPart = true;
-					sharedData.instruments[lastInstrumentIndex].scorePartSender.setup(remoteIP, port);
+					sharedData.instruments[lastInstrumentIndex].scorePartSender->setup(remoteIP, port);
 					numScorePartSenders++;
-					ofxOscMessage m;
+					OscMessage m;
 					m.setAddress("/initinst");
 					m.addIntArg(lastInstrumentIndex);
 					m.addStringArg(sharedData.instruments[lastInstrumentIndex].getName());
-					sharedData.instruments[lastInstrumentIndex].scorePartSender.sendMessage(m, false);
+					sharedData.instruments[lastInstrumentIndex].scorePartSender->send(m);
 					m.clear();
 					if (sendNotice > 0) {
 						switch (sendNotice) {
@@ -6857,7 +6857,7 @@ std::pair<bool, CmdOutput> ofApp::isBarLoop(std::vector<std::string>& originalCo
 						}
 						if (commands[1].compare("goto") == 0) {
 							if (gotoIndexOrBarName == 0) sharedData.thisBarIndex = it - sharedData.loopData[indexLocal].begin();
-							ofxOscMessage m;
+							OscMessage m;
 							m.setAddress("/thisloopndx");
 							m.addIntArg(sharedData.thisBarIndex);
 							sendToParts(m, false);
@@ -6911,7 +6911,7 @@ std::pair<bool, CmdOutput> ofApp::isBarLoop(std::vector<std::string>& originalCo
 					if (sequencer.isThreadRunning()) {
 						sequencer.update();
 						mustUpdateScore = true;
-						ofxOscMessage m;
+						OscMessage m;
 						m.setAddress("/update");
 						m.addIntArg(sharedData.tempLoopIndex);
 						sendToParts(m, true);
@@ -7267,7 +7267,7 @@ std::pair<bool, CmdOutput> ofApp::isOscClient(std::vector<std::string>& original
 							return std::make_pair(oscClientExists, genError("if one argument is provided to \"setup\", this must be the port number"));
 						}
 					}
-					oscClients[commands[0]].setup(host, port);
+					oscClients[commands[0]]->setup(host, port);
 					return std::make_pair(oscClientExists, cmdOutput);
 				}
 				else if (commands[i].compare("send") == 0) {
@@ -7281,7 +7281,7 @@ std::pair<bool, CmdOutput> ofApp::isOscClient(std::vector<std::string>& original
 						if (commands.size() < i+3) {
 							return std::make_pair(oscClientExists, genWarning("no data specified, not sending message"));
 						}
-						ofxOscMessage m;
+						OscMessage m;
 						m.setAddress(commands[i+1].substr(1, commands[i+1].size()-2));
 						// create an empty string to concatenate all vector items that are not numbers
 						// but are not defined as strings either, in case they are missing quotes
@@ -7307,7 +7307,7 @@ std::pair<bool, CmdOutput> ofApp::isOscClient(std::vector<std::string>& original
 						// after running through all vector items, check if the string has been populated
 						// if it has, store it
 						if (!oscStr.empty()) m.addStringArg(oscStr);
-						oscClients[commands[0]].sendMessage(m, false);
+						oscClients[commands[0]]->send(m);
 						m.clear();
 					}
 					else {
@@ -7368,7 +7368,7 @@ std::pair<bool, CmdOutput> ofApp::isOscServer(std::vector<std::string>& original
 					return std::make_pair(oscServerExists, genError("port number can't be below 1024"));
 				}
 				// the port might be used by another program, or by another OSC server
-				if (!oscServers[oscServerName].setup(port)) {
+				if (!oscServers[oscServerName]->setup(port)) {
 					return std::make_pair(oscServerExists, genError("could not listen to port " + std::to_string(port) + ", it might be used by another program"));
 				}
 			}

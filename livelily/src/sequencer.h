@@ -2,7 +2,7 @@
 #define SEQUENCER_H
 
 #include "ofMain.h"
-#include "ofxOsc.h"
+#include "osc.h"
 #include "midi.h"
 #include "ofTimer.h"
 #include <map>
@@ -63,11 +63,11 @@ class Sequencer : public ofThread
 		// in a dry run, writes a message to the log, with its time, and returns true, so that the caller doesn't send it
 		bool logged(const std::string& message);
 		// every message the sequencer sends goes through these, which log it instead in a dry run
-		void sendOsc(ofxOscMessage& m);
+		void sendOsc(OscMessage& m);
 		void execPyo(const std::string& code);
 		void sendMidiByte(int byte);
 		void callBoundFunction(const std::string& funcName);
-		std::string oscText(ofxOscMessage& m);
+		std::string oscText(OscMessage& m);
 		std::string midiText(Instrument& inst, const std::string& kind, int channel, int a, int b = -1);
 		// one tick of the sequencer (every 100 microseconds, see threadedFunction()), which returns false when the sequencer has stopped itself
 		bool step();
@@ -147,7 +147,7 @@ class Sequencer : public ofThread
 		void sendDynamic(Instrument& inst, std::pair<float, int> dynamic);
 		// sends the expression controller (CC 11) to all channels of a MIDI instrument
 		void midiExpression(Instrument& inst, int value);
-		void sendToParts(ofxOscMessage m, bool delay);
+		void sendToParts(OscMessage m, bool delay);
 		void sendSequencerStateToParts(bool state);
 		void sendLoopIndexToParts();
 		void sendStopCountdownToParts();
@@ -159,7 +159,7 @@ class Sequencer : public ofThread
 
 		SharedData *sharedData;
 
-		ofxOscSender oscSender;
+		std::shared_ptr<OscSender> oscSender = makeOscSender();
 		ofTimer timer;
 		bool runSequencer;
 		bool sequencerRunning;

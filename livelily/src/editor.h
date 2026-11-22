@@ -2,7 +2,7 @@
 #define EDITOR_H
 
 #include "ofMain.h"
-#include "ofxOsc.h"
+#include "osc.h"
 #include <vector>
 #include <string>
 #include <fstream>
@@ -348,7 +348,7 @@ class Editor
 		bool couldNotSaveFile;
 		uint64_t fileLoadErrorTimeStamp;
 
-		ofxOscSender oscKeys; // for sending key strokes to another LiveLily editor
+		std::shared_ptr<OscSender> oscKeys = makeOscSender(); // for sending key strokes to another LiveLily editor
 
 		uint64_t executionRampStart;
 

@@ -87,7 +87,7 @@ void ofApp::setup()
 
 	ofSetWindowTitle("LiveLily");
 
-	//oscReceiver.setup(OSCPORT);
+	//oscReceiver->setup(OSCPORT);
 	oscReceiverIsSet = false;
 	// waiting time to receive a response from a score part server is one frame at 60 FPS
 	scorePartResponseTime = (uint64_t)((1000.0 / 60.0) + 0.5);
@@ -1134,9 +1134,9 @@ void ofApp::update()
 	applyPendingTracebacks();
 	// check for OSC messages
 	static float prevVal = 0;
-	while (oscReceiver.hasWaitingMessages()) {
-		ofxOscMessage m;
-		oscReceiver.getNextMessage(m);
+	while (oscReceiver->hasWaitingMessages()) {
+		OscMessage m;
+		oscReceiver->getNextMessage(m);
 		std::string address = m.getAddress();
 		if (address == maestroAddress) {
 			if (!sequencer.isThreadRunning() && sharedData.setBeatAnimation) {
@@ -1187,17 +1187,17 @@ void ofApp::update()
 			}
 		}
 		else if (address == maestroToggleAddress) {
-			if (m.getArgType(0) == OFXOSC_TYPE_INT32) {
+			if (m.getArgType(0) == OscArgType::Int32) {
 				int val = m.getArgAsInt32(0);
 				if (val) receivingMaestro = true;
 				else receivingMaestro = false;
 			}
-			else if (m.getArgType(0) == OFXOSC_TYPE_FLOAT) {
+			else if (m.getArgType(0) == OscArgType::Float) {
 				int val = (int)m.getArgAsFloat(0);
 				if (val) receivingMaestro = true;
 				else receivingMaestro = false;
 			}
-			else if (m.getArgType(0) == OFXOSC_TYPE_TRUE || m.getArgType(0) == OFXOSC_TYPE_FALSE) {
+			else if (m.getArgType(0) == OscArgType::True || m.getArgType(0) == OscArgType::False) {
 				receivingMaestro = m.getArgAsBool(0);
 			}
 			if (!receivingMaestro) {
@@ -1216,7 +1216,7 @@ void ofApp::update()
 					int whichPaneOsc = it->first;
 					std::map<int, Editor>::iterator editIt = editors.find(whichPaneOsc);
 					if (editIt != editors.end()) {
-						if (m.getArgType(0) == OFXOSC_TYPE_STRING) {
+						if (m.getArgType(0) == OscArgType::String) {
 							std::string oscStr = m.getArgAsString(0);
 							for (unsigned i = 0; i < oscStr.size(); i++) {
 								if (address.find("/press") != std::string::npos) {
@@ -1227,7 +1227,7 @@ void ofApp::update()
 								}
 							}
 						}
-						else if (m.getArgType(0) == OFXOSC_TYPE_INT32) {
+						else if (m.getArgType(0) == OscArgType::Int32) {
 							size_t numArgs = m.getNumArgs();
 							for (size_t j = 0; j < numArgs; j++) {
 								int oscVal = (int)m.getArgAsInt32(j);
@@ -1239,7 +1239,7 @@ void ofApp::update()
 								}
 							}
 						}
-						else if (m.getArgType(0) == OFXOSC_TYPE_INT64) {
+						else if (m.getArgType(0) == OscArgType::Int64) {
 							size_t numArgs = m.getNumArgs();
 							for (size_t j = 0; j < numArgs; j++) {
 								int oscVal = (int)m.getArgAsInt64(j);
@@ -1251,7 +1251,7 @@ void ofApp::update()
 								}
 							}
 						}
-						else if (m.getArgType(0) == OFXOSC_TYPE_FLOAT) {
+						else if (m.getArgType(0) == OscArgType::Float) {
 							size_t numArgs = m.getNumArgs();
 							for (size_t j = 0; j < numArgs; j++) {
 								int oscVal = (int)m.getArgAsFloat(j);
@@ -1274,9 +1274,9 @@ void ofApp::update()
 	}
 
 	for (auto it = oscServers.begin(); it != oscServers.end(); ++it) {
-		while (it->second.hasWaitingMessages()) {
-			ofxOscMessage m;
-			it->second.getNextMessage(m);
+		while (it->second->hasWaitingMessages()) {
+			OscMessage m;
+			it->second->getNextMessage(m);
 			std::string address = m.getAddress();
 			if (oscServerFuncs.find(it->first) != oscServerFuncs.end()) {
 				for (auto it2 = oscServerFuncs.at(it->first).begin(); it2 != oscServerFuncs.at(it->first).end(); ++it2) {
@@ -1288,34 +1288,34 @@ void ofApp::update()
 						for (size_t argNdx = 0; argNdx < m.getNumArgs(); argNdx++) {
 							if (argNdx > 0) args += " ";
 							switch (m.getArgType(argNdx)) {
-								case OFXOSC_TYPE_INT32:
+								case OscArgType::Int32:
 									args += std::to_string(m.getArgAsInt32(argNdx));
 									break;
-								case OFXOSC_TYPE_INT64:
+								case OscArgType::Int64:
 									args += std::to_string(m.getArgAsInt64(argNdx));
 									break;
-								case OFXOSC_TYPE_FLOAT: {
+								case OscArgType::Float: {
 									std::ostringstream stream;
 									stream << m.getArgAsFloat(argNdx);
 									args += stream.str();
 									break;
 								}
-								case OFXOSC_TYPE_DOUBLE: {
+								case OscArgType::Double: {
 									std::ostringstream stream;
 									stream << m.getArgAsDouble(argNdx);
 									args += stream.str();
 									break;
 								}
-								case OFXOSC_TYPE_TRUE:
+								case OscArgType::True:
 									args += "1";
 									break;
-								case OFXOSC_TYPE_FALSE:
+								case OscArgType::False:
 									args += "0";
 									break;
-								case OFXOSC_TYPE_STRING:
+								case OscArgType::String:
 									args += m.getArgAsString(argNdx);
 									break;
-								case OFXOSC_TYPE_SYMBOL:
+								case OscArgType::Symbol:
 									args += m.getArgAsSymbol(argNdx);
 									break;
 								default:
@@ -1336,7 +1336,7 @@ void ofApp::update()
 		if (it->second.oscFifo.size() > 0) {
 			uint64_t stamp = ofGetElapsedTimeMillis();
 			if (stamp >= it->second.oscFifo.back().second) {
-				it->second.scorePartSender.sendMessage(it->second.oscFifo.back().first, false);
+				it->second.scorePartSender->send(it->second.oscFifo.back().first);
 				it->second.oscFifo.pop_back();
 			}
 		}
@@ -3470,10 +3470,10 @@ void ofApp::keyPressed(int key)
 {
 	mutex.lock();
 	if (editors[whichPane].getSendKeys()) {
-		ofxOscMessage m;
+		OscMessage m;
 		m.setAddress("/livelily"+std::to_string(editors[whichPane].getSendKeysPaneNdx())+"/press");
 		m.addIntArg(key);
-		editors[whichPane].oscKeys.sendMessage(m, false);
+		editors[whichPane].oscKeys->send(m);
 	}
 	executeKeyPressed(key);
 	mutex.unlock();
@@ -3485,10 +3485,10 @@ void ofApp::keyReleased(int key)
 {
 	mutex.lock();
 	if (editors[whichPane].getSendKeys()) {
-		ofxOscMessage m;
+		OscMessage m;
 		m.setAddress("/livelily"+std::to_string(editors[whichPane].getSendKeysPaneNdx())+"/release");
 		m.addIntArg(key);
-		editors[whichPane].oscKeys.sendMessage(m, false);
+		editors[whichPane].oscKeys->send(m);
 	}
 	executeKeyReleased(key);
 	mutex.unlock();
@@ -4910,15 +4910,15 @@ bool ofApp::isQuoted(const std::string& s)
 
 /****************** OSC to parts functions ********************/
 //--------------------------------------------------------------
-void ofApp::sendToParts(ofxOscMessage m, bool delay)
+void ofApp::sendToParts(OscMessage m, bool delay)
 {
 	for (auto it = sharedData.grouppedOSCClients.begin(); it != sharedData.grouppedOSCClients.end(); ++it) {
 		if (sharedData.instruments[*it].hasDelay() && delay) {
-			std::pair<ofxOscMessage, unsigned long> p = std::make_pair(m, ofGetElapsedTimeMillis());
+			std::pair<OscMessage, unsigned long> p = std::make_pair(m, ofGetElapsedTimeMillis());
 			sharedData.instruments[*it].oscFifo.push_back(p);
 		}
 		else {
-			sharedData.instruments[*it].scorePartSender.sendMessage(m, false);
+			sharedData.instruments[*it].scorePartSender->send(m);
 		}
 	}
 }
@@ -4935,7 +4935,7 @@ void ofApp::sendBeatVizInfo(int bar)
 		sharedData.beatViz = true;
 	}
 	// notify all score parts of the time stamp and the beat visualization counter
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/beatinfo");
 	m.addFloatArg(sharedData.beatVizStepsPerMs);
 	m.addIntArg((int)sharedData.beatVizRampStart);
@@ -4950,7 +4950,7 @@ void ofApp::sendBeatVizInfo(int bar)
 //--------------------------------------------------------------
 void ofApp::sendBarToParts(int barIndex)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/bar");
 	m.addStringArg(sharedData.barsOrdered[barIndex]);
 	sendToParts(m, false);
@@ -4959,7 +4959,7 @@ void ofApp::sendBarToParts(int barIndex)
 		if (inst->second.sendToPart) {
 			m.setAddress("/line");
 			m.addStringArg(inst->second.barLines[barIndex]);
-			inst->second.scorePartSender.sendMessage(m, false);
+			inst->second.scorePartSender->send(m);
 			m.clear();
 		}
 	}
@@ -4972,7 +4972,7 @@ void ofApp::sendBarToParts(int barIndex)
 void ofApp::sendLoopToParts()
 {
 	int lastLoopNdx = getLastLoopIndex();
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/loop");
 	m.addStringArg(sharedData.loopsOrdered[lastLoopNdx]);
 	m.addIntArg(lastLoopNdx);
@@ -4985,34 +4985,34 @@ void ofApp::sendLoopToParts()
 //--------------------------------------------------------------
 void ofApp::sendSizeToPart(int instNdx, int size)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/size");
 	m.addIntArg(size);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	sharedData.instruments[instNdx].scorePartSender->send(m);
 }
 
 //--------------------------------------------------------------
 void ofApp::sendNumBarsToPart(int instNdx, int numBars)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/numbars");
 	m.addIntArg(numBars);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	sharedData.instruments[instNdx].scorePartSender->send(m);
 }
 
 //--------------------------------------------------------------
 void ofApp::sendAccOffsetToPart(int instNdx, float accOffset)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/accoffset");
 	m.addFloatArg(accOffset);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	sharedData.instruments[instNdx].scorePartSender->send(m);
 }
 
 //--------------------------------------------------------------
 void ofApp::sendLoopIndexToParts()
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/loopndx");
 	m.addIntArg(sharedData.loopIndex);
 	sendToParts(m, false);
@@ -5022,40 +5022,40 @@ void ofApp::sendLoopIndexToParts()
 //--------------------------------------------------------------
 void ofApp::sendScoreChangeToPart(int instNdx, bool scoreChange)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/scorechange");
 	m.addBoolArg(scoreChange);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	sharedData.instruments[instNdx].scorePartSender->send(m);
 	m.clear();
 }
 
 //--------------------------------------------------------------
 void ofApp::sendChangeBeatColorToPart(int instNdx, bool changeBeatColor)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/beatcolor");
 	m.addBoolArg(changeBeatColor);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	sharedData.instruments[instNdx].scorePartSender->send(m);
 	m.clear();
 }
 
 //--------------------------------------------------------------
 void ofApp::sendFullscreenToPart(int instNdx, bool fullscreen)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/fullscreen");
 	m.addBoolArg(fullscreen);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	sharedData.instruments[instNdx].scorePartSender->send(m);
 	m.clear();
 }
 
 //--------------------------------------------------------------
 void ofApp::sendCursorToPart(int instNdx, bool cursor)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/cursor");
 	m.addBoolArg(cursor);
-	sharedData.instruments[instNdx].scorePartSender.sendMessage(m, false);
+	sharedData.instruments[instNdx].scorePartSender->send(m);
 	m.clear();
 }
 
@@ -6401,7 +6401,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 			sharedData.animate = false;
 			sharedData.setAnimation = true;
 		}
-		ofxOscMessage m;
+		OscMessage m;
 		m.setAddress("/play");
 		m.addIntArg(0);
 		sendToParts(m, true);
@@ -6773,7 +6773,7 @@ CmdOutput ofApp::maestroCommands(std::vector<std::string>& originalCommands, int
 			maestroAddress = commands[i+1];
 			if (!maestroToggleSet) receivingMaestro = true;
 			if (!oscReceiverIsSet) {
-				oscReceiver.setup(OSCPORT);
+				oscReceiver->setup(OSCPORT);
 				oscReceiverIsSet = true;
 			}
 			i++;
@@ -6786,7 +6786,7 @@ CmdOutput ofApp::maestroCommands(std::vector<std::string>& originalCommands, int
 			maestroToggleAddress = commands[i+1];
 			maestroToggleSet = true;
 			if (!oscReceiverIsSet) {
-				oscReceiver.setup(OSCPORT);
+				oscReceiver->setup(OSCPORT);
 				oscReceiverIsSet = true;
 			}
 			i++;
@@ -6798,7 +6798,7 @@ CmdOutput ofApp::maestroCommands(std::vector<std::string>& originalCommands, int
 			}
 			maestroLevareAddress = commands[i+1];
 			if (!oscReceiverIsSet) {
-				oscReceiver.setup(OSCPORT);
+				oscReceiver->setup(OSCPORT);
 				oscReceiverIsSet = true;
 			}
 			i++;
@@ -6817,7 +6817,7 @@ CmdOutput ofApp::maestroCommands(std::vector<std::string>& originalCommands, int
 			}
 			maestroValNdx = val;
 			if (!oscReceiverIsSet) {
-				oscReceiver.setup(OSCPORT);
+				oscReceiver->setup(OSCPORT);
 				oscReceiverIsSet = true;
 			}
 			i++;
@@ -6836,7 +6836,7 @@ CmdOutput ofApp::maestroCommands(std::vector<std::string>& originalCommands, int
 			}
 			maestroValThresh = val;
 			if (!oscReceiverIsSet) {
-				oscReceiver.setup(OSCPORT);
+				oscReceiver->setup(OSCPORT);
 				oscReceiverIsSet = true;
 			}
 			i++;
@@ -7735,7 +7735,7 @@ void ofApp::exit()
 {
 	// should print a warning message first
 	sequencer.stopNow();
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/exit");
 	m.addIntArg(1);
 	sendToParts(m, false);

@@ -44,7 +44,7 @@ void Sequencer::setup(SharedData *sData)
 	loopToCheckNumIter = 0;
 	checkLoop = false;
 	tempBar = -1;
-	oscSender.setup(HOST, OFSENDPORT);
+	oscSender->setup(HOST, OFSENDPORT);
 	timer.setPeriodicEvent(100000); // 100 us
 }
 
@@ -157,7 +157,7 @@ void Sequencer::silenceInstrument(Instrument& inst)
 		midiAllSoundOff(inst);
 	}
 	else {
-		ofxOscMessage m;
+		OscMessage m;
 		m.setAddress("/" + inst.getName() + "/dynamics");
 		m.addIntArg(0);
 		sendOsc(m);
@@ -192,7 +192,7 @@ void Sequencer::sendAllNotesOff()
 			midiAllSoundOff(it->second);
 		}
 		else {
-			ofxOscMessage m;
+			OscMessage m;
 			m.setAddress("/" + it->second.getName() + "/dynamics");
 			m.addIntArg(0);
 			sendOsc(m);
@@ -288,7 +288,7 @@ void Sequencer::sendBeatVizInfo(int bar)
 		sharedData->beatViz = true;
 	}
 	// notify all score parts of the time stamp and the beat visualization counter
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/beatinfo");
 	m.addFloatArg(sharedData->beatVizStepsPerMs);
 	m.addIntArg((int)sharedData->beatVizRampStart);
@@ -462,7 +462,7 @@ void Sequencer::sendDynamic(Instrument& inst, std::pair<float, int> dynamic)
 #endif
 	}
 	else {
-		ofxOscMessage m;
+		OscMessage m;
 		m.setAddress(setSeqOscAddress(inst.getName(), "/dynamics", false));
 		if (inst.sendMIDI()) m.addIntArg(dynamic.second);
 		else m.addFloatArg(dynamic.first);
@@ -565,7 +565,7 @@ void Sequencer::sendGlissando(int instNdx, float progress)
 		}
 		return;
 	}
-	ofxOscMessage m;
+	OscMessage m;
 	std::string s = "";
 	m.setAddress("/" + inst.getName() + "/note");
 	if (inst.sendToPython() && inst.glissStart.size() > 1) s += "[";
@@ -625,16 +625,16 @@ void Sequencer::setCheckLoop(std::string barLoopName, int numIter)
 }
 
 //--------------------------------------------------------------
-void Sequencer::sendToParts(ofxOscMessage m, bool delay)
+void Sequencer::sendToParts(OscMessage m, bool delay)
 {
 	for (auto it = sharedData->grouppedOSCClients.begin(); it != sharedData->grouppedOSCClients.end(); ++it) {
 		if (logged("osc part " + sharedData->instruments[*it].getName() + " " + oscText(m))) continue;
 		if (sharedData->instruments[*it].hasDelay() && delay) {
-			std::pair<ofxOscMessage, unsigned long> p = std::make_pair(m, Clock::millis());
+			std::pair<OscMessage, unsigned long> p = std::make_pair(m, Clock::millis());
 			sharedData->instruments[*it].oscFifo.push_back(p);
 		}
 		else {
-			sharedData->instruments[*it].scorePartSender.sendMessage(m, false);
+			sharedData->instruments[*it].scorePartSender->send(m);
 		}
 	}
 }
@@ -642,7 +642,7 @@ void Sequencer::sendToParts(ofxOscMessage m, bool delay)
 //--------------------------------------------------------------
 void Sequencer::sendSequencerStateToParts(bool state)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/seq");
 	m.addBoolArg(state);
 	sendToParts(m, false);
@@ -652,7 +652,7 @@ void Sequencer::sendSequencerStateToParts(bool state)
 //--------------------------------------------------------------
 void Sequencer::sendLoopIndexToParts()
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/loopndx");
 	m.addIntArg(sharedData->loopIndex);
 	sendToParts(m, false);
@@ -662,7 +662,7 @@ void Sequencer::sendLoopIndexToParts()
 //--------------------------------------------------------------
 void Sequencer::sendStopCountdownToParts()
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/nocountdown");
 	m.addIntArg(1); // dummy arg
 	sendToParts(m, true);
@@ -672,7 +672,7 @@ void Sequencer::sendStopCountdownToParts()
 //--------------------------------------------------------------
 void Sequencer::sendCountdownToParts(int countdown)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/countdown");
 	m.addIntArg(countdown);
 	sendToParts(m, true);
@@ -682,7 +682,7 @@ void Sequencer::sendCountdownToParts(int countdown)
 //--------------------------------------------------------------
 void Sequencer::sendFinishToParts(bool finishState)
 {
-	ofxOscMessage m;
+	OscMessage m;
 	m.setAddress("/finish");
 	m.addBoolArg(finishState);
 	sendToParts(m, true);
@@ -771,7 +771,7 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 #endif
 							}
 							else {
-								ofxOscMessage m;
+								OscMessage m;
 								m.setAddress(setSeqOscAddress(instMapIt->second.getName(), "/dynamics", checking));
 								m.addIntArg(0);
 								sendOsc(m);
@@ -802,7 +802,7 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 							startGlissando(instMapIt->first, bar, instMapIt->second.getBarDataCounter());
 						}
 						if (sendData) {
-							ofxOscMessage m;
+							OscMessage m;
 							m.setAddress(setSeqOscAddress(instMapIt->second.getName(), "/articulation", checking));
 							for (auto it = instMapIt->second.articulations[bar][instMapIt->second.getBarDataCounter()].begin(); it != instMapIt->second.articulations[bar][instMapIt->second.getBarDataCounter()].end(); ++it) {
 								m.addStringArg(sharedData->articulSyms[*it]);
@@ -1024,7 +1024,7 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 				}
 				if (!instMapIt->second.isMidi()) {
 					// in case of a rest, send a 0 dynamic to make sure the instMapInstrument will stop
-					ofxOscMessage m;
+					OscMessage m;
 					m.setAddress(setSeqOscAddress(instMapIt->second.getName(), "/dynamics", checking));
 					m.addIntArg(0);
 					sendOsc(m);
@@ -1291,7 +1291,7 @@ bool Sequencer::step()
 			sharedData->beatVizRampStart = sharedData->tempoMs[bar] / 4;
 			sharedData->beatAtValCounter = 0;
 			sendFinishToParts(false);
-			ofxOscMessage m;
+			OscMessage m;
 			m.setAddress("/beatinfo");
 			m.addFloatArg(sharedData->beatVizStepsPerMs);
 			m.addIntArg(sharedData->beatVizRampStart);
@@ -1437,7 +1437,7 @@ bool Sequencer::step()
 					// \mute, \unmute, and \solo apply at the start of the next bar (\mutenow, \unmutenow, and \solonow apply at once)
 					// this was checked on every step of the first bar of the loop, which applied them at once in that bar
 					checkMute();
-					ofxOscMessage m;
+					OscMessage m;
 					m.setAddress("/thisloopndx");
 					m.addIntArg(sharedData->thisBarIndex);
 					sendToParts(m, true);
@@ -1724,10 +1724,10 @@ bool Sequencer::logged(const std::string& message)
 }
 
 //--------------------------------------------------------------
-void Sequencer::sendOsc(ofxOscMessage& m)
+void Sequencer::sendOsc(OscMessage& m)
 {
 	if (logged("osc " + oscText(m))) return;
-	oscSender.sendMessage(m, false);
+	oscSender->send(m);
 }
 
 //--------------------------------------------------------------
@@ -1779,19 +1779,19 @@ void Sequencer::callBoundFunction(const std::string& funcName)
 }
 
 //--------------------------------------------------------------
-std::string Sequencer::oscText(ofxOscMessage& m)
+std::string Sequencer::oscText(OscMessage& m)
 {
 	std::ostringstream text;
 	text << m.getAddress() << std::fixed << std::setprecision(4);
 	for (size_t i = 0; i < m.getNumArgs(); i++) {
 		switch (m.getArgType(i)) {
-			case OFXOSC_TYPE_INT32: text << " " << m.getArgAsInt32(i); break;
-			case OFXOSC_TYPE_INT64: text << " " << m.getArgAsInt64(i); break;
-			case OFXOSC_TYPE_FLOAT: text << " " << m.getArgAsFloat(i); break;
-			case OFXOSC_TYPE_DOUBLE: text << " " << m.getArgAsDouble(i); break;
-			case OFXOSC_TYPE_STRING: text << " \"" << m.getArgAsString(i) << "\""; break;
-			case OFXOSC_TYPE_TRUE: text << " true"; break;
-			case OFXOSC_TYPE_FALSE: text << " false"; break;
+			case OscArgType::Int32: text << " " << m.getArgAsInt32(i); break;
+			case OscArgType::Int64: text << " " << m.getArgAsInt64(i); break;
+			case OscArgType::Float: text << " " << m.getArgAsFloat(i); break;
+			case OscArgType::Double: text << " " << m.getArgAsDouble(i); break;
+			case OscArgType::String: text << " \"" << m.getArgAsString(i) << "\""; break;
+			case OscArgType::True: text << " true"; break;
+			case OscArgType::False: text << " false"; break;
 			default: text << " ?"; break;
 		}
 	}

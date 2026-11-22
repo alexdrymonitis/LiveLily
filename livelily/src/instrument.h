@@ -3,7 +3,7 @@
 
 #include "ofMain.h"
 #include "color.h"
-#include "ofxOsc.h"
+#include "osc.h"
 #include "score.h"
 #include <vector>
 
@@ -274,15 +274,16 @@ class Instrument
 
 		// score parts OSC handling
 		bool sendToPart;
-		ofxOscSender scorePartSender;
+		// the sender of the score part of the instrument on another computer (see \instname.sendto)
+		std::shared_ptr<OscSender> scorePartSender = makeOscSender();
 		// map to hold a boolean determining that a part that receives data has received bar data correctly
 		std::map<int, bool> barDataOKFromParts; // keys are bar indexes
 		// map of instrument index and string to store expanded bar lines to send to parts
 		std::map<int, std::string> barLines;
 
 		// the std::vector below is used in case a connected instrument needs a delay for incoming messages
-		// so we store a pair with the ofxOscMessage object and a time stamp
-		std::vector<std::pair<ofxOscMessage, uint64_t>> oscFifo;
+		// so we store a pair with the OscMessage object and a time stamp
+		std::vector<std::pair<OscMessage, uint64_t>> oscFifo;
 		// the boolean below stores the state of the delay
 		bool delayState;
 		int64_t delayTime;

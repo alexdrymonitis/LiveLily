@@ -2,7 +2,7 @@
 #define OF_APP_H
 
 #include "ofMain.h"
-#include "ofxOsc.h"
+#include "osc.h"
 #include "of_midi.h"
 #include <map>
 #include <vector>
@@ -406,7 +406,7 @@ class ofApp : public ofBaseApp
 		bool isQuoted(const std::string& s);
 		//---------------------------------
 		// send data to score parts
-		void sendToParts(ofxOscMessage m, bool delay);
+		void sendToParts(OscMessage m, bool delay);
 		void sendBarToParts(int barIndex);
 		void sendLoopToParts();
 		void sendCountdownToParts(int countdown);
@@ -638,8 +638,8 @@ class ofApp : public ofBaseApp
 		std::string prevWorkingDir;
 
 		// interfacing stuff
-		std::map<std::string, ofxOscSender> oscClients;
-		std::map<std::string, ofxOscReceiver> oscServers;
+		std::map<std::string, std::shared_ptr<OscSender>> oscClients;
+		std::map<std::string, std::shared_ptr<OscReceiver>> oscServers;
 		std::map<std::string, std::vector<std::pair<std::string, std::string>>> oscServerFuncs;
 		ofSerial serial;
 		std::vector<ofSerialDeviceInfo> serialDeviceList;
@@ -814,7 +814,7 @@ class ofApp : public ofBaseApp
 		ofTrueTypeFont instFont;
 		bool fontLoaded;
 
-		ofxOscReceiver oscReceiver;
+		std::shared_ptr<OscReceiver> oscReceiver = makeOscReceiver();
 		bool oscReceiverIsSet;
 
 		std::map<int, std::string> allStrings;
