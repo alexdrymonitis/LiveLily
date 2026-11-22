@@ -1,0 +1,22 @@
+\openserialport opens a serial port, for example to
+communicate with an Arduino.
+It takes two arguments, the port and the baud rate.
+The port can be either its number or its path, as printed
+by \listserialports:
+
+\listserialports
+\openserialport 0 115200
+
+or
+
+\openserialport /dev/ttyACM0 115200
+
+\listserialports must be called first, as the port is
+looked up in the list made by that command. If the number
+is out of range or the path is not in the list, you will
+get an error.
+Only one serial port can be open at a time.
+
+Once open, data can be sent with \serialwrite and
+\serialprint, and the port can be closed with
+\closeserialport.

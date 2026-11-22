@@ -1,0 +1,18 @@
+\fromosc makes the current pane receive its typing via
+OSC, from another LiveLily that uses \sendkeys or
+\sendlines. Messages are received at port 9050.
+It takes up to one argument, the OSC address to listen to:
+
+\fromosc
+
+Without an argument, the address is /livelily followed by
+the number of the pane (counting from 1), for example
+/livelily1. An address given as an argument must start
+with a /:
+
+\fromosc /mykeys
+
+Messages to the address followed by /press type keys in
+the pane, and messages followed by /release release them.
+A message can carry integer key codes, or a string whose
+characters are typed one by one.

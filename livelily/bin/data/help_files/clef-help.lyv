@@ -1,0 +1,24 @@
+\clef sets the clef for an instrument.
+It must be included inside a bar definition,
+otherwise it will throw an error.
+Its syntax is the following:
+
+\clef bass
+
+The avaiable clefs are bass, alto, treble and percussion
+or its alias: perc.
+This command must be used at the beginning of a melodic
+line, like in the example below:
+
+\bar clef-1 {
+    \inst \clef bass c2 g,4 ees,
+}
+
+Once a clef is defined, it remains to this defined clef
+until a new clef is set. This means that if the bar above
+is executed, then the bar below will continue using the bass
+clef for \inst.
+
+\bar clef-2 {
+    \inst c,4 d, ees,4. c,8
+}

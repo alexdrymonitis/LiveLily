@@ -1,0 +1,37 @@
+\euclide creates a Euclidean rhythm, spreading a number of
+onsets over the taps of a bar as evenly as possible.
+It must be placed inside the notes definition of an
+instrument, inside a bar definition.
+Its syntax is the following:
+
+\euclide {taps onsets [duration [offset]] [notes] [dynamics]}
+
+The bar is divided into "taps" equal steps (e.g. 16 taps in
+4/4 are 16ths), and "onsets" is the number of notes spread
+over them. Without a duration, an onset lasts one tap, and
+rests fill the space until the next onset:
+
+\bar euc-1 {
+    \time 4/4
+    \inst1 \euclide {16 5 c''}
+}
+
+The duration (which can be dotted, e.g. 4.) is used if it
+fits before the next onset, otherwise the longest duration
+that fits. The offset is a number of onset durations of rest
+at the start of the bar. If the onsets don't fit after it,
+the offset is made smaller, with a warning:
+
+    \inst1 \euclide {16 5 4 1 c' cis' <c' ees'>}
+
+The notes are applied to the onsets in turn. Without notes,
+the onsets are durations only, for rhythmic instruments.
+Dynamics among the notes are applied in turn too, and are
+written only when they change:
+
+    \inst1 \euclide {16 5 4 c' cis' \f \p}
+
+Errors worth knowing: taps and onsets must be integers
+greater than 0, the onsets can't be more than the taps, and
+the bar must be divisible into the taps (taps can't be more
+than the 64ths of the bar).

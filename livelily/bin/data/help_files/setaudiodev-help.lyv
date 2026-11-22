@@ -1,0 +1,16 @@
+\setaudiodev sets the audio device used by Python (pyo),
+for both input and output.
+It takes one argument, the ID of the device, as printed
+by \listaudiodev:
+
+\listaudiodev
+\setaudiodev 2
+
+If the ID is negative or not in the list, you will get
+an error.
+Like all audio settings, it must be called before \python
+is called for the first time, otherwise it has no effect.
+If no device is set, the system's default one is used.
+
+To set the input or output device separately, use
+\setinaudiodev or \setoutaudiodev.

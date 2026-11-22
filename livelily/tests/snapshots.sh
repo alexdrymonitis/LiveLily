@@ -1,0 +1,61 @@
+#!/bin/bash
+# runs every .lyv file of bin/data and tests/lyv in the test mode of LiveLily (see src/testmode.cpp) and saves or compares what the parser makes of it
+#   tests/snapshots.sh save     saves the dumps to tests/snapshots, as the reference (run it before a change to the parser)
+#   tests/snapshots.sh check    dumps to tests/current and compares with tests/snapshots (run it after a change)
+# a file whose run crashes or doesn't finish is reported, and so is every file whose dump differs from its snapshot
+# build the program first (make wpyo -j2)
+
+mode="$1"
+if [ "$mode" != "save" ] && [ "$mode" != "check" ]; then
+	echo "usage: $0 save|check"
+	exit 2
+fi
+
+testsDir="$(cd "$(dirname "$0")" && pwd)"
+appDir="$(dirname "$testsDir")"
+binDir="$appDir/bin"
+if [ ! -x "$binDir/livelily" ]; then
+	echo "$binDir/livelily not found, build the program first"
+	exit 2
+fi
+# a binary older than the sources (e.g. after a build that failed) would check the old code, so it is refused
+newerSource="$(find "$appDir/src" -newer "$binDir/livelily" \( -name '*.cpp' -o -name '*.h' \) | head -1)"
+if [ -n "$newerSource" ]; then
+	echo "$binDir/livelily is older than $newerSource, build the program first"
+	exit 2
+fi
+if [ "$mode" = "save" ]; then
+	outDir="$testsDir/snapshots"
+else
+	outDir="$testsDir/current"
+fi
+mkdir -p "$outDir"
+rm -f "$outDir"/*.dump
+
+failed=0
+# the example files of bin/data, and the files of tests/lyv, which check particular rules of the parser
+for file in "$binDir"/data/*.lyv "$testsDir"/lyv/*.lyv; do
+	name="$(basename "$file" .lyv)"
+	# the program is run from bin, as the files load help files and SoundFonts with paths relative to it
+	(cd "$binDir" && timeout 120 ./livelily --test "$file" --out "$outDir/$name.dump" > "$outDir/$name.log" 2>&1)
+	status=$?
+	if [ $status -ne 0 ]; then
+		if [ $status -eq 124 ]; then echo "TIMEOUT  $name"; else echo "CRASH    $name (exit $status, see $outDir/$name.log)"; fi
+		failed=1
+		continue
+	fi
+	rm -f "$outDir/$name.log"
+	if [ "$mode" = "check" ]; then
+		if [ ! -f "$testsDir/snapshots/$name.dump" ]; then
+			echo "NEW      $name (no snapshot)"
+		elif ! diff -q "$testsDir/snapshots/$name.dump" "$outDir/$name.dump" > /dev/null; then
+			echo "DIFFERS  $name (diff tests/snapshots/$name.dump tests/current/$name.dump)"
+			failed=1
+		else
+			echo "ok       $name"
+		fi
+	else
+		echo "saved    $name"
+	fi
+done
+exit $failed

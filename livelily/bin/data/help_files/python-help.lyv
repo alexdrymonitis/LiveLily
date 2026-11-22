@@ -1,0 +1,42 @@
+\python sets the language of the current pane to Python.
+It takes no arguments:
+
+\python
+
+After this, every line executed in this pane is sent to
+the Python interpreter instead of the LiveLily parser.
+The first time \python is called, it also starts the Pyo
+audio server and the audio stream, using the number of
+channels set with \inchannels and \outchannels. Set these
+before calling \python, as the server is started only
+once per session.
+
+In a Python pane, a line that starts with "main " is
+executed in the main thread, for example:
+
+    main print("hello")
+
+If Python code prints a line that starts with "livelily: ",
+the rest of the printed text is typed into the pane, and
+with "livelily-2: " it is typed into pane 2. See \pystr
+for how this text is typed.
+
+In a Python pane, help(name) opens the documentation of
+name in the pane, as \help does in LiveLily, for example:
+
+    help(Sine)
+
+For an object, as a of a = Sine(), it opens the
+documentation of its class. The pane's text comes back
+with Ctrl+w in insert mode, or :q in normal mode.
+
+From a LiveLily pane you can send a line of code to the
+Python interpreter without switching language, with the
+send method:
+
+\python.send a.stop()
+
+This works only after \python has been called once,
+otherwise you get the error "python has not been
+initialized". Any other method gives an error.
+To switch the pane back, use \livelily or \lua.

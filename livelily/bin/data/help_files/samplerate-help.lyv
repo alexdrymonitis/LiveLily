@@ -1,0 +1,16 @@
+\samplerate sets the sample rate of the audio used by
+Python (pyo). The default is 48000.
+It takes one argument, an integer:
+
+\samplerate 44100
+
+The audio settings are applied only once, when \python is
+called for the first time. For this reason, this command
+must be called before \python, otherwise it has no
+effect. It also has no effect if LiveLily is built
+without pyo.
+The value is not checked, so make sure your sound card
+supports it.
+
+See also \buffersize, \inchannels, \outchannels and
+\setaudiodev.

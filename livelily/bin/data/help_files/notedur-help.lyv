@@ -1,0 +1,24 @@
+\notedur sets how long notes sound, as a percentage of
+their written duration. It applies to all instruments,
+also to those created after it is called.
+It does nothing by itself, it must be called with one of
+its methods and a percentage (an integer from 1 to 100):
+
+\notedur.normal 100
+
+The methods are:
+
+normal: notes without articulation
+staccato: notes with a staccato (default 50)
+staccatissimo: notes with a staccatissimo (default 25)
+tenuto: notes with a tenuto (default 90)
+
+For example, the line below makes staccato notes last
+30% of their duration:
+
+\notedur.staccato 30
+
+Instruments created after this command is called, e.g.
+with \insts.add, get the values it sets too.
+Using a method name not listed above gives an
+"unknown \notedur method" error.

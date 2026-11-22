@@ -1,0 +1,17 @@
+\barnum returns the bar number currently playing.
+When called by itself it does nothing. To print the current
+bar, you must call it with \print.
+
+\print \barnum
+
+It can also be used with other commands, like send of an
+OSC client, like below:
+
+\myosc.send "/barnum" \barnum
+
+Note that the word "barnum" is used twice in the example
+above. Once with a forward slash, which is the OSC
+address, and once with a backslash, which is the actual
+command.
+
+If no bar has been defined yet, this command returns -1.

@@ -1,0 +1,23 @@
+\merge draws two or more instruments on the staff of the
+first one, as voices, like LilyPond does.
+Its syntax is the following:
+
+\merge \inst1 \inst2
+
+The first instrument has its stems up, the second down, the
+third up again, and so on. Merging changes only the score,
+every instrument plays as before. The merged instruments
+should have the same clef, as each voice is placed by its
+own clef.
+
+An instrument that is merged again leaves the staff it was
+merged to before.
+
+To draw instruments on their own staves again, use
+\unmerge:
+
+\unmerge \inst2
+
+\merge takes at least two instruments. An unknown
+instrument, or an instrument given more than once, throws
+an error.

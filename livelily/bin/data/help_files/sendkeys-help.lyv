@@ -1,0 +1,16 @@
+\sendkeys sends every key pressed and released in the
+current pane via OSC to another LiveLily, which receives
+them with \fromosc. Messages are sent to port 9050.
+It takes two arguments, the IP of the receiving computer
+and the number of its pane (counting from 1):
+
+\sendkeys 192.168.1.20 1
+
+The keys are sent to the address /livelily1/press and
+/livelily1/release, which is what \fromosc listens to by
+default in the first pane of the receiving LiveLily.
+The keys are still typed in the local pane as well.
+There is no option to stop sending keys.
+
+To send whole lines when they are executed, use
+\sendlines.

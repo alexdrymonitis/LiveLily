@@ -1,0 +1,9 @@
+\lua sets the language of the current pane to Lua.
+It takes no arguments:
+
+\lua
+
+To switch the pane back to LiveLily, use \livelily, or
+use \python to switch to Python.
+Passing any argument gives the error "language command
+takes no arguments".

@@ -1,0 +1,15 @@
+\inactive makes the editor pane it is executed in
+inactive. It takes no arguments:
+
+\inactive
+
+When a pane is inactive, executing lines in it does
+nothing. The only line that is still executed is a line
+that contains only \active (without any indentation or
+other text), which makes the pane active again:
+
+\active
+
+This is useful to prevent code in a pane from being
+executed by accident. The setting concerns only the pane
+where the command is executed.

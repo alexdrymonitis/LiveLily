@@ -1,0 +1,23 @@
+# build output
+/obj/
+/bin/livelily
+/bin/livelily_debug
+/bin/*.so
+/bin/stderr.txt
+/bin/gen
+/log
+/make_sources.txt
+
+# test output: the snapshots are kept, the current dumps are made again by tests/snapshots.sh
+/tests/current/
+
+# local copies and experiments, not part of the project
+/backup/
+/claude_backup/
+/check/
+
+# editor and IDE files
+*~
+*.swp
+*.qbs.user
+.qtc_clangd/

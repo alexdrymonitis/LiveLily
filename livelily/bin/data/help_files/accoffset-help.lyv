@@ -1,0 +1,15 @@
+\accoffset sets how far apart accidentals are drawn when
+notes of a chord with accidentals are close to each other
+on the staff. When two such notes are close, the second
+accidental is moved to the left, so the two don't
+overlap. \accoffset sets how much it is moved, as a
+multiple of the distance between two staff lines.
+The default is 1.2.
+It takes one number as its argument:
+
+\accoffset 1.5
+
+The value is applied to all instruments, also to those
+created after the command is executed, e.g. with
+\insts.add.
+A missing or non-numeric argument gives an error.

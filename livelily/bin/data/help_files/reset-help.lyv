@@ -1,0 +1,14 @@
+reset is a method of \score, it is called like this:
+
+\score.reset
+
+It resets the position of each instrument in the data of
+its bar and sets the sequencer to not running.
+It takes no arguments.
+
+reset is also a keyword of \score.colors, where it sets
+all score colors back to their defaults:
+
+\score.colors reset
+
+See also the help file of \score.

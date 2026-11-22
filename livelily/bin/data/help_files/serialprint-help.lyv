@@ -1,0 +1,13 @@
+\serialprint sends text over the open serial port, as
+characters.
+It takes one or more arguments, which are sent separated
+by a single space, without a newline at the end:
+
+\serialprint hello world
+
+The line above sends the eleven characters of
+"hello world".
+A serial port must be opened first with \openserialport,
+otherwise you will get a "serial port is not open" error.
+
+To send numbers as bytes, use \serialwrite.

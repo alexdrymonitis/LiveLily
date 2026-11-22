@@ -1,0 +1,19 @@
+\cluster creates a cluster following the Lilypond syntax.
+Since it concerns rhythmic/melodic lines, it must be
+placed inside the notes definition of an instrument,
+inside a bar definition.
+Its syntax is the following:
+
+\cluster {<c' c''>4}
+
+The line above will create a cluster from middle C
+to C one octave above.
+More than one clusters can be defined in one \cluster
+call.
+
+Inside a bar definition, it looks like this:
+
+\bar cluster-1 {
+    \time 4/4
+    \inst \cluster {<c' c''>4 <d' g'>} fis'2
+}

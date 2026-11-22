@@ -1,0 +1,13 @@
+\listserialports prints the available serial ports to the
+traceback area, each with its number and its path.
+It takes no arguments:
+
+\listserialports
+
+The output looks like this:
+
+    Serial port 0: /dev/ttyACM0
+    Serial port 1: ...
+
+Call this command before \openserialport, as the list of
+ports is read only when this command is called.

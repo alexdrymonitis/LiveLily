@@ -1,0 +1,17 @@
+\unmutenow unmutes one or more instruments immediately.
+Its syntax is the following:
+
+\unmutenow \violin \cello
+
+where \violin and \cello are instruments created with
+\insts.init. To unmute all instruments, call:
+
+\unmutenow \all
+
+Unlike \unmute, which waits for the start of the next bar,
+\unmutenow unmutes the instruments at once, even in the
+middle of a bar.
+
+\unmutenow needs at least one argument, and an argument
+that is not an instrument results in an "unknown
+instrument" error.

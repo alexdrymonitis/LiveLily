@@ -1,0 +1,15 @@
+\outchannels sets the number of audio output channels of
+Python (pyo). The default is 2.
+It takes one argument, an integer:
+
+\outchannels 8
+
+Like all audio settings, it must be called before \python
+is called for the first time, otherwise it has no effect.
+It also sets the number of channels shown in the
+oscilloscope.
+
+To set both input and output channels at once, use
+\nchannels:
+
+\nchannels 2

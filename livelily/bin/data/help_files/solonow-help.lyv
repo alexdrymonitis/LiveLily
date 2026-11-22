@@ -1,0 +1,21 @@
+\solonow plays only the instruments given as arguments and
+mutes all others, immediately.
+Its syntax is the following:
+
+\solonow \violin \cello
+
+where \violin and \cello are instruments created with
+\insts.init. The solo instruments are unmuted, if they
+have been muted before.
+To play all instruments again, call:
+
+\solonow \all
+
+Unlike \solo, which waits for the start of the next bar,
+\solonow takes effect at once, even in the middle of a bar.
+
+Muted instruments show a whole rest in the score and are
+hidden in the piano roll.
+
+\solonow needs at least one argument. An argument that is
+not an instrument results in an "unknown instrument" error.

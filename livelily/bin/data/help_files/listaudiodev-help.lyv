@@ -1,0 +1,13 @@
+\listaudiodev prints the available audio devices to the
+traceback area, each with its ID number.
+It takes no arguments:
+
+\listaudiodev
+
+The output looks like this:
+
+    0: HDA Intel PCH: ALC257 Analog (hw:0,0)
+    1: ...
+
+The ID numbers are the ones used by \setaudiodev,
+\setinaudiodev and \setoutaudiodev.

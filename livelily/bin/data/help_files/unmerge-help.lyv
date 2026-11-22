@@ -1,0 +1,19 @@
+\unmerge undoes \merge, drawing instruments on their own
+staves again.
+Its syntax is the following:
+
+\unmerge \inst2
+
+The line above takes \inst2 out of the staff it was merged
+to. More than one instrument can be given:
+
+\unmerge \inst2 \inst3
+
+If only one instrument is left on a merged staff, that
+staff is no longer merged. Called alone, \unmerge undoes
+all merges:
+
+\unmerge
+
+An unknown instrument, or an instrument given more than
+once, throws an error.

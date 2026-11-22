@@ -1,0 +1,38 @@
+\bar defines a bar, with a melodic line for each instrument.
+The instruments must be created with \insts.init first.
+Its syntax is the following:
+
+\bar name {
+    \time 4/4
+    \inst1 c'4 d' e' f'
+    \inst2 c2 g
+}
+
+The name is given without the backslash, and once the bar
+is defined it works like a command, by prepending the
+backslash. Calling it alone in a line makes it the bar
+to be played:
+
+\name
+
+A bar can also be written in one line, and it can be
+called right after its closing bracket:
+
+\bar name { \time 4/4 \inst1 c'4 d' e' f' \inst2 c1 } \name
+
+The time signature and the tempo of the previous bar are
+kept if the bar doesn't set its own. An instrument that is
+left out of a bar gets a whole bar rest.
+
+An instrument can copy its line from another bar, or the
+line of another instrument of that bar:
+
+\bar name2 {
+    \inst1 \name
+    \inst2 \name.\inst1
+}
+
+A bar name can't be redefined, it can't start with a
+backslash, and it can't be the name of a LiveLily command
+(e.g. \bar merge is an error, as \merge is a command).
+A bar can't copy itself.

@@ -1,0 +1,10 @@
+\livelily sets the language of the current pane to
+LiveLily, the default language of every pane.
+It takes no arguments:
+
+\livelily
+
+Use it to switch back a pane that has been set to Python
+with \python or to Lua with \lua.
+Passing any argument gives the error "language command
+takes no arguments".

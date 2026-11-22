@@ -1,0 +1,38 @@
+\ottava sets one or two octaves above or below the
+written note(s) that follow it.
+Since it concerns notes, it must be included in the
+notes definition of an instrument, inside a bar.
+The \ottava command can also be called with its shorter
+alias, \ott.
+Its syntax is the following:
+
+\ottava 1
+
+Its argument is either 1, 2, -1, -2, or 0.
+
+It is used so the user can write a high or low note
+but make is fit inside the staff. If, for example,
+you want to write a C one octave below middle C, in a
+staff with a G clef, then you can write the following:
+
+\bar ott-1 {
+    \time 4/4
+    \inst c'2 \ottava -1 c
+}
+
+This will result in two identical notes in the score,
+but the second will have the octave symbol written
+underneath it. The sequencer will play the correct
+pitces.
+
+Note that octaves set with \ottava are persistent
+until a new octave is set. If you want to remove the
+octave symbol from your score, call it with a 0
+argument. The example below sets two octaves above
+at the beginning of the bar, and then removes the
+octave symbol.
+
+\bar ott-2 {
+    \time 4/4
+    \inst \ottava 2 c'''''2 \ottava 0 c''
+}

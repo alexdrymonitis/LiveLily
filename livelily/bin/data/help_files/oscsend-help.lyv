@@ -1,0 +1,9 @@
+\oscsend is not implemented. It is highlighted as a
+command, but calling it gives an "unknown command" error.
+
+To send OSC messages, create an OSC client with \osc or
+\oscclient and use its send method:
+
+\oscclient myosc
+\myosc.setup 8000
+\myosc.send "/addr" 1 2 3

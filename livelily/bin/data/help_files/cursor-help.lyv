@@ -1,0 +1,14 @@
+\cursor hides or shows the mouse cursor in the LiveLily
+window. It takes one argument, hide or show:
+
+\cursor hide
+
+\cursor show
+
+Calling it without an argument, or with more than one,
+results in an error.
+
+To hide the cursor in a LiveLily-part program, use the
+cursor method of an instrument instead, like:
+
+\inst1.cursor hide

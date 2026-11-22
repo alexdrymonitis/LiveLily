@@ -1,0 +1,19 @@
+\tuplet creates a tuplet following the Lilypond syntax.
+Since it concerns rhythmic/melodic lines, it must be
+placed inside the notes definition of an instrument,
+inside a bar definition.
+The \tuplet command can also be called with its
+shorter alias, \tup.
+Its syntax is the following:
+
+\tuplet 3/2 {c'8 cis' b}
+
+The line above will create a tuplet of three eighth
+notes against two.
+
+Inside a bar definition, it looks like this:
+
+\bar tup-1 {
+    \time 4/4
+    \inst c'4 \tuplet 5/4 {cis'8 b a bes cis'} c'4
+}

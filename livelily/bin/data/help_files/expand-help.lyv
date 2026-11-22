@@ -1,0 +1,21 @@
+\expand replaces the names inside its curly brackets with
+their contents, one level deeper than calling a name as an
+argument does. It is used as an argument to other commands.
+Its syntax is the following:
+
+\expand {\name}
+
+A loop name as an argument to a command gives the names of
+its bars, separated by |. With \expand, these names are
+replaced by the bars themselves. For example, if \myloop
+holds the bars \bar1 and \bar2, the line below prints the
+notes of \inst1 in both bars, separated by |:
+
+\print \expand {\myloop.\inst1}
+
+The | separators are kept as they are. A variable that
+holds the name of a bar or loop can also be expanded this
+way.
+
+\expand takes at least one argument, otherwise it throws
+an error.

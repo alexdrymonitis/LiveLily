@@ -1,0 +1,19 @@
+\pystr sets how text printed by Python is typed into a
+pane. Python code can print text that starts with
+"livelily: " (or "livelily-2: " for pane 2), and the rest
+of the text is typed into the pane as if it was written
+with the keyboard.
+
+\pystr takes one argument, char or line:
+
+\pystr char
+
+types the text one character at a time, one character
+per frame. This is the default.
+
+\pystr line
+
+inserts the text one whole line at a time.
+
+The setting is global, not per pane. Any other argument
+gives an "unknown argument" error.

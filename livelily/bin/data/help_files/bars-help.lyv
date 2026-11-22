@@ -1,0 +1,38 @@
+\bars defines several bars at once. The bars of each
+instrument are separated by |, and every instrument must
+have the same number of bars.
+Its syntax is the following:
+
+\bars name {
+    \time 4/4
+    \inst1 c'4 d' e' f' | g'1 | e'2 c'
+    \inst2 c2 g | c1 | g2 c
+}
+
+The name is given without the backslash. The bars are
+stored as separate bars, named name-1, name-2, etc., and a
+loop called name is created with all of them, so the line
+below plays the three bars:
+
+\name
+
+\bars can also be written in one line:
+
+\bars name { \inst1 c'1 | d'1 \inst2 c1 | g1 }
+
+\time, \tempo, and \beatat can take one value for all the
+bars, or one value per bar, separated by |:
+
+    \time 4/4 | 3/4 | 4/4
+    \tempo 4 = 60 | 4 = 90 | 4 = 120
+
+With more than one value, there must be as many values as
+bars.
+
+An instrument line can include the name of a loop, which
+is replaced by the bars of the loop, or copy an earlier bar
+of the same set, also from another instrument:
+
+    \inst2 c2 g | \name-1 | \name-1.\inst1
+
+The same naming rules as with \bar apply.

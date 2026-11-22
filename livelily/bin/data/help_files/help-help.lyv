@@ -1,0 +1,24 @@
+\help opens the help file of a command. Write the command
+with its backslash as the argument:
+
+\help \tempo
+
+By default the help file replaces the text of the current
+pane. Your text is not lost: close the help file with
+Ctrl+W followed by q (Ctrl+W alone in insert mode, or
+:q) and the pane gets its text back.
+
+To open the help file in a new pane instead, add vert or
+hor as a second argument:
+
+\help \tempo vert
+
+\help \tempo hor
+
+vert splits the window vertically and hor splits it
+horizontally, like the keyboard shortcuts for new panes.
+
+If no help file exists for the command, you get the error
+"couldn't find help file for" followed by the command,
+and the new pane, if any, is closed. \help alone gives
+the error "nothing specified to open its help file".

@@ -1,0 +1,36 @@
+\random returns a random value, and is used as an argument
+to other commands, or inside a melodic line. It can also be
+called with its shorter alias, \rand.
+With one number, it returns an integer from 0 up to the
+number minus one:
+
+\random 8
+
+With two numbers, it returns an integer from the first up to
+the second minus one:
+
+\random {60 72}
+
+With other values (or with three or more values), it
+returns one of them:
+
+\random {c'4 e'4 g'4}
+
+More than one argument must be enclosed in curly brackets.
+Inside a bar, the value is chosen once, when the bar is
+defined:
+
+\bar rand-1 {
+    \time 4/4
+    \inst1 c'4 \random {d'4 e'4 f'4} g'2
+}
+
+Inside a function, a new value is chosen every time the
+function is called:
+
+\function randnote {
+    \myosc.send /note \random {60 72}
+}
+
+With two arguments, both must be numbers, or both other
+values, otherwise it throws an error.

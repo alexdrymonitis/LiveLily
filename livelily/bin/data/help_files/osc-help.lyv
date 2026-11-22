@@ -1,0 +1,28 @@
+\osc creates an OSC client.
+Its syntax is the following:
+
+\osc myosc
+
+Once created, the client must be set up with the IP and
+the port. This is done with the following:
+
+\myosc.setup 127.0.0.1 8050
+
+The line above sets the client to use the local IP of the
+machine where LiveLily is running. In such a case, the IP
+can be omitted and only the port can be set, or the
+keyword localhost can be used.
+The line below sets the client to send data to port 8000
+at localhost (or 127.0.0.1)
+
+\myosc.setup 8000
+
+Once setup, the client can send messages with its send
+command. It can take any number and type of arguments.
+For example, the line below is correct and will send a
+float, an integer and a string.
+Take care to write the OSC address to send to as the
+first argument, inside quotes, otherwise you'll get an
+error.
+
+\myosc.send "/addr" 3.14 57 "hello world"

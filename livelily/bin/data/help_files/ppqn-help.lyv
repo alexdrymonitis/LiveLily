@@ -1,0 +1,12 @@
+\ppqn sets the pulses per quarter note for MIDI clock
+signals.
+Its syntax is the following:
+
+\ppqn 24
+
+The available values are 24, 48 and 96.
+
+Note that calling this command does not active the MIDI clock.
+To activate it, you must call the following:
+
+\midiclock on

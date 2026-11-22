@@ -1,0 +1,12 @@
+\tune sets the tuning frequency of A4, used when notes
+are converted to frequencies. The default is 440.
+It takes one argument, a number greater than 0, which can
+be a decimal:
+
+\tune 442
+\tune 431.5
+
+The frequency is used for the notes an instrument sends
+via OSC (unless it sends MIDI notes with its sendmidi
+method) and for the notes sent to Python. It does not
+affect notes sent through MIDI ports.

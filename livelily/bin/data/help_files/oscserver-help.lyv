@@ -1,0 +1,31 @@
+\oscserver creates an OSC server, to receive OSC messages.
+Its syntax is the following:
+
+\oscserver myserver
+
+The name can't be the name of a LiveLily command.
+Once created, the server is used like a command with its
+name, and its methods are concatenated with a dot.
+
+The setup method sets the port to listen to. It must be
+1024 or higher:
+
+\myserver.setup 5010
+
+If the port is used by another program, you will get an
+error.
+
+The map method maps an OSC address to a function. The
+address must be inside double quotes and start with a /,
+and the function must already be defined:
+
+\function setvar {
+    \print $1
+}
+
+\myserver.map "/foo" setvar
+
+Every message received at /foo calls \setvar, with the
+arguments of the message as the function's arguments
+($1, $2, etc.).
+Mapping the same address again replaces its function.

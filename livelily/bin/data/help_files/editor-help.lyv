@@ -1,0 +1,104 @@
+\editor controls the editor pane it is executed in.
+It does nothing by itself and takes no arguments, you must
+call one of its methods, concatenated with a dot.
+
+To highlight the notes in the editor while they are played
+by the sequencer, call:
+
+\editor.animate
+
+To turn this highlighting off, call:
+
+\editor.inanimate
+
+To align the melodic lines of bar definitions, so that the
+notes that sound together are written under each other,
+call:
+
+\editor.alignment on
+
+As a score engraver spaces notes, the shortest duration of
+a bar is the unit of its grid, so a bar of quarters is
+narrower than a bar of 16ths. One unit is as wide as the
+longest note token of the bar (with its articulations and
+dynamics, but not its text), and the notes of tuplets are
+placed in proportion between the units. Text in quotes,
+and \ottava, \ott, and \clef with their arguments, make
+room only where they are, so a line that starts with \clef
+starts the notes of all the lines after it. In \bars,
+every bar is aligned separately.
+To make a unit as wide as the shortest note token of the
+bar instead, so that a longer token makes room only where
+it is, as text does, call:
+
+\editor.alignment short
+
+and to go back to the longest note token (the default):
+
+\editor.alignment long
+
+These apply at once if alignment is on, otherwise the next
+time it is turned on.
+Turning alignment on aligns all the bar definitions of
+the pane, and while it is on, every edit of a melodic
+line (typing or deleting a character, pasting, or
+deleting in normal mode, e.g. with x or dw) aligns its
+bar again, with the cursor staying where it is in the
+token you edit. A space typed after a token moves the
+cursor to where the next note starts. While a token is
+half typed and can't be read (e.g. c14 on the way to c16,
+or a first note left without its duration), the bar is
+left as it is until it can. Lines that can't be aligned
+from their text (copied bars, \euclide, \transpose,
+\apply, repetitions, or lines with comments) are left as
+they are. To go back to single spaces between the tokens,
+call:
+
+\editor.alignment off
+
+To turn off the automatic closing of brackets and quotes,
+where typing an opening bracket also inserts the closing
+one, call:
+
+\editor.autobrackets off
+
+and to turn it back on (the default):
+
+\editor.autobrackets on
+
+To turn off the pop-up of autocompletion, which suggests
+commands, methods, and names while typing, call:
+
+\editor.autocomplete off
+
+and to turn it back on (the default):
+
+\editor.autocomplete on
+
+Press Tab to select a suggestion and Return to insert it.
+Turning it off also clears any suggestions shown.
+In Python panes, the suggestions include Python's keywords
+and builtins, the names written in the pane, and the names
+that executed code has imported or defined (e.g. after
+executing import numpy as np, or the pyo objects, which
+are always imported). Right after a dot, as in a., they
+are the attributes and methods of the object before the
+dot, once its code has been executed.
+Typing an opening round bracket after the name of a class
+or a function, as in Sine(, shows its arguments, dimmed,
+between the brackets:
+
+Sine(freq=1000, phase=0, mul=1, add=0)
+
+What you type replaces them, argument by argument, so
+typing 440, leaves phase=0, mul=1, add=0, and typing mu
+shows the rest of mul=1 and the arguments that are left.
+Press Tab to insert what is left of them. While you type
+the start of an argument's name, the pop-up is not shown,
+so that Tab completes the argument. \editor.autocomplete
+off turns these off too.
+
+The settings concern only the pane where the command is
+executed, so each pane can be set separately.
+Any other method results in an "unknown editor command"
+error.

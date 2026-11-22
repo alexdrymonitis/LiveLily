@@ -1,0 +1,10 @@
+\beatcount returns the number of the beat of the sequencer
+When called by itself it does nothing. To print the current
+bar, you must call it with \print.
+
+\print \beatcount
+
+It can also be used with other commands, like send of an
+OSC client, like below:
+
+\myosc.send "/beat" \beatcount

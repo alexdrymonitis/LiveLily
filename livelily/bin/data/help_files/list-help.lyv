@@ -1,0 +1,32 @@
+\list defines a list of items.
+Its syntax is the following:
+
+\list name {c' e' g' bes'}
+
+The name is given without the backslash, and once the list
+is defined it is called with a backslash. A list can also
+be written in more lines:
+
+\list name {
+    c' e'
+    g' bes'
+}
+
+An item is retrieved with its index (1-based), after a dot.
+When used as an argument to another command, it is replaced
+by the item, so the line below prints e':
+
+\print \name.2
+
+The traverse method executes the lines inside its curly
+brackets once for every item of the list, replacing $ with
+the item:
+
+\name.traverse {
+    \myosc.send "/note" $
+}
+
+Errors worth knowing: indexes start at 1, an index greater
+than the number of items is out of range, a list name
+can't be redefined, and it can't be the name of a LiveLily
+command.

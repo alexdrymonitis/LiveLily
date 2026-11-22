@@ -1,0 +1,18 @@
+\tenuto is not a command that can be executed on its own.
+It is highlighted in the editor, but running it gives an
+"unknown command" error.
+
+A tenuto is written after a note with two hyphens, like:
+
+\bar ten-1 {
+    \inst1 c'4-- d'-- e'2
+}
+
+A tenuto note sounds for a percentage of its duration,
+90% by default. To change this percentage, use
+\notedur.tenuto with an integer from 1 to 100:
+
+\notedur.tenuto 95
+
+This is applied to all instruments. See also \staccato
+and \staccatissimo.

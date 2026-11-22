@@ -1,0 +1,10 @@
+\framerate sets or returns the frame rate of LiveLily,
+that is, how many times per second the window is redrawn.
+To set it, call it with an integer higher than 0:
+
+\framerate 30
+
+Called without arguments, it returns the current frame
+rate. To see it, call it with \print:
+
+\print \framerate

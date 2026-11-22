@@ -1,0 +1,25 @@
+\group groups instruments on the score, connecting their
+staves with bar lines at the end of every bar.
+Its syntax is the following:
+
+\group \inst1 \inst2 \inst3
+
+The instruments must be adjacent, and given in the order
+they appear on the score, otherwise it throws an error.
+
+An optional name can be given as the last argument, without
+the backslash. This creates a command for the group, which
+passes whatever follows it to every instrument of the group:
+
+\group \hat \snare \kick drums
+
+\drums rhythm
+
+The line above turns all three instruments to rhythmic ones.
+Methods are passed to the instruments too:
+
+\drums.transpose 2
+
+\group takes at least two instruments, and when only two
+arguments are given, both must be instruments. A group name
+can't be the name of a LiveLily command.

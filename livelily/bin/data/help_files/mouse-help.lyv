@@ -1,0 +1,13 @@
+\mouse returns the position of the mouse inside the
+LiveLily window, in pixels, as two values, x and y.
+It takes no arguments. To see its value, call it with
+\print:
+
+\print \mouse
+
+It can also be used as an argument to other commands,
+like send of an OSC client, which will send two integers:
+
+\myosc.send "/mouse" \mouse
+
+To get only one of the two values, use \mousex or \mousey.

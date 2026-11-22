@@ -1,0 +1,13 @@
+\mousex returns the horizontal position of the mouse
+inside the LiveLily window, in pixels.
+It takes no arguments. To see its value, call it with
+\print:
+
+\print \mousex
+
+It can also be used as an argument to other commands,
+like send of an OSC client:
+
+\myosc.send "/mousex" \mousex
+
+See also \mousey and \mouse.

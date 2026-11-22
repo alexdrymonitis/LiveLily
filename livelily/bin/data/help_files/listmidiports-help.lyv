@@ -1,0 +1,17 @@
+\listmidiports prints the available MIDI output ports to
+the traceback area, each with its number.
+It takes no arguments:
+
+\listmidiports
+
+The output looks like this:
+
+    MIDI out port 0: Midi Through:Midi Through Port-0 14:0
+    MIDI out port 1: ...
+
+The numbers printed are the ones used by \openmidiport,
+\ctlchange, \pgmchange and the midiport method of an
+instrument.
+Call this command before opening a port, as the list of
+ports is read only when this command is called. Call it
+again if you connect a MIDI device later on.

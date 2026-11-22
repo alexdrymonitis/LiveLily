@@ -1,0 +1,96 @@
+\insts is used to initialize or add instruments.
+Calling this command is necessary for a LiveLily session
+to work. To initialize instruments, call it with the names
+you want to give to the instruments, without the
+backslash, like below:
+
+\insts.init inst1 inst2
+
+Once created, the arguments passed to \insts.init works
+like a command itself, by prepending the backslash, like
+
+\inst1
+
+Initializing instruments is possible only once per session.
+If you want to add instruments after you have initialized
+some, call \insts.add like below:
+
+\insts.add inst3
+
+Each defined instrument has its own commands and/or
+arguments.
+
+To turn an instrument to a rhythmic one, call:
+
+\inst1 rhythm
+
+This will change its staff to a one-liner where you can
+write rhythmic patterns.
+
+A rhythmic instrument can also be written in the x - notation,
+where every x is a hit and every - a rest, each one step of
+\score.seqres long (16ths by default). Steps can be separate
+or joined, and mixed:
+
+\inst1 x - x x - - x - x-x-x-x-
+
+X is an accented hit, and a hit takes articulations,
+dynamics, and text as notes do (e.g. x-. or x\f). A -
+followed by an articulation symbol is an articulation, and
+any other - is a rest, so x-- is a hit and two rests. The
+x - notation can't be used by instruments that are not
+rhythmic.
+
+To transpose the notes that appear on the score (for
+example for a clarinet or a saxophone), call:
+
+\inst2.transpose -3
+
+The number defines how many semitones the notes on the
+score will be transposed.
+
+If you want to send the instrument's notes via OSC but
+as MIDI notes, call:
+
+\inst3.sendmidi
+
+Some instruments sound late, like robotic acoustic
+instruments. For example, a Yamaha Disklavier needs about
+500ms to sound its notes. To set this delay, in
+milliseconds, call:
+
+\inst1.delay 500
+
+The sequencer sends the notes of such an instrument this
+much time earlier, so that they sound in time with the
+score and the instruments without a delay. When the
+sequencer starts, the instrument with the longest delay
+starts first, then the one with the second longest delay,
+and so on, and the score and the instruments without a
+delay start after the longest delay. The notes of an
+instrument with a delay are highlighted in the score and
+in the editor when they sound, and so are the functions
+bound to it called.
+A delay of 0 removes it, and the delay can't be negative.
+While the sequencer plays, a new delay applies from the
+start of the next bar. A loop called during the last
+moments of a bar reaches an instrument with a delay in the
+middle of its next bar, as its notes have been sent
+already, so the instrument starts from the point it should
+be at.
+
+To turn the LiveLily-part program of an instrument
+fullscreen (not in the computer that runs this LiveLily
+instance, but a computer that displays part of the full
+score), call:
+
+\inst1.fullscreen on
+
+To switch back to a smaller window, call the command with
+off.
+
+To hide the cursor in a LiveLily-part program, call:
+
+\inst1.cursor hide
+
+To bring the cursor back, call it with show.

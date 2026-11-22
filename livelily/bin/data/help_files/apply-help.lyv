@@ -1,0 +1,46 @@
+\apply takes the rhythm or the notes of the line of a bar
+and applies notes or durations to it. It is used in a
+melodic line, inside a bar definition. Its first argument
+is a bar, with an instrument after a dot, or without it for
+the line of the same instrument. Its syntax is the
+following:
+
+\inst1 \apply {\1.\inst2 c' <c' ees'>}
+
+The bar can also be written before the curly brackets:
+
+\inst1 \apply \1.\inst2 {c' <c' ees'>}
+
+With notes, as above, the notes go to the onsets of the
+line of \inst2 in bar 1. The onsets are its notes, not its
+rests or notes tied from the previous note. The notes are
+spread over the onsets as evenly as possible in time, each
+on the onset closest to an equal part of the bar.
+A note lasts until the next note or rest of the line, the
+rests of the line stay as they are, and an onset without a
+note right after a rest is a rest. If the line is
+c'4 cis'8 r c'16 ees' r ees' cis'4
+the line above gives
+c'4. r8 <c' ees'>8 r4.
+Every note gets the dynamic and the articulations of its
+onset, unless it has its own, like below:
+
+\inst1 \apply {\1.\inst2 c'\f-> <c' ees'>\p}
+
+There can't be more notes than onsets.
+
+With durations, the notes of the onsets of the line go to
+the durations in turn, and start again from the first note
+if there are more durations than notes:
+
+\inst1 \apply {\1.\inst2 8 8 4 4. 8}
+
+The durations can have dynamics and articulations
+(e.g. 8\f), and a rest (e.g. r8) takes no note.
+
+A rhythm staff can apply durations only, and they are
+written as they are. A melodic line can apply notes to the
+rhythm of a rhythm staff, but it can't apply the notes of a
+rhythm staff to durations, as a rhythm staff has no notes.
+A bar can't apply its own lines, and the durations of a
+line with tuplets can't be applied to notes.

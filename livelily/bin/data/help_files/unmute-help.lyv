@@ -1,0 +1,19 @@
+\unmute unmutes one or more instruments that have been
+muted with \mute, \mutenow, \solo, or \solonow.
+Its syntax is the following:
+
+\unmute \violin \cello
+
+where \violin and \cello are instruments created with
+\insts.init. To unmute all instruments, call:
+
+\unmute \all
+
+While the sequencer is playing, the instruments are
+unmuted at the start of the next bar. If the sequencer is
+stopped, they are unmuted at once.
+To unmute instruments immediately, use \unmutenow.
+
+\unmute needs at least one argument, and an argument that
+is not an instrument results in an "unknown instrument"
+error.

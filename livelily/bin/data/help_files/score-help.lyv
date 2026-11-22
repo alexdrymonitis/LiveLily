@@ -1,0 +1,116 @@
+\score controls the score and the sequencer that plays it.
+It does nothing by itself and takes no arguments, you must
+call one of its methods, concatenated with a dot, like:
+
+\score.show
+
+To start and stop the sequencer, call:
+
+\score.play
+\score.stop
+\score.stopnow
+
+\score.stop stops at the start of the next bar, while
+\score.stopnow stops immediately. \score.play, \score.stop
+and \score.stopnow take no arguments.
+
+\score.finish makes the sequencer stop at the end of the
+current loop and marks the end of the score.
+\score.reset resets the position of the instruments in
+their bars and sets the sequencer to not running.
+
+\score.beatsin sets a countdown of beats before the
+score starts playing, for example:
+
+\score.beatsin 4
+
+To show the score or one of its views, call \score.show
+with one of the arguments notes, pianoroll, scope, or seq
+(or sequencer). Without an argument it shows the notes.
+
+\score.show pianoroll
+
+The piano roll can take its lowest and highest keys, where
+c4 is the middle C. The default range is A0 to C8.
+Muted instruments are hidden in the piano roll.
+Every note is as opaque as its velocity, as in the sequencer
+view, so softer notes are fainter. When instruments play the
+same key at the same time, the lane of the key is split
+between them, side by side, for as long as they overlap, so
+no note hides another. A key that plays is highlighted in
+the color of its instrument, as opaque as its note, and a
+key that more instruments play together is highlighted
+with their colors mixed, the louder notes weighing more.
+
+\score.show pianoroll c1 a5
+
+The sequencer view shows the bar that plays as a row of
+squares for every instrument, one square for every step of
+\score.seqres. Every note is a rectangle in the color of its
+instrument, as long as its duration (one square for a step
+of the x - notation of rhythm staffs), and as opaque as its
+velocity, so softer notes are fainter. While the sequencer
+plays, the step that plays is shown with a red rectangle
+over all the rows, and muted instruments show no notes.
+
+\score.show sequencer
+
+\score.show can also take barcount, tempo, or beat, to
+display the bar counter, the tempo, or a pulse on each beat.
+\score.hide takes the same three arguments to hide them,
+and without an argument it hides the score.
+
+\score.show beat
+\score.hide
+
+To highlight the notes that play in the score, call:
+
+\score.animate
+
+and to turn this off, call \score.inanimate.
+If the sequencer is not running, the animation starts with
+\score.play.
+
+\score.beattype sets how the beat pulse is drawn, 1 for a
+pulse around the whole score (default), 2 for a pulse on
+the playing beat of the current bar.
+
+\score.beattype 2
+
+\score.numbars sets how many bars are displayed (1 or more).
+\score.movex and \score.movey move the score by a number of
+pixels, and \score.recenter brings it back to its place.
+
+\score.numbars 4
+\score.movex -50
+\score.recenter
+
+\score.colors sets the colors of the background, the staffs
+and notes, the playing notes, and the beat pulse, in this
+order. Each color is a name or three RGB values (0 to 255).
+The keywords invert and reset invert or reset all colors.
+
+\score.colors black white red green
+\score.colors 30 30 30 200 200 200
+\score.colors reset
+
+\score.seqres sets the resolution of the sequencer view, and
+the length of a step of the x - notation of rhythm staffs,
+one of 1, 2, 4, 8, 16 (default), 32, or 64.
+
+\score.seqres 8
+
+\score.update sets when the displayed bars change when a
+new loop is called, onlast (on the last bar of the current
+loop) or immediately (default).
+
+\score.update onlast
+
+\score.correct sets whether a natural sign is added to a
+note that appears earlier in the bar with an accidental
+only in the same octave (onoctave, default) or in any
+octave (all).
+
+\score.correct all
+
+An unknown method results in an error.

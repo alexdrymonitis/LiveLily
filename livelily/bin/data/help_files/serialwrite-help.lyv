@@ -1,0 +1,13 @@
+\serialwrite sends bytes over the open serial port.
+It takes one or more integers from 0 to 255, and sends
+each one as a single byte:
+
+\serialwrite 1 127 255
+
+A serial port must be opened first with \openserialport,
+otherwise you will get a "serial port is not open" error.
+If an argument is not a number between 0 and 255, you will
+get an error, but the bytes before it have already been
+sent.
+
+To send text instead of bytes, use \serialprint.

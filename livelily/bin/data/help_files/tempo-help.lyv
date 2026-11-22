@@ -1,0 +1,26 @@
+\tempo sets the tempo for a bar.
+It must be included inside a bar definition,
+otherwise it will throw an error.
+Its syntax is the following:
+
+\tempo 120
+
+or
+
+\tempo 4 = 80
+
+The line above defines the duration for a
+quarter note, while the first line
+defines the tempo for the duration set
+with the \time command.
+
+When a tempo is set, it is held for all
+bars defined after it, until a new tempo is set.
+For this reason, when setting a new tempo,
+it should be set at the beginning of the bar,
+like the example below.
+
+\bar tempo-1 {
+    \tempo 4 = 120
+    \inst c'4 cis'8 c' b4
+}

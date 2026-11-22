@@ -1,0 +1,19 @@
+\staccatissimo is not a command that can be executed on
+its own. It is highlighted in the editor, but running it
+gives an "unknown command" error.
+
+A staccatissimo is written after a note with a hyphen and
+an exclamation mark, like:
+
+\bar staccis-1 {
+    \inst1 c'4-! d'-! e'2
+}
+
+A staccatissimo note sounds for a percentage of its
+duration, 25% by default. To change this percentage, use
+\notedur.staccatissimo with an integer from 1 to 100:
+
+\notedur.staccatissimo 15
+
+This is applied to all instruments. See also \staccato
+and \tenuto.

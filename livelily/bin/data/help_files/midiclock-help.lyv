@@ -1,0 +1,7 @@
+\midiclock enables or disables MIDI clock messages sent
+by the sequencer of LiveLily.
+Its syntax is the following:
+
+\midiclock on
+
+Its arguments are either on or off.

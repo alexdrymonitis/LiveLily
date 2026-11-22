@@ -1,0 +1,28 @@
+\beatat sets the duration(s) for a beat.
+It must be included inside a bar definition,
+otherwise it will throw an error.
+Its syntax is the following:
+
+\beatat 4
+
+or
+
+\beatat 4. 4
+
+Multiple arguments can set different durations
+for the beat of the sequencer. The line above
+concerns a 5/8 bar, where the first beat lasts
+three eighth notes and the second beat lasts
+two eight notes.
+
+When a beat duration is set, it is held for all
+bars defined after it, until a new beat duration
+is set.
+For this reason, when setting a new beat duration,
+it should be set at the beginning of the bar,
+like the example below.
+
+\bar beatat-1 {
+    \beatat 4
+    \inst c'4 cis'8 c' b4
+}

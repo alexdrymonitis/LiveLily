@@ -1,0 +1,62 @@
+\function defines a function, a block of lines that is
+stored and executed every time the function is called.
+Its syntax is the following:
+
+\function name {
+    \myosc.send /note $1 $2
+}
+
+The name is given without the backslash, and the function
+is called with a backslash, like a command, optionally with
+arguments:
+
+\name 60 100
+
+$1, $2, etc. in the body are replaced by the arguments.
+A missing argument is replaced by 0. A function can also be
+defined in one line:
+
+\function name { \myosc.send /start 1 }
+
+A function can give a value with \return, which ends the
+function, so the lines after it are not run. Called inside
+another command, the function is replaced by this value:
+
+\function twice { \return $1 $1 }
+\print \twice 7
+
+The line above prints 7 7. \return without arguments ends
+the function without a value, and a function without
+\return has no value. Outside a function, \return gives
+an error.
+
+Defining a function with an existing name replaces its
+body. Function names can be up to 50 characters long, and
+can't be names of LiveLily commands.
+
+Methods (after a dot):
+
+\name.setargs 60 100
+
+stores arguments, used instead of the ones the function is
+called with, without executing the function.
+
+\name.bind \inst1
+
+calls the function at every note of \inst1, while the
+sequencer plays. Instead of an instrument, it can be bound
+to beat, barstart, loopstart, or framerate (or fr).
+With an instrument, a number sets the step (note) of the bar
+it is called at, every sets the steps between calls, and
+times sets after how many calls it is unbound:
+
+\name.bind \inst1 1 every 2 times 8
+
+\name.unbind
+
+stops calling the function.
+
+\name.onrelease \other
+
+calls the function \other when \name is unbound, after the
+number of times set with times.

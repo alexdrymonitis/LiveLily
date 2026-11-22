@@ -1,0 +1,39 @@
+\transpose transposes a stored bar by a defined number
+of semitones.
+This command can only be used inside a bar definition.
+Its syntax is the following:
+
+\transpose {\barname numsemitones}
+
+where "\barname" is the name of a stored bar and
+"numseminotes" is a number that defines how many
+semitones the bar should be transposed.
+For example, if we define the following bar:
+
+\bar transp-1 {
+    \inst1 c'2\f cis'4. c'16 d'
+    \inst2 g2\f gis2
+}
+
+then we can use this command to transpose the notes
+like in the example below:
+
+\bar transp-2 {
+    \inst1 \transpose {\transp-1 2}
+    \inst2 \transpose {\transp-1 2}
+}
+
+We can also use this command to retrieve the notes
+from another bar and another instrument, like the
+example below:
+
+\bar transp-3 {
+    \inst1 \transpose {\transp-2.\inst2 10}
+    \inst2 \transpose {\transp-2.\inst1 -14}
+}
+
+The example above will result in a bar with the notes of
+bar \transp-1, where each instrument plays the notes of
+the other instrument, with \inst1 playing the notes of \inst2
+transposed one octave above, and \inst2 playting the notes
+of \inst1 transposed one octave below.

@@ -1,0 +1,33 @@
+\oscclient creates an OSC client, to send OSC messages.
+It is the same as \osc. Its syntax is the following:
+
+\oscclient myosc
+
+The name can't be the name of a LiveLily command.
+Once created, the client is used like a command with its
+name, and its methods are concatenated with a dot.
+
+The setup method sets the IP and the port to send to:
+
+\myosc.setup 192.168.1.10 8000
+
+If only the port is given, localhost is used:
+
+\myosc.setup 8000
+
+The send method sends a message. The first argument is
+the OSC address, which must start with a / and be inside
+double quotes, otherwise you will get an error. It can be
+followed by any number of arguments:
+
+\myosc.send "/addr" 57 3.14 "hello world"
+
+Integers are sent as integers, decimal numbers as floats
+and quoted text as strings. Any unquoted words are joined
+together and sent as one string, after the other
+arguments.
+Commands that return values can be used as arguments:
+
+\myosc.send "/barnum" \barnum
+
+setup and send can't be combined in the same line.

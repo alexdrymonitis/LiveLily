@@ -1,0 +1,22 @@
+\mute mutes one or more instruments.
+Its syntax is the following:
+
+\mute \violin \cello
+
+where \violin and \cello are instruments created with
+\insts.init. To mute all instruments, call:
+
+\mute \all
+
+While the sequencer is playing, the instruments are muted
+at the start of the next bar. If the sequencer is stopped,
+they are muted at once.
+To mute instruments immediately, use \mutenow.
+To bring them back, use \unmute or \unmutenow.
+
+A muted instrument shows a whole rest in the score and is
+hidden in the piano roll.
+
+\mute needs at least one argument, and an argument that
+is not an instrument results in an "unknown instrument"
+error.

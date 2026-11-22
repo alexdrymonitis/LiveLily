@@ -1,0 +1,6 @@
+\change is a reserved name of LiveLily, it is highlighted
+as a command, but it is not implemented yet.
+Calling it throws an "unknown command" error.
+
+As a reserved name, change can't be the name of a bar, a
+loop, a list, a function, or a group.

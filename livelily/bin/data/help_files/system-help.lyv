@@ -1,0 +1,14 @@
+\system runs a shell command and returns its output.
+Everything after \system is joined with spaces and run
+in the system shell, like:
+
+\system ls ~/Documents
+
+The output can be used as the argument of another
+command. For example, the line below prints the current
+date to the traceback area:
+
+\print \system date
+
+If \system is called with nothing after it, you get the
+warning "no command added to \system".

@@ -17,8 +17,12 @@ Staff::Staff()
 	scoreOrientation = 0;
 	clefLength = 0;
 	xCoef = 1;
-	xOffset = 0;
+	// both offsets must be initialized, otherwise the vertical lines at the sides of the staff
+	// which use yStartOffset, get a random length
+	xStartOffset = 0;
+	yStartOffset = 0;
 	groupID = -1;
+	staffColor = ofColor::black;
 }
 
 //--------------------------------------------------------------
@@ -97,13 +101,25 @@ void Staff::setOrientation(int orientation)
 //--------------------------------------------------------------
 void Staff::setNumBarsToDisplay(int numBars)
 {
-	xCoef = 2.0 / (float)numBars;
+	// in horizontal view, the staff length is set for min(2, numBars) bars in ofApp::setScoreCoords()
+	// so this coefficient scales it to the actual number of bars
+	// (with one bar the length is already the full width, so the coefficient must be 1, not 2)
+	if (numBars < 1) numBars = 1;
+	xCoef = (float)std::min(2, numBars) / (float)numBars;
 }
 
 //--------------------------------------------------------------
 float Staff::getXCoef()
 {
-	return (scoreOrientation == 1 ? xCoef : (float)1.0);
+	// getXLength() scales the staff for any orientation other than vertical (horizontal and full screen)
+	// so the notes must be scaled the same way, otherwise they don't fit their staff
+	return (scoreOrientation > 0 ? xCoef : (float)1.0);
+}
+
+//--------------------------------------------------------------
+float Staff::getXStartOffset()
+{
+	return xStartOffset;
 }
 
 //--------------------------------------------------------------
@@ -137,34 +153,44 @@ float Staff::getMeterXOffset()
 {
 	float y = yDist / 2;
 	if (scoreOrientation > 0) y *= xCoef;
-	return y + meterLength; 
+	return y + meterLength;
 }
 
 //--------------------------------------------------------------
-void Staff::copyMelodicLine(int barIndex, int barToCopy)
+void Staff::moveScoreX(int numPixels)
 {
-	numerator[barIndex] = numerator[barToCopy];
-	denominator[barIndex] = denominator[barToCopy];
-	clefIndex[barIndex] = clefIndex[barToCopy];
-	meterIndex[barIndex] = meterIndex[barToCopy];
-	tempoBase[barIndex] = tempoBase[barToCopy];
-	BPMDisplayDots[barIndex] = BPMDisplayDots[barToCopy];
-	BPMTempi[barIndex] = BPMTempi[barToCopy];
+	xStartOffset += (float)numPixels;
+}
+
+//--------------------------------------------------------------
+void Staff::moveScoreY(int numPixels)
+{
+	yStartOffset += (float)numPixels;
+}
+
+//--------------------------------------------------------------
+void Staff::recenterScore()
+{
+	xStartOffset = yStartOffset = 0;
 }
 
 //--------------------------------------------------------------
 void Staff::drawStaff(int bar, float xStartPnt, float yStartPnt, float yOffset, bool drawClef,
 		bool drawMeter, bool drawLoopStartEnd, bool drawTempo)
 {
-	ofSetColor(0);
+	ofSetColor(staffColor * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
 	float xCoefLocal = xCoef;
 	if (scoreOrientation > 0) xCoefLocal = 1;
 	float xStartLocal = xStartPnt;
+	xStartLocal += xStartOffset;
 	float xEndLocal = getXLength() + xStartPnt;
 	//if (!drawClef) xEndLocal -= getClefXOffset();
 	//else if (scoreOrientation > 0) xEndLocal += getClefXOffset();
 	//if (!(drawMeter && drawMeterInsideBar)) xEndLocal -= getMeterXOffset();
 	//else if (scoreOrientation > 0) xEndLocal += getMeterXOffset();
+	// the vertical lines at the sides of the staff go from its top line to its bottom line
+	// yStartOffset (set with \movey) is not applied here, as it is not applied to the staff lines and the notes either
+	// so applying it only to the top of these lines would make them longer or shorter than the staff
 	float yStart = yStartPnt - (lineWidth / 2) + yOffset;
 	float yEnd = (yStartPnt + (4 * yDist)) + (lineWidth / 2) + yOffset;
 	ofDrawLine(xStartLocal, yStart, xStartLocal, yEnd);
@@ -211,7 +237,7 @@ void Staff::drawStaff(int bar, float xStartPnt, float yStartPnt, float yOffset, 
 		if (isScoreEnd) drawScoreEnd(bar, xEndLocal, yStartPnt, yOffset);
 	}
 	if (drawTempo && groupID == -1) {
-		string tempoBaseString = BPMDisplayNotes[tempoBase[bar]];
+		std::string tempoBaseString = BPMDisplayNotes[tempoBase[bar]];
 		float offset = 0;
 		// the following line is taken from the clef drawing chunk above
 		float y = yStartPnt+(yDist*3.8)+yOffset;
@@ -220,7 +246,7 @@ void Staff::drawStaff(int bar, float xStartPnt, float yStartPnt, float yOffset, 
 			ofDrawCircle(xStartPnt+(noteWidth*1.5), y, staffDist*0.2);
 			offset = noteWidth * 0.5;
 		}
-		string BPMString = " = " + to_string(BPMTempi[bar]); 
+		std::string BPMString = " = " + std::to_string(BPMTempi[bar]);
 		notationFont.drawString(tempoBaseString, xStartPnt, y);
 		BPMDisplayFont.drawString(BPMString, xStartPnt+offset+noteWidth, y);
 	}
@@ -304,14 +330,18 @@ Notes::Notes()
 	animate = false;
 	mute = false;
 	whichNote = -1;
+	xStartOffset = 0;
+	yStartOffset = 0;
 	lineWidth = ((ofApp*)ofGetAppPtr())->lineWidth;
 	//quarterSharp.load("quarter_sharp.png");
 	fontSize = 0;
 	rhythm = false;
 	scoreOrientation = 0;
 	scoreOrientationForDots = 0;
-	xOffset = 0;
+	xStartOffset = 0;
 	accidentalsOffsetCoef = 1.2;
+	notesColor = ofColor::black;
+	activeNotesColor = ofColor::red;
 }
 
 //--------------------------------------------------------------
@@ -442,6 +472,40 @@ void Notes::setMute(bool muteState)
 }
 
 //--------------------------------------------------------------
+void Notes::setVoice(int voice, int numVoices)
+{
+	voiceNum = std::max(1, voice);
+	forcedStemDir = (numVoices > 1 ? (voiceNum % 2 == 1 ? 1 : -1) : 0);
+}
+
+//--------------------------------------------------------------
+std::vector<Notes::NoteColumn> Notes::getColumns(int bar)
+{
+	std::vector<NoteColumn> columns;
+	auto notesIt = allNotes.find(bar);
+	if (notesIt == allNotes.end() || noteXCoords.find(bar) == noteXCoords.end()) return columns;
+	for (size_t i = 0; i < notesIt->second.size(); i++) {
+		NoteColumn column;
+		column.x = (i < noteXCoords[bar].size() ? noteXCoords[bar][i] : 0);
+		column.rest = (notesIt->second[i].empty() || notesIt->second[i][0] < 0);
+		if (i < allNoteHeadCoordsY[bar].size()) column.headsY = allNoteHeadCoordsY[bar][i];
+		int dur = (i < actualDurs[bar].size() ? actualDurs[bar][i] : 4);
+		column.headType = (dur <= 1 ? 1 : (dur == 2 ? 2 : 4));
+		column.dots = (i < dotsCounter[bar].size() ? dotsCounter[bar][i] : 0);
+		columns.push_back(column);
+	}
+	return columns;
+}
+
+//--------------------------------------------------------------
+void Notes::shiftColumn(int bar, int noteNdx, float dx)
+{
+	auto it = allNoteCoordsX.find(bar);
+	if (it == allNoteCoordsX.end() || noteNdx < 0 || noteNdx >= (int)it->second.size()) return;
+	for (float& x : it->second[noteNdx]) x += dx;
+}
+
+//--------------------------------------------------------------
 void Notes::setMeter(int bar, int numer, int denom, int numBeats)
 {
 	numerator[bar] = numer;
@@ -458,28 +522,28 @@ void Notes::setAccidentalsOffsetCoef(float coef)
 
 //--------------------------------------------------------------
 void Notes::setNotes(int bar,
-		vector<vector<int>> notes,
-		vector<vector<int>> accidentals,
-		vector<vector<int>> naturalsNotWritten,
-		vector<vector<int>> octaves,
-		vector<int> ottavas,
-		vector<int> durs,
-		vector<int> dotNdxs,
-		vector<unsigned> dotsCntr,
-		vector<int> gliss,
-		vector<vector<int>> articul,
-		vector<int> dyns,
-		vector<int> dynIdx,
-		vector<int> dynRampStart,
-		vector<int> dynRampEnd,
-		vector<int> dynRampDir,
-		vector<std::pair<int, int>> slurNdxs,
-		vector<int> tieNdxs,
+		std::vector<std::vector<int>> notes,
+		std::vector<std::vector<int>> accidentals,
+		std::vector<std::vector<int>> naturalsNotWritten,
+		std::vector<std::vector<int>> octaves,
+		std::vector<int> ottavas,
+		std::vector<int> durs,
+		std::vector<int> dotNdxs,
+		std::vector<unsigned> dotsCntr,
+		std::vector<int> gliss,
+		std::vector<std::vector<int>> articul,
+		std::vector<int> dyns,
+		std::vector<int> dynIdx,
+		std::vector<int> dynRampStart,
+		std::vector<int> dynRampEnd,
+		std::vector<int> dynRampDir,
+		std::vector<std::pair<int, int>> slurNdxs,
+		std::vector<int> tieNdxs,
 		bool isWholeBarSlurred,
-		map<int, std::pair<int, int>> tupletRatios,
-		map<int, std::pair<unsigned, unsigned>> tupletStartStop,
-		vector<string> texts,
-		vector<vector<int>> textIndexes,
+		std::map<int, std::pair<int, int>> tupletRatios,
+		std::map<int, std::pair<unsigned, unsigned>> tupletStartStop,
+		std::vector<std::string> texts,
+		std::vector<std::vector<int>> textIndexes,
 		int BPMMult)
 {
 	// if we have copied the bar by writing a bar name instead of an actual melodic line
@@ -548,10 +612,10 @@ void Notes::changeNotesBasedOnClef(int bar)
 }
 
 //--------------------------------------------------------------
-void Notes::correctDynamics(int bar, vector<int> dyns)
+void Notes::correctDynamics(int bar, std::vector<int> dyns)
 {
 	if (dynamics[bar].size() != dyns.size()) {
-		cout << "vectors don't have the same size\n";
+		cout << "std::vectors don't have the same size\n";
 		return;
 	}
 	for (unsigned i = 0; i < dynamics[bar].size(); i++) {
@@ -562,41 +626,41 @@ void Notes::correctDynamics(int bar, vector<int> dyns)
 //--------------------------------------------------------------
 void Notes::setNotePositions(int bar)
 {
-	vector<vector<int>> vvi;
+	std::vector<std::vector<int>> vvi;
 	for (auto vvit = allNotes[bar].begin(); vvit != allNotes[bar].end(); ++vvit) {
-		vvi.push_back(vector<int>());
+		vvi.push_back(std::vector<int>());
 		for (auto vit = vvit->begin(); vit != vvit->end(); ++vit) {
 			vvi.back().push_back(0);
 		}
 	}
-	vector<vector<float>> vvf;
+	std::vector<std::vector<float>> vvf;
 	for (auto vvit = allNotes[bar].begin(); vvit != allNotes[bar].end(); ++vvit) {
-		vvf.push_back(vector<float>());
+		vvf.push_back(std::vector<float>());
 		for (auto vit = vvit->begin(); vit != vvit->end(); ++vit) {
 			vvf.back().push_back(0);
 		}
 	}
 	// special 2D vector for Y coords of articulations
-	vector<vector<float>> vvf2;
+	std::vector<std::vector<float>> vvf2;
 	for (auto vvit = allArticulations[bar].begin(); vvit != allArticulations[bar].end(); ++vvit) {
-		vvf2.push_back(vector<float>());
+		vvf2.push_back(std::vector<float>());
 		for (auto vit = vvit->begin(); vit != vvit->end(); ++vit) {
 			vvf2.back().push_back(FLT_MIN);
 		}
 	}
 	// special 2D vector for shifting notes on the X axis, in case of clamped chords
-	vector<vector<bool>> vvb;
+	std::vector<std::vector<bool>> vvb;
 	for (auto vvit = allNotes[bar].begin(); vvit != allNotes[bar].end(); ++vvit) {
-		vvb.push_back(vector<bool>());
+		vvb.push_back(std::vector<bool>());
 		for (auto vit = vvit->begin(); vit != vvit->end(); ++vit) {
 			vvb.back().push_back(false);
 		}
 	}
-	vector<int> vi1(allNotes[bar].size(), 1);
-	vector<int> vi2(allNotes[bar].size(), 0);
-	vector<float> vf1(allNotes[bar].size(), 0);
-	vector<float> vf2(allNotes[bar].size(), FLT_MIN);
-	vector<float> vf3(allNotes[bar].size(), staffDist*4);
+	std::vector<int> vi1(allNotes[bar].size(), 1);
+	std::vector<int> vi2(allNotes[bar].size(), 0);
+	std::vector<float> vf1(allNotes[bar].size(), 0);
+	std::vector<float> vf2(allNotes[bar].size(), FLT_MIN);
+	std::vector<float> vf3(allNotes[bar].size(), staffDist*4);
 	stemDirections[bar] = vi1;
 	articulXPos[bar] = vf2;
 	articulYPos[bar] = vvf2;
@@ -620,25 +684,26 @@ void Notes::setNotePositions(int bar)
 	allChordsBaseIndexes[bar] = vi2;
 	allChordsEdgeIndexes[bar] = vi2;
 	isNoteGroupped[bar] = vi2;
-	
+	noteXCoords[bar] = vf1;
+
 	float x = 0;
 	int beamsCounter = 0;
 	bool fullBeat = false;
 	bool addedNotesAtFullBeat = false;
-	vector<bool> fullBeats(allNotes[bar].size(), false);
+	std::vector<bool> fullBeats(allNotes[bar].size(), false);
 	unsigned prevFullBeatNdx = 0;
 	float durAccum = 0;
 	tacet[bar] = false;
 	beamIndexCounter = 0;
 	beamIndexCounter2 = 0;
-	vector<int> numNotesEveryFullBeat(allNotes[bar].size());
+	std::vector<int> numNotesEveryFullBeat(allNotes[bar].size());
 	int numNotesFullBeatNdx = 0;
 	int nonBeamNumNotes = 0;
 	bool noteIsInTuplet = false;
 	int tupStopIndex = -1;
 	// cast to int to avoid cast further down in if tests
 	for (int i = 0; i < (int)allNotes[bar].size(); i++) {
-		vector<float> yVec(allNotes[bar][i].size());
+		std::vector<float> yVec(allNotes[bar][i].size());
 		if ((allNotes[bar].size() == 1) && (allNotes[bar][i][0] == -1)) {
 			tacet[bar] = true;
 			minYCoord[bar] = 0;
@@ -647,7 +712,13 @@ void Notes::setNotePositions(int bar)
 		// get the duration in musical terms, 1 for whole note
 		// 2 for half note, 4 for quarter, etc.
 		int duration = durations[bar][i] * ((float)numerator[bar] / (float)denominator[bar]);
-		actualDurs[bar][i] = (int)(((float)beats[bar] / (float)duration) + 0.5);
+		// dotted notes are drawn as the note without the dots (e.g. a dotted eighth is an eighth with a dot)
+		// so the dots are taken out of the duration, otherwise a dotted eighth would be a fifth of a bar in 4/4
+		// which is not beamed, and a dotted half would be drawn as a whole note
+		float undottedDuration = (float)duration;
+		int numDots = (dotIndexes[bar][i] > 0 ? (int)dotsCounter[bar][i] : 0);
+		if (numDots > 0) undottedDuration = (float)duration * (float)(1 << numDots) / (float)((1 << (numDots + 1)) - 1);
+		actualDurs[bar][i] = (int)(((float)beats[bar] / undottedDuration) + 0.5);
 		// detect the beats based on the denominator
 		// so eights and shorter notes are groupped properly
 		float thisDur = 0; // initialize to avoid compiler warnings
@@ -668,29 +739,13 @@ void Notes::setNotePositions(int bar)
 			}
 		}
 		if (BPMMultiplier[bar] > 1) thisDur /= (float)BPMMultiplier[bar];
-		// check if we're inside a tuplet
+		// check if we're inside tuplets, which can be nested, so the duration is multiplied by the ratio of every tuplet the note is in
+		// a beat is complete at the end of the outermost tuplet
 		for (auto it = tupStartStop[bar].begin(); it != tupStartStop[bar].end(); ++it) {
 			if (i >= (int)it->second.first && i <= (int)it->second.second) {
-				float diff = 0;
-				// check if actual sum is less than the expected sum
-				if (i == (int)it->second.first) {
-					float tupDurAccum = 0;
-					float expectedSum = 0;
-					for (unsigned j = it->second.first; j <= it->second.second; j++) {
-						tupDurAccum += (thisDur * tupRatios[bar][it->first].second / tupRatios[bar][it->first].first);
-						expectedSum += thisDur;
-					}
-					expectedSum = expectedSum * tupRatios[bar][it->first].second / tupRatios[bar][it->first].first;
-					diff = expectedSum - tupDurAccum;
-				}
 				thisDur = thisDur * tupRatios[bar][it->first].second / tupRatios[bar][it->first].first;
-				// here we just add the difference to the first note, as it doesn't matter
-				// as it does with the sequencer, and since here we're dealing with floats
-				// it's much easier to do it this way
-				if (i == (int)it->second.first) thisDur += diff;
+				if (!noteIsInTuplet || (int)it->second.second > (int)tupStopIndex) tupStopIndex = it->second.second;
 				noteIsInTuplet = true;
-				tupStopIndex = it->second.second;
-				break;
 			}
 		}
 		durAccum += thisDur;
@@ -719,7 +774,7 @@ void Notes::setNotePositions(int bar)
 				// since we add the distance from the previous note to the current one
 				// we need to test the previous index, hence i-1
 				if (i-1 >= (int)it->second.first && i-1 <= (int)it->second.second) {
-					thisDistBetweenBeats = (thisDistBetweenBeats / tupRatios[bar][it->first].first) * tupRatios[bar][it->first].second; 
+					thisDistBetweenBeats = (thisDistBetweenBeats / tupRatios[bar][it->first].first) * tupRatios[bar][it->first].second;
 				}
 			}
 			x += thisDistBetweenBeats;
@@ -727,10 +782,19 @@ void Notes::setNotePositions(int bar)
 		else if (tacet[bar]) {
 			x = xLength / 2;
 		}
+		noteXCoords[bar][i] = x;
 		// accumulate Ys to determine stem direction
 		int stemDirAccum = 0;
 		float stemDirAccumDiff = 0;
 		for (unsigned j = 0; j < allNotes[bar][i].size(); j++) {
+			// rests are drawn in the middle of the staff (see drawRest()), so that's their Y coord
+			// otherwise their note value (-1) and octave would place them below the staff
+			// and make the staff look like it extends far below it
+			if (allNotes[bar][i][j] < 0) {
+				// the rests of voices move up (stems up) or down (stems down), so they don't collide with the other voice
+				yVec[j] = middleOfStaff - (forcedStemDir * staffDist);
+				continue;
+			}
 			// set y as the C one octave below middle C
 			yVec[j] = halfStaffDist * 17;
 			float noteYOffset = (allNotes[bar][i][j] * halfStaffDist) + \
@@ -778,91 +842,13 @@ void Notes::setNotePositions(int bar)
 				hasExtraLines[bar][i][j] = 1;
 			}
 		}
-		// get the Y coords of the extreme notes of a chord
-		float maxVal =  FLT_MIN;
-		float minVal = FLT_MAX;
-		if (stemDirAccum >= 0) {
-			// local stem dir
-			// update stemDirections which is used in drawAccidentals()
-			stemDirections[bar][i] = 1;
-			for (unsigned j = 0; j < allNotes[bar][i].size(); j++) {
-				if (allNoteHeadCoordsY[bar][i][j] > maxVal) {
-					maxVal = allNoteHeadCoordsY[bar][i][j];
-					allChordsBaseIndexes[bar][i] = j;
-				}
-				if (allNoteHeadCoordsY[bar][i][j] < minVal) {
-					minVal = allNoteHeadCoordsY[bar][i][j];
-					allChordsEdgeIndexes[bar][i] = j;
-				}
-			}
-		}
+		// the stems of a voice of a staff with merged instruments have the direction of the voice (see setVoice())
+		if (forcedStemDir != 0) stemDirections[bar][i] = forcedStemDir;
+		else if (stemDirAccum >= 0) stemDirections[bar][i] = 1;
 		// stems can point down only if this is not a rhythm staff
-		else if (!rhythm) {
-			stemDirections[bar][i] = -1;
-			for (unsigned j = 0; j < allNotes[bar][i].size(); j++) {
-				if (allNoteHeadCoordsY[bar][i][j] < minVal) {
-					minVal = allNoteHeadCoordsY[bar][i][j];
-					allChordsBaseIndexes[bar][i] = j;
-				}
-				if (allNoteHeadCoordsY[bar][i][j] > maxVal) {
-					maxVal = allNoteHeadCoordsY[bar][i][j];
-					allChordsEdgeIndexes[bar][i] = j;
-				}
-			}
-		}
-		// once we've stored the Y coords of the note heads
-		// we run a loop to see if there are any note heads close together
-		// which means we'll have to change the X coord of one of them
-		// e.g. in an <e f g> sequence, only f will shift on the X axis
-		bool xCoordChanged = false;
-		float chordBaseNoteChangeCoef = 1;
-		for (unsigned j = 1; j < allNoteHeadCoordsY[bar][i].size(); j++) {
-			for (unsigned k = 0; k < allNoteHeadCoordsY[bar][i].size(); k++) {
-				// don't bother with the same note
-				if (j == k) continue;
-				// if two notes are close together on the Y axis
-				if (abs(allNoteHeadCoordsY[bar][i][j] - allNoteHeadCoordsY[bar][i][k]) < staffDist) {
-					// if k is on top (smaller Y coord)
-					if (allNoteHeadCoordsY[bar][i][j] > allNoteHeadCoordsY[bar][i][k]) {
-						// if both j and k haven't moved yet
-						if ((allNoteCoordsX[bar][i][j] == x) && (allNoteCoordsX[bar][i][k] == x)) {
-							// set the boolean to true, so the top note is moved when drawn
-							allNoteCoordsX[bar][i][k] += noteWidth;
-							allNoteShiftX[bar][i][j] = true;
-							xCoordChanged = true;
-							// if the base of the stem down chord changes
-							// then the X axis should not take an offset
-							if ((int)k == allChordsBaseIndexes[bar][i] && stemDirections[bar][i] == -1) {
-								chordBaseNoteChangeCoef = 0;
-							}
-						}
-					}
-					else {
-						if ((allNoteCoordsX[bar][i][k] == x) && (allNoteCoordsX[bar][i][j] == x)) {
-							allNoteCoordsX[bar][i][j] += noteWidth;
-							allNoteShiftX[bar][i][j] = true;
-							xCoordChanged = true;
-							if ((int)j == allChordsBaseIndexes[bar][i] && stemDirections[bar][i] == -1) {
-								chordBaseNoteChangeCoef = 0;
-							}
-						}
-					}
-				}
-			}
-		}
-		if (xCoordChanged) {
-			// if we have notes close together, we shift all notes by half the note width
-			// so they can be centered
-			for (unsigned j = 0; j < allNoteCoordsX[bar][i].size(); j++) {
-				if (stemDirections[bar][i] == -1 && chordBaseNoteChangeCoef > 0) {
-					allNoteCoordsX[bar][i][j] -= (noteWidth / 2);
-				}
-			}
-			if (stemDirections[bar][i] == -1) {
-				allNoteCoordsXOffset[bar][i] = noteWidth;
-				if (chordBaseNoteChangeCoef > 0) allChordsChangeXCoef[bar][i] = chordBaseNoteChangeCoef;
-			}
-		}
+		else if (!rhythm) stemDirections[bar][i] = -1;
+		// set the base and edge notes of the chord, and the X coords of its notes
+		layoutChordNotes(bar, i, x, stemDirections[bar][i]);
 		// set the Y coord to be the lowest note (highest Y value)
 		// in case of stem up, otherwise the other way round
 		float y = (halfStaffDist * 17);
@@ -873,11 +859,20 @@ void Notes::setNotePositions(int bar)
 								(allOctaves[bar][i][allChordsEdgeIndexes[bar][i]] * 7 * halfStaffDist);
 		y -= noteYOffsetBase;
 		yEdge -= noteYOffsetEdge;
+		// rests are in the middle of the staff, as above
+		if (allNotes[bar][i][0] < 0) y = yEdge = middleOfStaff;
 		if (y > allNotesMaxYPos[bar][i] && y < FLT_MAX) allNotesMaxYPos[bar][i] = y;
 		if (y < allNotesMinYPos[bar][i] && y > -FLT_MAX) allNotesMinYPos[bar][i] = y;
 		// caclulate the coords of the stems
 		if (hasStem[bar][i]) {
 			allNoteStemCoordsY[bar][i] = allNoteHeadCoordsY[bar][i][allChordsEdgeIndexes[bar][i]] + (noteHeight / 8.0) - (staffDist / 10.0) - ((stemHeight + halfStaffDist) * stemDirections[bar][i]);
+			// the stem of a note with ledger lines must reach the middle line of the staff
+			// a stem up (direction 1) ends above the note head (lower Y), a stem down (direction -1) below it
+			// (the stems of voices keep their length, as the stems of the other voice are on the other side)
+			if (!rhythm && forcedStemDir == 0) {
+				if (stemDirections[bar][i] == 1 && allNoteStemCoordsY[bar][i] > middleOfStaff) allNoteStemCoordsY[bar][i] = middleOfStaff;
+				else if (stemDirections[bar][i] == -1 && allNoteStemCoordsY[bar][i] < middleOfStaff) allNoteStemCoordsY[bar][i] = middleOfStaff;
+			}
 			if (allNoteStemCoordsY[bar][i] > allNotesMaxYPos[bar][i] && allNoteStemCoordsY[bar][i] < FLT_MAX) allNotesMaxYPos[bar][i] = allNoteStemCoordsY[bar][i];
 			if (allNoteStemCoordsY[bar][i] < allNotesMinYPos[bar][i] && allNoteStemCoordsY[bar][i] > -FLT_MAX) allNotesMinYPos[bar][i] = allNoteStemCoordsY[bar][i];
 		}
@@ -905,10 +900,10 @@ void Notes::setNotePositions(int bar)
 	prevFullBeatNdx = 0;
 	unsigned i;
 	int j, prevNdx;
-	vector<vector<int>> beamsIndexesLocal;
+	std::vector<std::vector<int>> beamsIndexesLocal;
 	for (i = 0; i < allNotes[bar].size(); i++) {
 		if (fullBeats[i]) {
-			vector<int> v;
+			std::vector<int> v;
 			beamsIndexesLocal.push_back(v);
 			beamsCounter = 0;
 			for (j = prevFullBeatNdx; j <= (int)i; j++) {
@@ -922,11 +917,11 @@ void Notes::setNotePositions(int bar)
 				prevNdx = beamsIndexesLocal.back()[0];
 				for (j = 1; j < beamsCounter; j++) {
 					if (beamsIndexesLocal.back()[j] - prevNdx > 1) {
-						// here the vectors must break, so we store the remaining of the vector to a new one
-						vector<int> v2(beamsIndexesLocal.back().begin() + j, beamsIndexesLocal.back().end());
+						// here the std::vectors must break, so we store the remaining of the std::vector to a new one
+						std::vector<int> v2(beamsIndexesLocal.back().begin() + j, beamsIndexesLocal.back().end());
 						// erase this portion from the existing one
 						beamsIndexesLocal.back().erase(beamsIndexesLocal.back().begin() + j, beamsIndexesLocal.back().end());
-						// and push the copied portion as a new vector
+						// and push the copied portion as a new std::vector
 						beamsIndexesLocal.push_back(v2);
 						beamsCounter -= j;
 						j = 1;
@@ -935,14 +930,14 @@ void Notes::setNotePositions(int bar)
 					prevNdx = beamsIndexesLocal.back()[j];
 				}
 			}
-			// erase single-element or empty vectors
+			// erase single-element or empty std::vectors
 			for (auto it = beamsIndexesLocal.rbegin(); it != beamsIndexesLocal.rend(); ++it) {
 				if (it->size() < 2) beamsIndexesLocal.erase(std::next(it).base());
 			}
 			prevFullBeatNdx = i + 1;
 		}
 	}
-	// when done, keep only the first and last index of each vector in vector
+	// when done, keep only the first and last index of each std::vector in std::vector
 	for (i = 0; i < beamsIndexesLocal.size(); i++) {
 		if (beamsIndexesLocal[i].size() > 2) {
 			beamsIndexesLocal[i].erase(beamsIndexesLocal[i].begin()+1, beamsIndexesLocal[i].end()-1);
@@ -952,7 +947,7 @@ void Notes::setNotePositions(int bar)
 	// this is used in drawNotes() to determine whether we'll draw an individual tail or not
 	int nonRestsCounter;
 	// also set which beam groups have rests so we make sure we don't draw on top of them
-	vector<int> beamGroupHasRests(beamsIndexesLocal.size(), 0);
+	std::vector<int> beamGroupHasRests(beamsIndexesLocal.size(), 0);
 	for (i = 0; i < beamsIndexesLocal.size(); i++) {
 		nonRestsCounter = 0;
 		for (j = beamsIndexesLocal[i][0]; j <= beamsIndexesLocal[i][1]; j++) {
@@ -968,7 +963,7 @@ void Notes::setNotePositions(int bar)
 	beamsCounter = 0;
 	prevFullBeatNdx = 0;
 	int hasRestsLocal = 0;
-	vector<int> hasRestsVecLocal;
+	std::vector<int> hasRestsVecLocal;
 	for (i = 0; i < allNotes[bar].size(); i++) {
 		if (fullBeats[i]) {
 			for (j = prevFullBeatNdx; j <= (int)i; j++) {
@@ -988,7 +983,7 @@ void Notes::setNotePositions(int bar)
 	}
 	prevFullBeatNdx = 0;
 	int numLinesLocal = 0;
-	vector<int> maxNumLinesLocal;
+	std::vector<int> maxNumLinesLocal;
 	for (i = 0; i < allNotes[bar].size(); i++) {
 		if (fullBeats[i]) {
 			for (j = prevFullBeatNdx; j <= (int)i; j++) {
@@ -1008,16 +1003,16 @@ void Notes::setNotePositions(int bar)
 			prevFullBeatNdx = i + 1;
 		}
 	}
-	// copy the local vectors to the maps of the class
+	// copy the local std::vectors to the std::maps of the class
 	beamsIndexes[bar] = beamsIndexesLocal;
 	hasRests[bar] = hasRestsVecLocal;
 	maxNumLines[bar] = maxNumLinesLocal;
-	grouppedStemDirs[bar] = vector<int>(beamsIndexes[bar].size());
-	numNotesWithBeams[bar] = vector<int>(beamsIndexes[bar].size(), 0);
+	grouppedStemDirs[bar] = std::vector<int>(beamsIndexes[bar].size());
+	numNotesWithBeams[bar] = std::vector<int>(beamsIndexes[bar].size(), 0);
 	// to easily separate notes with beams that are groupped from the ones that are not
 	// (e.g. in case of a dotted quarter with an eighth note)
 	// we first determine how many notes have beams in a group
-	// and then we copy the beamIndexesLocal vector to beamsIndexes as a 2D vector
+	// and then we copy the beamIndexesLocal std::vector to beamsIndexes as a 2D std::vector
 	if (beamsIndexes[bar].size() > 0) {
 		for (i = 0; i < beamsIndexes[bar].size(); i++) {
 			for (j = beamsIndexes[bar][i][0]; j <= beamsIndexes[bar][i][1]; j++) {
@@ -1089,9 +1084,16 @@ void Notes::setNotePositions(int bar)
 				}
 			}
 			// groupped stem directions for groupped notes
-			if (storedGroupStemDir) grouppedStemDirs[bar][i] = stemDir;
+			if (forcedStemDir != 0) grouppedStemDirs[bar][i] = forcedStemDir;
+			else if (storedGroupStemDir) grouppedStemDirs[bar][i] = stemDir;
 			else grouppedStemDirs[bar][i] = stemDirections[bar][i];
 			for (j = beamsIndexes[bar][i][0]; j <= beamsIndexes[bar][i][1]; j++) {
+				// if the stems of the group point to a different direction than the stem of this note on its own
+				// the base and edge notes of a chord change, and so do the X coords of notes a second apart (e.g. <a' b'>)
+				// so we lay out the note again
+				if (allNotes[bar][j][0] > -1 && stemDirections[bar][j] != grouppedStemDirs[bar][i]) {
+					layoutChordNotes(bar, j, noteXCoords[bar][j], grouppedStemDirs[bar][i]);
+				}
 				// set the second Y coordinate of the note which is the stem length as the direction might have changed
 				allNoteStemCoordsY[bar][j] = allNoteHeadCoordsY[bar][j][allChordsEdgeIndexes[bar][j]] + (noteHeight / 8.0) - (staffDist / 10.0) - ((stemHeight + halfStaffDist) * grouppedStemDirs[bar][i]);
 				if (allNoteStemCoordsY[bar][j] > allNotesMaxYPos[bar][j] && allNoteStemCoordsY[bar][j] < FLT_MAX) allNotesMaxYPos[bar][j] = allNoteStemCoordsY[bar][j];
@@ -1183,7 +1185,12 @@ void Notes::setNotePositions(int bar)
 				else {
 					// if the notes don't rise of fall linearly, set all stem coords to the same, maximum value
 					for (int k = beamsIndexes[bar][i][0]; k <= beamsIndexes[bar][i][1]; k++) {
-						if (grouppedStemDirs[bar][i] == 1) allNoteStemCoordsY[bar][k] = extremes[0];
+						if (grouppedStemDirs[bar][i] == 1) {
+							allNoteStemCoordsY[bar][k] = extremes[0];
+							// the stems now reach the beam, which is above the notes, so it is their highest point
+							// (otherwise elements above the group, e.g. a tuplet bracket, would fall on the beam)
+							if (allNoteStemCoordsY[bar][k] < allNotesMinYPos[bar][k] && allNoteStemCoordsY[bar][k] > -FLT_MAX) allNotesMinYPos[bar][k] = allNoteStemCoordsY[bar][k];
+						}
 						else {
 							allNoteStemCoordsY[bar][k] = extremes[1];
 							if (allNoteStemCoordsY[bar][k] > allNotesMaxYPos[bar][k] && allNoteStemCoordsY[bar][k] < FLT_MAX) allNotesMaxYPos[bar][k] = allNoteStemCoordsY[bar][k];
@@ -1227,6 +1234,169 @@ void Notes::setNotePositions(int bar)
 					}
 				}
 			}
+		}
+		// make the beam of each group a straight line
+		// the beams are drawn between the stems of each pair of notes, so the stems of a group must end on one straight line
+		// but the stems of a group that rises or falls are set one step apart for each note, regardless of the distance between the notes
+		// so the beam bends wherever the notes are not equally apart on the X axis (e.g. an eighth followed by two 16ths)
+		// here we put the end of every stem of a group on the line between the stems of its first and last notes
+		// and then move the whole line away from the notes, if needed, so that no stem is too short
+		if (!rhythm) {
+			for (int i = 0; i < (int)beamsIndexes[bar].size(); i++) {
+				if (numNotesWithBeams[bar][i] < 2) continue;
+				int groupStart = beamsIndexes[bar][i][0];
+				int groupEnd = beamsIndexes[bar][i][1];
+				int stemDir = grouppedStemDirs[bar][i];
+				// the X coord of the stem of a note, without the offset of the side of the stem, which is the same for the whole group
+				auto stemX = [&](int n) {
+					return allNoteCoordsX[bar][n][allChordsBaseIndexes[bar][n]] + (allNoteCoordsXOffset[bar][n] * allChordsChangeXCoef[bar][n]);
+				};
+				// the line goes through the stems of the first and last notes (not rests) of the group
+				int first = -1, last = -1;
+				for (int n = groupStart; n <= groupEnd; n++) {
+					if (allNotes[bar][n][0] < 0) continue;
+					if (first < 0) first = n;
+					last = n;
+				}
+				if (first < 0 || first == last || stemX(last) == stemX(first)) continue;
+				float xFirst = stemX(first), xLast = stemX(last);
+				float yFirst = allNoteStemCoordsY[bar][first], yLast = allNoteStemCoordsY[bar][last];
+				for (int n = groupStart; n <= groupEnd; n++) {
+					allNoteStemCoordsY[bar][n] = yFirst + ((yLast - yFirst) * (stemX(n) - xFirst) / (xLast - xFirst));
+				}
+				// the shortest a stem can be, from the note head closest to the beam to the beam
+				// plus the space of the extra beams (e.g. of 16ths), which are drawn between the first beam and the note heads
+				float shift = 0;
+				for (int n = groupStart; n <= groupEnd; n++) {
+					if (allNotes[bar][n][0] < 0) continue;
+					float minLength = (staffDist * 2.5) + (std::max(0, numBeams[bar][n] - 1) * (staffDist * BEAMDISTCOEFF));
+					float headY = allNoteHeadCoordsY[bar][n][allChordsEdgeIndexes[bar][n]];
+					// stems up end above the note heads (lower Y), stems down below them (higher Y)
+					if (stemDir == 1) shift = std::min(shift, (headY - minLength) - allNoteStemCoordsY[bar][n]);
+					else shift = std::max(shift, (headY + minLength) - allNoteStemCoordsY[bar][n]);
+				}
+				for (int n = groupStart; n <= groupEnd; n++) {
+					allNoteStemCoordsY[bar][n] += shift;
+					if (allNoteStemCoordsY[bar][n] > allNotesMaxYPos[bar][n] && allNoteStemCoordsY[bar][n] < FLT_MAX) allNotesMaxYPos[bar][n] = allNoteStemCoordsY[bar][n];
+					if (allNoteStemCoordsY[bar][n] < allNotesMinYPos[bar][n] && allNoteStemCoordsY[bar][n] > -FLT_MAX) allNotesMinYPos[bar][n] = allNoteStemCoordsY[bar][n];
+				}
+			}
+		}
+		// the stems of notes with ledger lines must reach the middle line of the staff
+		// the stems of a beamed group end at the beam, so if any of them doesn't reach the middle line
+		// we move the whole beam towards it, keeping its slope
+		// (e.g. a group of notes above the staff with the stems down would otherwise have its beam above the staff)
+		if (!rhythm) {
+			for (int i = 0; i < (int)beamsIndexes[bar].size(); i++) {
+				float shift = 0;
+				for (int k = beamsIndexes[bar][i][0]; k <= beamsIndexes[bar][i][1]; k++) {
+					if (allNotes[bar][k][0] < 0) continue; // rests
+					// stems down end below the note heads (higher Y), so they must not end above (lower Y than) the middle line
+					if (grouppedStemDirs[bar][i] == -1) shift = std::max(shift, middleOfStaff - allNoteStemCoordsY[bar][k]);
+					// and the other way round for stems up
+					else shift = std::min(shift, middleOfStaff - allNoteStemCoordsY[bar][k]);
+				}
+				if (shift == 0) continue;
+				for (int k = beamsIndexes[bar][i][0]; k <= beamsIndexes[bar][i][1]; k++) {
+					allNoteStemCoordsY[bar][k] += shift;
+					if (allNoteStemCoordsY[bar][k] > allNotesMaxYPos[bar][k] && allNoteStemCoordsY[bar][k] < FLT_MAX) allNotesMaxYPos[bar][k] = allNoteStemCoordsY[bar][k];
+					if (allNoteStemCoordsY[bar][k] < allNotesMinYPos[bar][k] && allNoteStemCoordsY[bar][k] > -FLT_MAX) allNotesMinYPos[bar][k] = allNoteStemCoordsY[bar][k];
+				}
+			}
+		}
+	}
+}
+
+//--------------------------------------------------------------
+void Notes::layoutChordNotes(int bar, int i, float x, int stemDir)
+{
+	// sets the base (the note the stem starts from) and edge (the note at the other end) indexes of a note or chord
+	// and the X coords of its notes, which depend on the direction of the stem when two notes are a second apart
+	// this is called when the notes are positioned, and again if a beamed group changes the direction of the stem
+	for (unsigned j = 0; j < allNoteCoordsX[bar][i].size(); j++) {
+		allNoteCoordsX[bar][i][j] = x;
+		allNoteShiftX[bar][i][j] = false;
+	}
+	allNoteCoordsXOffset[bar][i] = 0;
+	allChordsChangeXCoef[bar][i] = 0;
+	// get the Y coords of the extreme notes of a chord
+	float maxVal = -FLT_MAX;
+	float minVal = FLT_MAX;
+	if (stemDir >= 0) {
+		for (unsigned j = 0; j < allNotes[bar][i].size(); j++) {
+			if (allNoteHeadCoordsY[bar][i][j] > maxVal) {
+				maxVal = allNoteHeadCoordsY[bar][i][j];
+				allChordsBaseIndexes[bar][i] = j;
+			}
+			if (allNoteHeadCoordsY[bar][i][j] < minVal) {
+				minVal = allNoteHeadCoordsY[bar][i][j];
+				allChordsEdgeIndexes[bar][i] = j;
+			}
+		}
+	}
+	else {
+		for (unsigned j = 0; j < allNotes[bar][i].size(); j++) {
+			if (allNoteHeadCoordsY[bar][i][j] < minVal) {
+				minVal = allNoteHeadCoordsY[bar][i][j];
+				allChordsBaseIndexes[bar][i] = j;
+			}
+			if (allNoteHeadCoordsY[bar][i][j] > maxVal) {
+				maxVal = allNoteHeadCoordsY[bar][i][j];
+				allChordsEdgeIndexes[bar][i] = j;
+			}
+		}
+	}
+	// once we've stored the Y coords of the note heads
+	// we run a loop to see if there are any note heads close together
+	// which means we'll have to change the X coord of one of them
+	// e.g. in an <e f g> sequence, only f will shift on the X axis
+	bool xCoordChanged = false;
+	float chordBaseNoteChangeCoef = 1;
+	for (unsigned j = 1; j < allNoteHeadCoordsY[bar][i].size(); j++) {
+		for (unsigned k = 0; k < allNoteHeadCoordsY[bar][i].size(); k++) {
+			// don't bother with the same note
+			if (j == k) continue;
+			// if two notes are close together on the Y axis
+			if (abs(allNoteHeadCoordsY[bar][i][j] - allNoteHeadCoordsY[bar][i][k]) < staffDist) {
+				// if k is on top (smaller Y coord)
+				if (allNoteHeadCoordsY[bar][i][j] > allNoteHeadCoordsY[bar][i][k]) {
+					// if both j and k haven't moved yet
+					if ((allNoteCoordsX[bar][i][j] == x) && (allNoteCoordsX[bar][i][k] == x)) {
+						// set the boolean to true, so the top note is moved when drawn
+						allNoteCoordsX[bar][i][k] += noteWidth;
+						allNoteShiftX[bar][i][j] = true;
+						xCoordChanged = true;
+						// if the base of the stem down chord changes
+						// then the X axis should not take an offset
+						if ((int)k == allChordsBaseIndexes[bar][i] && stemDir == -1) {
+							chordBaseNoteChangeCoef = 0;
+						}
+					}
+				}
+				else {
+					if ((allNoteCoordsX[bar][i][k] == x) && (allNoteCoordsX[bar][i][j] == x)) {
+						allNoteCoordsX[bar][i][j] += noteWidth;
+						allNoteShiftX[bar][i][j] = true;
+						xCoordChanged = true;
+						if ((int)j == allChordsBaseIndexes[bar][i] && stemDir == -1) {
+							chordBaseNoteChangeCoef = 0;
+						}
+					}
+				}
+			}
+		}
+	}
+	if (xCoordChanged) {
+		// if we have notes close together, we shift all notes by half the note width
+		// so they can be centered
+		for (unsigned j = 0; j < allNoteCoordsX[bar][i].size(); j++) {
+			if (stemDir == -1 && chordBaseNoteChangeCoef > 0) {
+				allNoteCoordsX[bar][i][j] -= (noteWidth / 2);
+			}
+		}
+		if (stemDir == -1) {
+			allNoteCoordsXOffset[bar][i] = noteWidth;
+			if (chordBaseNoteChangeCoef > 0) allChordsChangeXCoef[bar][i] = chordBaseNoteChangeCoef;
 		}
 	}
 }
@@ -1316,171 +1486,87 @@ void Notes::storeArticulationsCoords(int bar)
 void Notes::storeTupletCoords(int bar)
 {
 	if (tupStartStop[bar].size() == 0) {
-		vector<float> v(1, 0); // dummy vector to not cause a crash on bar copying
+		std::vector<float> v(1, 0); // dummy std::vector to not cause a crash on bar copying
 		tupXCoords[bar][0] = v;
 		tupYCoords[bar][0] = v;
 		tupDirs[bar][0] = 1;
 		return;
 	}
-	for (auto it = tupStartStop[bar].begin(); it != tupStartStop[bar].end(); ++it) {
+	// tuplets can be nested, and the brackets of inner tuplets are placed first
+	// they are stored as part of their notes (see below), so the bracket of an outer tuplet goes outside them
+	std::vector<std::map<int, std::pair<unsigned, unsigned>>::iterator> tupletsInnerFirst;
+	for (auto it = tupStartStop[bar].begin(); it != tupStartStop[bar].end(); ++it) tupletsInnerFirst.push_back(it);
+	std::stable_sort(tupletsInnerFirst.begin(), tupletsInnerFirst.end(), [](auto a, auto b) {
+		return (a->second.second - a->second.first) < (b->second.second - b->second.first);
+	});
+	for (auto it : tupletsInnerFirst) {
+		unsigned first = it->second.first;
+		unsigned last = it->second.second;
+		// the bracket goes on the side of most stems (above if most stems point up)
 		int stemDirAccum = 0;
-		for (unsigned i = it->second.first; i <= it->second.second; i++) {
+		for (unsigned i = first; i <= last; i++) {
 			stemDirAccum += stemDirections[bar][i];
 		}
-		vector<float> vX(4, 0);
-		vector<float> vY(4, 0);
-		vX[0] = allNoteCoordsX[bar][it->second.first][allChordsBaseIndexes[bar][it->second.first]];
-		vX[3] = allNoteCoordsX[bar][it->second.second][allChordsBaseIndexes[bar][it->second.second]];
-		if (stemDirAccum >= 0) {
-			if (stemDirections[bar][it->second.first] > 0) {
-				vY[0] = allNoteStemCoordsY[bar][it->second.first];
-			}
-			else {
-				vY[0] = allNoteHeadCoordsY[bar][it->second.first][allChordsBaseIndexes[bar][it->second.first]];
-			}
-			if (stemDirections[bar][it->second.second] > 0) {
-				vY[3] = allNoteStemCoordsY[bar][it->second.second];
-			}
-			else {
-				vY[3] = allNoteHeadCoordsY[bar][it->second.second][allChordsBaseIndexes[bar][it->second.second]];
-			}
+		bool above = (stemDirAccum >= 0);
+		int dir = (above ? -1 : 1); // the direction away from the notes on the Y axis
+		// the outer edge of a note (or chord) on the side of the bracket: its highest point if the bracket is above, its lowest if below
+		// this includes stems, beams and articulations, which have already been stored
+		auto outerEdge = [&](unsigned n) {
+			return (above ? allNotesMinYPos[bar][n] : allNotesMaxYPos[bar][n]);
+		};
+		std::vector<float> vX(4, 0);
+		std::vector<float> vY(4, 0);
+		vX[0] = allNoteCoordsX[bar][first][allChordsBaseIndexes[bar][first]];
+		vX[3] = allNoteCoordsX[bar][last][allChordsBaseIndexes[bar][last]];
+		// the ends of the bracket are one staff space outside the first and last notes
+		vY[0] = outerEdge(first) + (staffDist * dir);
+		vY[3] = outerEdge(last) + (staffDist * dir);
+		// the Y coord of the bracket at an X coord, keeping its slope
+		auto bracketY = [&](float x) {
+			if (vX[3] == vX[0]) return vY[0];
+			return vY[0] + ((vY[3] - vY[0]) * (x - vX[0]) / (vX[3] - vX[0]));
+		};
+		// move the bracket away from the notes, so that none of the notes in between sticks out of it
+		float shift = 0;
+		for (unsigned i = first + 1; i < last; i++) {
+			float limit = outerEdge(i) + (staffDist * dir);
+			float y = bracketY(allNoteCoordsX[bar][i][allChordsBaseIndexes[bar][i]]);
+			if (above) shift = std::min(shift, limit - y);
+			else shift = std::max(shift, limit - y);
 		}
-		else {
-			if (stemDirections[bar][it->second.first] < 0) {
-				vY[0] = allNoteStemCoordsY[bar][it->second.first];
-			}
-			else {
-				vY[0] = allNoteHeadCoordsY[bar][it->second.first][allChordsBaseIndexes[bar][it->second.first]];
-			}
-			if (stemDirections[bar][it->second.second] < 0) {
-				vY[3] = allNoteStemCoordsY[bar][it->second.second];
-			}
-			else {
-				vY[3] = allNoteHeadCoordsY[bar][it->second.second][allChordsBaseIndexes[bar][it->second.first]];
-			}
-		}
-		float extreme, compare;
-		bool straightLine = false;
-		// if tuplet bracket goes upward
-		if (vY[0] > vY[3]) extreme = FLT_MAX;
-		else extreme = FLT_MIN;
-		for (unsigned i = it->second.first; i <= it->second.second; i++) {
-			// if tuplet bracket is drawn above the notes
-			if (stemDirAccum >= 0) {
-				if (stemDirections[bar][i] > 0) compare = allNoteStemCoordsY[bar][i];
-				else compare = allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]];
-			}
-			else {
-				if (stemDirections[bar][i] > 0) compare = allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]];
-				else compare = allNoteStemCoordsY[bar][i];
-			}
-			// if tuplet bracket goes upward
-			if (vY[0] > vY[3]) {
-				if (extreme > compare) extreme = compare;
-				else straightLine = true;
-			}
-			else {
-				if (extreme < compare) extreme = compare;
-				else straightLine = true;
-			}
-			if (straightLine) break;
-		}
-		// we now need to calculate how much less of X and Y we need to draw
-		// for this we need the width and height of the string of the tuplet ratio
-		// for the Ys, this is only in case we don't draw a straight line
-		string tuplet = to_string(tupRatios[bar][it->first].first);
+		vY[0] += shift;
+		vY[3] += shift;
+		// the bracket is interrupted in the middle, where the tuplet number is written
+		std::string tuplet = std::to_string(tupRatios[bar][it->first].first);
 		float stringWidth = textFont.stringWidth(tuplet);
+		float halfStringHeight = textFont.stringHeight(tuplet) / 2.0;
 		vX[1] = vX[2] = vX[0] + ((vX[3] - vX[0]) / 2.0);
 		vX[1] -= stringWidth;
 		vX[2] += stringWidth;
-		if (straightLine) {
-			if (stemDirAccum >= 0) {
-				for (unsigned i = it->second.first; i <= it->second.second; i++) {
-					if (stemDirections[bar][i] > 0) {
-						if (allNoteStemCoordsY[bar][i] < vY[0] || allNoteStemCoordsY[bar][i] < vY[3]) {
-							vY[0] = vY[3] = allNoteStemCoordsY[bar][i];
-						}
-					}
-					else {
-						if (allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] < vY[0] || \
-								allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] < vY[3]) {
-							vY[0] = vY[3] = allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]];
-						}
-					}
-				}
+		vY[1] = bracketY(vX[1]);
+		vY[2] = bracketY(vX[2]);
+		// store the bracket and its number as part of the notes it spans, so that other elements (e.g. ottavas) don't fall on it
+		for (unsigned i = first; i <= last; i++) {
+			float y = bracketY(allNoteCoordsX[bar][i][allChordsBaseIndexes[bar][i]]);
+			if (above) {
+				if (y - halfStringHeight < allNotesMinYPos[bar][i]) allNotesMinYPos[bar][i] = y - halfStringHeight;
 			}
 			else {
-				for (unsigned i = it->second.first; i <= it->second.second; i++) {
-					if (stemDirections[bar][i] < 0) {
-						if (allNoteStemCoordsY[bar][i] > vY[0] || allNoteStemCoordsY[bar][i] > vY[3]) {
-							vY[0] = vY[3] = allNoteStemCoordsY[bar][i];
-						}
-					}
-					else {
-						if (allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] > vY[0] || \
-								allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] > vY[3]) {
-							vY[0] = vY[3] = allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]];
-						}
-					}
-				}
+				if (y + halfStringHeight > allNotesMaxYPos[bar][i]) allNotesMaxYPos[bar][i] = y + halfStringHeight;
 			}
-			vY[1] = vY[2] = vY[0];
+		}
+		// move the ends to the stems, if the stems of the first and last notes point to the side of the bracket
+		if (above) {
+			if (stemDirections[bar][first] > 0) vX[0] += ((noteWidth / 2.0) - lineWidth);
+			if (stemDirections[bar][last] > 0) vX[3] += ((noteWidth / 2.0) - lineWidth);
 		}
 		else {
-			if (vY[0] > vY[3]) {
-				float midY = (vY[0] - vY[3]) / 2.0;
-				float part = (stringWidth * midY) / (vX[3]-vX[0]);
-				vY[1] = vY[2] = vY[3] + midY;
-				vY[1] += part;
-				vY[2] -= part;
-			}
-			else {
-				float midY = (vY[3] - vY[0]) / 2.0;
-				vY[1] = vY[2] = vY[0] + midY;
-				if (vY[0] != vY[1]) {
-					float part = (stringWidth * midY) / (vX[3]-vX[0]);
-					vY[1] -= part;
-					vY[2] += part;
-				}
-			}
-		}
-		// tuple bracket up
-		if (stemDirAccum >= 0) {
-			for (int i = 0; i < 4; i++) {
-				if (i == 0 || i == 3) {
-					// add offset only if tuplet bracket and note stem have the same direction
-					if (stemDirections[bar][it->second.first+i] > 0) {
-						vX[i] += ((noteWidth / 2.0) - lineWidth);
-					}
-				}
-				vY[i] -= staffDist;
-			}
-			for (unsigned i = it->second.first; i <= it->second.second; i++) {
-				for (int i = 0; i < 4; i++) {
-					if (vY[i] < allNotesMinYPos[bar][i]) allNotesMinYPos[bar][i] = vY[i];
-				}
-			}
-		}
-		// tuple bracket down
-		else {
-			for (int i = 0; i < 4; i++) {
-				if (i == 0 || i == 3) {
-					// add offset only if tuplet bracket and note stem have the same direction
-					if (stemDirections[bar][it->second.first+i] < 0) {
-						vX[i] -= ((noteWidth / 2.0) - (lineWidth / 2.0));
-					}
-				}
-				vY[i] += staffDist;
-			}
-			for (unsigned i = it->second.first; i <= it->second.second; i++) {
-				for (int i = 0; i < 4; i++) {
-					if (vY[i] > allNotesMaxYPos[bar][i]) allNotesMaxYPos[bar][i] = vY[i];
-				}
-			}
+			if (stemDirections[bar][first] < 0) vX[0] -= ((noteWidth / 2.0) - (lineWidth / 2.0));
+			if (stemDirections[bar][last] < 0) vX[3] -= ((noteWidth / 2.0) - (lineWidth / 2.0));
 		}
 		tupXCoords[bar][it->first] = vX;
 		tupYCoords[bar][it->first] = vY;
-		tupDirs[bar][it->first] = (stemDirAccum >= 0 ? 1 : -1);
+		tupDirs[bar][it->first] = (above ? 1 : -1);
 	}
 }
 
@@ -1488,8 +1574,8 @@ void Notes::storeTupletCoords(int bar)
 void Notes::storeSlurCoords(int bar)
 {
 	int dirAccum = 0;
-	// the vector below is used to calculate the orientation of the middle points of the curve
-	vector<int> slurDir(slurIndexes[bar].size(), 1);
+	// the std::vector below is used to calculate the orientation of the middle points of the curve
+	std::vector<int> slurDir(slurIndexes[bar].size(), 1);
 	for (unsigned i = 0; i < slurIndexes[bar].size(); i++) {
 		// if both start and end indexes of a slur are -1, it means there is no slur
 		if (slurIndexes[bar][i].first == -1 && slurIndexes[bar][i].second == -1 && !isWholeSlurred[bar]) {
@@ -1513,6 +1599,9 @@ void Notes::storeSlurCoords(int bar)
 			bool foundSlurStop = false;
 			int nextBar = bar + 1;
 			while (!foundSlurStop) {
+				// stop if there are no more bars (the slur is left open at the end of the bar, or ends in a bar that is not defined yet)
+				// otherwise this loop would never end, and slurIndexes[nextBar] would create empty bars forever
+				if (slurIndexes.find(nextBar) == slurIndexes.end()) break;
 				// first check if the next bar is slurred entirely
 				if (slurIndexes[nextBar].size() == 1 && \
 						(slurIndexes[nextBar][0].first == -1 && slurIndexes[nextBar][0].second == -1)) {
@@ -1539,16 +1628,18 @@ void Notes::storeSlurCoords(int bar)
 			bool foundSlurStart = false;
 			int prevBar = bar - 1;
 			while (!foundSlurStart) {
+				// stop if there are no more previous bars (the slur start is missing)
+				if (prevBar < 0 || slurIndexes.find(prevBar) == slurIndexes.end()) break;
 				// first check if the previous bar is slurred entirely
 				if (slurIndexes[prevBar].size() == 1 && \
 						(slurIndexes[prevBar][0].first == -1 && slurIndexes[prevBar][0].second == -1)) {
-					for (unsigned j = allNotes[prevBar].size() - 1; j >= 0; j--) {
+					for (int j = (int)allNotes[prevBar].size() - 1; j >= 0; j--) {
 						dirAccum += stemDirections[prevBar][j];
 					}
 					slurLinks[bar][i].first++;
 				}
 				else {
-					for (unsigned j = slurIndexes[prevBar].size() - 1; j >= 0; j--) {
+					for (int j = (int)slurIndexes[prevBar].size() - 1; j >= 0; j--) {
 						if (slurIndexes[prevBar][j].first > -1) {
 							for (int k = (int)allNotes[prevBar].size()-1; k >= slurIndexes[prevBar][j].first; k--) {
 								dirAccum += stemDirections[prevBar][k];
@@ -1565,22 +1656,23 @@ void Notes::storeSlurCoords(int bar)
 		// this is the inverse logic of the stems, as we want to connect note heads
 		// so when the stems are upward with stemDirectios[bar][k] = 1, we store a 1 to slurDir
 		// but that means below, and not above
+		// (slurDir has an entry per slur, not per note, so only the entry of this slur is set)
 		if (dirAccum == 0) {
-			slurDir[i] = slurDir[slurStopNdx] = 1;
+			slurDir[i] = 1;
 		}
 		else {
-			slurDir[i] = slurDir[slurStopNdx] = (dirAccum > 0 ? 1 : 0);
+			slurDir[i] = (dirAccum > 0 ? 1 : 0);
 		}
 	}
-	slurStartX[bar] = vector<float>(slurIndexes[bar].size(), -1);
-	slurStartY[bar] = vector<float>(slurIndexes[bar].size(), -1);
-	slurStopX[bar] = vector<float>(slurIndexes[bar].size(), -1);
-	slurStopY[bar] = vector<float>(slurIndexes[bar].size(), -1);
-	slurMiddleX1[bar] = vector<float>(slurIndexes[bar].size(), -1);
-	slurMiddleX2[bar] = vector<float>(slurIndexes[bar].size(), -1);
-	slurMiddleY1[bar] = vector<float>(slurIndexes[bar].size(), -1);
-	slurMiddleY2[bar] = vector<float>(slurIndexes[bar].size(), -1);
-	slurLinks[bar] = vector<std::pair<int, int>>(slurIndexes[bar].size(), std::make_pair(0, 0));
+	slurStartX[bar] = std::vector<float>(slurIndexes[bar].size(), -1);
+	slurStartY[bar] = std::vector<float>(slurIndexes[bar].size(), -1);
+	slurStopX[bar] = std::vector<float>(slurIndexes[bar].size(), -1);
+	slurStopY[bar] = std::vector<float>(slurIndexes[bar].size(), -1);
+	slurMiddleX1[bar] = std::vector<float>(slurIndexes[bar].size(), -1);
+	slurMiddleX2[bar] = std::vector<float>(slurIndexes[bar].size(), -1);
+	slurMiddleY1[bar] = std::vector<float>(slurIndexes[bar].size(), -1);
+	slurMiddleY2[bar] = std::vector<float>(slurIndexes[bar].size(), -1);
+	slurLinks[bar] = std::vector<std::pair<int, int>>(slurIndexes[bar].size(), std::make_pair(0, 0));
 	for (unsigned i = 0; i < slurIndexes[bar].size(); i++) {
 		// if both start and end indexes of a slur are -1, it means there is no slur
 		if (slurIndexes[bar][i].first == -1 && slurIndexes[bar][i].second == -1 && !isWholeSlurred[bar]) continue;
@@ -1592,18 +1684,20 @@ void Notes::storeSlurCoords(int bar)
 		else {
 			slurStartX[bar][i] = -(2 * staffDist);
 			slurLinks[bar][i].first = 1;
-			isLinked[bar].first = min(isLinked[bar].first, -slurLinks[bar][i].first);
+			isLinked[bar].first = std::min(isLinked[bar].first, -slurLinks[bar][i].first);
 			bool foundSlurStart = false;
 			int prevBar = bar - 1;
 			while (!foundSlurStart) {
+				// stop if there are no more previous bars (the slur start is missing)
+				if (prevBar < 0 || slurIndexes.find(prevBar) == slurIndexes.end()) break;
 				// first check if the previous bar is slurred entirely
 				if (slurIndexes[prevBar].size() == 1 && \
 						(slurIndexes[prevBar][0].first == -1 && slurIndexes[prevBar][0].second == -1)) {
 					slurLinks[bar][i].first++;
-					isLinked[bar].first = min(isLinked[bar].first, -slurLinks[bar][i].first);
+					isLinked[bar].first = std::min(isLinked[bar].first, -slurLinks[bar][i].first);
 				}
 				else {
-					for (unsigned j = slurIndexes[prevBar].size() - 1; j >= 0; j--) {
+					for (int j = (int)slurIndexes[prevBar].size() - 1; j >= 0; j--) {
 						if (slurIndexes[prevBar][j].first > -1) {
 							foundSlurStart = true;
 							break;
@@ -1618,7 +1712,7 @@ void Notes::storeSlurCoords(int bar)
 				if (stemDirections[bar][slurStartNdx] > 0) {
 					// if slur and stem directions are the same, we store the Y coord of the note head
 					slurStartY[bar][i] = allNoteHeadCoordsY[bar][slurStartNdx][allChordsBaseIndexes[bar][slurStartNdx]];
-					slurStartY[bar][i] += noteHeight;
+					slurStartY[bar][i] += slurYOffset();
 					if (slurStartY[bar][i] < allNotesMaxYPos[bar][slurStartNdx] && slurStartY[bar][i] < FLT_MAX) {
 						slurStartY[bar][i] = allNotesMaxYPos[bar][slurStartNdx] + noteHeight;
 						allNotesMaxYPos[bar][slurStartNdx] = slurStartY[bar][i]; // + (noteHeight/2);
@@ -1663,7 +1757,7 @@ void Notes::storeSlurCoords(int bar)
 			if (slurStartNdx > -1) {
 				if (stemDirections[bar][slurStartNdx] < 0) {
 					slurStartY[bar][i] = allNoteHeadCoordsY[bar][slurStartNdx][allChordsBaseIndexes[bar][slurStartNdx]];
-					slurStartY[bar][i] -= noteHeight;
+					slurStartY[bar][i] -= slurYOffset();
 					if (slurStartY[bar][i] > allNotesMinYPos[bar][slurStartNdx] && slurStartY[bar][i] > -FLT_MAX) {
 						slurStartY[bar][i] = allNotesMinYPos[bar][slurStartNdx] - noteHeight;
 						allNotesMinYPos[bar][slurStartNdx] = slurStartY[bar][i]; // - (noteHeight/2);
@@ -1713,6 +1807,9 @@ void Notes::storeSlurCoords(int bar)
 			bool foundSlurStart = false;
 			int nextBar = bar + 1;
 			while (!foundSlurStart) {
+				// stop if there are no more bars (the slur end is missing, or is in a bar that is not defined yet)
+				// otherwise slurIndexes[nextBar] would create empty bars forever
+				if (slurIndexes.find(nextBar) == slurIndexes.end()) break;
 				// first check if the next bar is slurred entirely
 				if (slurIndexes[nextBar].size() == 1 && \
 						(slurIndexes[nextBar][0].first == -1 && slurIndexes[nextBar][0].second == -1)) {
@@ -1734,7 +1831,7 @@ void Notes::storeSlurCoords(int bar)
 			if (slurStopNdx > -1) {
 				if (stemDirections[bar][slurStopNdx] > 0) {
 					slurStopY[bar][i] = allNoteHeadCoordsY[bar][slurStopNdx][allChordsBaseIndexes[bar][slurStopNdx]];
-					slurStopY[bar][i] += noteHeight;
+					slurStopY[bar][i] += slurYOffset();
 					if (slurStopY[bar][i] < allNotesMaxYPos[bar][slurStopNdx] && slurStopY[bar][i] < FLT_MAX) {
 						slurStopY[bar][i] = allNotesMaxYPos[bar][slurStopNdx] + noteHeight;
 						allNotesMaxYPos[bar][slurStopNdx] = slurStopY[bar][i];
@@ -1778,7 +1875,7 @@ void Notes::storeSlurCoords(int bar)
 			if (slurStopNdx > -1) {
 				if (stemDirections[bar][slurStopNdx] < 0) {
 					slurStopY[bar][i] = allNoteHeadCoordsY[bar][slurStopNdx][allChordsBaseIndexes[bar][slurStopNdx]];
-					slurStopY[bar][i] -= noteHeight;
+					slurStopY[bar][i] -= slurYOffset();
 					if (slurStopY[bar][i] > allNotesMinYPos[bar][slurStopNdx] && slurStopY[bar][i] > -FLT_MAX) {
 						slurStopY[bar][i] = allNotesMinYPos[bar][slurStopNdx] - noteHeight;
 						allNotesMinYPos[bar][slurStopNdx] = slurStopY[bar][i];
@@ -1877,9 +1974,26 @@ void Notes::storeSlurCoords(int bar)
 				}
 				if (j > 0 && j < slurStopNdx-1) {
 					if ((allNotesMinYPos[bar][j] > middleY1 && middleY1 > -FLT_MAX) || (allNotesMinYPos[bar][j] < middleY2 && middleY2 > -FLT_MAX)) {
-						allNotesMinYPos[bar][j] = min(middleY1, middleY2); // - (noteHeight/2);
+						allNotesMinYPos[bar][j] = std::min(middleY1, middleY2); // - (noteHeight/2);
 					}
 				}
+			}
+		}
+		// a tie under the slur, on the same side, curves away from its notes, so the slur goes over it
+		for (int j = slurStartNdx; j < slurStopNdx || (slurIndexes[bar][i].second == -1 && j <= slurStopNdx); j++) {
+			if (j >= (int)tieIndexes[bar].size() || tieIndexes[bar][j] < 0) continue;
+			bool tieBelow = stemDirections[bar][j] > 0;
+			if (tieBelow != (slurDir[i] > 0)) continue;
+			float headY = allNoteHeadCoordsY[bar][j][allChordsBaseIndexes[bar][j]];
+			// the tie starts at tieYOffset() and curves by up to 3/4 of halfStaffDist (see drawTie()), and the slur leaves a gap over it
+			float tieExtent = tieYOffset() + (halfStaffDist * 0.75) + halfStaffDist;
+			if (slurDir[i] > 0) {
+				middleY1 = std::max(middleY1, headY + tieExtent);
+				middleY2 = std::max(middleY2, headY + tieExtent);
+			}
+			else {
+				middleY1 = std::min(middleY1, headY - tieExtent);
+				middleY2 = std::min(middleY2, headY - tieExtent);
 			}
 		}
 		slurMiddleY1[bar][i] = middleY1;
@@ -1888,10 +2002,31 @@ void Notes::storeSlurCoords(int bar)
 }
 
 //--------------------------------------------------------------
+float Notes::tieXOffset()
+{
+	// a tie starts to the right of the center of the note head, towards its edge, so it doesn't start under the note head
+	return noteWidth * 0.4;
+}
+
+//--------------------------------------------------------------
+float Notes::tieYOffset()
+{
+	// a tie starts at the edge of the note head
+	return noteHeight * 0.5;
+}
+
+//--------------------------------------------------------------
+float Notes::slurYOffset()
+{
+	// a slur on the side of the note head starts and ends a bit further from it than a tie, lower with the stems up, higher with the stems down
+	return tieYOffset() + (noteHeight * 0.5);
+}
+
+//--------------------------------------------------------------
 void Notes::storeOttavaCoords(int bar)
 {
-	allOttavasYCoords[bar] = vector<float>(allOttavas[bar].size(), FLT_MIN);
-	allOttavasChangedAt[bar] = vector<int>(allOttavas[bar].size(), -1);
+	allOttavasYCoords[bar] = std::vector<float>(allOttavas[bar].size(), FLT_MIN);
+	allOttavasChangedAt[bar] = std::vector<int>(allOttavas[bar].size(), -1);
 	int prevOttava = 0;
 	for (unsigned i = 0; i < allOttavas[bar].size(); i++) {
 		if (allOttavas[bar][i] != 0) {
@@ -1904,10 +2039,10 @@ void Notes::storeOttavaCoords(int bar)
 					// so I create a float here
 					float zero = 0.0;
 					if (stemDirections[bar][i] > 0) {
-						yPos = min(allNotesMinYPos[bar][i], min(allNoteStemCoordsY[bar][i], zero));
+						yPos = std::min(allNotesMinYPos[bar][i], std::min(allNoteStemCoordsY[bar][i], zero));
 					}
 					else {
-						yPos = min(allNotesMinYPos[bar][i], min(allNoteHeadCoordsY[bar][i][0], zero));
+						yPos = std::min(allNotesMinYPos[bar][i], std::min(allNoteHeadCoordsY[bar][i][0], zero));
 					}
 					yPos -= staffDist; //(noteHeight + halfStaffDist);
 					if (stemDirections[bar][i] > 0 && allNoteStemCoordsY[bar][i] - (yPos+textHalfHeight) < halfStaffDist) {
@@ -1955,38 +2090,39 @@ void Notes::storeOttavaCoords(int bar)
 		}
 		prevOttava = allOttavas[bar][i];
 	}
-	// set the Y coordinates of adjacent ottavas (actually up until we define a new ottava number)
-	// to the same value
-	unsigned prevChange = 0;
-	for (unsigned i = 1; i < allOttavasChangedAt[bar].size(); i++) {
-		float textHalfHeight = notationFont.stringHeight(octaveSyms[abs(allOttavas[bar][prevChange])]) / 2;
-		if (allOttavasChangedAt[bar][i] < 0) { // if the ottava hasn't changed here
-			// first check if all symbols within the same ottava don't fall on anything else
-			for (unsigned j = prevChange+1; j < allOttavasChangedAt[bar].size(); j++) {
-				if (allOttavas[bar][j] > 0) {
-					allOttavasYCoords[bar][prevChange] = min(allNotesMinYPos[bar][j] - textHalfHeight, allOttavasYCoords[bar][prevChange]);
-					// subtracting textHalfHeight to compensate for the height of the string which is not added to the actual allOttavasYCoords[bar][i]
-					if (allOttavasYCoords[bar][prevChange] - textHalfHeight < allNotesMinYPos[bar][j] && allOttavasYCoords[bar][prevChange] > -FLT_MAX) {
-						allNotesMinYPos[bar][j] = allOttavasYCoords[bar][prevChange];
-					}
-				}
-				else {
-					allOttavasYCoords[bar][prevChange] = max(allNotesMaxYPos[bar][j] + textHalfHeight, allOttavasYCoords[bar][prevChange]);
-					// adding textHalfHeight to compensate for the height of the string which is not added to the actual allOttavasYCoords[bar][i]
-					if (allOttavasYCoords[bar][prevChange] + textHalfHeight > allNotesMaxYPos[bar][j] && allOttavasYCoords[bar][prevChange] < FLT_MAX) {
-						allNotesMaxYPos[bar][j] = allOttavasYCoords[bar][prevChange];
-					}
-				}
-				if (allOttavasChangedAt[bar][j] > -1 || j == allOttavasChangedAt[bar].size() - 1) {
-					prevChange = j;
-					i = j - 1;
-					break;
-				}
+	// each ottava line spans the notes from an ottava change up to the note before the next change
+	// its Y coord must clear all of these notes, not only the first one, and it's the same for all of them
+	// the first note's Y coord is set above, so here we check the rest of the notes, and store the line as part of them
+	unsigned segmentStart = 0;
+	while (segmentStart < allOttavas[bar].size()) {
+		int ottava = allOttavas[bar][segmentStart];
+		if (ottava == 0) {
+			segmentStart++;
+			continue;
+		}
+		unsigned segmentEnd = segmentStart;
+		while (segmentEnd + 1 < allOttavas[bar].size() && allOttavas[bar][segmentEnd + 1] == ottava) segmentEnd++;
+		float textHalfHeight = notationFont.stringHeight(octaveSyms[abs(ottava)]) / 2;
+		float y = allOttavasYCoords[bar][segmentStart];
+		for (unsigned i = segmentStart; i <= segmentEnd; i++) {
+			if (ottava > 0) {
+				// above the highest point of the note (and above the staff), as for the first note above
+				y = std::min(y, std::min(allNotesMinYPos[bar][i], 0.0f) - staffDist);
 			}
-			for (unsigned j = prevChange+1; j <= i; j++) {
-				allOttavasYCoords[bar][j] = allOttavasYCoords[bar][prevChange];
+			else {
+				y = std::max(y, std::max(allNotesMaxYPos[bar][i], halfStaffDist * 9) + staffDist);
 			}
 		}
+		for (unsigned i = segmentStart; i <= segmentEnd; i++) {
+			allOttavasYCoords[bar][i] = y;
+			if (ottava > 0) {
+				if (y - textHalfHeight < allNotesMinYPos[bar][i]) allNotesMinYPos[bar][i] = y - textHalfHeight;
+			}
+			else {
+				if (y + textHalfHeight > allNotesMaxYPos[bar][i]) allNotesMaxYPos[bar][i] = y + textHalfHeight;
+			}
+		}
+		segmentStart = segmentEnd + 1;
 	}
 }
 
@@ -1996,7 +2132,7 @@ void Notes::storeTextCoords(int bar)
 	//size_t size1 = 0;
 	//size_t size2;
 	unsigned i, j;
-	vector<vector<float>> v;
+	std::vector<std::vector<float>> v;
 	for (i = 0; i < allTextsIndexes.at(bar).size(); i++) {
 		v.push_back({0.0});
 		for (j = 1; j < allTextsIndexes.at(bar).at(i).size(); j++) {
@@ -2006,10 +2142,10 @@ void Notes::storeTextCoords(int bar)
 		//	size++;
 		//}
 	}
-	//allTextsXCoords[bar] = vector<float>(size);
-	//allTextsYCoords[bar] = vector<float>(size);
+	//allTextsXCoords[bar] = std::vector<float>(size);
+	//allTextsYCoords[bar] = std::vector<float>(size);
 	allTextsYCoords[bar] = v;
-	allTextsXCoords[bar] = vector<float>(allTextsIndexes.at(bar).size(), (float)0.0);
+	allTextsXCoords[bar] = std::vector<float>(allTextsIndexes.at(bar).size(), (float)0.0);
 	int index = 0;
 	for (i = 0; i < allTextsIndexes.at(bar).size(); i++) {
 		for (j = 0; j < allTextsIndexes.at(bar).at(i).size(); j++) {
@@ -2020,11 +2156,11 @@ void Notes::storeTextCoords(int bar)
 				if (allTextsIndexes.at(bar).at(i).at(j) > 0) {
 					allTextsYCoords.at(bar).at(i).at(j) = 0;
 					if (stemDirections.at(bar).at(i) > 0) {
-						yPos = min(allNotesMinYPos[bar][i], min(allNoteStemCoordsY[bar][i], allTextsYCoords.at(bar).at(i).at(j)));
+						yPos = std::min(allNotesMinYPos[bar][i], std::min(allNoteStemCoordsY[bar][i], allTextsYCoords.at(bar).at(i).at(j)));
 					}
 
 					else {
-						yPos = min(allNotesMinYPos[bar][i], min(allNoteHeadCoordsY[bar][i][0], allTextsYCoords.at(bar).at(i).at(j)));
+						yPos = std::min(allNotesMinYPos[bar][i], std::min(allNoteHeadCoordsY[bar][i][0], allTextsYCoords.at(bar).at(i).at(j)));
 					}
 					yPos -= (noteHeight + halfStaffDist);
 					allTextsYCoords.at(bar).at(i).at(j) = yPos;
@@ -2053,20 +2189,57 @@ void Notes::storeTextCoords(int bar)
 }
 
 //--------------------------------------------------------------
+float Notes::lowestPointOfNote(int bar, int noteNdx, bool includeTie)
+{
+	// allNotesMaxYPos includes the center of the lowest note head, stems, beams, articulations, slurs, ottavas, and text
+	// but not the lower half of the note heads, the accidentals, and the ties, which are drawn below the note heads
+	// this returns the lowest point of these, so that elements drawn below the note (e.g. crescendi) don't overlap them
+	float lowest = -FLT_MAX;
+	if (noteNdx < 0 || noteNdx >= (int)allNotes[bar].size()) return lowest;
+	float lowestHeadY = -FLT_MAX;
+	for (unsigned j = 0; j < allNotes[bar][noteNdx].size(); j++) {
+		// rests
+		if (allNotes[bar][noteNdx][j] < 0) continue;
+		float headY = allNoteHeadCoordsY[bar][noteNdx][j];
+		if (headY >= FLT_MAX || headY <= -FLT_MAX) continue;
+		lowestHeadY = std::max(lowestHeadY, headY);
+		lowest = std::max(lowest, headY + (noteHeight / 2.0f));
+		// accidentals are drawn with their baseline at the center of the note head, see drawAccidentals()
+		int accidentalNdx = -1;
+		if (isDrawnAccidental(allAccidentals[bar][noteNdx][j])) {
+			accidentalNdx = allAccidentals[bar][noteNdx][j];
+		}
+		else if (naturalSignsNotWritten[bar][noteNdx][j]) {
+			accidentalNdx = 4;
+		}
+		if (accidentalNdx > -1) {
+			ofRectangle rect = notationFont.getStringBoundingBox(accidentalSizeSym(accidentalNdx), 0, headY);
+			lowest = std::max(lowest, rect.y + rect.height);
+		}
+	}
+	// a tie of a note with the stem up is drawn below the note head, and curves down by up to 3/4 of halfStaffDist
+	// see drawTie()
+	if (includeTie && lowestHeadY > -FLT_MAX && noteNdx < (int)tieIndexes[bar].size() && tieIndexes[bar][noteNdx] > -1 && stemDirections[bar][noteNdx] > 0) {
+		lowest = std::max(lowest, lowestHeadY + (noteHeight / 2.0f) + (halfStaffDist * 0.75f));
+	}
+	return lowest;
+}
+
+//--------------------------------------------------------------
 void Notes::storeDynamicsCoords(int bar)
 {
-	dynsXCoords[bar] = vector<float>(dynamicsIndexes[bar].size(), 0);
-	dynsYCoords[bar] = vector<float>(dynamicsIndexes[bar].size(), 0);
-	dynsRampStartXCoords[bar] = vector<float>(dynamicsRampStart[bar].size(), 0);
-	dynsRampStartYCoords[bar] = vector<float>(dynamicsRampStart[bar].size(), 0);
-	dynsRampEndXCoords[bar] = vector<float>(dynamicsRampEnd[bar].size(), 0);
-	dynsRampEndYCoords[bar] = vector<float>(dynamicsRampEnd[bar].size(), 0);
+	dynsXCoords[bar] = std::vector<float>(dynamicsIndexes[bar].size(), 0);
+	dynsYCoords[bar] = std::vector<float>(dynamicsIndexes[bar].size(), 0);
+	dynsRampStartXCoords[bar] = std::vector<float>(dynamicsRampStart[bar].size(), 0);
+	dynsRampStartYCoords[bar] = std::vector<float>(dynamicsRampStart[bar].size(), 0);
+	dynsRampEndXCoords[bar] = std::vector<float>(dynamicsRampEnd[bar].size(), 0);
+	dynsRampEndYCoords[bar] = std::vector<float>(dynamicsRampEnd[bar].size(), 0);
 	// find the X Y coordinate for dynamics symbols
 	for (unsigned i = 0; i < dynamicsIndexes[bar].size(); i++) {
 		// cast to int to avoid cast in if test below
 		for (int j = 0; j < (int)allNotesMaxYPos[bar].size(); j++) {
 			if (dynamicsIndexes[bar][i] == j) {
-				float y = max((staffDist*4), allNotesMaxYPos[bar][j]);
+				float y = std::max((staffDist*4), allNotesMaxYPos[bar][j]);
 				y += (notationFont.stringHeight(dynSyms[dynamics[bar][i]]) * 1.2); // give a bit of room with 1.2
 				if (rhythm) y -= (staffDist * 2);
 				if (y > allNotesMaxYPos[bar][j]) allNotesMaxYPos[bar][j] = y;
@@ -2080,7 +2253,7 @@ void Notes::storeDynamicsCoords(int bar)
 		// cast to int to avoid cast in if test below
 		for (int j = 0; j < (int)allNotesMaxYPos[bar].size(); j++) {
 			if (dynamicsRampStart[bar][i] == j) {
-				float y = max((staffDist*4), allNotesMaxYPos[bar][j]);
+				float y = std::max((staffDist*4), allNotesMaxYPos[bar][j]);
 				if (y > allNotesMaxYPos[bar][j]) allNotesMaxYPos[bar][j] = y;
 				dynsRampStartXCoords[bar][i] = allNoteCoordsX[bar][j][allChordsBaseIndexes[bar][j]];
 				dynsRampStartYCoords[bar][i] = y;
@@ -2091,7 +2264,7 @@ void Notes::storeDynamicsCoords(int bar)
 		// cast to int to avoid cast in if test below
 		for (int j = 0; j < (int)allNotesMaxYPos[bar].size(); j++) {
 			if (dynamicsRampEnd[bar][i] == j) {
-				float y = max((staffDist*4), allNotesMaxYPos[bar][j]);
+				float y = std::max((staffDist*4), allNotesMaxYPos[bar][j]);
 				if (y > allNotesMaxYPos[bar][j]) allNotesMaxYPos[bar][j] = y;
 				dynsRampEndXCoords[bar][i] = allNoteCoordsX[bar][j][allChordsBaseIndexes[bar][j]];
 				dynsRampEndYCoords[bar][i] = y;
@@ -2182,9 +2355,14 @@ void Notes::storeDynamicsCoords(int bar)
 			for (unsigned j = dynamicsRampEnd[bar][i]; j < dynamicsIndexes[bar].size(); j++) {
 				if (dynamicsIndexes[bar][j] > -1) {
 					// find the previous and next index with a dynamic
-					unsigned prevDynNdx;
-					for (prevDynNdx = j - 1; prevDynNdx >= 0; prevDynNdx--) {
-						if (dynamicsIndexes[bar][prevDynNdx] > -1) break;
+					// these are ints, as there might be no previous dynamic (-1)
+					// with unsigned indexes, the loop would go below 0 and read outside the vector
+					int prevDynNdx = -1;
+					for (int k = (int)j - 1; k >= 0; k--) {
+						if (dynamicsIndexes[bar][k] > -1) {
+							prevDynNdx = k;
+							break;
+						}
 					}
 					unsigned nextDynNdx;
 					for (nextDynNdx = j + 1; nextDynNdx < dynamicsIndexes[bar].size(); nextDynNdx++) {
@@ -2193,30 +2371,21 @@ void Notes::storeDynamicsCoords(int bar)
 					// if no other dynamic is found after the end of the current one
 					// nextDynNdx will be one greater than the last element of dynamicsIndexes[bar]
 					if (nextDynNdx >= dynamicsIndexes[bar].size()) nextDynNdx = dynamicsIndexes[bar].size() - 1;
-					// find the previous start of a dynamic ramp
-					unsigned prevRampStartNdx;
-					for (prevRampStartNdx = i; prevRampStartNdx >= 0; prevRampStartNdx--) {
-						if (dynamicsRampStart[bar][prevRampStartNdx] > -1) break;
+					// find the previous start of a dynamic ramp (-1 if there is none)
+					int prevRampStartNdx = -1;
+					for (int k = (int)i - 1; k >= 0; k--) {
+						// a ramp can't start and end on the same note, so a start on this note belongs to the next ramp
+						if (dynamicsRampStart[bar][k] > -1) {
+							prevRampStartNdx = k;
+							break;
+						}
 					}
 					if (dynamicsRampEnd[bar][i] == dynamicsIndexes[bar][j]) {
 						dynsRampEndXCoords[bar][i] -= dynSymsWidths[dynamics[bar][j]]/2.0;
-						// check if the beginning of the ramp doesn't start from a dynamic sign
-						if (j > 0) {
-							if (dynamicsRampStart[bar][prevRampStartNdx] != dynamicsIndexes[bar][prevDynNdx]) {
-								dynsRampEndYCoords[bar][i] = max(dynsRampEndYCoords[bar][i], dynsYCoords[bar][j]);
-								dynsRampStartYCoords[bar][prevRampStartNdx] = dynsRampEndYCoords[bar][i];
-								if (j < dynamicsIndexes[bar].size()-1) {
-									for (int k = dynamicsIndexes[bar][j]; k < dynamicsIndexes[bar][nextDynNdx]; k++) {
-										if (dynsRampStartYCoords[bar][prevRampStartNdx] > allNotesMaxYPos[bar][k]) {
-											allNotesMaxYPos[bar][k] = dynsRampStartYCoords[bar][prevRampStartNdx];
-										}
-									}
-								}         
-							}
-						}
-						// if j is 0 it means that we end the ramp at the first dynamic sign
-						// so the ramp definitely doesn't start from a dynamic sign
-						else {
+						// if the ramp doesn't start from a dynamic sign, align it with the dynamic sign it ends at
+						// if there is no previous dynamic sign, the ramp definitely doesn't start from one
+						bool rampStartsAtDynamic = (prevRampStartNdx > -1 && prevDynNdx > -1 && dynamicsRampStart[bar][prevRampStartNdx] == dynamicsIndexes[bar][prevDynNdx]);
+						if (prevRampStartNdx > -1 && !rampStartsAtDynamic) {
 							dynsRampEndYCoords[bar][i] = max(dynsRampEndYCoords[bar][i], dynsYCoords[bar][j]);
 							dynsRampStartYCoords[bar][prevRampStartNdx] = dynsRampEndYCoords[bar][i];
 							if (j < dynamicsIndexes[bar].size()-1) {
@@ -2230,6 +2399,54 @@ void Notes::storeDynamicsCoords(int bar)
 					}
 				}
 			}
+		}
+	}
+	// place the crescendi and decrescendi
+	// the coordinates above are those of the start and end notes only, so the two ends of a ramp can be at different heights
+	// and the notes in between are not taken into account, so a ramp can be drawn on top of a lower note
+	// also, a ramp is drawn centered at its Y coordinate, extending staffDist above and below it
+	// so with its Y at the lowest point of a note (or at the bottom line of the staff) it overlaps it
+	// so here we put both ends of the ramp at the same height, below the lowest point of all the notes it spans
+	// leaving half a staff space between them and the top of the ramp
+	auto isDynamicAt = [this, bar](int noteNdx) {
+		for (unsigned k = 0; k < dynamicsIndexes[bar].size(); k++) {
+			if (dynamicsIndexes[bar][k] == noteNdx && dynamics[bar][k] > -1) return true;
+		}
+		return false;
+	};
+	// the same as for the dynamics symbols above
+	float staffBottom = (rhythm ? staffDist * 2 : staffDist * 4);
+	for (unsigned i = 0; i < dynamicsRampStart[bar].size(); i++) {
+		if (dynamicsRampStart[bar][i] < 0) continue;
+		// the ramp ends at the first ramp end from its start on, as in drawDynamics()
+		unsigned endNdx = i;
+		bool foundEnd = false;
+		// (a ramp can't start and end on the same note, so an end on its first note belongs to the previous ramp)
+		for (unsigned j = i + 1; j < dynamicsRampEnd[bar].size(); j++) {
+			if (dynamicsRampEnd[bar][j] > -1) {
+				endNdx = j;
+				foundEnd = true;
+				break;
+			}
+		}
+		if (!foundEnd) continue;
+		int startNote = dynamicsRampStart[bar][i];
+		int endNote = dynamicsRampEnd[bar][endNdx];
+		float lowestY = staffBottom;
+		for (int k = startNote; k <= endNote && k < (int)allNotesMaxYPos[bar].size(); k++) {
+			if (allNotesMaxYPos[bar][k] > lowestY && allNotesMaxYPos[bar][k] < FLT_MAX) lowestY = allNotesMaxYPos[bar][k];
+			lowestY = std::max(lowestY, lowestPointOfNote(bar, k, k < endNote));
+		}
+		float rampY = lowestY + halfStaffDist + staffDist;
+		// ramps that start or end at a dynamic symbol are aligned with it above, unless the notes need them lower
+		// both ends of a ramp always get the same Y coord
+		if (isDynamicAt(startNote) || isDynamicAt(endNote)) {
+			rampY = std::max(rampY, std::max(dynsRampStartYCoords[bar][i], dynsRampEndYCoords[bar][endNdx]));
+		}
+		dynsRampStartYCoords[bar][i] = dynsRampEndYCoords[bar][endNdx] = rampY;
+		// store the bottom of the ramp, so that the height of the bar includes it
+		for (int k = startNote; k <= endNote && k < (int)allNotesMaxYPos[bar].size(); k++) {
+			if (rampY + staffDist > allNotesMaxYPos[bar][k]) allNotesMaxYPos[bar][k] = rampY + staffDist;
 		}
 	}
 }
@@ -2252,86 +2469,13 @@ void Notes::storeMinMaxY(int bar)
 }
 
 //--------------------------------------------------------------
-void Notes::copyMelodicLine(int barIndex, int barToCopy)
-{
-	allNotes[barIndex] = allNotes.at(barToCopy);
-	allOctaves[barIndex] = allOctaves.at(barToCopy);
-	hasExtraLines[barIndex] = hasExtraLines.at(barToCopy);
-	allNoteCoordsX[barIndex] = allNoteCoordsX.at(barToCopy);
-	allNoteCoordsXOffset[barIndex] = allNoteCoordsXOffset.at(barToCopy);
-	allNoteHeadCoordsY[barIndex] = allNoteHeadCoordsY.at(barToCopy);
-	allNoteStemCoordsY[barIndex] = allNoteStemCoordsY.at(barToCopy);
-	extraLinesYPos[barIndex] = extraLinesYPos.at(barToCopy);
-	numExtraLines[barIndex] = numExtraLines.at(barToCopy);
-	extraLinesDir[barIndex] = extraLinesDir.at(barToCopy);
-	actualDurs[barIndex] = actualDurs.at(barToCopy);
-	allChordsBaseIndexes[barIndex] = allChordsBaseIndexes.at(barToCopy);
-	allChordsEdgeIndexes[barIndex] = allChordsEdgeIndexes.at(barToCopy);
-	allChordsChangeXCoef[barIndex] = allChordsChangeXCoef.at(barToCopy);
-	dotIndexes[barIndex] = dotIndexes.at(barToCopy);
-	dotsCounter[barIndex] = dotsCounter.at(barToCopy);
-	hasStem[barIndex] = hasStem.at(barToCopy);
-	stemDirections[barIndex] = stemDirections.at(barToCopy);
-	numTails[barIndex] = numTails.at(barToCopy);
-	numNotesWithBeams[barIndex] = numNotesWithBeams.at(barToCopy);
-	numBeams[barIndex] = numBeams.at(barToCopy);
-	beamsIndexes[barIndex] = beamsIndexes.at(barToCopy);
-	grouppedStemDirs[barIndex] = grouppedStemDirs.at(barToCopy);
-	allAccidentals[barIndex] = allAccidentals.at(barToCopy);
-	allGlissandi[barIndex] = allGlissandi.at(barToCopy);
-	allArticulations[barIndex] = allArticulations.at(barToCopy);
-	articulXPos[barIndex] = articulXPos.at(barToCopy);
-	articulYPos[barIndex] = articulYPos.at(barToCopy);
-	allTexts[barIndex] = allTexts.at(barToCopy);
-	allTextsIndexes[barIndex] = allTextsIndexes.at(barToCopy);
-	allTextsXCoords[barIndex] = allTextsXCoords.at(barToCopy);
-	allTextsYCoords[barIndex] = allTextsYCoords.at(barToCopy);
-	slurStartX[barIndex] = slurStartX.at(barToCopy);
-	slurStartY[barIndex] = slurStartY.at(barToCopy);
-	slurStopX[barIndex] = slurStopX.at(barToCopy);
-	slurStopY[barIndex] = slurStopY.at(barToCopy);
-	slurMiddleX1[barIndex] = slurMiddleX1.at(barToCopy);
-	slurMiddleX2[barIndex] = slurMiddleX2.at(barToCopy);
-	slurMiddleY1[barIndex] = slurMiddleY1.at(barToCopy);
-	slurMiddleY2[barIndex] = slurMiddleY2.at(barToCopy);
-	slurLinks[barIndex] = slurLinks.at(barToCopy);
-	tieIndexes[barIndex] = tieIndexes.at(barToCopy);
-	isWholeSlurred[barIndex] = isWholeSlurred.at(barToCopy);
-	dynamics[barIndex] = dynamics.at(barToCopy);
-	dynsXCoords[barIndex] = dynsXCoords.at(barToCopy);
-	dynsYCoords[barIndex] = dynsYCoords.at(barToCopy);
-	dynamicsRampStart[barIndex] = dynamicsRampStart.at(barToCopy);
-	dynamicsRampEnd[barIndex] = dynamicsRampEnd.at(barToCopy);
-	dynsRampStartXCoords[barIndex] = dynsRampStartXCoords.at(barToCopy);
-	dynsRampEndXCoords[barIndex] = dynsRampEndXCoords.at(barToCopy);
-	dynsRampStartYCoords[barIndex] = dynsRampStartYCoords.at(barToCopy);
-	dynsRampEndYCoords[barIndex] = dynsRampEndYCoords.at(barToCopy);
-	dynamicsRampDir[barIndex] = dynamicsRampDir.at(barToCopy);
-	//minYCoord[barIndex] = minYCoord.at(barToCopy);
-	//maxYCoord[barIndex] = maxYCoord.at(barToCopy);
-	durations[barIndex] = durations.at(barToCopy);
-	naturalSignsNotWritten[barIndex] = naturalSignsNotWritten.at(barToCopy);
-	isNoteGroupped[barIndex] = isNoteGroupped.at(barToCopy);
-	allOttavas[barIndex] = allOttavas.at(barToCopy);
-	allOttavasYCoords[barIndex] = allOttavasYCoords.at(barToCopy);
-	allOttavasChangedAt[barIndex] = allOttavasChangedAt.at(barToCopy);
-	tupStartStop[barIndex] = tupStartStop.at(barToCopy);
-	if (tupStartStop.at(barToCopy).size() > 0) {
-		tupXCoords[barIndex] = tupXCoords.at(barToCopy);
-		tupYCoords[barIndex] = tupYCoords.at(barToCopy);
-		tupDirs[barIndex] = tupDirs.at(barToCopy);
-	}
-	tupRatios[barIndex] = tupRatios.at(barToCopy);
-}
-
-//--------------------------------------------------------------
 void Notes::deleteBar(int bar)
 {
 	allNotes.erase(bar);
 }
 
 //--------------------------------------------------------------
-void Notes::insertNaturalSigns(int bar, int loopNdx, vector<int> *v)
+void Notes::insertNaturalSigns(int bar, int loopNdx, std::vector<int> *v)
 {
 	// create an array of booleans where the index is the note and the value
 	// determines whether this note has already been corrected
@@ -2366,21 +2510,50 @@ std::pair<int, int> Notes::isBarLinked(int bar)
 }
 
 //--------------------------------------------------------------
-void Notes::drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, float yStartPnt, float yOffset, bool animation, float xCoef)
+void Notes::moveScoreX(int numPixels)
+{
+	xStartOffset += (float)numPixels;
+}
+
+//--------------------------------------------------------------
+void Notes::moveScoreY(int numPixels)
+{
+	yStartOffset += (float)numPixels;
+}
+
+//--------------------------------------------------------------
+void Notes::recenterScore()
+{
+	xStartOffset = yStartOffset = 0;
+}
+
+//--------------------------------------------------------------
+void Notes::setDynamicsRampOpenAtEnd(int bar, bool open)
+{
+	dynamicsRampOpenAtEnd[bar] = open;
+}
+
+//--------------------------------------------------------------
+void Notes::drawNotes(int bar, int loopNdx, std::vector<int> *v, float xStartPnt, float yStartPnt, float yOffset, bool animation, float xCoef, int nextBar)
 {
 	if (allNotes.find(bar) == allNotes.end()) return;
+	// a bar whose note positions have not been calculated yet (see setNotePositions()) can't be drawn
+	// this shouldn't happen, but skipping the bar is better than a crash during a performance
+	if (hasExtraLines.find(bar) == hasExtraLines.end()) return;
+	ofSetColor(notesColor  * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
 	float xCoefLocal = xCoef;
 	//if (scoreOrientation > 0) xCoefLocal = 1;
 	// each bar must store its xStartPnt dynamically when drawn
 	// so this can be used in linked items, like slurs, glissandi and crescendi that span over one bar
+	xStartPnt += xStartOffset;
 	xOffsets[bar] = xStartPnt;
 	if (!mute) {
 		// first determine if there is any natural sign that needs to be inserted
 		// the second argument is the index within the loop that displays the bars horizontally
-		// the third is a pointer to the vector that holds the bar indexes (map keys) of the currently playing loop
+		// the third is a pointer to the std::vector that holds the bar indexes (map keys) of the currently playing loop
 		if (loopNdx > 0) insertNaturalSigns(bar, loopNdx, v);
 		for (unsigned i = 0; i < allNotes.at(bar).size(); i++) {
-			int restsColor = 0;
+			ofColor restsColor = notesColor;
 			for (unsigned j = 0; j < allNotes.at(bar).at(i).size(); j++) {
 				if (hasExtraLines.at(bar).at(i).at(j)) {
 					float xStartLocal = xStartPnt + (allNoteCoordsX.at(bar).at(i).at(j) * xCoefLocal);
@@ -2394,8 +2567,10 @@ void Notes::drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, flo
 				if (j == 0) {
 					// then set the animation color
 					if (animation && animate && whichNote == (int)i) {
-						ofSetColor(255 * ((ofApp*)ofGetAppPtr())->brightnessCoeff, 0, 0);
-						restsColor = 255 * ((ofApp*)ofGetAppPtr())->brightnessCoeff;
+						ofSetColor(activeNotesColor.r * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+								activeNotesColor.g * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+								activeNotesColor.b * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						restsColor = activeNotesColor;
 					}
 				}
 				// then draw all the notes heads and rests
@@ -2463,7 +2638,9 @@ void Notes::drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, flo
 			}
 			// reset the animation color
 			if (animation && animate && whichNote == (int)i) {
-				ofSetColor(0);
+				ofSetColor(notesColor.r * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+						notesColor.g * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+						notesColor.b * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
 			}
 		}
 		// then draw the beams
@@ -2481,10 +2658,12 @@ void Notes::drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, flo
 						if (actualDurs.at(bar).at(j) < 8) {
 							continue;
 						}
-						vector<float> xCoords(3);
-						vector<float> yCoords(3);
-						xCoords.at(0) = xStartPnt + ((allNoteCoordsX.at(bar).at(j)[allChordsBaseIndexes.at(bar).at(j)] + (allNoteCoordsXOffset.at(bar).at(i) * allChordsChangeXCoef.at(bar).at(i))) * xCoefLocal);
-						xCoords.at(2) = xStartPnt + ((allNoteCoordsX.at(bar).at(j+1)[allChordsBaseIndexes.at(bar).at(j+1)] + (allNoteCoordsXOffset.at(bar).at(i) * allChordsChangeXCoef.at(bar).at(i))) * xCoefLocal);
+						std::vector<float> xCoords(3);
+						std::vector<float> yCoords(3);
+						// the X coordinates of the two stems the beam connects, calculated the same way as the stems above
+						// the chord offsets are those of each note (j and j+1), not of the beam group (i)
+						xCoords.at(0) = xStartPnt + ((allNoteCoordsX.at(bar).at(j)[allChordsBaseIndexes.at(bar).at(j)] + (allNoteCoordsXOffset.at(bar).at(j) * allChordsChangeXCoef.at(bar).at(j))) * xCoefLocal);
+						xCoords.at(2) = xStartPnt + ((allNoteCoordsX.at(bar).at(j+1)[allChordsBaseIndexes.at(bar).at(j+1)] + (allNoteCoordsXOffset.at(bar).at(j+1) * allChordsChangeXCoef.at(bar).at(j+1))) * xCoefLocal);
 						yCoords.at(0) = allNoteStemCoordsY.at(bar).at(j) + yStartPnt + yOffset;
 						yCoords.at(2) = allNoteStemCoordsY.at(bar).at(j+1) + yStartPnt + yOffset;
 						if (j == beamsIndexes.at(bar).at(i).at(0)) xCoords.at(0) -= (lineWidth/2);
@@ -2512,28 +2691,63 @@ void Notes::drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, flo
 						// but the other two need to draw two beams
 						for (int k = 0; k < 2; k++) {
 							// draw the first beam
-							drawBeams(xCoords.at(k), yCoords.at(k), xCoords.at(k+1), yCoords.at(k+1));
+							drawThickLine(xCoords.at(k), yCoords.at(k), xCoords.at(k+1), yCoords.at(k+1));
 							// separate variable for correct offsetting in the loop below
 							float yCoordOffset1;
 							float yCoordOffset2;
 							// draw the rest (if any) with a loop
 							// but not for rests, unless these are surrounded by notes
-							for (int l = 1; l < numBeams.at(bar).at(j+k); l++) {
+							int groupStart = beamsIndexes.at(bar).at(i).at(0);
+							int groupEnd = beamsIndexes.at(bar).at(i).at(1);
+							// whether a note carries a beam of a level (the first beam is level 0)
+							// a rest carries a beam only if it is surrounded by notes that carry it
+							auto hasBeamAtLevel = [&](int n, int level) {
+								if (n < groupStart || n > groupEnd) return false;
+								if (numBeams.at(bar).at(n) <= level) return false;
+								if (allNotes.at(bar).at(n).at(0) > -1) return true;
+								return (n > groupStart && n < groupEnd && numBeams.at(bar).at(n-1) > level && numBeams.at(bar).at(n+1) > level);
+							};
+							int self = j + k;
+							int partner = (k == 0 ? j + 1 : j);
+							for (int l = 1; l < numBeams.at(bar).at(self); l++) {
+								// this half of the pair is drawn if both notes carry this beam (a full beam between them)
+								// or as a partial beam, if this note carries it but none of its neighbours does
+								// (e.g. a 16th after a dotted eighth), which points to the previous note
+								// or to the next one if this is the first note of the group
 								bool drawBeam = false;
-								// if two connected notes are not rests and they have the same duration
-								if (allNotes.at(bar).at(j+k).at(0) > -1 && actualDurs.at(bar).at(j) == actualDurs.at(bar).at(j+1)) {
-									drawBeam = true;
-								}
-								else {
-									if (j+k > beamsIndexes.at(bar).at(i).at(0) && j+k < beamsIndexes.at(bar).at(i).at(1)) {
-										// if a rest is surrounded by notes and not rests
-										if (numBeams.at(bar).at(j+k-1) >= l+1 && numBeams.at(bar).at(j+k+1) >= l+1) drawBeam = true;
+								if (hasBeamAtLevel(self, l)) {
+									if (hasBeamAtLevel(partner, l)) {
+										drawBeam = true;
+									}
+									else if (k == 1) {
+										drawBeam = !hasBeamAtLevel(self + 1, l);
+									}
+									else {
+										drawBeam = (self == groupStart);
 									}
 								}
 								if (drawBeam) {
-									yCoordOffset1 = yCoords.at(k) + ((l*(staffDist*BEAMDISTCOEFF)) * grouppedStemDirs.at(bar).at(i));
-									yCoordOffset2 = yCoords.at(k+1) + ((l*(staffDist*BEAMDISTCOEFF)) * grouppedStemDirs.at(bar).at(i));
-									drawBeams(xCoords.at(k), yCoordOffset1, xCoords.at(k+1), yCoordOffset2);
+									float levelOffset = (l*(staffDist*BEAMDISTCOEFF)) * grouppedStemDirs.at(bar).at(i);
+									yCoordOffset1 = yCoords.at(k) + levelOffset;
+									yCoordOffset2 = yCoords.at(k+1) + levelOffset;
+									float xStart = xCoords.at(k), xEnd = xCoords.at(k+1);
+									// a partial beam (of a note whose neighbours don't carry this beam) covers half the distance to its neighbour
+									// (from its stem to the middle point between the two stems, which is what this half of the pair is)
+									// but in a group of two notes, this is too long, so it covers a quarter of the distance between the two stems
+									if (!hasBeamAtLevel(partner, l) && groupEnd - groupStart == 1) {
+										const float partialBeamCoef = 0.25;
+										float x0 = xCoords.at(0), x2 = xCoords.at(2);
+										float y0 = yCoords.at(0) + levelOffset, y2 = yCoords.at(2) + levelOffset;
+										if (k == 0) {
+											xEnd = x0 + ((x2 - x0) * partialBeamCoef);
+											yCoordOffset2 = y0 + ((y2 - y0) * partialBeamCoef);
+										}
+										else {
+											xStart = x2 - ((x2 - x0) * partialBeamCoef);
+											yCoordOffset1 = y2 - ((y2 - y0) * partialBeamCoef);
+										}
+									}
+									drawThickLine(xStart, yCoordOffset1, xEnd, yCoordOffset2);
 								}
 							}
 						}
@@ -2542,32 +2756,36 @@ void Notes::drawNotes(int bar, int loopNdx, vector<int> *v, float xStartPnt, flo
 			}
 		}
 		drawAccidentals(bar, xStartPnt, yStartPnt, yOffset, xCoef);
-		drawGlissandi(bar, xStartPnt, yStartPnt, yOffset, xCoef);
+		drawGlissandi(bar, xStartPnt, yStartPnt, yOffset, xCoef, nextBar);
 		drawTuplets(bar, xStartPnt, yStartPnt, yOffset, xCoef);
 		drawArticulations(bar, xStartPnt, yStartPnt, yOffset, xCoef);
 		drawOttavas(bar, xStartPnt, yStartPnt, yOffset, xCoef);
 		drawText(bar, xStartPnt, yStartPnt, yOffset, xCoef);
-		drawSlurs(bar, loopNdx, xStartPnt, yStartPnt, yOffset, xCoef);
+		drawSlurs(bar, loopNdx, xStartPnt, yStartPnt, yOffset, xCoef, nextBar);
 		drawTies(bar, loopNdx, xStartPnt, yStartPnt, yOffset, xCoef);
 		drawDynamics(bar, xStartPnt, yStartPnt, yOffset, xCoef);
 	}
 	else {
-		int restColor = 0;
-		float xPos = xStartPnt + (xLength / 2);
-		if (animation && animate) restColor = 255;
+		// a muted instrument shows a whole rest in the middle of the bar, where a bar with r1 has it (see setNotePositions())
+		// in the color of the notes that play while the bar plays (it was 255, white, which is not visible on the score)
+		ofColor restColor = notesColor;
+		float xPos = xStartPnt + ((xLength / 2) * xCoefLocal);
+		if (animation && animate) restColor = activeNotesColor;
 		drawRest(bar, 1, xPos, yStartPnt, restColor, yOffset);
 	}
 }
 
 //--------------------------------------------------------------
-int Notes::drawRest(int bar, int restDur, float x, float yStartPnt, int color, float yOffset)
+int Notes::drawRest(int bar, int restDur, float x, float yStartPnt, ofColor color, float yOffset)
 {
-	ofSetColor(color, 0, 0);
+	ofSetColor(color * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
+	// the rests of a voice of a staff with merged instruments move one staff space up (stems up) or down (stems down)
+	yStartPnt -= (forcedStemDir * staffDist);
 	int indexLocal;
 	if (restDur < 4) {
 		indexLocal = 0;
 		float y = yStartPnt + staffDist + halfStaffDist+((staffDist/2.0)*(restDur-1)) + yOffset;
-		if (rhythm && restDur == 1) y += staffDist; 
+		if (rhythm && restDur == 1) y += staffDist;
 		notationFont.drawString(restsSyms[indexLocal], x-(noteHeight/2), y);
 	}
 	else {
@@ -2595,19 +2813,20 @@ int Notes::drawRest(int bar, int restDur, float x, float yStartPnt, int color, f
 		notationFont.drawString(restsSyms[indexLocal], x-((noteHeight*1.5)/2.0),
 				yStartPnt+staffDist+extraOffset+yOffset);
 	}
-	ofSetColor(0);
+	// we reset the color to notes color as the rest of the things we draw should have that color
+	ofSetColor(notesColor.r * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+			notesColor.g * ((ofApp*)ofGetAppPtr())->brightnessCoeff,
+			notesColor.b * ((ofApp*)ofGetAppPtr())->brightnessCoeff);
 	return indexLocal;
 }
 
 //--------------------------------------------------------------
-void Notes::drawBeams(float x1, float y1, float x2, float y2)
+void Notes::drawThickLine(float x1, float y1, float x2, float y2)
 {
 	// draw a thick line without affecting the thickness
 	// of all the other lines
 	// taken from
-	// https://forum.openframeworks.cc/t/how-do-i-draw-lines-of-a-
-	// reasonable-thickness-on-a-very-large-canvas-given-opengl-
-	// constraints/30815/7
+	// https://forum.openframeworks.cc/t/how-do-i-draw-lines-of-a-constraints/30815/7
 	ofPoint a;
 	ofPoint b;
 	a.x = x1;
@@ -2626,6 +2845,87 @@ void Notes::drawBeams(float x1, float y1, float x2, float y2)
 }
 
 //--------------------------------------------------------------
+bool Notes::isDrawnAccidental(int ndx)
+{
+	return ndx >= 0 && ndx <= 8;
+}
+
+//--------------------------------------------------------------
+const std::string& Notes::accidentalSizeSym(int ndx)
+{
+	if (ndx == 1 || ndx == 3) return accSyms[2];
+	if (ndx == 5 || ndx == 7) return accSyms[6];
+	return accSyms[ndx];
+}
+
+//--------------------------------------------------------------
+float Notes::accidentalWidth(int ndx)
+{
+	float width = notationFont.getStringBoundingBox(accidentalSizeSym(ndx), 0, 0).width;
+	// the 1.5 flat is two flats, and the 1.5 sharp has wider horizontal bars than the sharp (see drawAccidental())
+	if (ndx == 1) return width * 1.9;
+	if (ndx == 7) return width * 1.3;
+	return width;
+}
+
+//--------------------------------------------------------------
+void Notes::drawAccidental(int ndx, float x, float y)
+{
+	if (!isDrawnAccidental(ndx)) return;
+	if (!accSyms[ndx].empty()) {
+		notationFont.drawString(accSyms[ndx], x, y);
+		return;
+	}
+	ofRectangle rect = notationFont.getStringBoundingBox(accidentalSizeSym(ndx), x, y);
+	if (ndx == 1 || ndx == 3) {
+		// a flat drawn at drawX, mirrored on the vertical axis at its center, so it stays within the same rectangle
+		auto drawMirroredFlat = [&](float drawX) {
+			float centerX = rect.getCenter().x + (drawX - x);
+			ofPushMatrix();
+			ofTranslate(centerX, 0);
+			ofScale(-1, 1);
+			ofTranslate(-centerX, 0);
+			notationFont.drawString(accSyms[2], drawX, y);
+			ofPopMatrix();
+		};
+		if (ndx == 3) {
+			drawMirroredFlat(x);
+		}
+		else {
+			// the 1.5 flat is a mirrored flat and a flat, with their stems next to each other
+			// it ends where a flat would end, so the mirrored flat is to the left of the flat
+			notationFont.drawString(accSyms[2], x, y);
+			drawMirroredFlat(x - (rect.width * 0.9));
+		}
+		return;
+	}
+	// the half sharp has one vertical stroke and the 1.5 sharp three, with the horizontal bars of a sharp
+	// both have the height of a sharp and end where a sharp would end
+	int numStrokes = (ndx == 5 ? 1 : 3);
+	float barsWidth = (ndx == 5 ? rect.width * 0.75 : rect.width * 1.3);
+	float right = rect.x + rect.width;
+	float left = right - barsWidth;
+	float strokeWidth = std::max(1.0f, staffDist * 0.12f);
+	float barThickness = std::max(1.5f, staffDist * 0.4f);
+	// the bars rise to the right, as in a sharp
+	float slant = barsWidth * 0.25;
+	for (int k = 0; k < numStrokes; k++) {
+		float strokeX = left + (barsWidth * (k + 1) / (numStrokes + 1)) - (strokeWidth / 2.0);
+		// the strokes are a little shorter than the sharp at their ends, so they don't stick out of it
+		ofDrawRectangle(strokeX, rect.y + (rect.height * 0.04), strokeWidth, rect.height * 0.92);
+	}
+	for (int k = 0; k < 2; k++) {
+		float barY = rect.y + (rect.height * (k == 0 ? 0.36 : 0.66));
+		ofBeginShape();
+		ofVertex(left, barY + (slant / 2.0));
+		ofVertex(right, barY - (slant / 2.0));
+		ofVertex(right, barY - (slant / 2.0) + barThickness);
+		ofVertex(left, barY + (slant / 2.0) + barThickness);
+		ofEndShape(true);
+	}
+}
+
+//--------------------------------------------------------------
 void Notes::drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
 {
 	if (tacet[bar]) return;
@@ -2639,21 +2939,16 @@ void Notes::drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOf
 				x -= allNoteCoordsXOffset[bar][i];
 			}
 			float y = allNoteHeadCoordsY[bar][i][j];
-			// escape dummy accentals
-			if ((allAccidentals[bar][i][j]%2) == 0) {
-				// escape lack of accidental and rests
-				if (allAccidentals[bar][i][j] > -1 && allNotes[bar][i][j] > -1) {
-					if (abs(y-prevY) < staffDist * 3 && j > 0) {
-						if (prevX == (allNoteCoordsX[bar][i][allChordsBaseIndexes[bar][i]] - allNoteCoordsXOffset[bar][i])) {
-							x -= (staffDist * accidentalsOffsetCoef);
-						}
+			// escape lack of accidental, accidentals that are not repeated, and rests
+			if (isDrawnAccidental(allAccidentals[bar][i][j]) && allNotes[bar][i][j] > -1) {
+				if (abs(y-prevY) < staffDist * 3 && j > 0) {
+					if (prevX == (allNoteCoordsX[bar][i][allChordsBaseIndexes[bar][i]] - allNoteCoordsXOffset[bar][i])) {
+						x -= (staffDist * accidentalsOffsetCoef);
 					}
-					notationFont.drawString(accSyms[allAccidentals[bar][i][j]],
-							(x*xCoefLocal)+xStartPnt-(noteWidth*1.2),
-							y+yStartPnt+yOffset);
-					prevY = y;
-					prevX = x;
 				}
+				drawAccidental(allAccidentals[bar][i][j], (x*xCoefLocal)+xStartPnt-(noteWidth*1.2), y+yStartPnt+yOffset);
+				prevY = y;
+				prevX = x;
 			}
 			if (naturalSignsNotWritten[bar][i][j]) {
 				if (abs(y-prevY) < staffDist * 3 && j > 0) {
@@ -2673,55 +2968,90 @@ void Notes::drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOf
 }
 
 //--------------------------------------------------------------
-void Notes::drawGlissandi(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
+void Notes::drawGlissandi(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef, int nextBar)
 {
 	float xCoefLocal = xCoef;
 	//if (scoreOrientation > 0) xCoefLocal = 1;
-	float xStart, xEnd;
-	float yStart, yEnd;
+	// a line that starts or ends at a note on a staff line starts or ends a little above or below the line, towards the other note
+	auto offsetFromLine = [&](float y, float otherY) {
+		if (((int)(abs((y + yOffset) - yStartPnt) / halfStaffDist) % 2) == 0) {
+			float glissLineOffset = staffDist / 4.0;
+			return (y > otherY ? y - glissLineOffset : y + glissLineOffset);
+		}
+		return y;
+	};
 	for (unsigned i = 0; i < allGlissandi[bar].size(); i++) {
-		if (allGlissandi[bar][i] > 0) {
-			xStart = (allNoteCoordsX[bar][i][allChordsBaseIndexes[bar][i]]*xCoefLocal) + xStartPnt;
-			xEnd = (allNoteCoordsX[bar][i+1][allChordsBaseIndexes[bar][i]]*xCoefLocal) + xStartPnt - noteWidth;
-			yStart = allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] + yStartPnt + yOffset;
-			yEnd = allNoteHeadCoordsY[bar][i+1][allChordsBaseIndexes[bar][i]] + yStartPnt + yOffset;
+		if (allGlissandi[bar][i] <= 0) continue;
+		// a glissando on the last note goes to the first note of the next bar (the same bar if it plays alone)
+		// that note is not drawn next to it (it is in another bar, which may not be visible), so the line ends at the end of the bar
+		// in the direction of that note, as if it were drawn right after the end of the bar
+		bool toEdge = (i + 1 >= allNoteCoordsX[bar].size());
+		int targetBar = bar;
+		int targetNdx = i + 1;
+		if (toEdge) {
+			targetBar = (nextBar >= 0 && allNoteHeadCoordsY.find(nextBar) != allNoteHeadCoordsY.end() && !allNoteHeadCoordsY[nextBar].empty() ? nextBar : bar);
+			targetNdx = 0;
+		}
+		float xStart = (allNoteCoordsX[bar][i][allChordsBaseIndexes[bar][i]]*xCoefLocal) + xStartPnt;
+		float xEndBase;
+		if (toEdge) {
+			// find the remaining number of beats to determine the distance left to the edge of the staff
+			int beatsUpToThisNote = 0;
+			for (size_t j = 0; j < i; j++) beatsUpToThisNote += durations[bar][j];
+			int remainingBeats = beats[bar] - beatsUpToThisNote;
+			xEndBase = ((allNoteCoordsX[bar][i][allChordsBaseIndexes[bar][i]]*xCoefLocal) + xStartPnt - noteWidth) + (distBetweenBeats[bar] * remainingBeats);
+		}
+		else {
+			xEndBase = (allNoteCoordsX[bar][targetNdx][allChordsBaseIndexes[bar][targetNdx]]*xCoefLocal) + xStartPnt - noteWidth;
+		}
+		// a line from a note with a stem up starts to the right of the half of the note head, with a stem down at its right edge
+		if (stemDirections[bar][i] > 0) {
+			xStart += (noteWidth/2);
+		}
+		else {
+			xStart += noteWidth;
+		}
+		// every note of a chord gets its own line, to the note it is paired with in the next chord, as the sequencer plays it
+		// the notes are paired by their height on the staff (see glissandoPairs() in utils.h), the higher a note the smaller its y
+		std::vector<float> startPitches, endPitches;
+		std::vector<int> startNdxs, endNdxs;
+		for (unsigned j = 0; j < allNoteHeadCoordsY[bar][i].size(); j++) {
+			if (allNotes[bar][i][j] < 0) continue;
+			startPitches.push_back(-allNoteHeadCoordsY[bar][i][j]);
+			startNdxs.push_back(j);
+		}
+		for (unsigned j = 0; j < allNoteHeadCoordsY[targetBar][targetNdx].size(); j++) {
+			if (allNotes[targetBar][targetNdx][j] < 0) continue;
+			endPitches.push_back(-allNoteHeadCoordsY[targetBar][targetNdx][j]);
+			endNdxs.push_back(j);
+		}
+		std::vector<int> pairs = glissandoPairs(startPitches, endPitches);
+		for (size_t k = 0; k < pairs.size(); k++) {
+			if (pairs[k] < 0) continue;
+			int startNdx = startNdxs[k];
+			int endNdx = endNdxs[pairs[k]];
+			float xEnd = xEndBase;
+			float yStart = allNoteHeadCoordsY[bar][i][startNdx] + yStartPnt + yOffset;
+			float yEnd = allNoteHeadCoordsY[targetBar][targetNdx][endNdx] + yStartPnt + yOffset;
+			if (toEdge) {
+				// where the note would be after the end of the bar, at the distance its own bar has from its start
+				float xTarget = (xLength*xCoefLocal) + xStartPnt + (allNoteCoordsX[targetBar][targetNdx][endNdx]*xCoefLocal);
+				float yStartOnLine = offsetFromLine(yStart, yEnd);
+				float yEndAtEdge = yEnd;
+				if (xTarget > xStart) yEndAtEdge = yStartOnLine + ((yEnd - yStartOnLine) * ((xEnd - xStart) / (xTarget - xStart)));
+				ofDrawLine(xStart, yStartOnLine, xEnd, yEndAtEdge);
+				continue;
+			}
 			// if we have an accidental at the end of the gliss
-			if ((allAccidentals[bar][i+1][allChordsBaseIndexes[bar][i]]%2) == 0) {
-				if (allAccidentals[bar][i+1][allChordsBaseIndexes[bar][i]] != 4) {
-					// this is taken from the drawAccidentals() function
-					xEnd = (allNoteCoordsX[bar][i+1][allChordsBaseIndexes[bar][i]]*xCoefLocal)-(noteWidth*1.2);
-					if (stemDirections[bar][i+1] < 0) {
-						xEnd += staffDist;
-					}
-					xEnd -= (notationFont.stringWidth(accSyms[allAccidentals[bar][i+1][allChordsBaseIndexes[bar][i]]])/2.0);
+			if (isDrawnAccidental(allAccidentals[bar][targetNdx][endNdx]) && allAccidentals[bar][targetNdx][endNdx] != 4) {
+				if (stemDirections[bar][targetNdx] < 0) {
+					xEnd += staffDist;
 				}
+				xEnd -= (accidentalWidth(allAccidentals[bar][targetNdx][endNdx])/2.0);
 			}
-			if (stemDirections[bar][i] > 0) {
-				xStart += (noteWidth/2);
-			}
-			else {
-				xStart += noteWidth;
-			}
-			// check if the start and end notes are on a line
-			if (((int)(abs((yStart + yOffset) - yStartPnt) / halfStaffDist) % 2) == 0) {
-				float glissLineOffset = staffDist / 4.0;
-				if (yStart > yEnd) {
-					yStart -= glissLineOffset;
-				}
-				else {
-					yStart += glissLineOffset;
-				}
-			}
-			if (((int)(abs((yEnd + yOffset) - yStartPnt) / halfStaffDist) % 2) == 0) {
-				float glissLineOffset = staffDist / 4.0;
-				if (yEnd > yStart) {
-					yEnd -= glissLineOffset;
-				}
-				else {
-					yEnd += glissLineOffset;
-				}
-			}
-			ofDrawLine(xStart, yStart, xEnd, yEnd);
+			float yStartOnLine = offsetFromLine(yStart, yEnd);
+			float yEndOnLine = offsetFromLine(yEnd, yStart);
+			ofDrawLine(xStart, yStartOnLine, xEnd, yEndOnLine);
 		}
 	}
 }
@@ -2731,8 +3061,8 @@ void Notes::drawTuplets(int bar, float xStartPnt, float yStartPnt, float yOffset
 {
 	// code copied from drawNotes() where we draw the beams, and modified
 	for (auto it = tupStartStop[bar].begin(); it != tupStartStop[bar].end(); ++it) {
-		// the string of the tuplet number to be displayed
-		string tuplet = to_string(tupRatios[bar][it->first].first);
+		// the std::string of the tuplet number to be displayed
+		std::string tuplet = std::to_string(tupRatios[bar][it->first].first);
 		float halfStringHeight = textFont.stringHeight(tuplet) * 0.5;
 		float halfStringWidth = textFont.stringWidth(tuplet) * 0.5;
 		for (int i = 0; i < 2; i++) {
@@ -2740,8 +3070,9 @@ void Notes::drawTuplets(int bar, float xStartPnt, float yStartPnt, float yOffset
 					tupYCoords[bar][it->first][i*2] + yStartPnt + yOffset,
 					(tupXCoords[bar][it->first][(i*2)+1] * xCoef) + xStartPnt,
 					tupYCoords[bar][it->first][(i*2)+1] + yStartPnt + yOffset);
+			// the hooks at the two ends of the tuplet bracket
 			ofDrawLine((tupXCoords[bar][it->first][(i*2)+i] * xCoef) + xStartPnt,
-					tupYCoords[bar][it->first][(i*2)+i] + yStartPnt,
+					tupYCoords[bar][it->first][(i*2)+i] + yStartPnt + yOffset,
 					(tupXCoords[bar][it->first][(i*2)+i] * xCoef) + xStartPnt,
 					tupYCoords[bar][it->first][(i*2)+i]+(halfStaffDist*tupDirs[bar][it->first]) + yStartPnt + yOffset);
 		}
@@ -2760,7 +3091,7 @@ void Notes::drawArticulations(int bar, float xStartPnt, float yStartPnt, float y
 			if (allArticulations[bar][i][j] > 0) {
 				if (allArticulations[bar][i][j] < 7) {
 					// we don't have a symbol for no articulation so bar with allArticulations[i]-1
-					string articulStr = articulSyms[allArticulations[bar][i][j]-1];
+					std::string articulStr = articulSyms[allArticulations[bar][i][j]-1];
 					if ((allArticulations[bar][i][j] == 1) && (stemDirections[bar][i] > 0)) {
 						// the marcato sign needs to be inverted in case of being projected under the note
 						ofPushMatrix();
@@ -2826,7 +3157,7 @@ void Notes::drawOttavas(int bar, float xStartPnt, float yStartPnt, float yOffset
 			// if there is a line that needs to be drawn till the end of the bar
 			else if (i == allOttavasChangedAt[bar].size() - 1 && allOttavasChangedAt[bar][i] == -1) {
 				drawOttavaLine(bar, prevChange, i, xStartPnt, yStartPnt, yOffset, xCoefLocal);
-			} 
+			}
 		}
 	}
 }
@@ -2834,6 +3165,9 @@ void Notes::drawOttavas(int bar, float xStartPnt, float yStartPnt, float yOffset
 //--------------------------------------------------------------
 void Notes::drawOttavaLine(int bar, unsigned startNdx, unsigned endNdx, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
 {
+	// an ottava that applies to a single note is shown with its symbol only, without a line
+	// and notes without an ottava have no line (the stretches between ottavas are passed here too)
+	if (endNdx <= startNdx || allOttavas[bar][startNdx] == 0) return;
 	float xCoefLocal = xCoef;
 	//if (scoreOrientation > 0) xCoefLocal = 1;
 	float xStart = (allNoteCoordsX[bar][startNdx][0] * xCoefLocal) + xStartPnt;
@@ -2842,7 +3176,9 @@ void Notes::drawOttavaLine(int bar, unsigned startNdx, unsigned endNdx, float xS
 	float textHalfHeight = notationFont.stringHeight(octaveSyms[abs(allOttavas[bar][startNdx])]) / 2;
 	xStart += notationFont.stringWidth(octaveSyms[abs(allOttavas[bar][startNdx])]);
 	ofDrawLine(xStart, y, xEnd, y);
-	if (allOttavas[bar][startNdx] > 0) {
+	// the hook at the end of the line always points towards the staff
+	// down for lines above the staff, up for lines below it
+	if (allOttavasYCoords[bar][startNdx] < halfStaffDist * 4) {
 		ofDrawLine(xEnd, y, xEnd, y+textHalfHeight);
 	}
 	else {
@@ -2866,14 +3202,22 @@ void Notes::drawText(int bar, float xStartPnt, float yStartPnt, float yOffset, f
 }
 
 //--------------------------------------------------------------
-void Notes::drawSlurs(int bar, int loopNdx, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
+void Notes::drawSlurs(int bar, int loopNdx, float xStartPnt, float yStartPnt, float yOffset, float xCoef, int nextBar)
 {
 	float xCoefLocal = xCoef;
 	//if (scoreOrientation > 0) xCoefLocal = 1;
+	// in horizontal view, a slur that goes on in the next bar (e.g. in \bars) is drawn when that bar is drawn, from the start of the slur
+	// but a slur left open at the end of a bar that is followed by another bar (or by itself, if it plays alone) is drawn to the end of the bar
+	bool nextBarContinuesSlur = false;
+	if (nextBar == bar + 1 && slurIndexes.find(nextBar) != slurIndexes.end()) {
+		for (const auto& slur : slurIndexes[nextBar]) {
+			if (slur.first == -1 && (slur.second > -1 || isWholeSlurred[nextBar])) nextBarContinuesSlur = true;
+		}
+	}
 	ofNoFill();
 	for (unsigned i = 0; i < slurStartX[bar].size(); i++) {
 		// slurs that span over more than one bar are drawn only when we draw the bar of the end of the slur
-		if (slurLinks[bar][i].second > 0 && scoreOrientation > 0) continue;
+		if (slurLinks[bar][i].second > 0 && scoreOrientation > 0 && nextBarContinuesSlur) continue;
 		float x0 = 0.0;
 		float y0 = slurStartY[bar][i] + yStartPnt + yOffset;
 		float x1;
@@ -2919,7 +3263,8 @@ void Notes::drawTies(int thisBar, int loopNdx, float xStartPnt, float yStartPnt,
 	// drawTies is separate from drawTie, so we can draw the extreme notes of a chord
 	// with opposite orientations
 	ofNoFill();
-	for (unsigned i = 0; i < tieIndexes[thisBar].size() - 1; i++) {
+	// a tie on the last note goes to the end of the bar, towards the first note of the next bar (see drawTie())
+	for (unsigned i = 0; i < tieIndexes[thisBar].size() && i < allNoteCoordsX[thisBar].size(); i++) {
 		if (tieIndexes[thisBar][i] > -1) {
 			drawTie(thisBar, i, allChordsBaseIndexes[thisBar][i], xStartPnt, yStartPnt, yOffset, xCoef, 1);
 			if (allNotes[thisBar][i].size() > 1) {
@@ -2939,17 +3284,26 @@ void Notes::drawTies(int thisBar, int loopNdx, float xStartPnt, float yStartPnt,
 //--------------------------------------------------------------
 void Notes::drawTie(int thisBar, unsigned i, unsigned j, float xStartPnt, float yStartPnt, float yOffset, float xCoef, int stemDirCoef)
 {
-	float x0 = xStartPnt + ((allNoteCoordsX[thisBar][i][j] + (halfStaffDist * 0.5)) * xCoef);
+	// a tie always starts and ends a little away from the centers of the note heads on the X axis
+	float x0 = xStartPnt + ((allNoteCoordsX[thisBar][i][j] + tieXOffset()) * xCoef);
 	float x1, x2;
-	float x3 = xStartPnt + ((allNoteCoordsX[thisBar][i+1][j] - (halfStaffDist * 0.5)) * xCoef);
+	float x3;
+	if (i + 1 < allNoteCoordsX[thisBar].size() && j < allNoteCoordsX[thisBar][i+1].size()) {
+		x3 = xStartPnt + ((allNoteCoordsX[thisBar][i+1][j] - tieXOffset()) * xCoef);
+	}
+	else {
+		x3 = xStartPnt + ((xLength - (halfStaffDist * 0.5)) * xCoef);
+	}
+	// a tie of a note with the stem up is drawn below the note head, and of a note with the stem down above it (the opposite with stemDirCoef -1)
+	// a slur on the same side starts and ends further from the note head (see slurYOffset()), so the tie is under it
 	float y = yStartPnt + allNoteHeadCoordsY[thisBar][i][j] + yOffset;
 	float yMiddle;
 	if (stemDirections[thisBar][i] > 0) {
-		y += ((noteHeight * 0.5) * stemDirCoef);
+		y += (tieYOffset() * stemDirCoef);
 		yMiddle = y + (halfStaffDist * stemDirCoef);
 	}
 	else {
-		y -= ((noteHeight * 0.5) * stemDirCoef);
+		y -= (tieYOffset() * stemDirCoef);
 		yMiddle = y - (halfStaffDist * stemDirCoef);
 	}
 	float curveSegment = (x3 - x0) / 3.0;
@@ -2976,16 +3330,22 @@ void Notes::drawDynamics(int bar, float xStartPnt, float yStartPnt, float yOffse
 			// find the next index of dynsRampEndXCoords[bar] that is greater than -1
 			// to determine where the dynamic ramp ends
 			unsigned endNdx = i;
-			for (unsigned j = i; j < dynamicsRampEnd[bar].size(); j++) {
+			// a ramp can't start and end on the same note, so an end on its first note belongs to the previous ramp
+			for (unsigned j = i + 1; j < dynamicsRampEnd[bar].size(); j++) {
 				if (dynamicsRampEnd[bar][j] > -1) {
 					endNdx = j;
 					break;
 				}
 			}
+			float xEnd = (dynsRampEndXCoords[bar][endNdx]*xCoefLocal)+xStartPnt;
+			// a crescendo or diminuendo left open at the end of the bar goes on to the next bar, so it is drawn to the end of the bar
+			if (dynamicsRampOpenAtEnd[bar] && endNdx + 1 >= dynamicsRampEnd[bar].size()) {
+				xEnd = std::max(xEnd, ((xLength - halfStaffDist)*xCoefLocal)+xStartPnt);
+			}
 			for (int j = 0; j < 2; j++) {
 				ofDrawLine((dynsRampStartXCoords[bar][i]*xCoefLocal)+xStartPnt,
 						dynsRampStartYCoords[bar][i]+yStartPnt+(staffDist*(((dynamicsRampDir[bar][i]*(-1))+1)*((j*2)-1)))+yOffset,
-						(dynsRampEndXCoords[bar][endNdx]*xCoefLocal)+xStartPnt,
+						xEnd,
 						dynsRampEndYCoords[bar][endNdx]+yStartPnt+(staffDist*(dynamicsRampDir[bar][i]*((j*2)-1)))+yOffset);
 			}
 		}
@@ -2993,7 +3353,7 @@ void Notes::drawDynamics(int bar, float xStartPnt, float yStartPnt, float yOffse
 }
 
 //--------------------------------------------------------------
-void Notes::printVector(vector<int> v)
+void Notes::printVector(std::vector<int> v)
 {
 	for (unsigned i = 0; i < v.size(); i++) {
 		cout << v[i] << " ";
@@ -3002,7 +3362,7 @@ void Notes::printVector(vector<int> v)
 }
 
 //--------------------------------------------------------------
-void Notes::printVector(vector<string> v)
+void Notes::printVector(std::vector<std::string> v)
 {
 	for (unsigned i = 0; i < v.size(); i++) {
 		cout << v[i] << " ";
@@ -3011,7 +3371,7 @@ void Notes::printVector(vector<string> v)
 }
 
 //--------------------------------------------------------------
-void Notes::printVector(vector<float> v)
+void Notes::printVector(std::vector<float> v)
 {
 	for (unsigned i = 0; i < v.size(); i++) {
 		cout << v[i] << " ";

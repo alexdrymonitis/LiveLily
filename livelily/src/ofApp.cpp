@@ -1,691 +1,64 @@
 #include "ofApp.h"
-#include <string.h>
+#include <set>
+#include "pyo_classes.h" // the Python code of the Pyo synths (pyoClasses), defined in pyo_classes.cpp
+#include <string>
 #include <time.h> // to give random seed to srand()
-#include <sstream>
 #include <ctype.h> // to add isdigit()
 #include <algorithm> // for replacing characters in a string
 #include <cmath> // to add abs()
 #include <utility> // to add pair and make_pair
 #include <sstream> // to create a string from vector<string>
+#include <iomanip> // std::setprecision
 
-/******************* Sequencer class **************************/
-//--------------------------------------------------------------
-void Sequencer::setup(SharedData *sData)
-{
-	sharedData = sData;
-	runSequencer = false;
-	updateSequencer = false;
-	sequencerRunning = false;
-	finish = false;
-	finished = false;
-	mustStop = false;
-	mustStopCalled = false;
-	sendMidiClock = false;
-	muteChecked = false;
-	firstIter = false;
-	onNextStartMidiByte = 0xFA; // Start MIDI byte
-	tickCounter = 0;
-	beatCounter = 0;
-	sendBeatVizInfoCounter = 0;
-	thisLoopIndex = 0;
-	countdown = false;
-	countdownCounter = 0;
-	midiTuneVal = 440;
-	oscSender.setup(HOST, OFSENDPORT);
-	timer.setPeriodicEvent(100000); // 100 us
-}
+// the includes below are used to execute shell commands and store the output in a string
+// sstream is already included above, also needed for shell output storage
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <random>
+#include <sstream>
+#include <string>
 
-//--------------------------------------------------------------
-void Sequencer::checkMute()
-{
-	// check if an instrument needs to be muted at the beginning
-	for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-		if (instMapIt->second.isToBeMuted()) {
-			if (!instMapIt->second.isMuted()) {
-				instMapIt->second.setMute(true);
-			}
-		}
-		else if (instMapIt->second.isToBeUnmuted()) {
-			if (instMapIt->second.isMuted()) {
-				instMapIt->second.setMute(false);
-			}
-		}
-	}
-	muteChecked = true;
-}
+#ifndef _WIN32
+	#include <sys/wait.h>
+#endif
 
-//--------------------------------------------------------------
-void Sequencer::setSendMidiClock(bool sendMidiClockState)
-{
-	sendMidiClock = sendMidiClockState;
-}
-
-//--------------------------------------------------------------
-void Sequencer::sendAllNotesOff()
-{
-	for (map<int, Instrument>::iterator it = sharedData->instruments.begin(); it != sharedData->instruments.end(); ++it) {
-		if (it->second.isMidi()) midiOut.sendControlChange(it->second.getMidiChan(), 120, 0);
-		else {
-			ofxOscMessage m;
-			m.setAddress("/" + it->second.getName() + "/dynamics");
-			m.addIntArg(0);
-			oscSender.sendMessage(m, false);
-			m.clear();
-		}
-	}
-}
-
-//--------------------------------------------------------------
-void Sequencer::start()
-{
-	runSequencer = true;
-	sequencerRunning = false;
-	startThread();
-}
-
-//--------------------------------------------------------------
-void Sequencer::stop()
-{
-	mustStop = true;
-}
-
-//--------------------------------------------------------------
-void Sequencer::stopNow()
-{
-	sendAllNotesOff();
-	stopThread();
-	if (sendMidiClock) midiOut.sendMidiByte(0xFC); // Stop MIDI byte
-	if (!mustStopCalled) onNextStartMidiByte = 0xFB; // Continue MIDI byte
-	else mustStopCalled = false;
-	runSequencer = sequencerRunning = false;
-	beatCounter = 0;
-	((ofApp*)ofGetAppPtr())->sendSequencerStateToParts(false);
-}
-
-//--------------------------------------------------------------
-void Sequencer::update()
-{
-	updateSequencer = true;
-}
-
-//--------------------------------------------------------------
-void Sequencer::setSequencerRunning(bool seqRun)
-{
-	sequencerRunning = seqRun;
-}
-
-//--------------------------------------------------------------
-void Sequencer::setFinish(bool finishState)
-{
-	finish = finishState;
-	if (finish) ((ofApp*)ofGetAppPtr())->sendFinishToParts(finishState);
-}
-
-//--------------------------------------------------------------
-void Sequencer::setCountdown(int num)
-{
-	countdown = true;
-	countdownCounter = num;
-}
-
-//--------------------------------------------------------------
-void Sequencer::setMidiTune(int tuneVal)
-{
-	midiTuneVal = tuneVal;
-}
-
-//--------------------------------------------------------------
-void Sequencer::sendBeatVizInfo(int bar)
-{
-	// calculate the time stamp regardless of whether we're showing the beat
-	// or not in the editor, in case we have connected score parts
-	sharedData->beatVizTimeStamp = ofGetElapsedTimeMillis();
-	sharedData->beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs[bar] / 4.0);
-	sharedData->beatVizRampStart = sharedData->tempoMs[bar] / 4;
-	if (sharedData->beatAnimate) {
-		sharedData->beatViz = true;
-	}
-	// notify all score parts of the time stamp and the beat visualization counter
-	ofxOscMessage m;
-	m.setAddress("/beatinfo");
-	m.addFloatArg(sharedData->beatVizStepsPerMs);
-	m.addIntArg((int)sharedData->beatVizRampStart);
-	((ofApp*)ofGetAppPtr())->sendToParts(m, false);
-	m.clear();
-	m.setAddress("/beat");
-	m.addIntArg(sharedData->beatCounter);
-	((ofApp*)ofGetAppPtr())->sendToParts(m, false);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-float Sequencer::midiToFreq(int midiNote)
-{
-	return pow(2.0, ((midiNote - 69.0) / 12.0)) * midiTuneVal;
-}
-
-//--------------------------------------------------------------
-void Sequencer::startGlissando(int intNdx, int bar, int barDataCounter)
-{
-//	sharedData->instruments.at(instNdx).setGlissandoStart(true);
-//	// if the isntrument sends MIDI, then we have to determine the pitch bend value we need to cover
-//	// but we should bare in mind that the user might have set a specific tuning
-//	// in which case we have to compensate for that
-//	auto itBegin = sharedData->instruments.at(instNdx).notes.at(bar).at(sharedData->instruments.at(instNdx).getBarDataCounter()).begin();
-//	auto itEnd = sharedData->instruments.at(instNdx).notes.at(bar).at(sharedData->instruments.at(instNdx).getBarDataCounter()).end();
-//	for (auto it = itBegin; it != itEnd; ++it) {
-//		sharedData->instruments.at(instNdx).glissVecStart.push_back(*it);
-//	}
-//	int nextNote = sharedData->instruments.at(instNdx).getBarDataCounter() + 1;
-//	int nextBar = sharedData->thisLoopIndex;
-//	if (nextNote >= (int)sharedData->instruments.at(instNdx).notes.at(bar).size()) {
-//		nextNote = 0;
-//		nextBar = sharedData->thisLoopIndex + 1;
-//		if (nextBar >= (int)sharedData->loopData.at(sharedData->loopIndex).size()) {
-//			nextBar = 0;
-//		}
-//	}
-//	itBegin = sharedData->instruments.at(instNdx).notes.at(nextBar).at(nextNote).begin();
-//	itEnd = sharedData->instruments.at(instNdx).notes.at(nextBar).at(nextNote).end();
-//	for (auto it = itBegin; it != itEnd; ++it) {
-//		sharedData->instruments.at(instNdx).glissVecEnd.push_back(*it);
-//	}
-//	// check if the two vectors dont't have the same size
-//	if (sharedData->instruments.at(instNdx).glissStart.size() != sharedData->instruments.at(instNdx).glissEnd.size()) {
-//		
-//	}
-}
-
-//--------------------------------------------------------------
-void Sequencer::runGlissando(int instNdx, int bar)
-{
-//	// here we run a glissando that has been started by the function above
-//	// with a time grain of 100um (the sequencer's time grain)
-//	// based on the current tempo
-//	if (sharedData->instruments.at(instNdx).getGlissandoStart()) {
-//		// here we run the glissando, and when we reach its target, we set the glissandoStart to false
-//		if (reachedTargetPitch) {
-//			sharedData->instruments.at(instNdx).setGlissandoStart(false);
-//		}
-//	}
-}
-
-//--------------------------------------------------------------
-void Sequencer::threadedFunction()
-{
-	while (isThreadRunning()) {
-		timer.waitNext();
-		if (runSequencer && !sequencerRunning) {
-			//sharedData->mutex.lock();
-			int bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisLoopIndex];
-			// in here we calculate the number of beats on a microsecond basis
-			numBeats = sharedData->numBeats[bar] * sharedData->tempo[bar];
-			if (sharedData->showScore) {
-				if (sharedData->setAnimation) {
-					for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-						instMapIt->second.setAnimation(true);
-					}
-					sharedData->animate = true;
-					sharedData->setAnimation = false;
-				}
-				if (sharedData->setBeatAnimation) {
-					sharedData->beatViz = true;
-					sharedData->beatAnimate = true;
-					sharedData->setBeatAnimation = false;
-				}
-			}
-			// calculate the following two in case we connect to a score part
-			sharedData->beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs[bar] / 4.0);
-			sharedData->beatVizRampStart = sharedData->tempoMs[bar] / 4;
-			((ofApp*)ofGetAppPtr())->sendFinishToParts(false);
-			ofxOscMessage m;
-			m.setAddress("/beatinfo");
-			m.addFloatArg(sharedData->beatVizStepsPerMs);
-			m.addIntArg(sharedData->beatVizRampStart);
-			((ofApp*)ofGetAppPtr())->sendToParts(m, true);
-			m.clear();
-			sequencerRunning = true;
-			runSequencer = false;
-			if (sendMidiClock) midiOut.sendMidiByte(onNextStartMidiByte);
-			firstIter = true;
-			endOfBar = false;
-			sendBeatVizInfoCounter = 0;
-			for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-				instMapIt->second.initSeqToggle();
-				instMapIt->second.setFirstIter(true);
-			}
-			thisLoopIndex = sharedData->thisLoopIndex;
-			((ofApp*)ofGetAppPtr())->sendSequencerStateToParts(true);
-			//sharedData->mutex.unlock();
-		}
-	
-		if (sequencerRunning) {
-			//sharedData->mutex.lock();
-			uint64_t timeStamp = ofGetElapsedTimeMicros();
-			int bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisLoopIndex];
-			int prevBar = sharedData->loopData[sharedData->loopIndex][((int)sharedData->thisLoopIndex - 1 < 0 ? (int)sharedData->loopData[sharedData->loopIndex].size()-1 : sharedData->thisLoopIndex-1)];
-			// check if we're at the beginning of the loop
-			if (sharedData->thisLoopIndex == 0) {
-				if (!finished) {
-					// notify scores that this is the first bar of a loop
-					// if the first instItrument has been notified, then all instItruments will
-					// so we don't bother to check every instItrument explicitly
-					// this information concerns the score
-					auto instMapIt = sharedData->instruments.begin();
-					if (!instMapIt->second.isLoopStart()) {
-						for (instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-							instMapIt->second.setLoopStart(true);
-						}
-					}
-					checkMute();
-				}
-			}
-			else {
-				// if the last instItrument has its isLoopStart boolean to true
-				// set all instItruments booleans to false
-				instMapRevIt = sharedData->instruments.rbegin();
-				if (instMapRevIt->second.isLoopStart()) {
-					for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-						instMapIt->second.setLoopStart(false);
-					}
-				}
-			}
-			// check if we're at the end of the loop
-			if (sharedData->thisLoopIndex == sharedData->loopData[sharedData->loopIndex].size()-1) {
-				// first check if we're finishing
-				if (finish) {
-					// falsify both isLoopStart and isLoopEnd for all staffs first
-					// and notify all staffs of the finale
-					for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-						instMapIt->second.setLoopStart(false);
-						instMapIt->second.setLoopEnd(false);
-						instMapIt->second.setScoreEnd(true);
-					}
-				}
-				else {
-					// notify scores that this is the last bar of a loop
-					auto instMapIt = sharedData->instruments.begin();
-					if (!instMapIt->second.isLoopEnd()) {
-						for (instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-							instMapIt->second.setLoopEnd(true);
-						}
-					}
-				}
-			}
-			else {
-				instMapRevIt = sharedData->instruments.rbegin();
-				if (instMapRevIt->second.isLoopEnd()) {
-					for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-						instMapIt->second.setLoopEnd(false);
-					}
-				}
-			}
-			// get the start of each beat
-			int diff = (int)(timeStamp - tickCounter);
-			int compareVal = sharedData->tempoMs[bar] * 1000; // in microseconds
-			if (diff >= compareVal || firstIter) {
-				if (finished) {
-					for (auto func = sharedData->functions.begin(); func != sharedData->functions.end(); ++func) {
-						// binding a function to the number of instruments + 2, binds to the end
-						if (func->second.getBoundInst() == (int)sharedData->instruments.size() + 2 && sharedData->beatCounter == 0) {
-							((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(func->second.getName()), 1, 1);
-						}
-					}
-					finished = false;
-					stopNow();
-					//sharedData->mutex.unlock();
-					return;
-				}
-				if (firstIter) tickCounter = timeStamp;
-				else tickCounter = timeStamp - (uint64_t)(diff - compareVal);
-				// reset all instrument note durations at the start of each bar
-				//for (auto it = sharedData->instruments.begin(); it != sharedData->instruments.end(); ++it) {
-				//	it->second.resetNoteDur();
-				//}
-				if (endOfBar || firstIter) {
-					sharedData->thisLoopIndex = thisLoopIndex;
-					bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisLoopIndex];
-					ofxOscMessage m;
-					m.setAddress("/thisloopndx");
-					m.addIntArg(sharedData->thisLoopIndex);
-					((ofApp*)ofGetAppPtr())->sendToParts(m, true);
-					m.clear();
-					// sync the time stamp of each instrument to that of the sequencer when the latter starts
-					if (firstIter) {
-						for (auto it = sharedData->instruments.begin(); it != sharedData->instruments.end(); ++it) {
-							it->second.setTimeStamp(timeStamp);
-						}
-					}
-					if (updateSequencer && (sharedData->thisLoopIndex == 0)) {
-						// update the loop index first
-						sharedData->loopIndex = sharedData->tempBarLoopIndex;
-						// then update the bar index
-						bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisLoopIndex];
-						((ofApp*)ofGetAppPtr())->sendLoopIndexToParts();
-						// zero noteDur for all instruments so the first step of a new loop fires immediately
-						//for (auto it = sharedData->instruments.begin(); it != sharedData->instruments.end(); ++it) {
-						//	it->second.zeroNoteDur();
-						//}
-						updateSequencer = false;
-						sharedData->drawLoopStartEnd = true;
-						sharedData->barCounter = 0;
-						// update the previous number of bars displayed and the previous position to properly display single bars in horizontal view
-						sharedData->prevNumBars = sharedData->numBars;
-						sharedData->prevPosition = sharedData->thisPosition;
-					}
-					// after checking if we must update the indexes, increment them
-					if (!countdown) {
-						thisLoopIndex++;
-						if (thisLoopIndex >= sharedData->loopData[sharedData->loopIndex].size()) {
-							thisLoopIndex = 0;
-							// when we start a loop from its beginning, we must check if an instrument needs to be muted
-							muteChecked = false;
-						}
-						// increment the bar counter which is used for displaying the score only
-						sharedData->barCounter++;
-						endOfBar = false;
-						if (firstIter) ((ofApp*)ofGetAppPtr())->sendStopCountdownToParts();
-					}
-				}
-				firstIter = false;
-				if (countdown) {
-					((ofApp*)ofGetAppPtr())->sendCountdownToParts(countdownCounter);
-					countdownCounter--;
-					sharedData->beatCounter = -1;
-					for (auto func = sharedData->functions.begin(); func != sharedData->functions.end(); ++func) {
-						// binding to the number of instruments, binds a function to the pulse of the beat
-						if (func->second.getBoundInst() == (int)sharedData->instruments.size()) { 
-							((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(func->second.getName()), 1, 1);
-						}
-					}
-					if (!(sharedData->beatCounter == 0 && mustStop)) sendBeatVizInfo(bar);
-					endOfBar = true;
-					if (countdownCounter == 0) {
-						countdown = false;
-						sharedData->beatCounter = 0;
-						((ofApp*)ofGetAppPtr())->sendCountdownToParts(countdownCounter);
-					}
-				}
-				else {
-					sharedData->beatCounter = beatCounter;
-					beatCounter++;
-					if (beatCounter >= sharedData->numerator[bar]) {
-						beatCounter = 0;
-					}
-					if (sendBeatVizInfoCounter == 0) {
-						if (!(sharedData->beatCounter == 0 && mustStop)) sendBeatVizInfo(bar);
-					}
-					if (sharedData->beatAtDifferentThanDivisor[bar]) {
-						sendBeatVizInfoCounter++;
-						int modulo = (sharedData->beatAtValues[bar] > 0 ? sharedData->beatAtValues[bar] : 1);
-						sendBeatVizInfoCounter %= modulo;
-					}
-					for (auto func = sharedData->functions.begin(); func != sharedData->functions.end(); ++func) {
-						// binding a function to the number of instruments + 1, binds to the start of each bar
-						if (func->second.getBoundInst() == (int)sharedData->instruments.size() + 1 && sharedData->beatCounter == 0) {
-							((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(func->second.getName()), 1, 1);
-						}
-						// binding to the number of instruments, binds a function to the pulse of the beat
-						else if (func->second.getBoundInst() == (int)sharedData->instruments.size()) { 
-							((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(func->second.getName()), 1, 1);
-						}
-						// binding to the number of instruments + 3, binds a function to the start of the loop
-						else if (func->second.getBoundInst() == (int)sharedData->instruments.size() + 3 && \
-								sharedData->thisLoopIndex == 0 && sharedData->beatCounter == 0) { 
-							((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(func->second.getName()), 1, 1);
-						}
-					}
-				}
-				sharedData->PPQNCounter = 0;
-				// check if we're at the beginning of a bar so we must reset the barDataCounter of each instrument
-				if (sharedData->beatCounter == 0) {
-					for (auto it = sharedData->instruments.begin(); it != sharedData->instruments.end(); ++it) {
-						it->second.resetBarDataCounter();
-					}
-					if (mustStop) {
-						if (sharedData->animate) {
-							for (auto it = sharedData->instruments.begin(); it != sharedData->instruments.end(); ++it) {
-								it->second.setAnimation(false);
-							}
-							sharedData->animate = false;
-							sharedData->setAnimation = true;
-						}
-						onNextStartMidiByte = 0xFA; // Start MIDI command
-						mustStop = false;
-						mustStopCalled = true;
-						stopNow();
-						//sharedData->mutex.unlock();
-						return;
-					}
-				}
-			}
-			if (!countdown) {
-				// send MIDI clock, if set
-				// need to calculate the number of steps
-				uint64_t midiClockTimeStamp = ofGetElapsedTimeMicros();
-				if (sendMidiClock && \
-						(midiClockTimeStamp - sharedData->PPQNTimeStamp) >= sharedData->PPQNPerUs[bar] && \
-						sharedData->PPQNCounter < sharedData->PPQN) {
-					midiOut.sendMidiByte(0xF8);
-					sharedData->PPQNCounter++;
-					sharedData->PPQNTimeStamp = midiClockTimeStamp;
-				}
-				for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-					if (instMapIt->second.getBarDataCounter() == 0) {
-						if (instMapIt->second.mustUpdateTempo()) {
-							instMapIt->second.setUpdateTempo(false);
-						}
-					}
-					//runGlissando(instMapIt->first, bar); // this function determines whethere there are any glissandi active
-					if (instMapIt->second.hasNotesInBar(bar)) {
-						if (instMapIt->second.mustFireStep(timeStamp, bar, sharedData->tempo[bar])) {
-							// if we have a note, not a rest, and the current instrument is not muted
-							if (instMapIt->second.hasNotesInStep(bar) && !instMapIt->second.isMuted()) {
-								if (!instMapIt->second.isMidi()) { // send OSC message
-									// if the toggle is on and the note is not slurred or tied, send a note off
-									if (instMapIt->second.getSeqToggle()) {
-										if (!instMapIt->second.isNoteSlurred(bar, instMapIt->second.getBarDataCounter()) && \
-												!instMapIt->second.isNoteTied(bar, instMapIt->second.getBarDataCounter())) {
-											ofxOscMessage m;
-											m.setAddress("/" + instMapIt->second.getName() + "/dynamics");
-											m.addIntArg(0);
-											oscSender.sendMessage(m, false);
-											m.clear();
-										}
-									}
-									else {
-										bool sendData;
-										if (instMapIt->second.getBarDataCounter() > 0) {
-											if (!instMapIt->second.isNoteTied(bar, instMapIt->second.getBarDataCounter()-1)) {
-												sendData = true;
-											}
-											else {
-												sendData = false;
-											}
-										}
-										else {
-											if (prevBar != bar) {
-												if (!instMapIt->second.isLastNoteTied(prevBar)) {
-													sendData = true;
-												}
-												else {
-													sendData = false;
-												}
-											}
-											else {
-												sendData = true;
-											}
-										}
-										//if (instMapIt->second.glissandi.at(bar).at(instMapIt->second.getBarDataCounter()) == 1) {
-										//	startGlissando(instMapIt->first, bar, instMapIt->second.getBarDataCounter());
-										//}
-										if (sendData) {
-											ofxOscMessage m;
-											m.setAddress("/" + instMapIt->second.getName() + "/articulation");
-											for (auto it = instMapIt->second.articulations[bar][instMapIt->second.getBarDataCounter()].begin(); it != instMapIt->second.articulations[bar][instMapIt->second.getBarDataCounter()].end(); ++it) {
-												m.addStringArg(sharedData->articulSyms[*it]);
-											}
-											oscSender.sendMessage(m, false);
-											m.clear();
-
-											if (instMapIt->second.hasText(bar)) {
-												m.setAddress("/" + instMapIt->second.getName() + "/text");
-												m.addStringArg(instMapIt->second.getText(bar));
-												oscSender.sendMessage(m, false);
-												m.clear();
-											}
-
-											m.setAddress("/" + instMapIt->second.getName() + "/note");
-											for (auto it = instMapIt->second.notes[bar][instMapIt->second.getBarDataCounter()].begin(); it != instMapIt->second.notes[bar][instMapIt->second.getBarDataCounter()].end(); ++it) {
-												if (instMapIt->second.sendMIDI()) m.addFloatArg(*it);
-												else m.addFloatArg(midiToFreq(*it));
-											}
-											oscSender.sendMessage(m, false);
-											m.clear();
-											
-											m.setAddress("/" + instMapIt->second.getName() + "/dynamics");
-											if (instMapIt->second.sendMIDI()) m.addIntArg(instMapIt->second.getMidiVel(bar));
-											else m.addIntArg(instMapIt->second.getDynamic(bar));
-											oscSender.sendMessage(m, false);
-											m.clear();
-										}
-									}
-								}
-								// sending MIDI
-								else {
-									if (instMapIt->second.getSeqToggle()) {
-										if (!instMapIt->second.isNoteSlurred(bar, instMapIt->second.getBarDataCounter()) && \
-												!instMapIt->second.isNoteTied(bar, instMapIt->second.getBarDataCounter())) {
-											for (auto it = instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()].begin(); it != instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()].end(); ++it) {
-												midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendNoteOff(instMapIt->second.getMidiChan(), *it, 0);
-											}
-										}
-									}
-									else {
-										bool sendData;
-										if (instMapIt->second.getBarDataCounter() > 0) {
-											if (!instMapIt->second.isNoteTied(bar, instMapIt->second.getBarDataCounter()-1)) {
-												sendData = true;
-											}
-											else {
-												sendData = false;
-											}
-										}
-										else {
-											if (prevBar != bar) {
-												if (!instMapIt->second.isLastNoteTied(prevBar)) {
-													sendData = true;
-												}
-												else {
-													sendData = false;
-												}
-											}
-											else {
-												sendData = true;
-											}
-										}
-										if (sendData) {
-											midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendPitchBend(instMapIt->second.getMidiChan(), instMapIt->second.getPitchBendVal(bar));
-											for (auto it = instMapIt->second.midiArticulationVals[bar][instMapIt->second.barDataCounter].begin(); it != instMapIt->second.midiArticulationVals[bar][instMapIt->second.barDataCounter].end(); ++it) {
-												midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendProgramChange(instMapIt->second.getMidiChan(), *it);
-											}
-											for (auto it = instMapIt->second.midiNotes[bar][instMapIt->second.barDataCounter].begin(); it != instMapIt->second.midiNotes[bar][instMapIt->second.barDataCounter].end(); ++it) {
-												midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendNoteOn(instMapIt->second.getMidiChan(), *it, instMapIt->second.getMidiVel(bar));
-											}
-										}
-										// if the previous note was slurred, but not tied, send the note off message after the note on of the new note
-										if (instMapIt->second.getBarDataCounter() > 0) {
-											if (instMapIt->second.isNoteSlurred(bar, instMapIt->second.getBarDataCounter()-1) && \
-													!instMapIt->second.isNoteTied(bar, instMapIt->second.getBarDataCounter()-1)) {
-												for (auto it = instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()-1].begin(); it != instMapIt->second.midiNotes[bar][instMapIt->second.getBarDataCounter()-1].end(); ++it) {
-													midiOuts[midiPortsMap[instMapIt->second.getMidiPort()]].sendNoteOff(instMapIt->second.getMidiChan(), *it, 0);
-												}
-											}
-										}
-									}
-								}
-							}
-							else {
-								if (!instMapIt->second.isMidi()) {
-									// in case of a rest, send a 0 dynamic to make sure the instMapInstrument will stop
-									ofxOscMessage m;
-									m.setAddress("/" + instMapIt->second.getName() + "/dynamics");
-									m.addIntArg(0);
-									oscSender.sendMessage(m, false);
-									m.clear();
-								}
-								else {
-									// send all sound off with CC #120 with value 0
-									midiOut.sendControlChange(instMapIt->second.getMidiChan(), 120, 0);
-								}
-							}
-							if (sharedData->animate && !instMapIt->second.getSeqToggle()) {
-								instMapIt->second.setActiveNote();
-							}
-							if (instMapIt->second.getSeqToggle()) {
-								for (auto func = sharedData->functions.begin(); func != sharedData->functions.end(); ++func) {
-									if (func->second.getBoundInst() == instMapIt->first) {
-										if (instMapIt->second.getBarDataCounter() == 0) {
-											// this will not reset the first time a function is bound to an instrument
-											// so that we can set a calling step to not be the first one
-											// and when we bind the function, the first time it will be triggered at the
-											// desired step, then it will wrap around the number of steps of the instrument
-											func->second.resetCallingStep();
-										}
-										if (func->second.getCallingStep() == instMapIt->second.getBarDataCounter()) {
-											func->second.addStepIncrement(instMapIt->second.getBarDataCounter());
-											((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(func->second.getName()), 1, 1); // dummy 2nd and 3rd arguments
-										}
-									}
-								}
-							}
-							// toggleSeqToggle() takes care to increment the barDataCounter of the class
-							instMapIt->second.toggleSeqToggle(bar);
-						}
-					}
-				}
-			}
-			// check if we're at the end of the bar
-			if (sharedData->beatCounter == sharedData->numerator[bar] - 1 && !endOfBar) {
-				endOfBar = true;
-				if (sharedData->thisLoopIndex == sharedData->loopData[sharedData->loopIndex].size()-1 && finish) {
-					// if we're finishing
-					finish = false;
-					finished = true;
-					runSequencer = false;
-					updateSequencer = false;
-					onNextStartMidiByte = 0xFA; // Start MIDI command
-					//for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-					//	instMapIt->second.setAnimation(false);
-					//}
-					//sharedData->beatAnimate = false;
-					//sharedData->animate = false;
-					//sharedData->setAnimation = true;
-				}
-			}
-			//sharedData->mutex.unlock();
-		}
-	}
-}
-
+/**************************************************************/
 /********************* Main OF class **************************/
 //--------------------------------------------------------------
 void ofApp::setup()
 {
+	// setup() runs on the main thread, store its id to detect calls from other threads
+	mainThreadId = std::this_thread::get_id();
+	brightnessCoeff = 0.85;
 	backgroundColor = ofColor::black;
-	ofBackground(backgroundColor);
+	foregroundColor = ofColor::white;
+	beatColor = ofColor::paleGreen;
+	scoreBackgroundColor = ofColor::white;
+	shellStrColor = ofColor::white;
+	ofBackground(backgroundColor*brightnessCoeff);
 
-	// give a random seed to srand()
-	srand(time(NULL));
-	
+	// give a random seed to srand(), and a fixed one in test mode, so that \rand gives the same values every time (see testmode.cpp)
+	srand(testFile.empty() ? time(NULL) : 1);
+
 	unsigned int framerate = 60;
-	
+
 	sequencer.setup(&sharedData);
+
+	// define audio properties
+	sampleRate = 48000;
+	bufferSize = 256;
+	inChannels = 2;
+	outChannels = 2;
+	//audioDevID = 1;
+	inSoundDeviceSet = false;
+	outSoundDeviceSet = false;
+	pyoSet = false;
 
 	startSequencer = false;
 
-	brightnessCoeff = 0.85;
-	brightness = (int)(255 * brightnessCoeff);
 	notesID = 0;
 	parsingBar = false;
 	parsingBars = false;
@@ -695,25 +68,28 @@ void ofApp::setup()
 	barsIterCounter = 0;
 	numBarsToParse = 0;
 	numBarsToParseSet = false;
+	barsCmdNumBars = 0;
 	firstInstForBarsIndex = 0;
 	firstInstForBarsSet = false;
 	checkIfAllPartsReceivedBarData = false;
 	lastFunctionIndex = 0;
+	storingFunctionIndex = 0;
+	functionBodyDepth = 0;
 	fullScreen = false;
 	isWindowResized = false;
 	windowResizeTimeStamp = 0;
-	
+
 	ofSetFrameRate(framerate);
 	lineWidth = 2;
 	ofSetLineWidth(lineWidth);
-	
+
 	ofSetWindowTitle("LiveLily");
-	
+
 	//oscReceiver.setup(OSCPORT);
 	oscReceiverIsSet = false;
 	// waiting time to receive a response from a score part server is one frame at 60 FPS
 	scorePartResponseTime = (uint64_t)((1000.0 / 60.0) + 0.5);
-	
+
 	sharedData.screenWidth = ofGetWindowWidth();
 	sharedData.screenHeight = ofGetWindowHeight();
 	sharedData.middleOfScreenX = sharedData.screenWidth / 2;
@@ -723,11 +99,20 @@ void ofApp::setup()
 	numBarsToDisplay = 2;
 
 	sharedData.numInstruments = 0;
-	
+
 	shiftPressed = false;
 	ctrlPressed = false;
 	altPressed = false;
-	
+
+	numShellLines = 0;
+	numShellLsOutputLines = 0;
+	executingBind = false;
+	editorBindingKey = -1;
+	editorBindingArg = -1;
+	editorBindingIsDollar = false;
+	gPressed = false;
+	dPressed = false;
+
 	ofTrueTypeFont::setGlobalDpi(72);
 	fontSize = 18;
 	whichPane = 0;
@@ -736,35 +121,42 @@ void ofApp::setup()
 	editors[0].setActivity(true);
 	editors[0].setID(0);
 	editors[0].setPaneRow(0);
-	editors[0].setPaneCol(1);
+	editors[0].setPaneCol(0);
 	numPanes[0] = 1;
 	paneSplitOrientation = 0;
+	fontLoaded = false;
 	// the function below calls setFontSize() which in turn sets various values
 	// including the tracebackBase variable that is used to determine the coordinates and offsets of the panes
-	setFontSize();
+	setFontSize(true);
 	screenSplitHorizontal = sharedData.screenWidth;
-	
+
 	sharedData.tempoMs[0] = 500;
 	sharedData.BPMMultiplier[0] = 1;
 	sharedData.beatAtDifferentThanDivisor[0] = false;
+	sharedData.beatAtValCounter = 0;
 	sharedData.numerator[0] = 4;
 	sharedData.denominator[0] = 4;
 	sharedData.numBeats[0] = 4;
-	
+
 	barError = false;
 	inserting = false;
-	
+
 	sharedData.loopIndex = 0;
-	sharedData.tempBarLoopIndex = 0;
-	sharedData.thisLoopIndex = 0;
+	sharedData.tempLoopIndex = 0;
+	sharedData.thisBarIndex = 0;
 	sharedData.beatCounter = 0; // this is controlled by the sequencer
 	sharedData.barCounter = 0; // also controlled by the sequencer
 	sharedData.numBars = sharedData.prevNumBars = 1;
 	sharedData.thisPosition = sharedData.prevPosition = 0;
 	showBarCount = false;
 	showTempo = false;
-	
-	sharedData.showScore = false;
+
+	//sharedData.showNotes = false;
+	//showPianoRoll = false;
+	//showScope = false;
+	showScore = false;
+	scoreType = 0;
+	seqResolution = 16;
 	sharedData.longestInstNameWidth = 0;
 	sharedData.staffLinesDist = 10.0;
 	sharedData.scoreFontSize = 35;
@@ -787,44 +179,68 @@ void ofApp::setup()
 	sharedData.noteWidth = 0;
 	sharedData.noteHeight = 0;
 	sharedData.allStaffDiffs = 0;
+	sharedData.yStartPnts[0] = sharedData.yStartPnts[1] = sharedData.yStartPnts[2] = 0;
 	sharedData.maxBarFirstStaffAnchor = 0;
 
+	// various score variables
 	scoreOrientation = 0;
 	scoreXOffset = sharedData.screenWidth / 2;
 	scoreYOffset = 0;
 	scoreXStartPnt = 0;
 	scoreBackgroundWidth = sharedData.screenWidth/2;
-	scoreBackgroundHeight = sharedData.tracebackBase - cursorHeight;
+	scoreBackgroundHeight = sharedData.tracebackBase; // - cursorHeight;
 	scoreMoveXCommand = false;
 	scoreMoveYCommand = false;
 	mustUpdateScore = false;
 	scoreUpdated = false;
 	scoreChangeOnLastBar = false;
+	// piano roll variables, with the keys of a piano, from A0 to C8 (see setPianoRollRange())
+	sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+	setPianoRollRange(21, 108);
+	sharedData.pianoRollMinDur = (scoreBackgroundWidth - sharedData.pianoRollKeysWidth) / (float)MINDUR;
 
 	maestroToggleSet = false;
 	receivingMaestro = false;
 	maestroValNdx = 0;
 	maestroInitialized = false;
+	maestroBeatsIn = 1;
 	maestroValThresh = 7.5;
 	maestroTimeStamp = ofGetElapsedTimeMillis();
+	maestroAddress = "/maestro";
+	maestroToggleAddress = "/toggle";
+	maestroLevareAddress = "/levare";
+
+	sharedData.pyStdoutStr = "";
+	sharedData.pyStdoutStrNdx = 0;
+	sharedData.typePyStrCharByChar = true;
+	sharedData.typePyStrLineByLine = false;
+	sharedData.typePyStr = false;
+	sharedData.whichPyPane = 0;
+	sharedData.pyStdoutKeyModNdx = 0;
+	sharedData.pyStdoutStrVecNdx = 0;
 
 	correctOnSameOctaveOnly = true;
 
 	serialPortOpen = false;
-	
+
 	sharedData.PPQN = 24;
 	sharedData.PPQNCounter = 0;
 	// get the ms duration of the PPQM
 	sharedData.PPQNPerUs[0] = (uint64_t)(sharedData.tempoMs[0] / (float)sharedData.PPQN) * 1000;
-	
+
+	exiting = false;
+
+	mouseX = 0;
+	mouseY = 0;
+
 	// set the notes chars
 	for (int i = 2; i < 9; i++) {
 		noteChars[i-2] = char((i%7)+97);
 	}
 	noteChars[7] = char(114); // "r" for rest
-	
-	// store the articulation names strings
-	string articulSymsLocal[8] = {"none", "marcato", "trill", "tenuto", \
+
+	// store the articulation names std::strings
+	std::string articulSymsLocal[8] = {"none", "marcato", "trill", "tenuto", \
 								  "staccatissimo", "accent", "staccato", "portando"};
 	for (int i = 0; i < 8; i++) {
 		sharedData.articulSyms[i] = articulSymsLocal[i];
@@ -835,9 +251,9 @@ void ofApp::setup()
 		sharedData.beatVizCosTab[i] = (int)(((cos(((float)i/(float)(BEATVIZBRIGHTNESS+1))*M_PI) * -0.5) + 0.5) * 255);
 	}
 
-	/* Colors used for syntax highlighting
+	/* Colors used for syntax highlighting for LiveLily
 	   first level commands -- fuchsia
-	   second level commands - violet
+	   methods --------------- violet
 	   arguments ------------- skyBlue
 	   instruments ----------- greenYellow
 	   bars ------------------ orchid
@@ -852,133 +268,679 @@ void ofApp::setup()
 	   digits ---------------- gold
 	   text highlight box ---- goldenRod
 	   strings --------------- aqua
+	   variables ------------- darkTurquoise
+	   python decorators ----- coral
 	   -- paleGreen is used for the pulse of the beat
 	*/
 	// first level commands
-	commandsMap[livelily]["\\bar"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\loop"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\bars"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\function"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\tempo"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\solo"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\solonow"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\mute"] =  ofColor::fuchsia;
-	commandsMap[livelily]["\\unmute"] =  ofColor::fuchsia;
-	commandsMap[livelily]["\\mutenow"] =  ofColor::fuchsia;
-	commandsMap[livelily]["\\unmutenow"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\change"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\remaining"] =  ofColor::fuchsia;
-	commandsMap[livelily]["\\cursor"] =  ofColor::fuchsia;
-	commandsMap[livelily]["\\score"] =  ofColor::fuchsia;
-	commandsMap[livelily]["\\insts"] =  ofColor::fuchsia;
-	commandsMap[livelily]["\\finish"] =  ofColor::fuchsia;
-	commandsMap[livelily]["\\reset"] =  ofColor::fuchsia;
-	commandsMap[livelily]["\\fromosc"] =  ofColor::fuchsia;
-	commandsMap[livelily]["\\listmidiports"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\openmidiport"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\ctlchange"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\pgmchange"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\midiclock"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\dur"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\staccato"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\staccatissimo"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\tenuto"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\listserialports"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\openserialport"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\closeserialport"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\serialwrite"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\serialprint"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\time"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\print"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\osc"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\oscsend"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\beatcount"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\random"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\barnum"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\list"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\ottava"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\ott"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\beatsin"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\instorder"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\miditune"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\tuplet"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\tup"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\system"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\beatat"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\group"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\accoffset"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\autobrackets"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\active"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\inactive"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\sendkeys"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\sendlines"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\maestro"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\framerate"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\barlines"] = ofColor::fuchsia;
-	commandsMap[livelily]["\\clef"] = ofColor::fuchsia;
+	// the commands of LiveLily, from the table of commands (see commandTable() in parser.cpp)
+	// so that a command added there is colored, autocompleted, and reserved as a name (see reservedNames below)
+	for (const auto& command : commandTable()) commandsMap[livelily][command.first[1]][command.first] = ofColor::fuchsia;
+	commandsMap[livelily]['j'][""] = foregroundColor;
+	commandsMap[livelily]['q'][""] = foregroundColor;
+	commandsMap[livelily]['x'][""] = foregroundColor;
+	commandsMap[livelily]['z'][""] = foregroundColor;
 
-	// second leve commands
-	commandsMap[livelily]["play"] = ofColor::violet;
-	commandsMap[livelily]["stop"] =  ofColor::violet;
-	commandsMap[livelily]["stopnow"] =  ofColor::violet;
-	commandsMap[livelily]["rhythm"] = ofColor::violet;
-	commandsMap[livelily]["bind"] = ofColor::violet;
-	commandsMap[livelily]["unbind"] = ofColor::violet;
-	commandsMap[livelily]["onrelease"] = ofColor::violet;
-	commandsMap[livelily]["release"] = ofColor::violet;
-	commandsMap[livelily]["sendto"] = ofColor::violet;
-	commandsMap[livelily]["midiport"] = ofColor::violet;
-	commandsMap[livelily]["midichan"] = ofColor::violet;
-	commandsMap[livelily]["show"] = ofColor::violet;
-	commandsMap[livelily]["hide"] = ofColor::violet;
-	commandsMap[livelily]["animate"] = ofColor::violet;
-	commandsMap[livelily]["inanimate"] = ofColor::violet;
-	commandsMap[livelily]["showbeat"] = ofColor::violet;
-	commandsMap[livelily]["hidebeat"] = ofColor::violet;
-	commandsMap[livelily]["beattype"] = ofColor::violet;
-	commandsMap[livelily]["recenter"] = ofColor::violet;
-	commandsMap[livelily]["numbars"] = ofColor::violet;
-	commandsMap[livelily]["traverse"] = ofColor::violet;
-	commandsMap[livelily]["fullscreen"] = ofColor::violet;
-	commandsMap[livelily]["cursor"] = ofColor::violet;
-	commandsMap[livelily]["transpose"] = ofColor::violet;
-	commandsMap[livelily]["update"] = ofColor::violet;
-	commandsMap[livelily]["correct"] = ofColor::violet;
-	commandsMap[livelily]["goto"] = ofColor::violet;
-	commandsMap[livelily]["locate"] = ofColor::violet;
-	commandsMap[livelily]["sendmidi"] = ofColor::violet;
-	commandsMap[livelily]["accoffset"] = ofColor::violet;
-	commandsMap[livelily]["delay"] = ofColor::violet;
-	commandsMap[livelily]["setargs"] = ofColor::violet;
-	commandsMap[livelily]["send"] = ofColor::violet;
-	commandsMap[livelily]["setup"] = ofColor::violet;
-	commandsMap[livelily]["address"] = ofColor::violet;
-	commandsMap[livelily]["valndx"] = ofColor::violet;
-	commandsMap[livelily]["toggle"] = ofColor::violet;
-	commandsMap[livelily]["reset"] = ofColor::violet;
-	commandsMap[livelily]["valthresh"] = ofColor::violet;
-	commandsMap[livelily]["init"] = ofColor::violet;
-	commandsMap[livelily]["add"] = ofColor::violet;
+	// methods
+	commandsMap[livelily]['a']["accoffset"] = ofColor::violet;
+	commandsMap[livelily]['a']["add"] = ofColor::violet;
+	commandsMap[livelily]['a']["alignment"] = ofColor::violet;
+	commandsMap[livelily]['a']["autobrackets"] = ofColor::violet;
+	commandsMap[livelily]['a']["autocomplete"] = ofColor::violet;
+	commandsMap[livelily]['a']["animation"] = ofColor::violet;
+	commandsMap[livelily]['b']["beatsin"] = ofColor::violet;
+	commandsMap[livelily]['b']["beattype"] = ofColor::violet;
+	commandsMap[livelily]['b']["bind"] = ofColor::violet;
+	commandsMap[livelily]['c']["check"] = ofColor::violet;
+	commandsMap[livelily]['c']["clear"] = ofColor::violet;
+	commandsMap[livelily]['c']["colors"] = ofColor::violet;
+	commandsMap[livelily]['c']["correct"] = ofColor::violet;
+	commandsMap[livelily]['c']["cursor"] = ofColor::violet;
+	commandsMap[livelily]['d']["delay"] = ofColor::violet;
+	commandsMap[livelily]['f']["finish"] = ofColor::violet;
+	commandsMap[livelily]['f']["fullscreen"] = ofColor::violet;
+	commandsMap[livelily]['g']["goto"] = ofColor::violet;
+	commandsMap[livelily]['h']["hide"] = ofColor::violet;
+	commandsMap[livelily]['i']["init"] = ofColor::violet;
+	commandsMap[livelily]['l']["levareaddr"] = ofColor::violet;
+	commandsMap[livelily]['l']["locate"] = ofColor::violet;
+	commandsMap[livelily]['m']["mainaddr"] = ofColor::violet;
+	commandsMap[livelily]['m']["map"] = ofColor::violet;
+	commandsMap[livelily]['m']["midichan"] = ofColor::violet;
+	commandsMap[livelily]['m']["midiport"] = ofColor::violet;
+	commandsMap[livelily]['m']["movex"] = ofColor::violet;
+	commandsMap[livelily]['m']["movey"] = ofColor::violet;
+	commandsMap[livelily]['n']["normal"] = ofColor::violet;
+	commandsMap[livelily]['n']["numbars"] = ofColor::violet;
+	commandsMap[livelily]['o']["onrelease"] = ofColor::violet;
+	commandsMap[livelily]['p']["play"] = ofColor::violet;
+	commandsMap[livelily]['r']["recenter"] = ofColor::violet;
+	commandsMap[livelily]['r']["release"] = ofColor::violet;
+	commandsMap[livelily]['r']["remove"] = ofColor::violet;
+	commandsMap[livelily]['s']["send"] = ofColor::violet;
+	commandsMap[livelily]['s']["sendmidi"] = ofColor::violet;
+	commandsMap[livelily]['s']["setargs"] = ofColor::violet;
+	commandsMap[livelily]['s']["setup"] = ofColor::violet;
+	commandsMap[livelily]['s']["sendto"] = ofColor::violet;
+	commandsMap[livelily]['s']["seqres"] = ofColor::violet;
+	commandsMap[livelily]['s']["show"] = ofColor::violet;
+	commandsMap[livelily]['s']["showbeat"] = ofColor::violet;
+	commandsMap[livelily]['s']["sndfont"] = ofColor::violet;
+	commandsMap[livelily]['s']["stop"] =  ofColor::violet;
+	commandsMap[livelily]['s']["stopnow"] =  ofColor::violet;
+	commandsMap[livelily]['t']["toggleaddr"] = ofColor::violet;
+	commandsMap[livelily]['t']["transpose"] = ofColor::violet;
+	commandsMap[livelily]['t']["traverse"] = ofColor::violet;
+	commandsMap[livelily]['t']["tune"] = ofColor::violet;
+	commandsMap[livelily]['u']["unbind"] = ofColor::violet;
+	commandsMap[livelily]['u']["update"] = ofColor::violet;
+	commandsMap[livelily]['v']["val"] = ofColor::violet;
+	commandsMap[livelily]['v']["valndx"] = ofColor::violet;
+	commandsMap[livelily]['v']["valthresh"] = ofColor::violet;
+	commandsMap[livelily]['v']["volume"] = ofColor::violet;
 
 	// arguments
-	commandsMap[livelily]["barcount"] = ofColor::skyBlue;
-	commandsMap[livelily]["tempo"] = ofColor::skyBlue;
-	commandsMap[livelily]["beat"] = ofColor::skyBlue;
-	commandsMap[livelily]["barstart"] = ofColor::skyBlue;
-	commandsMap[livelily]["loopstart"] = ofColor::skyBlue;
-	commandsMap[livelily]["all"] = ofColor::skyBlue;
-	commandsMap[livelily]["framerate"] = ofColor::skyBlue;
-	commandsMap[livelily]["fr"] = ofColor::skyBlue;
-	commandsMap[livelily]["onlast"] = ofColor::skyBlue;
-	commandsMap[livelily]["immediately"] = ofColor::skyBlue;
-	commandsMap[livelily]["onoctave"] = ofColor::skyBlue;
-	commandsMap[livelily]["on"] = ofColor::skyBlue;
-	commandsMap[livelily]["off"] = ofColor::skyBlue;
-	commandsMap[livelily]["bass"] = ofColor::skyBlue;
-	commandsMap[livelily]["treble"] = ofColor::skyBlue;
-	commandsMap[livelily]["alto"] = ofColor::skyBlue;
-	commandsMap[livelily]["perc"] = ofColor::skyBlue;
-	commandsMap[livelily]["percussion"] = ofColor::skyBlue;
+	commandsMap[livelily]['a']["all"] = ofColor::skyBlue;
+	commandsMap[livelily]['a']["alto"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["barcount"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["barstart"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["bass"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["beat"] = ofColor::skyBlue;
+	commandsMap[livelily]['c']["char"] = ofColor::skyBlue;
+	commandsMap[livelily]['f']["fr"] = ofColor::skyBlue;
+	commandsMap[livelily]['f']["framerate"] = ofColor::skyBlue;
+	commandsMap[livelily]['h']["hor"] = ofColor::skyBlue;
+	commandsMap[livelily]['i']["immediately"] = ofColor::skyBlue;
+	commandsMap[livelily]['i']["invert"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["line"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["localhost"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["loopstart"] = ofColor::skyBlue;
+	commandsMap[livelily]['n']["notes"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["off"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["on"] = ofColor::skyBlue;
+	// the widths of the units of \editor.alignment
+	commandsMap[livelily]['s']["short"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["long"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["onlast"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["onoctave"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["perc"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["percussion"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["pianoroll"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["sequencer"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["seq"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["python"] = ofColor::skyBlue;
+	commandsMap[livelily]['r']["reset"] = ofColor::skyBlue;
+	commandsMap[livelily]['r']["rhythm"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["scope"] = ofColor::skyBlue;
+	commandsMap[livelily]['t']["tempo"] = ofColor::skyBlue;
+	commandsMap[livelily]['t']["treble"] = ofColor::skyBlue;
+	commandsMap[livelily]['v']["vert"] = ofColor::skyBlue;
+
+	// color names, same color as arguments above
+	commandsMap[livelily]['a']["aliceBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['a']["antiqueWhite"] = ofColor::skyBlue;
+	commandsMap[livelily]['a']["aqua"] = ofColor::skyBlue;
+	commandsMap[livelily]['a']["aquamarine"] = ofColor::skyBlue;
+	commandsMap[livelily]['a']["azure"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["black"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["blue"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["beige"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["bisque"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["blanchedAlmond"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["blueViolet"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["brown"] = ofColor::skyBlue;
+	commandsMap[livelily]['b']["burlyWood"] = ofColor::skyBlue;
+	commandsMap[livelily]['c']["cyan"] = ofColor::skyBlue;
+	commandsMap[livelily]['c']["cadetBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['c']["chartreuse"] = ofColor::skyBlue;
+	commandsMap[livelily]['c']["chocolate"] = ofColor::skyBlue;
+	commandsMap[livelily]['c']["coral"] = ofColor::skyBlue;
+	commandsMap[livelily]['c']["cornflowerBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['c']["cornsilk"] = ofColor::skyBlue;
+	commandsMap[livelily]['c']["crimson"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkCyan"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkGoldenRod"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkGray"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkGrey"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkKhaki"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkMagenta"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkOliveGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkOrange"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkOrchid"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkRed"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkSalmon"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkSeaGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkSlateBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkSlateGray"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkSlateGrey"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkTurquoise"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["darkViolet"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["deepPink"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["deepSkyBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["dimGray"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["dimGrey"] = ofColor::skyBlue;
+	commandsMap[livelily]['d']["dodgerBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['f']["fireBrick"] = ofColor::skyBlue;
+	commandsMap[livelily]['f']["floralWhite"] = ofColor::skyBlue;
+	commandsMap[livelily]['f']["forestGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['f']["fuchsia"] = ofColor::skyBlue;
+	commandsMap[livelily]['g']["green"] = ofColor::skyBlue;
+	commandsMap[livelily]['g']["gray"] = ofColor::skyBlue;
+	commandsMap[livelily]['g']["gainsboro"] = ofColor::skyBlue;
+	commandsMap[livelily]['g']["ghostWhite"] = ofColor::skyBlue;
+	commandsMap[livelily]['g']["gold"] = ofColor::skyBlue;
+	commandsMap[livelily]['g']["goldenRod"] = ofColor::skyBlue;
+	commandsMap[livelily]['g']["grey"] = ofColor::skyBlue;
+	commandsMap[livelily]['g']["greenYellow"] = ofColor::skyBlue;
+	commandsMap[livelily]['h']["honeyDew"] = ofColor::skyBlue;
+	commandsMap[livelily]['h']["hotPink"] = ofColor::skyBlue;
+	commandsMap[livelily]['i']["indianRed "] = ofColor::skyBlue;
+	commandsMap[livelily]['i']["indigo "] = ofColor::skyBlue;
+	commandsMap[livelily]['i']["ivory"] = ofColor::skyBlue;
+	commandsMap[livelily]['k']["khaki"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lavender"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lavenderBlush"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lawnGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lemonChiffon"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightCoral"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightCyan"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightGoldenRodYellow"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightGray"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightGrey"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightPink"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightSalmon"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightSeaGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightSkyBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightSlateGray"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightSlateGrey"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightSteelBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lightYellow"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["lime"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["limeGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['l']["linen"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["magenta"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["maroon"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mediumAquaMarine"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mediumBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mediumOrchid"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mediumPurple"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mediumSeaGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mediumSlateBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mediumSpringGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mediumTurquoise"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mediumVioletRed"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["midnightBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mintCream"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["mistyRose"] = ofColor::skyBlue;
+	commandsMap[livelily]['m']["moccasin"] = ofColor::skyBlue;
+	commandsMap[livelily]['n']["navajoWhite"] = ofColor::skyBlue;
+	commandsMap[livelily]['n']["navy"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["oldLace"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["olive"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["oliveDrab"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["orange"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["orangeRed"] = ofColor::skyBlue;
+	commandsMap[livelily]['o']["orchid"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["paleGoldenRod"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["paleGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["paleTurquoise"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["paleVioletRed"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["papayaWhip"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["peachPuff"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["peru"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["pink"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["plum"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["powderBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['p']["purple"] = ofColor::skyBlue;
+	commandsMap[livelily]['r']["red"] = ofColor::skyBlue;
+	commandsMap[livelily]['r']["rosyBrown"] = ofColor::skyBlue;
+	commandsMap[livelily]['r']["royalBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["saddleBrown"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["salmon"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["sandyBrown"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["seaGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["seaShell"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["sienna"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["silver"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["skyBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["slateBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["slateGray"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["slateGrey"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["snow"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["springGreen"] = ofColor::skyBlue;
+	commandsMap[livelily]['s']["steelBlue"] = ofColor::skyBlue;
+	commandsMap[livelily]['t']["tan"] = ofColor::skyBlue;
+	commandsMap[livelily]['t']["teal"] = ofColor::skyBlue;
+	commandsMap[livelily]['t']["thistle"] = ofColor::skyBlue;
+	commandsMap[livelily]['t']["tomato"] = ofColor::skyBlue;
+	commandsMap[livelily]['t']["turquoise"] = ofColor::skyBlue;
+	commandsMap[livelily]['v']["violet"] = ofColor::skyBlue;
+	commandsMap[livelily]['w']["white"] = ofColor::skyBlue;
+	commandsMap[livelily]['w']["wheat"] = ofColor::skyBlue;
+	commandsMap[livelily]['w']["whiteSmoke"] = ofColor::skyBlue;
+	commandsMap[livelily]['y']["yellow"] = ofColor::skyBlue;
+	commandsMap[livelily]['y']["yellowGreen"] = ofColor::skyBlue;
+
+	// dummy upper case letters (the LiveLily language doesn't have keywords with upper case letters)
+	commandsMap[livelily]['A'][""] = foregroundColor;
+	commandsMap[livelily]['B'][""] = foregroundColor;
+	commandsMap[livelily]['C'][""] = foregroundColor;
+	commandsMap[livelily]['D'][""] = foregroundColor;
+	commandsMap[livelily]['E'][""] = foregroundColor;
+	commandsMap[livelily]['F'][""] = foregroundColor;
+	commandsMap[livelily]['G'][""] = foregroundColor;
+	commandsMap[livelily]['H'][""] = foregroundColor;
+	commandsMap[livelily]['I'][""] = foregroundColor;
+	commandsMap[livelily]['J'][""] = foregroundColor;
+	commandsMap[livelily]['K'][""] = foregroundColor;
+	commandsMap[livelily]['L'][""] = foregroundColor;
+	commandsMap[livelily]['M'][""] = foregroundColor;
+	commandsMap[livelily]['N'][""] = foregroundColor;
+	commandsMap[livelily]['O'][""] = foregroundColor;
+	commandsMap[livelily]['P'][""] = foregroundColor;
+	commandsMap[livelily]['Q'][""] = foregroundColor;
+	commandsMap[livelily]['R'][""] = foregroundColor;
+	commandsMap[livelily]['S'][""] = foregroundColor;
+	commandsMap[livelily]['T'][""] = foregroundColor;
+	commandsMap[livelily]['U'][""] = foregroundColor;
+	commandsMap[livelily]['V'][""] = foregroundColor;
+	commandsMap[livelily]['W'][""] = foregroundColor;
+	commandsMap[livelily]['X'][""] = foregroundColor;
+	commandsMap[livelily]['Y'][""] = foregroundColor;
+	commandsMap[livelily]['Z'][""] = foregroundColor;
+	// the commands of LiveLily are reserved names (see isReservedName()), which are stored before any name is defined
+	for (const auto& byChar : commandsMap[livelily]) {
+		for (const auto& cmd : byChar.second) {
+			if (cmd.first.size() > 1 && cmd.first[0] == '\\') reservedNames.insert(cmd.first);
+		}
+	}
+
+	/* Colors used for syntax highlighting for Python
+	   commands -------------- fuchsia
+	   keywords -------------- violet
+	   Pyo classes ----------- deepSkyBlue
+	   command execution ----- cyan
+	   errors ---------------- red
+	   warnings -------------- orange
+	   brackets pairing ------ magenta
+	   comments -------------- gray
+	   digits ---------------- gold
+	   text highlight box ---- goldenRod
+	   strings --------------- aqua
+	   -- paleGreen is used for the pulse of the beat
+	*/
+	// keywords
+	commandsMap[python]['a']["as"] = ofColor::violet;
+	commandsMap[python]['a']["assert"] = ofColor::violet;
+	commandsMap[python]['a']["and"] = ofColor::violet;
+	commandsMap[python]['b']["break"] = ofColor::violet;
+	commandsMap[python]['c']["class"] = ofColor::violet;
+	commandsMap[python]['c']["continue"] = ofColor::violet;
+	commandsMap[python]['d']["def"] = ofColor::violet;
+	commandsMap[python]['d']["del"] = ofColor::violet;
+	commandsMap[python]['e']["elif"] = ofColor::violet;
+	commandsMap[python]['e']["else"] = ofColor::violet;
+	commandsMap[python]['e']["except"] = ofColor::violet;
+	commandsMap[python]['f']["for"] = ofColor::violet;
+	commandsMap[python]['f']["from"] = ofColor::violet;
+	commandsMap[python]['f']["finally"] = ofColor::violet;
+	commandsMap[python]['g']["global"] = ofColor::violet;
+	commandsMap[python]['h'][""] = foregroundColor;
+	commandsMap[python]['i']["if"] = ofColor::violet;
+	commandsMap[python]['i']["is"] = ofColor::violet;
+	commandsMap[python]['i']["import"] = ofColor::violet;
+	commandsMap[python]['i']["in"] = ofColor::violet;
+	commandsMap[python]['j'][""] = foregroundColor;
+	commandsMap[python]['k'][""] = foregroundColor;
+	commandsMap[python]['l']["lambda"] = ofColor::violet;
+	commandsMap[python]['m'][""] = foregroundColor;
+	commandsMap[python]['n']["not"] = ofColor::violet;
+	commandsMap[python]['n']["nonlocal"] = ofColor::violet;
+	commandsMap[python]['n']["not"] = ofColor::violet;
+	commandsMap[python]['o']["or"] = ofColor::violet;
+	commandsMap[python]['p']["pass"] = ofColor::violet;
+	commandsMap[python]['q'][""] = foregroundColor;
+	commandsMap[python]['r']["raise"] = ofColor::violet;
+	commandsMap[python]['r']["return"] = ofColor::violet;
+	commandsMap[python]['s'][""] = foregroundColor;
+	commandsMap[python]['t']["try"] = ofColor::violet;
+	commandsMap[python]['u'][""] = foregroundColor;
+	commandsMap[python]['v'][""] = foregroundColor;
+	commandsMap[python]['w']["while"] = ofColor::violet;
+	commandsMap[python]['w']["with"] = ofColor::violet;
+	commandsMap[python]['x'][""] = foregroundColor;
+	commandsMap[python]['y']["yield"] = ofColor::violet;
+	commandsMap[python]['z'][""] = foregroundColor;
+	commandsMap[python]['F']["False"] = ofColor::violet;
+	commandsMap[python]['J'][""] = foregroundColor;
+	commandsMap[python]['K'][""] = foregroundColor;
+	commandsMap[python]['N']["None"] = ofColor::violet;
+	commandsMap[python]['Q'][""] = foregroundColor;
+	commandsMap[python]['T']["True"] = ofColor::violet;
+
+	// Pyo classes
+	commandsMap[python]['A']["Abs"] = ofColor::deepSkyBlue;
+	commandsMap[python]['A']["Atan2"] = ofColor::deepSkyBlue;
+	commandsMap[python]['A']["Adsr"] = ofColor::deepSkyBlue;
+	commandsMap[python]['A']["AllpassWV"] = ofColor::deepSkyBlue;
+	commandsMap[python]['A']["Allpass"] = ofColor::deepSkyBlue;
+	commandsMap[python]['A']["Allpass2"] = ofColor::deepSkyBlue;
+	commandsMap[python]['A']["Atone"] = ofColor::deepSkyBlue;
+	commandsMap[python]['A']["AToDB"] = ofColor::deepSkyBlue;
+	commandsMap[python]['A']["AtanTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['A']["AttackDetector"] = ofColor::deepSkyBlue;
+	commandsMap[python]['A']["Average"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["Balance"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["Biquad"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["Biquadx"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["Biquada"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["BandSplit"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["ButLP"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["ButHP"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["ButBP"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["ButBR"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["Blit"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["BrownNoise"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["Between"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["Beat"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["Bendin"] = ofColor::deepSkyBlue;
+	commandsMap[python]['B']["Binaural"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Centroid"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Cos"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Ceil"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Clip"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Convolve"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Chorus"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["ComplexRes"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["CarToPol"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["CvlVerb"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["ChenLee"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["CrossFM"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["CallAfter"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["CtlScan"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["CtlScan2"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Change"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Cloud"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Count"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Counter"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["CentsToTranspo"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Clean_objects"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Compare"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["ConotrolRead"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["ConotrolRec"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["ChebyTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["CosLogTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["CosTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["CurvyTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['C']["Compress"] = ofColor::deepSkyBlue;
+	commandsMap[python]['D']["Div"] = ofColor::deepSkyBlue;
+	commandsMap[python]['D']["Degrade"] = ofColor::deepSkyBlue;
+	commandsMap[python]['D']["Disto"] = ofColor::deepSkyBlue;
+	commandsMap[python]['D']["Delay"] = ofColor::deepSkyBlue;
+	commandsMap[python]['D']["Delay1"] = ofColor::deepSkyBlue;
+	commandsMap[python]['D']["DCBlock"] = ofColor::deepSkyBlue;
+	commandsMap[python]['D']["DBToA"] = ofColor::deepSkyBlue;
+	commandsMap[python]['D']["Denorm"] = ofColor::deepSkyBlue;
+	commandsMap[python]['D']["DataTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['D']["Dummy"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["Expseg"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["Exp"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventScale"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventGenerator"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventDummy"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventFilter"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventKey"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventSeq"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventSlide"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventIndex"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventMarkov"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventChoice"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventDrunk"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventNoise"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventCall"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventConditional"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EventInstrument"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["Events"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["EQ"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["Euclide"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["ExpTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['E']["Expand"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["Fader"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["Follower"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["Follower2"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["Floor"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["FreqShift"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["FFT"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["FrameAccum"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["FrameDelta"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["FastSine"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["FM"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["FToM"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["FourBand"] = ofColor::deepSkyBlue;
+	commandsMap[python]['F']["Freeverb"] = ofColor::deepSkyBlue;
+	commandsMap[python]['G']["Gate"] = ofColor::deepSkyBlue;
+	commandsMap[python]['G']["Granulator"] = ofColor::deepSkyBlue;
+	commandsMap[python]['G']["Granule"] = ofColor::deepSkyBlue;
+	commandsMap[python]['H']["Hilbert"] = ofColor::deepSkyBlue;
+	commandsMap[python]['H']["HannTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['H']["HarmTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['H']["HRTF"] = ofColor::deepSkyBlue;
+	commandsMap[python]['H']["Harmonizer"] = ofColor::deepSkyBlue;
+	commandsMap[python]['I']["IRWinSync"] = ofColor::deepSkyBlue;
+	commandsMap[python]['I']["IRAverage"] = ofColor::deepSkyBlue;
+	commandsMap[python]['I']["IRPulse"] = ofColor::deepSkyBlue;
+	commandsMap[python]['I']["IRFM"] = ofColor::deepSkyBlue;
+	commandsMap[python]['I']["IFFTMatrix"] = ofColor::deepSkyBlue;
+	commandsMap[python]['I']["Input"] = ofColor::deepSkyBlue;
+	commandsMap[python]['I']["InputFader"] = ofColor::deepSkyBlue;
+	commandsMap[python]['I']["Iter"] = ofColor::deepSkyBlue;
+	commandsMap[python]['I']["IFFT"] = ofColor::deepSkyBlue;
+	commandsMap[python]['I']["Interp"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["Log"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["Log2"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["Log10"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["Linseg"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["LFO"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["Lorenz"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["LogiMap"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["Lookup"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["Looper"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["LinTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['L']["LogTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MidiListener"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MidiDispatcher"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["Mirror"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["Min"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["Max"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MultiBand"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["Mix"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MatrixMorph"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MatrixPointer"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MatrixRec"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MatrixRecLoop"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MidiAdsr"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MidiDelAdsr"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MidiCtl"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["Metro"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MToF"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MToT"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["Map"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MoogLP"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["Mixer"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MidiLinseg"] = ofColor::deepSkyBlue;
+	commandsMap[python]['M']["MML"] = ofColor::deepSkyBlue;
+	commandsMap[python]['N']["Noise"] = ofColor::deepSkyBlue;
+	commandsMap[python]['N']["Notein"] = ofColor::deepSkyBlue;
+	commandsMap[python]['N']["NextTrig"] = ofColor::deepSkyBlue;
+	commandsMap[python]['N']["NoteinRead"] = ofColor::deepSkyBlue;
+	commandsMap[python]['N']["NoteinRec"] = ofColor::deepSkyBlue;
+	commandsMap[python]['N']["NewTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['N']["NewMatrix"] = ofColor::deepSkyBlue;
+	commandsMap[python]['O']["OscListener"] = ofColor::deepSkyBlue;
+	commandsMap[python]['O']["OscDataReceive"] = ofColor::deepSkyBlue;
+	commandsMap[python]['O']["OscDataSend"] = ofColor::deepSkyBlue;
+	commandsMap[python]['O']["OscListReceive"] = ofColor::deepSkyBlue;
+	commandsMap[python]['O']["OscReceive"] = ofColor::deepSkyBlue;
+	commandsMap[python]['O']["OscSend"] = ofColor::deepSkyBlue;
+	commandsMap[python]['O']["Osc"] = ofColor::deepSkyBlue;
+	commandsMap[python]['O']["OscBank"] = ofColor::deepSkyBlue;
+	commandsMap[python]['O']["OscLoop"] = ofColor::deepSkyBlue;
+	commandsMap[python]['O']["OscTrig"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyoBaseObject"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyoObject"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyoTableObject"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyoMatrixObject"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyoPVObject"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PeakAmp"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PolToCar"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVAnal"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVSynth"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVAddSynth"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVTranspose"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVVerb"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVGate"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVCross"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVMult"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVMorph"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVFilter"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVDelay"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVBuffer"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVShift"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVAmpMod"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVFreqMod"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVBufLoops"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVBufTabLoops"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PVMix"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Phasor"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PinkNoise"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Particle"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Particle2"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Pointer"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Pointer2"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Pulsar"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Percent"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyGuiControlSlider"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyGuiVuMeter"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyGuiGrapher"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyGuiMultiSlider"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyGuiSpectrum"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyGuiScope"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyGuiSndView"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PyGuiKeyboard"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["ParaTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PartialTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Port"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Phaser"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["PadSynthTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Print"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Pan"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Pow"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Programin"] = ofColor::deepSkyBlue;
+	commandsMap[python]['P']["Pattern"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["RawMidi"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["RandDur"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["RandInt"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["Randh"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["Randi"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["Record"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["Resample"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["RMS"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["Round"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["Reson"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["Resonx"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["RCOsc"] = ofColor::deepSkyBlue;
+	commandsMap[python]['R']["Rossler"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Server"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Spectrum"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Scope"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Sin"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Sqrt"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Sub"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Sig"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SigTo"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SDelay"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SVF"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SVF2"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["STRev"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SmoothDelay"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Sine"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SineLoop"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SumOsc"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SuperSaw"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Stream"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SPan"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Selector"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Switch"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Score"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SfPlayer"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SfMarkerLooper"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SfMarkerShuffler"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SampHold"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Scale"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Snap"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SawTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SyncTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SndTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SquareTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SharedTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SLMap"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SLMapFreq"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SLMapMul"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SLMapPhase"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SLMapQ"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SLMapDur"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["SLMapPan"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Select"] = ofColor::deepSkyBlue;
+	commandsMap[python]['S']["Seq"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["Tan"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["Tanh"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["Tone"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["Touchin"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TableIndex"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TableMorph"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TablePut"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TableRead"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TableRec"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TableWrite"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TableScale"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TableFill"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TableScan"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["Thresh"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["Timer"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["Trig"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigBurst"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigChoice"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigEnv"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigExpseg"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigFunc"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigLinseg"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigRand"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigRandInt"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigTableRec"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigVal"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigXnoise"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrigXnoiseMidi"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TranspoToCents"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TrackHold"] = ofColor::deepSkyBlue;
+	commandsMap[python]['T']["TriangleTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['U']["Urn"] = ofColor::deepSkyBlue;
+	commandsMap[python]['V']["Vocoder"] = ofColor::deepSkyBlue;
+	commandsMap[python]['V']["Vectral"] = ofColor::deepSkyBlue;
+	commandsMap[python]['V']["VarPort"] = ofColor::deepSkyBlue;
+	commandsMap[python]['V']["VoiceManager"] = ofColor::deepSkyBlue;
+	commandsMap[python]['W']["Wrap"] = ofColor::deepSkyBlue;
+	commandsMap[python]['W']["Waveguide"] = ofColor::deepSkyBlue;
+	commandsMap[python]['W']["WGVerb"] = ofColor::deepSkyBlue;
+	commandsMap[python]['W']["WinTable"] = ofColor::deepSkyBlue;
+	commandsMap[python]['X']["XNoise"] = ofColor::deepSkyBlue;
+	commandsMap[python]['X']["XNoiseDur"] = ofColor::deepSkyBlue;
+	commandsMap[python]['X']["XNoiseMidi"] = ofColor::deepSkyBlue;
+	commandsMap[python]['Y']["Yin"] = ofColor::deepSkyBlue;
+	commandsMap[python]['Z']["ZCross"] = ofColor::deepSkyBlue;
 
 	// push commands that won't let the editor tokenize based on digits
 	commandsToNotTokenize.push_back("\\insts");
@@ -986,21 +948,194 @@ void ofApp::setup()
 	commandsToNotTokenize.push_back("\\bars");
 	commandsToNotTokenize.push_back("\\loop");
 	commandsToNotTokenize.push_back("\\function");
-	commandsToNotTokenize.push_back("\\list");
+	commandsToNotTokenize.push_back("\\std::list");
 	commandsToNotTokenize.push_back("\\group");
+
+	// commands that the editor needs to check in case of multi-line executing
+	// but starting on the first line that is not indented
+	noIndentCheck[livelily].push_back("\\bar");
+	noIndentCheck[livelily].push_back("\\bars");
+	noIndentCheck[livelily].push_back("\\loop");
+	noIndentCheck[livelily].push_back("\\function");
+	noIndentCheck[livelily].push_back("\\std::list");
+	noIndentCheck[python].push_back("class");
+	noIndentCheck[python].push_back("def");
+	noIndentCheck[python].push_back("for");
+	noIndentCheck[python].push_back("while");
+	noIndentCheck[python].push_back("if");
+
+	// a map with the color names, copied from the colorsExtendedExample
+	colorNameMap["white"] = ofColor::white;
+	colorNameMap["gray"] = ofColor::gray;
+	colorNameMap["black"] = ofColor::black;
+	colorNameMap["red"] = ofColor::red;
+	colorNameMap["green"] = ofColor::green;
+	colorNameMap["blue"] = ofColor::blue;
+	colorNameMap["cyan"] = ofColor::cyan;
+	colorNameMap["magenta"] = ofColor::magenta;
+	colorNameMap["yellow"] = ofColor::yellow;
+	colorNameMap["aliceBlue"] = ofColor::aliceBlue;
+	colorNameMap["antiqueWhite"] = ofColor::antiqueWhite;
+	colorNameMap["aqua"] = ofColor::aqua;
+	colorNameMap["aquamarine"] = ofColor::aquamarine;
+	colorNameMap["azure"] = ofColor::azure;
+	colorNameMap["beige"] = ofColor::beige;
+	colorNameMap["bisque"] = ofColor::bisque;
+	colorNameMap["blanchedAlmond"] = ofColor::blanchedAlmond;
+	colorNameMap["blueViolet"] = ofColor::blueViolet;
+	colorNameMap["brown"] = ofColor::brown;
+	colorNameMap["burlyWood"] = ofColor::burlyWood;
+	colorNameMap["cadetBlue"] = ofColor::cadetBlue;
+	colorNameMap["chartreuse"] = ofColor::chartreuse;
+	colorNameMap["chocolate"] = ofColor::chocolate;
+	colorNameMap["coral"] = ofColor::coral;
+	colorNameMap["cornflowerBlue"] = ofColor::cornflowerBlue;
+	colorNameMap["cornsilk"] = ofColor::cornsilk;
+	colorNameMap["crimson"] = ofColor::crimson;
+	colorNameMap["darkBlue"] = ofColor::darkBlue;
+	colorNameMap["darkCyan"] = ofColor::darkCyan;
+	colorNameMap["darkGoldenRod"] = ofColor::darkGoldenRod;
+	colorNameMap["darkGray"] = ofColor::darkGray;
+	colorNameMap["darkGrey"] = ofColor::darkGrey;
+	colorNameMap["darkGreen"] = ofColor::darkGreen;
+	colorNameMap["darkKhaki"] = ofColor::darkKhaki;
+	colorNameMap["darkMagenta"] = ofColor::darkMagenta;
+	colorNameMap["darkOliveGreen"] = ofColor::darkOliveGreen;
+	colorNameMap["darkOrange"] = ofColor::darkOrange;
+	colorNameMap["darkOrchid"] = ofColor::darkOrchid;
+	colorNameMap["darkRed"] = ofColor::darkRed;
+	colorNameMap["darkSalmon"] = ofColor::darkSalmon;
+	colorNameMap["darkSeaGreen"] = ofColor::darkSeaGreen;
+	colorNameMap["darkSlateBlue"] = ofColor::darkSlateBlue;
+	colorNameMap["darkSlateGray"] = ofColor::darkSlateGray;
+	colorNameMap["darkSlateGrey"] = ofColor::darkSlateGrey;
+	colorNameMap["darkTurquoise"] = ofColor::darkTurquoise;
+	colorNameMap["darkViolet"] = ofColor::darkViolet;
+	colorNameMap["deepPink"] = ofColor::deepPink;
+	colorNameMap["deepSkyBlue"] = ofColor::deepSkyBlue;
+	colorNameMap["dimGray"] = ofColor::dimGray;
+	colorNameMap["dimGrey"] = ofColor::dimGrey;
+	colorNameMap["dodgerBlue"] = ofColor::dodgerBlue;
+	colorNameMap["fireBrick"] = ofColor::fireBrick;
+	colorNameMap["floralWhite"] = ofColor::floralWhite;
+	colorNameMap["forestGreen"] = ofColor::forestGreen;
+	colorNameMap["fuchsia"] = ofColor::fuchsia;
+	colorNameMap["gainsboro"] = ofColor::gainsboro;
+	colorNameMap["ghostWhite"] = ofColor::ghostWhite;
+	colorNameMap["gold"] = ofColor::gold;
+	colorNameMap["goldenRod"] = ofColor::goldenRod;
+	colorNameMap["grey"] = ofColor::grey;
+	colorNameMap["greenYellow"] = ofColor::greenYellow;
+	colorNameMap["honeyDew"] = ofColor::honeyDew;
+	colorNameMap["hotPink"] = ofColor::hotPink;
+	colorNameMap["indianRed "] = ofColor::indianRed;
+	colorNameMap["indigo "] = ofColor::indigo;
+	colorNameMap["ivory"] = ofColor::ivory;
+	colorNameMap["khaki"] = ofColor::khaki;
+	colorNameMap["lavender"] = ofColor::lavender;
+	colorNameMap["lavenderBlush"] = ofColor::lavenderBlush;
+	colorNameMap["lawnGreen"] = ofColor::lawnGreen;
+	colorNameMap["lemonChiffon"] = ofColor::lemonChiffon;
+	colorNameMap["lightBlue"] = ofColor::lightBlue;
+	colorNameMap["lightCoral"] = ofColor::lightCoral;
+	colorNameMap["lightCyan"] = ofColor::lightCyan;
+	colorNameMap["lightGoldenRodYellow"] = ofColor::lightGoldenRodYellow;
+	colorNameMap["lightGray"] = ofColor::lightGray;
+	colorNameMap["lightGrey"] = ofColor::lightGrey;
+	colorNameMap["lightGreen"] = ofColor::lightGreen;
+	colorNameMap["lightPink"] = ofColor::lightPink;
+	colorNameMap["lightSalmon"] = ofColor::lightSalmon;
+	colorNameMap["lightSeaGreen"] = ofColor::lightSeaGreen;
+	colorNameMap["lightSkyBlue"] = ofColor::lightSkyBlue;
+	colorNameMap["lightSlateGray"] = ofColor::lightSlateGray;
+	colorNameMap["lightSlateGrey"] = ofColor::lightSlateGrey;
+	colorNameMap["lightSteelBlue"] = ofColor::lightSteelBlue;
+	colorNameMap["lightYellow"] = ofColor::lightYellow;
+	colorNameMap["lime"] = ofColor::lime;
+	colorNameMap["limeGreen"] = ofColor::limeGreen;
+	colorNameMap["linen"] = ofColor::linen;
+	colorNameMap["maroon"] = ofColor::maroon;
+	colorNameMap["mediumAquaMarine"] = ofColor::mediumAquaMarine;
+	colorNameMap["mediumBlue"] = ofColor::mediumBlue;
+	colorNameMap["mediumOrchid"] = ofColor::mediumOrchid;
+	colorNameMap["mediumPurple"] = ofColor::mediumPurple;
+	colorNameMap["mediumSeaGreen"] = ofColor::mediumSeaGreen;
+	colorNameMap["mediumSlateBlue"] = ofColor::mediumSlateBlue;
+	colorNameMap["mediumSpringGreen"] = ofColor::mediumSpringGreen;
+	colorNameMap["mediumTurquoise"] = ofColor::mediumTurquoise;
+	colorNameMap["mediumVioletRed"] = ofColor::mediumVioletRed;
+	colorNameMap["midnightBlue"] = ofColor::midnightBlue;
+	colorNameMap["mintCream"] = ofColor::mintCream;
+	colorNameMap["mistyRose"] = ofColor::mistyRose;
+	colorNameMap["moccasin"] = ofColor::moccasin;
+	colorNameMap["navajoWhite"] = ofColor::navajoWhite;
+	colorNameMap["navy"] = ofColor::navy;
+	colorNameMap["oldLace"] = ofColor::oldLace;
+	colorNameMap["olive"] = ofColor::olive;
+	colorNameMap["oliveDrab"] = ofColor::oliveDrab;
+	colorNameMap["orange"] = ofColor::orange;
+	colorNameMap["orangeRed"] = ofColor::orangeRed;
+	colorNameMap["orchid"] = ofColor::orchid;
+	colorNameMap["paleGoldenRod"] = ofColor::paleGoldenRod;
+	colorNameMap["paleGreen"] = ofColor::paleGreen;
+	colorNameMap["paleTurquoise"] = ofColor::paleTurquoise;
+	colorNameMap["paleVioletRed"] = ofColor::paleVioletRed;
+	colorNameMap["papayaWhip"] = ofColor::papayaWhip;
+	colorNameMap["peachPuff"] = ofColor::peachPuff;
+	colorNameMap["peru"] = ofColor::peru;
+	colorNameMap["pink"] = ofColor::pink;
+	colorNameMap["plum"] = ofColor::plum;
+	colorNameMap["powderBlue"] = ofColor::powderBlue;
+	colorNameMap["purple"] = ofColor::purple;
+	colorNameMap["rosyBrown"] = ofColor::rosyBrown;
+	colorNameMap["royalBlue"] = ofColor::royalBlue;
+	colorNameMap["saddleBrown"] = ofColor::saddleBrown;
+	colorNameMap["salmon"] = ofColor::salmon;
+	colorNameMap["sandyBrown"] = ofColor::sandyBrown;
+	colorNameMap["seaGreen"] = ofColor::seaGreen;
+	colorNameMap["seaShell"] = ofColor::seaShell;
+	colorNameMap["sienna"] = ofColor::sienna;
+	colorNameMap["silver"] = ofColor::silver;
+	colorNameMap["skyBlue"] = ofColor::skyBlue;
+	colorNameMap["slateBlue"] = ofColor::slateBlue;
+	colorNameMap["slateGray"] = ofColor::slateGray;
+	colorNameMap["slateGrey"] = ofColor::slateGrey;
+	colorNameMap["snow"] = ofColor::snow;
+	colorNameMap["springGreen"] = ofColor::springGreen;
+	colorNameMap["steelBlue"] = ofColor::steelBlue;
+	colorNameMap["tan"] = ofColor::tan;
+	colorNameMap["teal"] = ofColor::teal;
+	colorNameMap["thistle"] = ofColor::thistle;
+	colorNameMap["tomato"] = ofColor::tomato;
+	colorNameMap["turquoise"] = ofColor::turquoise;
+	colorNameMap["violet"] = ofColor::violet;
+	colorNameMap["wheat"] = ofColor::wheat;
+	colorNameMap["whiteSmoke"] = ofColor::whiteSmoke;
+	colorNameMap["yellowGreen"] = ofColor::yellowGreen;
 }
 
 //--------------------------------------------------------------
 void ofApp::update()
 {
-	//sharedData.mutex.lock();
-	//bool mutexLocked = true;
-    // check for OSC messages
+	// in test mode, the file is run once setup has finished and a frame has been drawn, and the program quits (see testmode.cpp)
+	if (!testFile.empty()) {
+		if (!testDone && ofGetFrameNum() > 1) {
+			testDone = true;
+			testDoneFrame = ofGetFrameNum();
+			runTest();
+			// with a screenshot, the program quits after drawing (see draw())
+			if (testScreenshot.empty()) ofExit(0);
+		}
+		return;
+	}
+	// apply any tracebacks set from the sequencer thread
+	applyPendingTracebacks();
+	// check for OSC messages
 	static float prevVal = 0;
 	while (oscReceiver.hasWaitingMessages()) {
 		ofxOscMessage m;
 		oscReceiver.getNextMessage(m);
-		string address = m.getAddress();
+		std::string address = m.getAddress();
 		if (address == maestroAddress) {
 			if (!sequencer.isThreadRunning() && sharedData.setBeatAnimation) {
 				sharedData.beatAnimate = true;
@@ -1015,9 +1150,9 @@ void ofApp::update()
 							sharedData.beatCounter++;
 							if (sharedData.beatCounter >= sharedData.numerator[bar]) {
 								sharedData.beatCounter = 0;
-								sharedData.thisLoopIndex++;
-								if (sharedData.thisLoopIndex >= sharedData.loopData[sharedData.loopIndex].size()) {
-									sharedData.thisLoopIndex = 0;
+								sharedData.thisBarIndex++;
+								if (sharedData.thisBarIndex >= sharedData.loopData[sharedData.loopIndex].size()) {
+									sharedData.thisBarIndex = 0;
 								}
 								bar = getPlayingBarIndex();
 							}
@@ -1029,14 +1164,14 @@ void ofApp::update()
 						}
 						sharedData.beatUpdated = true;
 						maestroTimeStamp = ofGetElapsedTimeMillis();
-						cout << sharedData.beatCounter << endl;
-						printVector(maestroVec);
+						//cout << sharedData.beatCounter << endl;
+						//printVector(maestroVec);
 						float accum = 0;
 						for (auto it = maestroVec.begin(); it != maestroVec.end(); ++it) {
 							accum += *it;
 						}
 						accum /= (float)maestroVec.size();
-						cout << "accum: " << accum << endl;
+						//cout << "accum: " << accum << endl;
 						maestroVec.clear();
 					}
 				}
@@ -1063,29 +1198,29 @@ void ofApp::update()
 			else if (m.getArgType(0) == OFXOSC_TYPE_TRUE || m.getArgType(0) == OFXOSC_TYPE_FALSE) {
 				receivingMaestro = m.getArgAsBool(0);
 			}
-			if (!receivingMaestro) maestroInitialized = false;
-			else sharedData.beatCounter = -1;
+			if (!receivingMaestro) {
+				maestroInitialized = false;
+			}
+			else {
+				parseString("\\score.beatsin " + std::to_string(maestroBeatsIn), 1, 1); // dummy 2nd and 3rd args
+			}
 		}
-		else if (address == maestroResetAddress) {
-			int val = m.getArgAsInt32(0);
-			if (val) sharedData.beatCounter = 0;
+		else if (address == maestroLevareAddress) {
+			maestroBeatsIn = m.getArgAsInt32(0);
 		}
 		else {
-			for (map<int, string>::iterator it = fromOscAddr.begin(); it != fromOscAddr.end(); ++it) {
+			for (std::map<int, std::string>::iterator it = fromOscAddr.begin(); it != fromOscAddr.end(); ++it) {
 				if (address.substr(0, it->second.size()) == it->second) {
 					int whichPaneOsc = it->first;
-					// unlock the mutex here because the function that handles data received from OSC locks it
-					//sharedData.mutex.unlock();
-					//mutexLocked = false;
-					map<int, Editor>::iterator editIt = editors.find(whichPaneOsc);
+					std::map<int, Editor>::iterator editIt = editors.find(whichPaneOsc);
 					if (editIt != editors.end()) {
 						if (m.getArgType(0) == OFXOSC_TYPE_STRING) {
-							string oscStr = m.getArgAsString(0);
+							std::string oscStr = m.getArgAsString(0);
 							for (unsigned i = 0; i < oscStr.size(); i++) {
-								if (address.find("/press") != string::npos) {
+								if (address.find("/press") != std::string::npos) {
 									editIt->second.fromOscPress((int)oscStr.at(i));
 								}
-								else if (address.find("/release") != string::npos) {
+								else if (address.find("/release") != std::string::npos) {
 									editIt->second.fromOscRelease((int)oscStr.at(i));
 								}
 							}
@@ -1094,10 +1229,10 @@ void ofApp::update()
 							size_t numArgs = m.getNumArgs();
 							for (size_t j = 0; j < numArgs; j++) {
 								int oscVal = (int)m.getArgAsInt32(j);
-								if (address.find("/press") != string::npos) {
+								if (address.find("/press") != std::string::npos) {
 									editIt->second.fromOscPress(oscVal);
 								}
-								else if (address.find("/release") != string::npos) {
+								else if (address.find("/release") != std::string::npos) {
 									editIt->second.fromOscRelease(oscVal);
 								}
 							}
@@ -1106,10 +1241,10 @@ void ofApp::update()
 							size_t numArgs = m.getNumArgs();
 							for (size_t j = 0; j < numArgs; j++) {
 								int oscVal = (int)m.getArgAsInt64(j);
-								if (address.find("/press") != string::npos) {
+								if (address.find("/press") != std::string::npos) {
 									editIt->second.fromOscPress(oscVal);
 								}
-								else if (address.find("/release") != string::npos) {
+								else if (address.find("/release") != std::string::npos) {
 									editIt->second.fromOscRelease(oscVal);
 								}
 							}
@@ -1118,10 +1253,10 @@ void ofApp::update()
 							size_t numArgs = m.getNumArgs();
 							for (size_t j = 0; j < numArgs; j++) {
 								int oscVal = (int)m.getArgAsFloat(j);
-								if (address.find("/press") != string::npos) {
+								if (address.find("/press") != std::string::npos) {
 									editIt->second.fromOscPress(oscVal);
 								}
-								else if (address.find("/release") != string::npos) {
+								else if (address.find("/release") != std::string::npos) {
 									editIt->second.fromOscRelease(oscVal);
 								}
 							}
@@ -1136,8 +1271,64 @@ void ofApp::update()
 		}
 	}
 
+	for (auto it = oscServers.begin(); it != oscServers.end(); ++it) {
+		while (it->second.hasWaitingMessages()) {
+			ofxOscMessage m;
+			it->second.getNextMessage(m);
+			std::string address = m.getAddress();
+			if (oscServerFuncs.find(it->first) != oscServerFuncs.end()) {
+				for (auto it2 = oscServerFuncs.at(it->first).begin(); it2 != oscServerFuncs.at(it->first).end(); ++it2) {
+					// the first item of the pair inside the vector is the OSC address
+					if (address == it2->first) {
+						// the arguments of the message are the arguments of the mapped function ($1, $2, etc.)
+						// numbers are converted to text here, as getArgAsString() would print a warning for every number
+						std::string args;
+						for (size_t argNdx = 0; argNdx < m.getNumArgs(); argNdx++) {
+							if (argNdx > 0) args += " ";
+							switch (m.getArgType(argNdx)) {
+								case OFXOSC_TYPE_INT32:
+									args += std::to_string(m.getArgAsInt32(argNdx));
+									break;
+								case OFXOSC_TYPE_INT64:
+									args += std::to_string(m.getArgAsInt64(argNdx));
+									break;
+								case OFXOSC_TYPE_FLOAT: {
+									std::ostringstream stream;
+									stream << m.getArgAsFloat(argNdx);
+									args += stream.str();
+									break;
+								}
+								case OFXOSC_TYPE_DOUBLE: {
+									std::ostringstream stream;
+									stream << m.getArgAsDouble(argNdx);
+									args += stream.str();
+									break;
+								}
+								case OFXOSC_TYPE_TRUE:
+									args += "1";
+									break;
+								case OFXOSC_TYPE_FALSE:
+									args += "0";
+									break;
+								case OFXOSC_TYPE_STRING:
+									args += m.getArgAsString(argNdx);
+									break;
+								case OFXOSC_TYPE_SYMBOL:
+									args += m.getArgAsSymbol(argNdx);
+									break;
+								default:
+									break;
+							}
+						}
+						// the second item of the pair inside the vector is the mapped function
+						// it is called like a bound function, so that its errors go to the line where it is defined
+						callBoundFunction(it2->second, args);
+					}
+				}
+			}
+		}
+	}
 
-	//if (!mutexLocked) sharedData.mutex.lock();
 	// check if any instrument has a delay for receiving OSC messages
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 		if (it->second.oscFifo.size() > 0) {
@@ -1148,13 +1339,22 @@ void ofApp::update()
 			}
 		}
 	}
-	for (auto func = sharedData.functions.begin(); func != sharedData.functions.end(); ++func) {
-		// binding a function to the number of instruments + 2, binds to the framerate
-		if (func->second.getBoundInst() == (int)sharedData.instruments.size() + 2) {
-			parseCommand(genCmdInput(func->second.getName()), 1, 1);
+	// collect the names of the functions to call while holding the lock
+	// and call them after releasing it, as calling a function locks it again
+	std::vector<std::string> framerateFuncs;
+	{
+		std::lock_guard<std::mutex> lock(sharedData.functionsMutex);
+		for (auto func = sharedData.functions.begin(); func != sharedData.functions.end(); ++func) {
+			// binding a function to the number of instruments + 2, binds to the framerate
+			if (func->second.getBoundInst() == (int)sharedData.instruments.size() + 2) {
+				framerateFuncs.push_back(func->second.getName());
+			}
 		}
 	}
-	//sharedData.mutex.unlock();
+	for (const std::string& funcName : framerateFuncs) {
+		//parseCommand(genCmdInput(funcName), 1, 1);
+		callBoundFunction(funcName);
+	}
 
 	if (isWindowResized) {
 		if ((ofGetElapsedTimeMillis() - windowResizeTimeStamp) > WINDOW_RESIZE_GAP) {
@@ -1164,17 +1364,153 @@ void ofApp::update()
 	}
 	if (startSequencer) {
 		startSequencer = false;
-		if (!sequencer.isThreadRunning()) {
+		// the sequencer doesn't play in test mode (see testmode.cpp)
+		if (!sequencer.isThreadRunning() && testFile.empty()) {
 			sequencer.start();
+		}
+	}
+
+	if (sharedData.typePyStr && ((sharedData.pyStdoutStrNdx == 0 && !ctrlPressed && !shiftPressed) || sharedData.pyStdoutStrNdx > 0)) {
+		if (sharedData.typePyStrCharByChar) {
+			pyStdoutStrKeyModifier keyMod = checkPyStdoutKeyModifier(sharedData.pyStdoutStrNdx);
+			sharedData.pyStdoutStrNdx += keyMod.ndxInc;
+			if (keyMod.isModifier) {
+				handleKeyModifier(keyMod);
+			}
+			else {
+				int charToType = (int)sharedData.pyStdoutStr[sharedData.pyStdoutStrNdx];
+				if (sharedData.pyStdoutStr[sharedData.pyStdoutStrNdx] == '\n') {
+					charToType = 13;
+				}
+				if (sharedData.whichPyPane == whichPane) {
+					keyPressed(charToType);
+				}
+				else {
+					keyPressedOsc(charToType, sharedData.whichPyPane);
+				}
+				sharedData.pyStdoutStrNdx++;
+			}
+			if (sharedData.pyStdoutStrNdx >= sharedData.pyStdoutStr.size()) {
+				sharedData.pyStdoutStr.clear();
+				sharedData.pyStdoutStrNdx = 0;
+				sharedData.typePyStr = false;
+			}
+		}
+		else if (sharedData.typePyStrLineByLine) {
+			// check if we have a key modifier at the very beginning
+			if (sharedData.pyStdoutStrVecNdx == 0 && sharedData.pyStdoutKeyModNdxs.size() > 0 && sharedData.pyStdoutStrVecNdx == sharedData.pyStdoutKeyModNdxs[sharedData.pyStdoutKeyModNdx]) {
+				handleKeyModifier(sharedData.pyStdoutKeyModifiers[sharedData.pyStdoutKeyModNdx]);
+				sharedData.pyStdoutKeyModNdx++;
+				// if we have a key modifier, we increment the char by char index so that the test in which typing Python strings is included is true
+				sharedData.pyStdoutStrNdx++;
+			}
+			editors[sharedData.whichPyPane].setString(sharedData.pyStdoutStrVec[sharedData.pyStdoutStrVecNdx]);
+			sharedData.pyStdoutStrVecNdx++;
+			// then check if we have a key modifier after the current string chunk
+			if (sharedData.pyStdoutKeyModNdxs.size() > 0 && sharedData.pyStdoutStrVecNdx == sharedData.pyStdoutKeyModNdxs[sharedData.pyStdoutKeyModNdx]) {
+				handleKeyModifier(sharedData.pyStdoutKeyModifiers[sharedData.pyStdoutKeyModNdx]);
+				sharedData.pyStdoutKeyModNdx++;
+				// if we have a key modifier, we increment the char by char index so that the test in which typing Python strings is included is true
+				sharedData.pyStdoutStrNdx++;
+			}
+			if (sharedData.pyStdoutStrVecNdx >= (int)sharedData.pyStdoutStrVec.size()) {
+				sharedData.typePyStrLineByLine = false;
+				sharedData.pyStdoutStrVec.clear();
+				sharedData.pyStdoutKeyModifiers.clear();
+				sharedData.pyStdoutKeyModNdxs.clear();
+				sharedData.typePyStr = false;
+				sharedData.pyStdoutStrVecNdx = 0;
+				sharedData.pyStdoutKeyModNdx = 0;
+				sharedData.pyStdoutStrNdx = 0;
+			}
+		}
+		else {
+			std::vector<int> angleBracketNdxs = findIndexesOfCharInStr(sharedData.pyStdoutStr, "<");
+			bool hasModifiers = false;
+			std::vector<pyStdoutStrKeyModifier> keyModifiers;
+			// run through the indexes of the angle brackets and test each one separately for a key modifier
+			for (auto it = angleBracketNdxs.begin(); it != angleBracketNdxs.end(); ++it) {
+				keyModifiers.push_back(checkPyStdoutKeyModifier(*it));
+				if (keyModifiers.back().isModifier) {
+					hasModifiers = true;
+				}
+			}
+			if (!hasModifiers) {
+				std::vector<std::string> v = tokenizeString(sharedData.pyStdoutStr, "\n", true);
+				for (std::string s : v) {
+					std::vector<std::string> v2 = tokenizeString(s, "\b", true);
+					sharedData.pyStdoutStrVec.insert(sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
+				}
+				//editors[whichPane].setString(sharedData.pyStdoutStr);
+			}
+			else {
+				size_t lastModifierNdx = 0;
+				int prevEnd = 0;
+				for (size_t i = 0; i < keyModifiers.size(); i++) {
+					if (keyModifiers[i].isModifier) {
+						int bracketStart = angleBracketNdxs[i];
+						int bracketEnd = bracketStart + keyModifiers[i].ndxInc;
+						if (bracketStart > prevEnd) {
+							std::vector<std::string> v = tokenizeString(sharedData.pyStdoutStr.substr(prevEnd, bracketStart-prevEnd), "\n", true);
+							for (std::string s : v) {
+								std::vector<std::string> v2 = tokenizeString(s, "\b", true);
+								sharedData.pyStdoutStrVec.insert(sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
+							}
+							int keyModNdx = 0;
+							if (sharedData.pyStdoutKeyModNdxs.size() > 0) keyModNdx = sharedData.pyStdoutKeyModNdxs.back();
+							sharedData.pyStdoutKeyModNdxs.push_back((int)v.size() + keyModNdx);
+							//editors[sharedData.whichPyPane].setString(sharedData.pyStdoutStr.substr(prevEnd, bracketStart-prevEnd));
+						}
+						// if we start with a key modifier, the modifiers indexes vector will be empty
+						// so we populate it with a 0
+						if (sharedData.pyStdoutKeyModNdxs.empty()) sharedData.pyStdoutKeyModNdxs.push_back(0);
+						sharedData.pyStdoutKeyModifiers.push_back(keyModifiers[i]);
+						//handleKeyModifier(keyModifiers[i]);
+						prevEnd = bracketEnd;
+						lastModifierNdx = i;
+					}
+				}
+				// check if there is anything remaining in the string after the last modifier key
+				if ((int)sharedData.pyStdoutStr.size() > angleBracketNdxs[lastModifierNdx] + keyModifiers[lastModifierNdx].ndxInc + 1) {
+					int substrStart = angleBracketNdxs[lastModifierNdx] + keyModifiers[lastModifierNdx].ndxInc;
+					std::vector<std::string> v = tokenizeString(sharedData.pyStdoutStr.substr(substrStart), "\n", true);
+					for (std::string s : v) {
+						std::vector<std::string> v2 = tokenizeString(s, "\b", true);
+						sharedData.pyStdoutStrVec.insert(sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
+					}
+					//editors[sharedData.whichPyPane].setString(sharedData.pyStdoutStr.substr(substrStart));
+				}
+			}
+			sharedData.typePyStrLineByLine = true;
+			sharedData.pyStdoutStr.clear();
+			sharedData.pyStdoutStrNdx = 0;
+			//sharedData.typePyStr = false;
+		}
+	}
+
+	if (showScope && pyoSet) {
+		for (int i = 0; i < outChannels; i++) {
+			scopeWaveforms[i].clear();
+		}
+		scopeRms = scopeBuffer.getRMSAmplitude();
+		for(size_t i = 0; i < scopeBuffer.getNumFrames(); i++) {
+			for (int j = 0; j < outChannels; j++) {
+				float sample = scopeBuffer.getSample(i, j);
+				float x = ofMap(i, 0, scopeBuffer.getNumFrames(), scoreXOffset, scoreBackgroundWidth+scoreXOffset);
+				float y = ((sample * (scoreBackgroundHeight / 2)) * scopeRms) + (scoreBackgroundHeight / 2);
+				if (scoreOrientation == 1) y += scoreYOffset;
+				scopeWaveforms[j].addVertex(x, y);
+			}
 		}
 	}
 }
 
+/********************* drawing functions ***********************/
 //--------------------------------------------------------------
 void ofApp::draw()
 {
-	//sharedData.mutex.lock();
-	for (map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
+	ofSetLineWidth(lineWidth);
+	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 		it->second.drawText();
 		// draw the pane separator for panes that do not touch the traceback printing area
 		if ((paneSplitOrientation == 0 && numPanes.find(it->second.getPaneRow()+1) != numPanes.end()) || \
@@ -1182,7 +1518,7 @@ void ofApp::draw()
 			it->second.drawPaneSeparator();
 		}
 	}
-	ofSetColor(brightness);
+	ofSetColor(foregroundColor*brightnessCoeff);
 	// draw the lines that separate the different editors
 	// initializing to 0 to avoid warning messages during compilation
 	float paneWidth = 0, paneHeight = 0;
@@ -1193,7 +1529,7 @@ void ofApp::draw()
 	else {
 		paneWidth = (float)sharedData.screenWidth / (float)numPanes.size();
 	}
-	for (map<int, int>::iterator it = numPanes.begin(); it != numPanes.end(); ++it) {
+	for (std::map<int, int>::iterator it = numPanes.begin(); it != numPanes.end(); ++it) {
 		if (paneSplitOrientation == 0) {
 			paneWidth = (float)sharedData.screenWidth / (float)it->second;
 			// we start the following loop from 1 because if we have one column only
@@ -1210,82 +1546,76 @@ void ofApp::draw()
 			paneHeight = sharedData.tracebackBase / (float)it->second;
 		}
 	}
-	ofSetLineWidth(lineWidth);
-	if (sharedData.showScore) {
-		drawScore();
+	//if (sharedData.showNotes) {
+	//	drawScore();
+	//}
+	//else if (showPianoRoll) {
+	//	drawPianoRoll();
+	//}
+	//else if (showScope) {
+	//	drawScope();
+	//}
+	if (showScore) {
+		switch (scoreType) {
+			case 0:
+				drawScore();
+				break;
+			case 1:
+				drawPianoRoll();
+				break;
+			case 2:
+				drawScope();
+				break;
+			case 3:
+				drawSequencer();
+				break;
+		}
 	}
 	// draw the pane separator for panes that do touch the traceback printing area
-	for (map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
+	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 		if ((paneSplitOrientation == 0 && numPanes.find(it->second.getPaneRow()+1) == numPanes.end()) || \
 				(paneSplitOrientation == 1 && it->second.getPaneCol() >= numPanes[it->second.getPaneRow()])) {
 			it->second.drawPaneSeparator();
 		}
 	}
-	// fill the traceback printing area with the background color
-	float tracebackBackgroundYCoord;
-	int paneNdx;
-	// first determine the index of the pane we need to get the correct Y coordinates from
-	if (paneSplitOrientation == 0) {
-		// with a 0 pane split orientation, the index is the last row
-		auto lastRowPane = prev(numPanes.end());
-		paneNdx = lastRowPane->first;
+	// draw a horizontal line to separate the panes and score from the traceback area
+	ofSetColor(foregroundColor*brightnessCoeff);
+	ofDrawLine(0, sharedData.tracebackYCoord, sharedData.screenWidth, sharedData.tracebackYCoord);
+	// when the shell stops being shown (e.g. a new error message replaces the output of a command)
+	// the area below the panes goes back to its size for error messages, as it does when pressing Esc
+	bool shellShown = editors[whichPane].showingShell();
+	if (shellWasShown && !shellShown) {
+		shellStr = "";
+		numShellLines = numShellLsOutputLines = 0;
+		shellScroll = 0;
+		sharedData.tracebackYCoord = sharedData.tracebackBase;
+		restorePaneLayout();
+		editors[whichPane].resetMaxNumLines();
+		// the sizes of the areas below the panes are calculated again in drawTraceback() and drawShell()
+		tracebackNumLinesShown = shellNumLinesShown = -1;
 	}
-	else {
-		// with a 1 pane split orientation, it's the column that matters, so we just use the first index
-		paneNdx = 0;
-	}
-	// the line below is copied from Editor::drawPaneSeparator() where we calculate the Y coord
-	tracebackBackgroundYCoord = (editors[paneNdx].getMaxNumLines() * editors[paneNdx].getCursorHeight()) + editors[paneNdx].getFrameYOffset();
-	// in this case though we need an extra offset equal to the height of the cursor
-	tracebackBackgroundYCoord += editors[paneNdx].getCursorHeight();
-	ofSetColor(backgroundColor);
-	ofDrawRectangle(0, tracebackBackgroundYCoord, sharedData.screenWidth, sharedData.screenHeight-tracebackBackgroundYCoord);
-	if (editors[whichPane].showingCommand()) {
-		drawCommand();
+	shellWasShown = shellShown;
+	if (shellShown) {
+		drawShell();
 	}
 	else{
 		drawTraceback();
 	}
-	//sharedData.mutex.unlock();
-}
-
-//--------------------------------------------------------------
-int ofApp::msToBPM(unsigned long ms)
-{
-	return (int)((1000 / ms) * 60);
-}
-
-//--------------------------------------------------------------
-void ofApp::sendBeatVizInfo(int bar)
-{
-	// calculate the time stamp regardless of whether we're showing the beat
-	// or not in the editor, in case we have connected score parts
-	sharedData.beatVizTimeStamp = ofGetElapsedTimeMillis();
-	sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData.tempoMs[bar] / 4.0);
-	sharedData.beatVizRampStart = sharedData.tempoMs[bar] / 4;
-	if (sharedData.beatAnimate) {
-		sharedData.beatViz = true;
+	// the pop-up of autocompletion is drawn last, so that it is on top of everything
+	editors[whichPane].drawCompletions();
+	// in test mode with a screenshot, the window is saved a few frames after the file has run, and the program quits (see testmode.cpp)
+	if (!testScreenshot.empty() && testDone && ofGetFrameNum() > testDoneFrame + 3) {
+		ofSaveScreen(testScreenshot);
+		ofExit(0);
 	}
-	// notify all score parts of the time stamp and the beat visualization counter
-	ofxOscMessage m;
-	m.setAddress("/beatinfo");
-	m.addFloatArg(sharedData.beatVizStepsPerMs);
-	m.addIntArg((int)sharedData.beatVizRampStart);
-	sendToParts(m, false);
-	m.clear();
-	m.setAddress("/beat");
-	m.addIntArg(sharedData.beatCounter);
-	sendToParts(m, false);
-	m.clear();
 }
 
 //--------------------------------------------------------------
 void ofApp::drawTraceback()
 {
-	static int tracebackNumLinesStatic = MINTRACEBACKLINES;
 	int tracebackCounter = 0;
-	uint64_t stamps[editors[whichPane].tracebackTimeStamps.size()];
-	int ndxs[editors[whichPane].tracebackTimeStamps.size()];
+	uint64_t stamps[editors[whichPane].allLines.size()];
+	int ndxs[editors[whichPane].allLines.size()];
 	int i = 0;
 	int paneNdx = 0;
 	//for (auto it = numPanes.begin(); it != numPanes.end(); ++it) {
@@ -1294,17 +1624,17 @@ void ofApp::drawTraceback()
 	//	}
 	//}
 	// we must first determine which traceback string was initiated first, so we can print this on top
-	for (auto it = editors[whichPane].getTracebackTimeStampsBegin(); it != editors[whichPane].getTracebackTimeStampsEnd(); ++it) {
-		if ((ofGetElapsedTimeMillis() - it->second) < editors[whichPane].getTracebackDur() && editors[whichPane].getTracebackStr(it->first).size() > 0) {
+	for (auto it = editors[whichPane].getAllLinesBegin(); it != editors[whichPane].getAllLinesEnd(); ++it) {
+		if ((ofGetElapsedTimeMillis() - editors[whichPane].getTracebackTimeStamp(it->first)) < editors[whichPane].getTracebackDur() && editors[whichPane].getTracebackStr(it->first).size() > 0) {
 			// exclude the line of the cursor as this is check below
 			if (it->first != editors[whichPane].getCursorLineIndex()) {
 				ndxs[i] = it->first;
-				stamps[i] = it->second;
+				stamps[i] = editors[whichPane].getTracebackTimeStamp(it->first);
 				i++;
 			}
 		}
 		else {
-			it->second = 0;
+			editors[whichPane].setTracebackTimeStamp(it->first, 0);
 		}
 	}
 	// sort indexes based on time stamps (the smaller the time stamp, the higher it should be in the traceback)
@@ -1319,7 +1649,7 @@ void ofApp::drawTraceback()
 	}
 	// once we check the traceback messages of lines other than that where the cursor is
 	// we check the line of the cursor too
-	if (editors[whichPane].tracebackStr[editors[whichPane].getCursorLineIndex()].size() > 0) {
+	if (editors[whichPane].getTracebackStr(editors[whichPane].getCursorLineIndex()).size() > 0) {
 		// if there was something in the traceback, accumulate
 		if (numTracebackLinesChanged) {
 			numTracebackLines += editors[whichPane].getTracebackNumLines(editors[whichPane].getCursorLineIndex());
@@ -1335,17 +1665,17 @@ void ofApp::drawTraceback()
 	}
 	// minimum number of lines is 2
 	// so the line that separates the panes from the traceback can fit one line of text
-	numTracebackLines = max(numTracebackLines, MINTRACEBACKLINES);
+	numTracebackLines = std::max(numTracebackLines, MINTRACEBACKLINES);
 	// if the number of lines in the traceback has changed, change the maximum number of lines in the editor
-	if (numTracebackLines != tracebackNumLinesStatic) {
-		tracebackNumLinesStatic = numTracebackLines;
+	if (numTracebackLines != tracebackNumLinesShown) {
+		tracebackNumLinesShown = numTracebackLines;
 		// if the number of lines of the traceback changes, reset the maximum number of lines of the editor
 		// need to check which editors go till the bottom of the window
 		paneNdx = 0;
 		for (auto it = numPanes.begin(); it != numPanes.end(); ++it) {
 			for (int i = 0; i < it->second; i++) {
 				// with split orientation set to 0, we need to offset the number of lines
-				// for the editors on the last row, so the last key of the numPanes map
+				// for the editors on the last row, so the last key of the numPanes std::map
 				// with split orientation set to 1, we need to offset the number of lines
 				// for the editors that are in the last column of every row
 				int leftOperand = (paneSplitOrientation == 0 ? it->first : i);
@@ -1361,92 +1691,242 @@ void ofApp::drawTraceback()
 				paneNdx++;
 			}
 		}
-	}
-	if (numTracebackLines > MINTRACEBACKLINES) {
-		sharedData.tracebackYCoord = sharedData.tracebackBase - (cursorHeight * (numTracebackLines - MINTRACEBACKLINES));
-		sharedData.tracebackYCoord = min(sharedData.tracebackYCoord, sharedData.tracebackBase);
-	}
-	else {
-		sharedData.tracebackYCoord = sharedData.tracebackBase;
+		if (numTracebackLines > MINTRACEBACKLINES) {
+			float prevTracebackYCoord = sharedData.tracebackYCoord;
+			sharedData.tracebackYCoord = sharedData.tracebackBase - (cursorHeight * (numTracebackLines - MINTRACEBACKLINES));
+			sharedData.tracebackYCoord = std::min(sharedData.tracebackYCoord, sharedData.tracebackBase);
+			moveScoreWithTraceback(prevTracebackYCoord);
+		}
+		else {
+			sharedData.tracebackYCoord = sharedData.tracebackBase;
+			resetScoreYOffset();
+		}
 	}
 	for (int j = 0; j < i; j++) {
 		switch (editors[whichPane].getTracebackColor(ndxs[j])) {
 			case 0:
-				ofSetColor(ofColor::white);
+				ofSetColor(ofColor::white*brightnessCoeff);
 				break;
 			case 1:
-				ofSetColor(ofColor::orange);
+				ofSetColor(ofColor::orange*brightnessCoeff);
 				break;
 			case 2:
-				ofSetColor(ofColor::red);
+				ofSetColor(ofColor::red*brightnessCoeff);
 				break;
 			default:
-				ofSetColor(ofColor::white);
+				ofSetColor(ofColor::white*brightnessCoeff);
 				break;
 		}
-		string tracebackStr;
-		// if the stderr message is a warning or error, prepend the line number
-		if (editors[whichPane].getTracebackColor(ndxs[j]) > 0) {
-			tracebackStr = "line " + ofToString(ndxs[j]+1) + ": ";
+		std::string tracebackStr = "";
+		// if the stderr message is a warning or error in LiveLily (not Python), prepend the line number
+		if (editors[whichPane].getTracebackColor(ndxs[j]) > 0 && editors[whichPane].getLanguage() != 1) {
+			tracebackStr += "line " + ofToString(ndxs[j]+1) + ": ";
 		}
 		tracebackStr += editors[whichPane].getTracebackStr(ndxs[j]);
-		font.drawString(tracebackStr, editors[whichPane].getHalfCharacterWidth(), sharedData.tracebackYCoord+(editors[whichPane].getCursorHeight()*(tracebackCounter+1)));
+		drawLines(tracebackStr, halfCharacterWidth, sharedData.tracebackYCoord+(cursorHeight*(tracebackCounter+1)));
 		tracebackCounter += editors[whichPane].getTracebackNumLines(ndxs[j]);
 	}
 }
 
 //--------------------------------------------------------------
-void ofApp::drawCommand()
+void ofApp::drawLines(const std::string& str, float x, float y)
 {
-	static int commandNumLinesStatic = MINTRACEBACKLINES;
-	vector<string> commandSplit = tokenizeString(editors[whichPane].getCommandStr(), "\n");
-	int numCommandLines = (int)commandSplit.size();
-	// minimum number of lines is 2
-	// so the line that separates the panes from the traceback can fit one line of text
-	numCommandLines = max(numCommandLines, MINTRACEBACKLINES);
-	// if the number of lines in the traceback has changed, change the maximum number of lines in the editor
-	if (numCommandLines != commandNumLinesStatic) {
-		commandNumLinesStatic = numCommandLines;
-		// if the number of lines of the traceback changes, reset the maximum number of lines of the editor
-		// need to check which editors go till the bottom of the window
-		int paneNdx = 0;
-		for (auto it = numPanes.begin(); it != numPanes.end(); ++it) {
-			for (int i = 0; i < it->second; i++) {
-				// with split orientation set to 0, we need to offset the number of lines
-				// for the editors on the last row, so the last key of the numPanes map
-				// with split orientation set to 1, we need to offset the number of lines
-				// for the editors that are in the last column of every row
-				int leftOperand = (paneSplitOrientation == 0 ? it->first : i);
-				int rightOperand = (paneSplitOrientation == 0 ? (int)numPanes.size() : it->second);
-				if (leftOperand == rightOperand - 1) {
-					if (numCommandLines > MINTRACEBACKLINES) {
-						editors[paneNdx].offsetMaxNumLines(-(numCommandLines-MINTRACEBACKLINES));
-					}
-					else {
-						editors[paneNdx].resetMaxNumLines();
-					}
-				}
-				paneNdx++;
-			}
+	// draws text with many lines, with the line height of the editor, which the areas below the panes are measured in
+	// (drawString() would use the line height of the font, which is greater, so the lines would drift down)
+	size_t start = 0;
+	int lineNdx = 0;
+	while (start <= str.size()) {
+		size_t end = str.find('\n', start);
+		if (end == std::string::npos) end = str.size();
+		if (end > start) font.drawString(str.substr(start, end - start), x, y + (lineNdx * cursorHeight));
+		lineNdx++;
+		start = end + 1;
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::drawShell()
+{
+	// the strings of the shell are broken into lines to fit the width of the window as it is now, so that they fit it also after it is resized
+	// a command that is typed has no newlines, so its cursor is on the row of its position, and it can be on a row of its own
+	// right after the last character of a row
+	maxShellChars = std::max((size_t)1, (size_t)(sharedData.screenWidth / oneCharacterWidth));
+	std::string shellLines, shellLsOutputLines;
+	if (!shellStr.empty()) {
+		shellLines = wrapShellLines(shellStr, numShellLines);
+		if (editors[whichPane].isTypingShell()) numShellLines = std::max(numShellLines, (int)(shellStrCursorPos / maxShellChars) + 1);
+	}
+	if (!shellLsOutputStr.empty()) shellLsOutputLines = wrapShellLines(shellLsOutputStr, numShellLsOutputLines);
+	// at least two lines, so that the line that separates the panes from the area below them has one line of text under it
+	int numShellLinesWanted = std::max(numShellLines + numShellLsOutputLines, MINTRACEBACKLINES);
+	// the panes are made shorter when the number of lines changes, or when another pane becomes active, which then keeps its height the longest
+	if (numShellLinesWanted != shellNumLinesShown || whichPane != shellLayoutPane) {
+		shellNumLinesShown = numShellLinesWanted;
+		shellLayoutPane = whichPane;
+		shellVisibleLines = layoutPanesForShell(numShellLinesWanted);
+		if (shellVisibleLines > MINTRACEBACKLINES) {
+			float prevTracebackYCoord = sharedData.tracebackYCoord;
+			sharedData.tracebackYCoord = sharedData.tracebackBase - (cursorHeight * (shellVisibleLines - MINTRACEBACKLINES));
+			sharedData.tracebackYCoord = std::min(sharedData.tracebackYCoord, sharedData.tracebackBase);
+			moveScoreWithTraceback(prevTracebackYCoord);
+		}
+		else {
+			sharedData.tracebackYCoord = sharedData.tracebackBase;
+			resetScoreYOffset();
 		}
 	}
-	ofSetColor(editors[whichPane].getCommandStrColor());
-	string commandStr = editors[whichPane].getCommandStr();
-	float charWidth = editors[whichPane].oneCharacterWidth;
-	float cursorHeight = editors[whichPane].getCursorHeight();
-	float x = editors[whichPane].getHalfCharacterWidth();
-	float y = sharedData.tracebackYCoord+cursorHeight;
-	if (numCommandLines > 2) y -= ((numCommandLines - 2) * cursorHeight);
-	font.drawString(commandStr, x, y);
-	if (editors[whichPane].isTypingCommand()) {
-		ofDrawRectangle(font.stringWidth(commandStr)+(charWidth*0.5), y-(cursorHeight*0.85), charWidth, cursorHeight);
+	// the lines of the command and of its output, of which the lines from shellScroll on are shown, as many as fit
+	// (a command that is typed is short, so it is always shown from its start)
+	shellTotalLines = numShellLines + numShellLsOutputLines;
+	if (editors[whichPane].isTypingShell()) shellScroll = 0;
+	shellScroll = std::max(0, std::min(shellScroll, shellTotalLines - shellVisibleLines));
+	std::vector<std::string> rows;
+	auto addRows = [&rows](const std::string& lines, int numLines) {
+		size_t first = rows.size();
+		size_t start = 0;
+		while (start <= lines.size() && !lines.empty()) {
+			size_t end = lines.find('\n', start);
+			if (end == std::string::npos) end = lines.size();
+			rows.push_back(lines.substr(start, end - start));
+			start = end + 1;
+		}
+		// the row of the cursor after the last character of a full row has no characters
+		while (rows.size() < first + (size_t)numLines) rows.push_back("");
+	};
+	addRows(shellLines, numShellLines);
+	addRows(shellLsOutputLines, numShellLsOutputLines);
+	std::string shownRows;
+	for (int i = shellScroll; i < std::min((int)rows.size(), shellScroll + shellVisibleLines); i++) {
+		if (i > shellScroll) shownRows += "\n";
+		shownRows += rows[i];
 	}
+	// the area below the panes has already moved up to fit all the lines, so the first line is right below its top
+	float y = sharedData.tracebackYCoord + cursorHeight;
+	ofSetColor(shellStrColor*brightnessCoeff);
+	drawLines(shownRows, halfCharacterWidth, y);
+	if (editors[whichPane].isTypingShell()) {
+		float cursorX = halfCharacterWidth + ((shellStrCursorPos % maxShellChars) * oneCharacterWidth);
+		float cursorY = y + ((shellStrCursorPos / maxShellChars) * cursorHeight);
+		ofDrawRectangle(cursorX, cursorY - (cursorHeight * 0.85), oneCharacterWidth, cursorHeight);
+		if (shellStrCursorPos < (int)shellStr.size()) {
+			ofSetColor(backgroundColor*brightnessCoeff);
+			font.drawString(shellStr.substr(shellStrCursorPos, 1), cursorX, cursorY);
+		}
+	}
+}
+
+//--------------------------------------------------------------
+int ofApp::layoutPanesForShell(int wanted)
+{
+	int extra = wanted - MINTRACEBACKLINES;
+	if (extra <= 0) {
+		restorePaneLayout();
+		return MINTRACEBACKLINES;
+	}
+	// the layout of the panes before they are made shorter, which is stored once, so that it can be given back (see restorePaneLayout())
+	if (paneBase.empty()) {
+		for (auto& editor : editors) {
+			paneBase[editor.first] = {editor.second.getMaxNumLinesReset(), editor.second.getFrameYOffset(), editor.second.getFrameHeight()};
+		}
+	}
+	// the panes are in columns of rows, which all reach the area below the panes
+	// with split orientation 0 there is one column, with the rows of numPanes, and the panes of each row side by side
+	// with split orientation 1, every item of numPanes is a column, with one pane in each of its rows
+	// (the pane indexes follow the same order as in setPaneCoords())
+	std::vector<std::vector<std::vector<int>>> columns;
+	int paneNdx = 0;
+	if (paneSplitOrientation == 0) {
+		columns.resize(1);
+		for (const auto& row : numPanes) {
+			std::vector<int> panes;
+			for (int i = 0; i < row.second; i++) panes.push_back(paneNdx++);
+			columns[0].push_back(panes);
+		}
+	}
+	else {
+		for (const auto& column : numPanes) {
+			std::vector<std::vector<int>> rows;
+			for (int i = 0; i < column.second; i++) rows.push_back({paneNdx++});
+			columns.push_back(rows);
+		}
+	}
+	const int minRowLines = 2; // one line of text and the line with the file name
+	auto rowLines = [this](const std::vector<int>& row) {
+		auto it = paneBase.find(row.front());
+		return (it != paneBase.end() ? it->second.lines : minRowLines);
+	};
+	// the most lines the shell can get is what the column that can give the fewest lines can give
+	for (const auto& column : columns) {
+		int canGive = 0;
+		for (const auto& row : column) canGive += std::max(0, rowLines(row) - minRowLines);
+		extra = std::min(extra, canGive);
+	}
+	for (const auto& column : columns) {
+		int numRows = (int)column.size();
+		// the row of the active pane, if it is in this column
+		int activeRow = -1;
+		for (int r = 0; r < numRows; r++) {
+			if (std::find(column[r].begin(), column[r].end(), whichPane) != column[r].end()) activeRow = r;
+		}
+		// the rows give lines from the bottom up, and the row of the active pane last
+		std::vector<int> order;
+		for (int r = numRows - 1; r >= 0; r--) {
+			if (r != activeRow) order.push_back(r);
+		}
+		if (activeRow >= 0) order.push_back(activeRow);
+		std::vector<int> taken(numRows, 0);
+		int left = extra;
+		for (int r : order) {
+			taken[r] = std::min(left, std::max(0, rowLines(column[r]) - minRowLines));
+			left -= taken[r];
+		}
+		// every row moves up by the lines the rows above it gave
+		int above = 0;
+		for (int r = 0; r < numRows; r++) {
+			for (int pane : column[r]) {
+				auto baseIt = paneBase.find(pane);
+				if (baseIt == paneBase.end()) continue;
+				if (taken[r] > 0) editors[pane].offsetMaxNumLines(-taken[r]);
+				else editors[pane].resetMaxNumLines();
+				editors[pane].setFrameYOffset(baseIt->second.y - (above * cursorHeight));
+				editors[pane].setFrameHeight(baseIt->second.height - (taken[r] * cursorHeight));
+			}
+			above += taken[r];
+		}
+	}
+	return MINTRACEBACKLINES + extra;
+}
+
+//--------------------------------------------------------------
+void ofApp::restorePaneLayout()
+{
+	for (const auto& base : paneBase) {
+		auto it = editors.find(base.first);
+		if (it == editors.end()) continue;
+		it->second.resetMaxNumLines();
+		it->second.setFrameYOffset(base.second.y);
+		it->second.setFrameHeight(base.second.height);
+	}
+	paneBase.clear();
+}
+
+//--------------------------------------------------------------
+void ofApp::moveScoreWithTraceback(float prevTracebackYCoord)
+{
+	// move the score by as much as the traceback has grown or shrunk since its previous size
+	// and not by the whole difference from the base of the traceback, which would accumulate every time
+	// the number of lines changes, and would eventually push the score out of the window
+	// a score shown at the top of the window in horizontal view is not reached by the traceback
+	// so it is not moved, as moving it would push its upper part out of the window
+	if (scoreOrientation == 1 && scoreYOffset <= 0) return;
+	scoreYOffset += (sharedData.tracebackYCoord - prevTracebackYCoord);
 }
 
 //--------------------------------------------------------------
 void ofApp::drawScore()
 {
-	ofSetColor(brightness);
+	ofSetLineWidth(lineWidth);
+	ofSetColor(scoreBackgroundColor * brightnessCoeff);
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
 	// safety test to avoid crashes when changing the window size before creating any bars
 	if (sharedData.loopIndex >= (int)sharedData.loopData.size()) return;
@@ -1454,17 +1934,17 @@ void ofApp::drawScore()
 	//int numBars = 1;
 	bool drawLoopStartEnd = true;
 	int bar; //, prevBar = 0;
-	int ndx = sharedData.thisLoopIndex;
+	int ndx = sharedData.thisBarIndex;
 	if (scoreOrientation > 0) {
 		// numBars is part of the ofApp class and it's used to be compared to the previous number of bars displayed
 		// which is necessary to properly position single bars in horizontal view
-		sharedData.numBars = min(numBarsToDisplay, (int)sharedData.loopData[sharedData.loopIndex].size());
+		sharedData.numBars = std::min(numBarsToDisplay, (int)sharedData.loopData[sharedData.loopIndex].size());
 		drawLoopStartEnd = false;
 		// the equation below yields the first bar to display
 		// the rest will be calculated by adding the loop variable i
 		// e.g. for an 8-bar loop with two bars being displayed
 		// the line below yields 0, 2, 4, 6, every other index (it actually ignores the odd indexes)
-		ndx = ((sharedData.thisLoopIndex - (sharedData.thisLoopIndex % sharedData.numBars)) / sharedData.numBars) * sharedData.numBars;
+		ndx = ((sharedData.thisBarIndex - (sharedData.thisBarIndex % sharedData.numBars)) / sharedData.numBars) * sharedData.numBars;
 		// in the if test below we set the number of bars to be displayed to fit the remaining bars
 		// e.g. in a six-bar loop, when the first four bars have been played, we need to display two bars only
 		// not four bars which is the maximum number of bars to display (these numbers are hypothetical)
@@ -1484,13 +1964,16 @@ void ofApp::drawScore()
 	float beatPulseSizeY = 0;
 	//------------ end of variables for the beat visualization ------------
 	// show the animated beat
-	ofSetColor(0);
 	if (sharedData.instruments.size() > 0) {
 		if (sharedData.beatAnimate) {
 			beatPulseMinPosY = sharedData.yStartPnts[scoreOrientation] - sharedData.noteHeight;
 			beatPulseMaxPosY = sharedData.yStartPnts[scoreOrientation] + (sharedData.staffLinesDist * 4);
-			for (unsigned i = 1; i < sharedData.instruments.size(); i++) {
-				beatPulseMaxPosY += (sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2));
+			// one staff for every instrument that is not merged into the staff of another one (see \merge)
+			bool firstStaff = true;
+			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+				if (mergeHostOf(it->first) != it->first) continue;
+				if (!firstStaff) beatPulseMaxPosY += (sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2));
+				firstStaff = false;
 			}
 			beatPulseMaxPosY += sharedData.noteHeight;
 			beatPulseSizeY = beatPulseMaxPosY - beatPulseMinPosY;
@@ -1508,12 +1991,11 @@ void ofApp::drawScore()
 						beatPulseSizeX = beatPulseEndX - beatPulseStartX;
 						beatPulseSizeX += sharedData.staffLinesDist;
 						beatPulseMinPosY += scoreYOffset;
-						ofSetColor(ofColor::paleGreen.r*brightnessCoeff,
-								   ofColor::paleGreen.g*brightnessCoeff,
-								   ofColor::paleGreen.b*brightnessCoeff,
+						ofSetColor(beatColor.r*brightnessCoeff,
+								   beatColor.g*brightnessCoeff,
+								   beatColor.b*brightnessCoeff,
 								   sharedData.beatVizCosTab[sharedData.beatVizDegrade] * BEATVIZCOEFF);
 						ofDrawRectangle(beatPulsePosX, beatPulseMinPosY, beatPulseSizeX, beatPulseSizeY);
-						ofSetColor(0);
 						break;
 					default:
 						break;
@@ -1539,13 +2021,15 @@ void ofApp::drawScore()
 		notesOffsetX += (sharedData.staffLinesDist * NOTESXOFFSETCOEF);
 		//float prevNotesOffsetX = notesOffsetX;
 		//float notesXCoef = (sharedData.instruments.begin()->second.getStaffXLength() + staffOffsetX - notesOffsetX) / notesLength;
-		if (showBarCount) {
-			string barCountStr = "(" + to_string(sharedData.thisLoopIndex+1) + "/" + to_string(sharedData.loopData[sharedData.loopIndex].size()) + ") " + to_string(sharedData.barCounter);
+		if (showBarCount && sharedData.instruments.size() > 0) {
+			ofColor color = sharedData.instruments[0].getStaffColor();
+			ofSetColor(color.r*brightnessCoeff, color.g*brightnessCoeff, color.b*brightnessCoeff);
+			std::string barCountStr = "(" + std::to_string(sharedData.thisBarIndex+1) + "/" + std::to_string(sharedData.loopData[sharedData.loopIndex].size()) + ") " + std::to_string(sharedData.barCounter);
 			font.drawString(barCountStr, scoreXOffset+scoreBackgroundWidth-font.stringWidth(barCountStr)-20, scoreYOffset+20);
 		}
 		std::pair prevMeter = std::make_pair(4, 4);
 		std::pair prevTempo = std::make_pair(0, 0);
-		vector<int> prevClefs (sharedData.instruments.size(), 0); 
+		std::vector<int> prevClefs (sharedData.instruments.size(), 0);
 		bool prevDrawClef = false, prevDrawMeter = false;
 		for (int i = 0; i < sharedData.numBars; i++) {
 			bool drawClef = false, drawMeter = false, animate = false;
@@ -1592,7 +2076,7 @@ void ofApp::drawScore()
 					drawTempo = true;
 				}
 			}
-			if (barNdx == (int)sharedData.thisLoopIndex) animate = true;
+			if (barNdx == (int)sharedData.thisBarIndex) animate = true;
 			// the index below is used in insertNaturalSigns() in Notes() in score.cpp to deterimine if we must
 			// insert a natural sign at the beginning of a bar in case the same note appears
 			// in a previous bar with an accidental (this concerns only the visible bars, e.g. 4 bars in one row)
@@ -1606,22 +2090,22 @@ void ofApp::drawScore()
 			// every bar that finishes playing must display the respective bar of the upcoming loop
 			int threshold = (int)sharedData.loopData[sharedData.loopIndex].size() - sharedData.numBars + i;
 			if (scoreChangeOnLastBar) threshold = (int)sharedData.loopData[sharedData.loopIndex].size() - 2;
-			if (mustUpdateScore && (int)sharedData.thisLoopIndex > threshold && i < sharedData.numBars - 1) {
-				if (i >= (int)sharedData.loopData[sharedData.tempBarLoopIndex].size()) {
+			if (mustUpdateScore && (int)sharedData.thisBarIndex > threshold && i < sharedData.numBars - 1) {
+				if (i >= (int)sharedData.loopData[sharedData.tempLoopIndex].size()) {
 					showBar = false;
 				}
 				else {
-					bar = sharedData.loopData[sharedData.tempBarLoopIndex][i];
-					insertNaturalsNdx = sharedData.tempBarLoopIndex;
+					bar = sharedData.loopData[sharedData.tempLoopIndex][i];
+					insertNaturalsNdx = sharedData.tempLoopIndex;
 				}
 				scoreUpdated = true;
 			}
-			else if (mustUpdateScore && scoreUpdated && sharedData.thisLoopIndex == 0) {
+			else if (mustUpdateScore && scoreUpdated && sharedData.thisBarIndex == 0) {
 				mustUpdateScore = scoreUpdated = false;
 			}
 			// if we're staying in the same loop, when the currently playing bar is displayed at the right-most staff
 			// all the other bars must display the next bars of the loop (if there are any)
-			else if (((int)sharedData.thisLoopIndex % sharedData.numBars) == sharedData.numBars - 1 && i < sharedData.numBars - 1) {
+			else if (((int)sharedData.thisBarIndex % sharedData.numBars) == sharedData.numBars - 1 && i < sharedData.numBars - 1) {
 				bar = sharedData.loopData[sharedData.loopIndex][(barNdx+sharedData.numBars)%(int)sharedData.loopData[sharedData.loopIndex].size()];
 				// the calculations below determine whether the remaining bars are less than sharedData.numBars - 1
 				// (we subtract one because in the last slot, we display the bar of the current loop chunk)
@@ -1630,7 +2114,7 @@ void ofApp::drawScore()
 				// we need to display two bars
 				// when at the last bar of the first chunk, we display the 5th and 6th bar on the left side
 				// and the 4th bar on the right side, with the 3rd slot being blank
-				int loopIndexLocal = sharedData.thisLoopIndex + 1;
+				int loopIndexLocal = sharedData.thisBarIndex + 1;
 				if (loopIndexLocal >= (int)sharedData.loopData[sharedData.loopIndex].size()) loopIndexLocal = 0;
 				int ndxLocal = (((loopIndexLocal) - ((loopIndexLocal) % sharedData.numBars)) / sharedData.numBars) * sharedData.numBars;
 				int numBarsLocal = (ndxLocal > 0 ? sharedData.numBars - ((int)sharedData.loopData[sharedData.loopIndex].size() - ndxLocal) : sharedData.numBars);
@@ -1654,18 +2138,22 @@ void ofApp::drawScore()
 			}
 			// set position of single bars based on the position of the bars of the previous loop
 			if (sharedData.numBars == 1 && scoreOrientation > 0) {
-				// initially display the signle bar at the second position
-				staffOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
-				notesOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
+				// initially display the single bar at the second position, and alternate with the third one
+				// but only with positions that are inside the score, as there are numBarsToDisplay positions
+				// (with two bars, the third position would be outside of the window, and the score would disappear)
+				int firstSlot = (numBarsToDisplay > 1 ? 1 : 0);
+				int secondSlot = (numBarsToDisplay > 2 ? 2 : 0);
+				int slot = firstSlot;
 				if ((sharedData.prevNumBars > 1 || (sharedData.prevNumBars == 1 && sharedData.prevPosition == 0)) && sequencer.isThreadRunning()) {
-					// but the previous loop was a single bar at the second position, display the current single bar at the third position
-					staffOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
-					notesOffsetX += sharedData.instruments.begin()->second.getStaffXLength();
+					// but the previous loop was a single bar at the first of these positions, display the current single bar at the other one
+					slot = secondSlot;
 					sharedData.thisPosition = 1;
 				}
 				else {
 					sharedData.thisPosition = 0;
 				}
+				staffOffsetX += sharedData.instruments.begin()->second.getStaffXLength() * (float)slot;
+				notesOffsetX += sharedData.instruments.begin()->second.getStaffXLength() * (float)slot;
 			}
 			float notesXCoef = notesLength * sharedData.instruments.begin()->second.getXCoef(); // sharedData.instruments.begin()->second.getStaffXLength();
 			if (drawClef) notesXCoef -= sharedData.instruments.begin()->second.getClefXOffset();
@@ -1676,7 +2164,7 @@ void ofApp::drawScore()
 			// an offset to the pulse so it is displayed on top of the currently playing bar
 			if (sharedData.beatAnimate && sharedData.beatViz && sharedData.beatVizType == 2) {
 				// draw only for the currenlty playing bar, whichever that is in the horizontal line
-				if (barNdx == (int)sharedData.thisLoopIndex) {
+				if (barNdx == (int)sharedData.thisBarIndex) {
 					beatPulseStartX = notesOffsetX + ((notesLength  / sharedData.numerator[getPlayingBarIndex()]) * sharedData.beatCounter) * notesXCoef;
 					//beatPulseStartX = ((notesLength * notesXCoef)  / sharedData.numerator[getPlayingBarIndex()]) * sharedData.beatCounter;
 					//beatPulseStartX *= notesXCoef;
@@ -1686,44 +2174,104 @@ void ofApp::drawScore()
 					beatPulsePosX = beatPulseStartX - noteSize;
 					beatPulseSizeX = noteSize * 2;
 					beatPulseMinPosY += scoreYOffset;
-					ofSetColor(ofColor::paleGreen.r*brightnessCoeff,
-							   ofColor::paleGreen.g*brightnessCoeff,
-							   ofColor::paleGreen.b*brightnessCoeff,
+					ofSetColor(beatColor.r*brightnessCoeff,
+							   beatColor.g*brightnessCoeff,
+							   beatColor.b*brightnessCoeff,
 							   sharedData.beatVizCosTab[sharedData.beatVizDegrade] * BEATVIZCOEFF);
 					ofDrawRectangle(beatPulsePosX, beatPulseMinPosY, beatPulseSizeX, beatPulseSizeY);
-					ofSetColor(0);
+				}
+			}
+			// the bar that is played after this one, towards which glissandi, ties, slurs, and crescendi or diminuendi at its end go
+			// it is the next bar of the loop this bar is shown from, or the first bar of a loop that has been called, at the end of the loop
+			int nextBarOfScore = -1;
+			{
+				const std::vector<int>& loop = sharedData.loopData[insertNaturalsNdx];
+				size_t pos = loop.size();
+				if (insertNaturalsNdx == sharedData.loopIndex && barNdx < (int)loop.size() && loop[barNdx] == bar) pos = barNdx;
+				else pos = std::find(loop.begin(), loop.end(), bar) - loop.begin();
+				if (pos < loop.size()) {
+					if (pos + 1 < loop.size()) nextBarOfScore = loop[pos+1];
+					else if (insertNaturalsNdx == sharedData.loopIndex && sharedData.tempLoopIndex != sharedData.loopIndex &&
+							sequencer.isThreadRunning() && !sharedData.loopData[sharedData.tempLoopIndex].empty()) {
+						nextBarOfScore = sharedData.loopData[sharedData.tempLoopIndex].front();
+					}
+					else nextBarOfScore = loop.front();
 				}
 			}
 			float yStartPnt = sharedData.yStartPnts[scoreOrientation];
+			// the Y coordinate of every staff, by the instrument it belongs to
+			// instruments merged into the staff of another one (see \merge) are drawn on that staff, below
+			std::map<int, float> staffYOf;
+			{
+				float staffY = yStartPnt;
+				for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+					if (mergeHostOf(it->first) != it->first) continue;
+					staffYOf[it->first] = staffY;
+					staffY += (sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2));
+				}
+			}
 			unsigned j = 0;
-			map<int, Instrument>::iterator prevInst;
+			std::map<int, Instrument>::iterator prevInst;
 			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+				int host = mergeHostOf(it->first);
+				if (host != it->first) {
+					// a voice of the staff of another instrument has no staff, name, or connecting lines of its own
+					if (showBar && staffYOf.find(host) != staffYOf.end()) {
+						it->second.drawNotes(bar, i, &sharedData.loopData[insertNaturalsNdx], notesOffsetX, staffYOf[host], scoreYOffset, animate, notesXCoef, nextBarOfScore);
+					}
+					continue;
+				}
 				if (i == 0) {
 					// write the names of the instruments without the backslash and get the longest name
 					// only at the first iteration of the bars loop
-					float xPos = scoreXOffset + (sharedData.blankSpace * 0.75) + (sharedData.longestInstNameWidth - instNameWidths[it->first]);
-					float yPos = yStartPnt + (sharedData.staffLinesDist*2.5) + scoreYOffset;
-					instFont.drawString(it->second.getName(), xPos, yPos);
+					// a staff with merged instruments (see \merge) has their names one below the other, in the order of their voices
+					// centered on the staff, where the name of a single instrument is
+					std::vector<int> staffInsts = {it->first};
+					for (const auto& group : mergeGroups) {
+						if (group.size() > 1 && group.front() == it->first) staffInsts = group;
+					}
+					float lineHeight = instFont.getLineHeight();
+					float firstYPos = yStartPnt + (sharedData.staffLinesDist*2.5) + scoreYOffset - (lineHeight * (float)(staffInsts.size() - 1) / 2.0f);
+					for (size_t k = 0; k < staffInsts.size(); k++) {
+						Instrument& inst = sharedData.instruments[staffInsts[k]];
+						float xPos = scoreXOffset + (sharedData.blankSpace * 0.75) + (sharedData.longestInstNameWidth - instNameWidths[staffInsts[k]]);
+						float yPos = firstYPos + (lineHeight * (float)k);
+						ofColor color = inst.getStaffColor();
+						ofSetColor(color.r*brightnessCoeff, color.g*brightnessCoeff, color.b*brightnessCoeff);
+						instFont.drawString(inst.getName(), xPos, yPos);
+					}
 				}
 				// then draw one line at each side of the staffs to connect them
 				// we draw the first one here, and the rest inside the for loop below
-				float connectingLineX = scoreXStartPnt + scoreXOffset;
-				float connectingLineY2 = yStartPnt - sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2);
-				if (i > 0) {
-					connectingLineX += sharedData.instruments.begin()->second.getStaffXLength();
-				}
-				if (j > 0) {
-					ofDrawLine(connectingLineX, yStartPnt, connectingLineX, connectingLineY2);
-					// if this instrument is groupped with the previous one, draw a connecting line at the end of the bar too
+				// the line goes from the top line of this staff to the bottom line of the previous one
+				// at the same X and Y coordinates the staves are drawn at:
+				// staffOffsetX includes the X offset of all previous bars (and of a single bar in horizontal view)
+				// and scoreYOffset is the Y offset of the score (e.g. when the score is at the bottom in horizontal view)
+				// the start of the staff can also be moved with \movex, so we include this too
+				float connectingLineX = staffOffsetX + it->second.getStaffXStartOffset();
+				float connectingLineY1 = yStartPnt + scoreYOffset;
+				float connectingLineY2 = connectingLineY1 - sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2);
+				// each staff draws its own vertical lines at its sides (from its top to its bottom line) in Staff::drawStaff()
+				// here we draw the lines between the staves:
+				// on the left side of the score (the first bar), all staves are connected, from the top line of the top staff
+				// to the bottom line of the bottom staff, by connecting each staff to the previous one
+				// on the right side of every bar (and between bars in horizontal view), only groupped staves are connected
+				if (j > 0 && showBar) {
+					if (i == 0) {
+						ofDrawLine(connectingLineX, connectingLineY1, connectingLineX, connectingLineY2);
+					}
+					// if this instrument is groupped with the previous one, connect them at the end of the bar
 					if (it->second.getGroup() == prevInst->second.getID() && it->second.getGroup() > -1) {
-						connectingLineX += sharedData.instruments.begin()->second.getStaffXLength();
-						ofDrawLine(connectingLineX, yStartPnt, connectingLineX, connectingLineY2);
+						float connectingLineXEnd = staffOffsetX + sharedData.instruments.begin()->second.getStaffXLength();
+						ofDrawLine(connectingLineXEnd, connectingLineY1, connectingLineXEnd, connectingLineY2);
 					}
 				}
-				bool drawTempoLocal = (showTempo && drawTempo ? true : false);
+				// the tempo belongs to the bar and not to an instrument, so it is drawn once, above the top staff
+				// drawn above every other staff, it would fall on the staff above it
+				bool drawTempoLocal = (showTempo && drawTempo && j == 0);
 				if (showBar) {
 					it->second.drawStaff(bar, staffOffsetX, yStartPnt, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempoLocal);
-					it->second.drawNotes(bar, i, &sharedData.loopData[insertNaturalsNdx], notesOffsetX, yStartPnt, scoreYOffset, animate, notesXCoef);
+					it->second.drawNotes(bar, i, &sharedData.loopData[insertNaturalsNdx], notesOffsetX, yStartPnt, scoreYOffset, animate, notesXCoef, nextBarOfScore);
 				}
 				yStartPnt += (sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2));
 				j++;
@@ -1739,6 +2287,668 @@ void ofApp::drawScore()
 			//prevBar = bar;
 		}
 	}
+	// once done drawing the score, draw the line that separates it from the editor
+	// this is important in case of changing the color of the score, to clearly separate the two
+	if (scoreOrientation < 2) {
+		ofColor color;
+		color.r = 255 - scoreBackgroundColor.r;
+		color.g = 255 - scoreBackgroundColor.g;
+		color.b = 255 - scoreBackgroundColor.b;
+		// draw this separating line only if its color is different than the background color of the editor
+		if (color != backgroundColor) {
+			ofSetColor(color * brightnessCoeff);
+			if (scoreOrientation == 0) {
+				ofDrawLine(sharedData.middleOfScreenX, 0, sharedData.middleOfScreenX, sharedData.screenHeight);
+			}
+			else {
+				ofDrawLine(0, scoreBackgroundHeight, sharedData.screenWidth, scoreBackgroundHeight);
+			}
+		}
+	}
+}
+
+//--------------------------------------------------------------
+int ofApp::noteNameToMidi(const std::string& name)
+{
+	static const std::map<char, int> pitchClasses = {{'c', 0}, {'d', 2}, {'e', 4}, {'f', 5}, {'g', 7}, {'a', 9}, {'b', 11}};
+	if (name.empty() || pitchClasses.find(std::tolower(name[0])) == pitchClasses.end()) return -1;
+	int pitch = pitchClasses.at(std::tolower(name[0]));
+	size_t ndx = 1;
+	// sharps and flats, as in LiveLily (e.g. fis, bes)
+	while (ndx + 1 < name.size() && (name.compare(ndx, 2, "is") == 0 || name.compare(ndx, 2, "es") == 0)) {
+		pitch += (name[ndx] == 'i' ? 1 : -1);
+		ndx += 2;
+	}
+	std::string octave = name.substr(ndx);
+	if (!isNumber(octave)) return -1;
+	// the octaves are numbered as in scientific pitch notation, where c4 is the middle C (MIDI 60)
+	int midi = (std::stoi(octave) + 1) * 12 + pitch;
+	return (midi >= 0 && midi <= 127 ? midi : -1);
+}
+
+//--------------------------------------------------------------
+void ofApp::setPianoRollRange(int lowestKey, int highestKey)
+{
+	auto isBlack = [](int note) { int pc = note % 12; return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10; };
+	sharedData.pianoRollLowestKey = std::max(0, lowestKey);
+	sharedData.pianoRollHighestKey = std::min(127, highestKey);
+	int numWhiteKeys = 0;
+	for (int note = sharedData.pianoRollLowestKey; note <= sharedData.pianoRollHighestKey; note++) {
+		if (!isBlack(note)) numWhiteKeys++;
+	}
+	sharedData.pianoRollNumWhiteKeys = std::max(1, numWhiteKeys);
+	// the keyboard goes from the start of its lowest key to the end of its highest key
+	// a white key takes the whole width of a white key, and a black key the width of its lane (see pianoRollLane())
+	// so a keyboard can start or end with a black key (e.g. c1 cis4), without the white key next to it
+	sharedData.pianoRollOrigin = 0;
+	std::pair<float, float> lowest = pianoRollLane(sharedData.pianoRollLowestKey);
+	std::pair<float, float> highest = pianoRollLane(sharedData.pianoRollHighestKey);
+	static const int whiteIndex[12] = {0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6};
+	auto whiteStart = [&](int note) { return (float)((note / 12) * 7 + whiteIndex[note % 12]); };
+	float start = (isBlack(sharedData.pianoRollLowestKey) ? lowest.first : whiteStart(sharedData.pianoRollLowestKey));
+	float end = (isBlack(sharedData.pianoRollHighestKey) ? highest.first + highest.second : whiteStart(sharedData.pianoRollHighestKey) + 1);
+	sharedData.pianoRollOrigin = start;
+	sharedData.pianoRollLength = std::max(1.0f, end - start);
+	// the keys fill the length of the keyboard, which is the height of the score in vertical view, and its width in horizontal view
+	if (scoreOrientation == 0) sharedData.pianoRollKeysHeight = scoreBackgroundHeight / sharedData.pianoRollLength;
+	else sharedData.pianoRollKeysWidth = scoreBackgroundWidth / sharedData.pianoRollLength;
+}
+
+//--------------------------------------------------------------
+std::pair<float, float> ofApp::pianoRollLane(int note)
+{
+	// the start of every pitch class in an octave and the width of its lane, in widths of white keys
+	// C to E are three white keys with five lanes, F to B four white keys with seven lanes
+	auto laneInOctave = [](int pc) {
+		if (pc <= 4) return std::make_pair(pc * 0.6f, 0.6f);
+		return std::make_pair(3.0f + ((pc - 5) * (4.0f / 7.0f)), 4.0f / 7.0f);
+	};
+	// relative to the start of the keyboard (see setPianoRollRange())
+	std::pair<float, float> lane = laneInOctave(note % 12);
+	return std::make_pair((float)((note / 12) * 7) + lane.first - sharedData.pianoRollOrigin, lane.second);
+}
+
+//--------------------------------------------------------------
+void ofApp::drawPianoRoll()
+{
+	ofSetLineWidth(lineWidth);
+	// draw the background of the piano roll
+	ofSetColor(backgroundColor * brightnessCoeff);
+	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
+	bool vertical = (scoreOrientation == 0);
+	// the width of a white key along the keyboard, and the depth of the keys (from the side of the notes to the front of the keys)
+	float whiteKeyWidth = (vertical ? sharedData.pianoRollKeysHeight : sharedData.pianoRollKeysWidth);
+	float keysDepth = (vertical ? sharedData.pianoRollKeysWidth : sharedData.pianoRollKeysHeight);
+	// the keyboard is at the right side of the score in vertical view, with the lowest key at the bottom
+	// and at the bottom of the score in horizontal view, with the lowest key on the left
+	// the black keys are at the side of the keyboard that faces the notes, two thirds of its depth
+	float keyboardStart = (vertical ? scoreXOffset + scoreBackgroundWidth - keysDepth : scoreYOffset + scoreBackgroundHeight - keysDepth);
+	const float blackKeysDepth = 2.0f / 3.0f;
+	// draws a rectangle on the keyboard, from start to end along it (in widths of white keys)
+	// and from depthStart to depthEnd across it (0 at the side of the notes, 1 at the front of the keys)
+	auto keyRect = [&](float start, float end, float depthStart, float depthEnd) {
+		if (vertical) {
+			float y1 = scoreYOffset + scoreBackgroundHeight - (end * whiteKeyWidth);
+			ofDrawRectangle(keyboardStart + (depthStart * keysDepth), y1, (depthEnd - depthStart) * keysDepth, (end - start) * whiteKeyWidth);
+		}
+		else {
+			ofDrawRectangle(scoreXOffset + (start * whiteKeyWidth), keyboardStart + (depthStart * keysDepth), (end - start) * whiteKeyWidth, (depthEnd - depthStart) * keysDepth);
+		}
+	};
+	auto isBlack = [](int note) { int pc = note % 12; return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10; };
+	static const int whiteIndex[12] = {0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6};
+	auto whiteKeyStart = [&](int note) {
+		return (float)((note / 12) * 7 + whiteIndex[note % 12]) - sharedData.pianoRollOrigin;
+	};
+	float keyboardLength = sharedData.pianoRollLength;
+	// the notes that play, highlighted on the keyboard with the color of their instrument, as opaque as their velocity
+	// by key and by instrument, so that a key that more instruments play is highlighted with their colors mixed (see highlightKey below)
+	struct ActiveKey {
+		ofColor color;
+		int velocity;
+	};
+	std::map<int, std::map<int, ActiveKey>> activeKeys;
+	// the notes of the roll, collected before they are drawn, so that notes of different instruments on the same key at the same time
+	// share the lane of the key, side by side, instead of hiding one another (see below)
+	struct RollNote {
+		int inst;
+		int key;
+		float pos;
+		float length;
+		ofColor color;
+		int velocity;
+	};
+	std::vector<RollNote> rollNotes;
+	// then draw the notes of all instruments
+	if (sharedData.instruments.size() > 0 && sharedData.loopData.size() > 0) {
+		uint64_t timeStamp = ofGetElapsedTimeMillis();
+		// the movement of the notes depends on the tempo of the currently playing bar
+		int thisBar = sharedData.loopData[sharedData.loopIndex][sharedData.thisBarIndex];
+		// the length of the area of the notes, from the edge of the score to the keyboard
+		float rollLength = (vertical ? scoreBackgroundWidth - sharedData.pianoRollKeysWidth : scoreBackgroundHeight - sharedData.pianoRollKeysHeight);
+		float rollStart = (vertical ? scoreXOffset : scoreYOffset);
+		// with the piano roll we show one bar only
+		// but as the notes roll, we start showing the next bar too
+		// so we need two bars (or the same bar twice, in case of a single-bar loop)
+		// hence the two iteration loop below
+		for (int i = 0; i < 2; i++) {
+			int bar = sharedData.loopData[sharedData.loopIndex][sharedData.thisBarIndex];
+			if (mustUpdateScore && sharedData.thisBarIndex == sharedData.loopData[sharedData.loopIndex].size()-1 && i > 0) {
+				scoreUpdated = true;
+			}
+			else if (mustUpdateScore && sequencer.isUpdated() && sharedData.thisBarIndex == 0) {
+				mustUpdateScore = scoreUpdated = false;
+			}
+			if (i) {
+				if (scoreUpdated) {
+					bar = sharedData.loopData[sharedData.tempLoopIndex][0];
+				}
+				else {
+					if (sharedData.thisBarIndex+1 >= sharedData.loopData[sharedData.loopIndex].size()) {
+						bar = sharedData.loopData[sharedData.loopIndex][0];
+					}
+					else {
+						bar = sharedData.loopData[sharedData.loopIndex][sharedData.thisBarIndex+1];
+					}
+				}
+			}
+			for (auto instIt = sharedData.instruments.begin(); instIt != sharedData.instruments.end(); ++instIt) {
+				// a muted instrument is not shown, as it doesn't play
+				if (instIt->second.isMuted()) continue;
+				ofSetColor(instIt->second.getColor() * brightnessCoeff);
+				float posAccum = 0;
+				// safety test to ensure the bar we're trying to display actually exists
+				if (instIt->second.notes.find(bar) == instIt->second.notes.end()) {
+					continue;
+				}
+				for (size_t j = 0; j < instIt->second.notes.at(bar).size(); j++) {
+					float noteLength = (float)instIt->second.durs.at(bar).at(j) * sharedData.pianoRollMinDur;
+					float durPercentage = instIt->second.durPercentages[instIt->second.articulations[bar][j][0]];
+					// the position of the note along the roll, towards the keyboard
+					// the ADSR release part is removed from the length of the note, so its start moves by as much
+					float pos = rollStart + rollLength - posAccum - noteLength + (noteLength * (1 - durPercentage));
+					if (sequencer.isThreadRunning()) {
+						// advance according to the elapsed time since the start of the bar
+						pos += ((rollLength * (timeStamp - sharedData.pianoRollTimeStamp)) / (sharedData.tempoMs[thisBar] * sharedData.numerator[thisBar]));
+					}
+					float length = noteLength * durPercentage;
+					if (i == 0) {
+						// a note of this bar ends at the keyboard
+						float diff = length - (rollStart + rollLength - pos);
+						if (diff > 0) length -= diff;
+					}
+					else {
+						// a note of the next bar starts at the edge of the score
+						pos -= rollLength;
+						length = std::min(length, pos - (rollStart - length));
+						pos = std::max(pos, rollStart);
+					}
+					bool active = sequencer.isThreadRunning() && bar == thisBar &&
+						((instIt->second.getSeqToggle() && (int)j == instIt->second.getBarDataCounter()) ||
+						 (instIt->second.getDurPercentage(bar) == 100 && (int)j == instIt->second.getBarDataCounter()-1));
+					const std::vector<int>& velocities = instIt->second.midiVels[bar];
+					int velocity = (j < velocities.size() ? velocities[j] : 127);
+					for (size_t k = 0; k < instIt->second.notes.at(bar).at(j).size(); k++) {
+						int note = (int)instIt->second.notes.at(bar).at(j).at(k);
+						if (note < sharedData.pianoRollLowestKey || note > sharedData.pianoRollHighestKey) continue; // -1 is a rest
+						if (length <= 0) continue;
+						rollNotes.push_back({instIt->first, note, pos, length, instIt->second.getColor() * brightnessCoeff, velocity});
+						if (active) activeKeys[note][instIt->first] = {instIt->second.getColor() * brightnessCoeff, velocity};
+					}
+					posAccum += noteLength;
+				}
+			}
+		}
+	}
+	// the notes, each in its lane, a little narrower, so that notes of neighbouring lanes are apart
+	// where notes of different instruments are on the same key at the same time, the lane is split between them, for as long as they overlap
+	// with the instruments in the order of their indexes, and every note is as opaque as its MIDI velocity (127 is opaque, as in drawSequencer())
+	ofEnableAlphaBlending();
+	for (const RollNote& note : rollNotes) {
+		// the points where the notes of other instruments on the same key start and end during this note
+		std::vector<float> points = {note.pos, note.pos + note.length};
+		for (const RollNote& other : rollNotes) {
+			if (other.key != note.key || other.inst == note.inst) continue;
+			if (other.pos >= note.pos + note.length || note.pos >= other.pos + other.length) continue;
+			if (other.pos > note.pos) points.push_back(other.pos);
+			if (other.pos + other.length < note.pos + note.length) points.push_back(other.pos + other.length);
+		}
+		std::sort(points.begin(), points.end());
+		std::pair<float, float> lane = pianoRollLane(note.key);
+		float laneStart = lane.first + (lane.second * 0.1f);
+		float laneWidth = lane.second * 0.8f;
+		int alpha = std::clamp((int)std::lround((float)note.velocity * 255.0f / 127.0f), 0, 255);
+		ofSetColor(note.color.r, note.color.g, note.color.b, alpha);
+		for (size_t p = 0; p + 1 < points.size(); p++) {
+			float start = points[p], end = points[p+1];
+			if (end - start <= 0) continue;
+			// the instruments that play this key during this part of the note, and the place of this note among them
+			float middle = (start + end) / 2.0f;
+			std::set<int> insts;
+			for (const RollNote& other : rollNotes) {
+				if (other.key == note.key && other.pos <= middle && middle < other.pos + other.length) insts.insert(other.inst);
+			}
+			insts.insert(note.inst);
+			int place = (int)std::distance(insts.begin(), insts.find(note.inst));
+			float partWidth = laneWidth / (float)insts.size();
+			float partStart = laneStart + (partWidth * (float)place);
+			if (vertical) {
+				ofDrawRectangle(start, scoreYOffset + scoreBackgroundHeight - ((partStart + partWidth) * whiteKeyWidth), end - start, partWidth * whiteKeyWidth);
+			}
+			else {
+				ofDrawRectangle(scoreXOffset + (partStart * whiteKeyWidth), start, partWidth * whiteKeyWidth, end - start);
+			}
+		}
+	}
+	// highlights a part of a key that plays, from start to end along the keyboard and from depthStart to depthEnd across it
+	// with the instruments that play it mixed in one color: their colors weighted by how opaque their notes are (by their velocities)
+	// and as opaque as the notes would be if they were laid over one another, over the color of the key
+	// so one instrument has its own color and the opacity of its note, as the notes of the lanes (see above)
+	auto highlightKey = [&](const std::map<int, ActiveKey>& insts, float start, float end, float depthStart, float depthEnd) {
+		float r = 0, g = 0, b = 0, weights = 0, transparency = 1;
+		for (const auto& inst : insts) {
+			float opacity = std::clamp((float)inst.second.velocity / 127.0f, 0.0f, 1.0f);
+			r += inst.second.color.r * opacity;
+			g += inst.second.color.g * opacity;
+			b += inst.second.color.b * opacity;
+			weights += opacity;
+			transparency *= 1.0f - opacity;
+		}
+		if (weights <= 0) return;
+		ofSetColor(std::lround(r / weights), std::lround(g / weights), std::lround(b / weights), std::lround((1.0f - transparency) * 255.0f));
+		keyRect(start, end, depthStart, depthEnd);
+	};
+	// the white keys, with the notes that play highlighted
+	ofSetColor(ofColor::white * brightnessCoeff);
+	keyRect(0, keyboardLength, 0, 1);
+	for (auto& key : activeKeys) {
+		if (isBlack(key.first)) continue;
+		float start = whiteKeyStart(key.first);
+		// the front of the key is its whole width, and its part between the black keys is from the black key below to the one above
+		// within the keyboard, which might start or end with a black key
+		highlightKey(key.second, std::max(0.0f, start), std::min(keyboardLength, start + 1), blackKeysDepth, 1);
+		float backStart = std::max(0.0f, start), backEnd = std::min(keyboardLength, start + 1);
+		if (key.first - 1 >= sharedData.pianoRollLowestKey && isBlack(key.first - 1)) {
+			std::pair<float, float> below = pianoRollLane(key.first - 1);
+			backStart = below.first + below.second;
+		}
+		if (key.first + 1 <= sharedData.pianoRollHighestKey && isBlack(key.first + 1)) {
+			backEnd = pianoRollLane(key.first + 1).first;
+		}
+		highlightKey(key.second, backStart, backEnd, 0, blackKeysDepth);
+	}
+	// the lines between the white keys
+	ofSetColor((backgroundColor == ofColor::white ? ofColor(0) : backgroundColor) * brightnessCoeff);
+	// at the start of every white key of the range, except at the start of the keyboard
+	// and at the end of its last white key, if it ends with a black key (e.g. at the end of c4, when the keyboard ends with cis4)
+	for (int note = sharedData.pianoRollLowestKey; note <= sharedData.pianoRollHighestKey + 1; note++) {
+		if (isBlack(note)) continue;
+		float k = whiteKeyStart(note);
+		if (k <= 0.001f || k >= keyboardLength - 0.001f) continue;
+		if (vertical) {
+			float y = scoreYOffset + scoreBackgroundHeight - (k * whiteKeyWidth);
+			ofDrawLine(keyboardStart, y, keyboardStart + keysDepth, y);
+		}
+		else {
+			float x = scoreXOffset + (k * whiteKeyWidth);
+			ofDrawLine(x, keyboardStart, x, keyboardStart + keysDepth);
+		}
+	}
+	// the black keys, each over its lane, with the notes that play highlighted
+	for (int note = sharedData.pianoRollLowestKey; note <= sharedData.pianoRollHighestKey; note++) {
+		if (!isBlack(note)) continue;
+		std::pair<float, float> lane = pianoRollLane(note);
+		auto activeIt = activeKeys.find(note);
+		ofSetColor(0);
+		keyRect(lane.first, lane.first + lane.second, 0, blackKeysDepth);
+		if (activeIt != activeKeys.end()) {
+			highlightKey(activeIt->second, lane.first, lane.first + lane.second, 0, blackKeysDepth);
+			// the outline of a highlighted black key, so it is distinguished from the white keys next to it
+			ofNoFill();
+			ofSetColor(0);
+			keyRect(lane.first, lane.first + lane.second, 0, blackKeysDepth);
+			ofFill();
+		}
+	}
+	// a line that separates the keyboard from the notes, if the background of the editor is white
+	if (backgroundColor == ofColor::white) {
+		ofSetColor(0);
+		if (vertical) ofDrawLine(keyboardStart, scoreYOffset, keyboardStart, scoreYOffset + scoreBackgroundHeight);
+		else ofDrawLine(scoreXOffset, keyboardStart, scoreXOffset + scoreBackgroundWidth, keyboardStart);
+	}
+	// draw a line that separates the piano roll from the editor
+	ofSetColor(foregroundColor * brightnessCoeff);
+	if (scoreOrientation == 0 && scoreXOffset > 0) {
+		ofDrawLine(scoreXOffset, 0, scoreXOffset, scoreBackgroundHeight);
+	}
+	else if (scoreYOffset > 0) {
+		ofDrawLine(0, scoreYOffset, scoreBackgroundWidth, scoreYOffset);
+	}
+}
+
+
+//--------------------------------------------------------------
+void ofApp::drawScope()
+{
+	// draw the background
+	ofSetColor(backgroundColor * brightnessCoeff);
+	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
+	if (pyoSet) {
+		// draw the legend
+		std::string chanStr = "chan ";
+		// get the number of digits of the number of channels
+		int numDigits = 0;
+		int timesTen = 1;
+		while (timesTen <= outChannels) {
+			timesTen *= 10;
+			numDigits++;
+		}
+		float strWidth = font.stringWidth(chanStr) + (oneCharacterWidth * numDigits);
+		float strHeight = font.stringHeight(chanStr);
+		for (int i = 0; i < outChannels; i++) {
+			// use the same colors we use for the piano roll
+			ofSetColor(colorNameMap[instrumentColors[i%(int)instrumentColors.size()]]);
+			float x = scoreXOffset+scoreBackgroundWidth-strWidth-10;
+			float y = scoreYOffset+(strHeight*(i+1)) + ((strHeight/2)*(i > 0 ? 1 : 0));
+			ofDrawLine(x-oneCharacterWidth, y, x-oneCharacterWidth-10, y);
+			font.drawString(chanStr + std::to_string(i+1), x, y+(strHeight/2));
+		}
+		ofSetLineWidth(lineWidth*2);
+		for (int i = 0; i < outChannels; i++) {
+			// draw the actual waveforms
+			ofSetColor(colorNameMap[instrumentColors[i%(int)instrumentColors.size()]]);
+			scopeWaveforms[i].draw();
+		}
+		ofSetLineWidth(lineWidth);
+	}
+	// draw a line that separates the scope from the editor
+	ofSetColor(foregroundColor * brightnessCoeff);
+	if (scoreOrientation == 0) {
+		float x = (scoreXOffset > 0 ? scoreXOffset : scoreBackgroundWidth);
+		ofDrawLine(x, 0, x, scoreBackgroundHeight);
+	}
+	else if (scoreOrientation == 1 && scoreYOffset == 0) {
+		ofDrawLine(0, scoreBackgroundHeight, scoreBackgroundWidth, scoreBackgroundHeight);
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::drawSequencer()
+{
+	// the step sequencer (\score.show sequencer): a row for every instrument, with a square for every step of \score.seqres in the bar that plays
+	// the squares are unfilled, in the foreground color, and every note is a rectangle in the color of its instrument (as in the piano roll)
+	// over as many steps as it lasts (a step of the x - notation is one step), and as opaque as its MIDI velocity (127 is opaque)
+	ofSetLineWidth(lineWidth);
+	ofEnableAlphaBlending();
+	ofSetColor(backgroundColor * brightnessCoeff);
+	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
+	if (sharedData.instruments.empty()) return;
+	auto loopIt = sharedData.loopData.find(sharedData.loopIndex);
+	if (loopIt == sharedData.loopData.end() || loopIt->second.empty()) return;
+	int bar = loopIt->second[std::min((size_t)sharedData.thisBarIndex, loopIt->second.size() - 1)];
+	// the length of the bar and of a step, in units of the minimum duration, and the steps of the bar (e.g. 12 in 3/4 with 16ths)
+	int barLength = (sharedData.numBeats.count(bar) ? sharedData.numBeats[bar] : MINDUR);
+	int stepLength = std::max(1, MINDUR / std::max(1, seqResolution));
+	int numSteps = std::max(1, (barLength + stepLength - 1) / stepLength);
+	// the instruments in the order of the score
+	std::vector<int> order;
+	for (const auto& ordered : sharedData.instrumentIndexesOrdered) {
+		if (sharedData.instruments.count(ordered.second)) order.push_back(ordered.second);
+	}
+	if (order.empty()) return;
+	// the squares are as large as they can be, after the names of the instruments, and they are centered vertically
+	float margin = 10;
+	float nameWidth = (float)sharedData.longestInstNameWidth + (margin * 2);
+	float square = std::min((scoreBackgroundWidth - nameWidth - margin) / (float)numSteps, (scoreBackgroundHeight - (margin * 2)) / (float)order.size());
+	if (square <= 0) return;
+	float gridX = scoreXOffset + nameWidth;
+	float gridY = scoreYOffset + ((scoreBackgroundHeight - (square * (float)order.size())) / 2.0f);
+	ofColor foreground = foregroundColor * brightnessCoeff;
+	// a note, from its start to its end in units of the minimum duration, with its velocity
+	struct SeqNote {
+		int start;
+		int end;
+		int velocity;
+	};
+	for (size_t row = 0; row < order.size(); row++) {
+		Instrument& inst = sharedData.instruments[order[row]];
+		float y = gridY + (square * (float)row);
+		ofSetColor(foreground);
+		instFont.drawString(inst.getName(), scoreXOffset + margin, y + ((square + instFont.stringHeight("A")) / 2.0f));
+		// the notes, where a note tied from the note before it is part of that note, and none for a muted instrument, as it doesn't play
+		std::vector<SeqNote> seqNotes;
+		if (!inst.isMuted() && inst.durs.count(bar)) {
+		const std::vector<int>& durs = inst.durs[bar];
+		const std::vector<std::vector<float>>& notes = inst.notes[bar];
+		const std::vector<int>& ties = inst.tieIndexes[bar];
+		const std::vector<int>& velocities = inst.midiVels[bar];
+		int onset = 0;
+		for (size_t i = 0; i < durs.size(); i++) {
+			bool isRest = (i >= notes.size() || notes[i].empty() || notes[i][0] < 0);
+			bool tiedFromPrev = (i > 0 && i - 1 < ties.size() && ties[i-1] > -1);
+			if (!isRest) {
+				if (tiedFromPrev && !seqNotes.empty() && seqNotes.back().end == onset) seqNotes.back().end = onset + durs[i];
+				else seqNotes.push_back({onset, onset + durs[i], (i < velocities.size() ? velocities[i] : 127)});
+			}
+			onset += durs[i];
+		}
+		}
+		// the squares of the steps no note covers, so that a note over many steps is one rectangle, without the lines of the steps in it
+		std::vector<bool> covered(numSteps, false);
+		for (const SeqNote& note : seqNotes) {
+			for (int step = 0; step < numSteps; step++) {
+				if (note.start <= step * stepLength && (step + 1) * stepLength <= note.end) covered[step] = true;
+			}
+		}
+		ofNoFill();
+		ofSetColor(foreground);
+		for (int step = 0; step < numSteps; step++) {
+			if (!covered[step]) ofDrawRectangle(gridX + (square * (float)step), y, square, square);
+		}
+		ofFill();
+		ofColor color = inst.getColor() * brightnessCoeff;
+		for (const SeqNote& note : seqNotes) {
+			float x = gridX + (square * (float)note.start / (float)stepLength);
+			float width = square * (float)(note.end - note.start) / (float)stepLength;
+			// the 256 values of transparency over the 128 values of MIDI velocity, so 127 is opaque
+			int alpha = std::clamp((int)std::lround((float)note.velocity * 255.0f / 127.0f), 0, 255);
+			ofSetColor(color.r, color.g, color.b, alpha);
+			ofDrawRectangle(x, y, width, square);
+			// and the outline of the note, in the foreground color, as the squares of the steps
+			ofNoFill();
+			ofSetColor(foreground);
+			ofDrawRectangle(x, y, width, square);
+			ofFill();
+		}
+	}
+	// the step that plays, while the sequencer plays, as a red rectangle over the steps of all the rows, with 25% transparency
+	if (sequencer.isThreadRunning() && sharedData.tempoMs.count(bar) && sharedData.numerator.count(bar)) {
+		float barMs = (float)(sharedData.tempoMs[bar] * sharedData.numerator[bar]);
+		if (barMs > 0) {
+			float progress = std::clamp((float)(ofGetElapsedTimeMillis() - sharedData.pianoRollTimeStamp) / barMs, 0.0f, 1.0f);
+			int step = std::min(numSteps - 1, (int)(progress * (float)barLength / (float)stepLength));
+			ofColor red = ofColor::red * brightnessCoeff;
+			ofSetColor(red.r, red.g, red.b, 191);
+			ofDrawRectangle(gridX + (square * (float)step), gridY, square, square * (float)order.size());
+		}
+	}
+}
+
+/******************** key press functions **********************/
+//--------------------------------------------------------------
+// Shift selects text when moving the cursor only in insert mode
+// in normal mode the selection extends only in visual mode, whether Shift is pressed or not
+// (keys like G, J, K, H, and L are typed with Shift, and they should only move the cursor)
+// after moving the cursor, the Shift state of the editor is restored with setShiftPressed(shiftPressed)
+void ofApp::setNormalModeShift()
+{
+	if (!editors[whichPane].getInserting()) editors[whichPane].setShiftPressed(editors[whichPane].getVisualMode());
+}
+
+//--------------------------------------------------------------
+std::string ofApp::tieWarning(int loopNdx)
+{
+	auto loopIt = sharedData.loopData.find(loopNdx);
+	if (loopIt == sharedData.loopData.end() || loopIt->second.empty()) return "";
+	const std::vector<int>& loop = loopIt->second;
+	std::vector<std::string> ignoredTies;
+	// the last bar of a loop is followed by its first bar, and a bar that plays alone by itself
+	for (size_t i = 0; i < loop.size(); i++) {
+		int fromBar = loop[i];
+		int toBar = loop[(i + 1) % loop.size()];
+		for (auto& inst : sharedData.instruments) {
+			if (tieAcrossBars(inst.second, fromBar, toBar) == 2) {
+				std::string barName = (sharedData.barsOrdered.find(fromBar) != sharedData.barsOrdered.end() ? sharedData.barsOrdered[fromBar] : std::to_string(fromBar));
+				std::string tie = "\\" + inst.second.getName() + " in " + barName;
+				if (std::find(ignoredTies.begin(), ignoredTies.end(), tie) == ignoredTies.end()) ignoredTies.push_back(tie);
+			}
+		}
+	}
+	if (ignoredTies.empty()) return "";
+	std::string warning = "the tie at the end of ";
+	for (size_t i = 0; i < ignoredTies.size(); i++) {
+		if (i > 0) warning += (i == ignoredTies.size() - 1 ? " and " : ", ");
+		warning += ignoredTies[i];
+	}
+	warning += " will be ignored, as the next note is not the same";
+	return warning;
+}
+
+//--------------------------------------------------------------
+// all LiveLily commands and the names defined in the session (instruments, bars, functions, etc.), with their backslash
+// these are the names of commandsMap that start with a backslash, which is also used for the colors of the editor
+std::vector<std::string> ofApp::getCommandCompletions()
+{
+	std::set<std::string> names;
+	for (const auto& byChar : commandsMap[livelily]) {
+		for (const auto& cmd : byChar.second) {
+			if (cmd.first.size() > 1 && cmd.first[0] == '\\') names.insert(cmd.first);
+		}
+	}
+	return std::vector<std::string>(names.begin(), names.end());
+}
+
+//--------------------------------------------------------------
+std::vector<std::string> ofApp::getArgumentCompletions()
+{
+	std::set<std::string> names;
+	for (const auto& byChar : commandsMap[livelily]) {
+		for (const auto& cmd : byChar.second) {
+			if (!cmd.first.empty() && cmd.first[0] != '\\') names.insert(cmd.first);
+		}
+	}
+	return std::vector<std::string>(names.begin(), names.end());
+}
+
+//--------------------------------------------------------------
+bool ofApp::startsMelodicLine(const std::string& word)
+{
+	return sharedData.instrumentIndexes.find(word) != sharedData.instrumentIndexes.end() || instGroups.find(word) != instGroups.end();
+}
+
+//--------------------------------------------------------------
+// the strings of the interpreter have one name per line (see Pyo::names() and Pyo::signature())
+static std::vector<std::string> pythonLines(const std::string& str)
+{
+	std::vector<std::string> lines;
+	size_t start = 0;
+	while (start < str.size()) {
+		size_t end = str.find('\n', start);
+		if (end == std::string::npos) end = str.size();
+		if (end > start) lines.push_back(str.substr(start, end - start));
+		start = end + 1;
+	}
+	return lines;
+}
+
+bool ofApp::refreshPythonTable()
+{
+#ifdef USEPYO
+	if (!pyoSet || !sharedData.pyo.isSetup()) return false;
+	unsigned executions = sharedData.pyo.getExecutions();
+	if (!pythonTable.made || pythonTable.executions != executions) {
+		std::vector<std::string> names = pythonLines(sharedData.pyo.globalNames());
+		pythonTable.names = std::set<std::string>(names.begin(), names.end());
+		pythonTable.attributes.clear();
+		pythonTable.signatures.clear();
+		pythonTable.executions = executions;
+		pythonTable.made = true;
+	}
+	return true;
+#else
+	return false;
+#endif
+}
+
+std::vector<std::string> ofApp::pythonNames(const std::string& dotted)
+{
+#ifdef USEPYO
+	if (!refreshPythonTable()) return {};
+	if (dotted.empty()) return std::vector<std::string>(pythonTable.names.begin(), pythonTable.names.end());
+	// a name that is not in the interpreter has no attributes to ask for
+	if (pythonTable.names.find(dotted.substr(0, dotted.find('.'))) == pythonTable.names.end()) return {};
+	auto it = pythonTable.attributes.find(dotted);
+	if (it != pythonTable.attributes.end()) return it->second;
+	std::vector<std::string> attributes = pythonLines(sharedData.pyo.names(dotted));
+	pythonTable.attributes[dotted] = attributes;
+	return attributes;
+#else
+	(void)dotted;
+	return {};
+#endif
+}
+
+std::vector<std::string> ofApp::pythonSignature(const std::string& dotted)
+{
+#ifdef USEPYO
+	if (!refreshPythonTable() || dotted.empty()) return {};
+	if (pythonTable.names.find(dotted.substr(0, dotted.find('.'))) == pythonTable.names.end()) return {};
+	auto it = pythonTable.signatures.find(dotted);
+	if (it != pythonTable.signatures.end()) return it->second;
+	std::vector<std::string> params = pythonLines(sharedData.pyo.signature(dotted));
+	pythonTable.signatures[dotted] = params;
+	return params;
+#else
+	(void)dotted;
+	return {};
+#endif
+}
+
+//--------------------------------------------------------------
+// the methods of a command or of an object that is defined in the session, by its name with a backslash (e.g. \score or \violin)
+std::vector<std::string> ofApp::getMethodCompletions(const std::string& name)
+{
+	static const std::map<std::string, std::vector<std::string>> commandMethods = {
+		{"\\score", {"animation", "beatsin", "beattype", "colors", "correct", "finish", "hide", "movex", "movey",
+					 "numbars", "play", "recenter", "reset", "seqres", "show", "stop", "stopnow", "update"}},
+		{"\\editor", {"alignment", "animation", "autobrackets", "autocomplete"}},
+		{"\\insts", {"add", "clear", "init", "remove"}},
+		{"\\python", {"send"}},
+		{"\\clicktrack", {"tune", "volume"}},
+		{"\\maestro", {"levareaddr", "mainaddr", "toggleaddr", "valndx", "valthresh"}}
+	};
+	// groups of instruments take the methods of instruments
+	static const std::vector<std::string> instrumentMethods = {"accoffset", "beatcolor", "cursor", "delay", "fullscreen", "midichan",
+		"midiport", "numbars", "rhythm", "sendmidi", "sendto", "size", "sndfont", "transpose", "update"};
+	static const std::vector<std::string> functionMethods = {"bind", "onrelease", "setargs", "unbind"};
+	static const std::vector<std::string> listMethods = {"traverse"};
+	static const std::vector<std::string> barLoopMethods = {"check", "goto", "locate"};
+	static const std::vector<std::string> oscClientMethods = {"send", "setup"};
+	static const std::vector<std::string> oscServerMethods = {"map", "setup"};
+	static const std::vector<std::string> variableMethods = {"val"};
+	auto it = commandMethods.find(name);
+	if (it != commandMethods.end()) return it->second;
+	// some of the maps below store names with their backslash and some without it
+	std::string plainName = (startsWith(name, "\\") ? name.substr(1) : name);
+	auto has = [&](const auto& m) { return m.find(name) != m.end() || m.find(plainName) != m.end(); };
+	if (has(sharedData.instrumentIndexes) || has(instGroups)) return instrumentMethods;
+	if (has(functionIndexes)) return functionMethods;
+	if (has(listIndexes)) return listMethods;
+	if (has(sharedData.barsIndexes) || has(sharedData.loopsIndexes)) return barLoopMethods;
+	if (has(oscClients)) return oscClientMethods;
+	if (has(oscServers)) return oscServerMethods;
+	if (has(variables)) return variableMethods;
+	return {};
 }
 
 //--------------------------------------------------------------
@@ -1746,162 +2956,451 @@ void ofApp::drawScore()
 // or when a key press is simulated from OSC
 void ofApp::executeKeyPressed(int key)
 {
+	// while asking to save before quitting, the keys answer the question (see quitPromptKey())
+	// except the modifier keys, and the arrow keys while typing a path
+	bool modifierKey = (key == 0 || key == 1 || key == 2 || key == 4 || (key >= 3680 && key <= 3685));
+	bool arrowKey = (key >= 57356 && key <= 57361);
+	if (quitPromptState > 0 && !modifierKey && !(arrowKey && quitPromptState == 2)) {
+		quitPromptKey(key);
+		return;
+	}
+	// the output of a shell command that doesn't fit the area below the panes scrolls with the up and down arrows
+	// and with Page Up and Page Down by the lines that are shown (see drawShell()), until Esc clears it
+	if (editors[whichPane].showingShell() && !editors[whichPane].isTypingShell() && shellTotalLines > shellVisibleLines &&
+			(key == 57357 || key == 57359 || key == 57360 || key == 57361)) {
+		if (key == 57357) shellScroll--;
+		else if (key == 57359) shellScroll++;
+		else if (key == 57360) shellScroll -= shellVisibleLines;
+		else shellScroll += shellVisibleLines;
+		shellScroll = std::max(0, std::min(shellScroll, shellTotalLines - shellVisibleLines));
+		return;
+	}
 	switch (key) {
+		case 0: // caps lock
+			break;
 		case 1:
 			editors[whichPane].setShiftPressed(true);
 			shiftPressed = true;
-	    	break;
-	    case 2:
+			break;
+		case 2:
 			editors[whichPane].setCtrlPressed(true);
 			ctrlPressed = true;
-	    	break;
-	    case 4:
+			break;
+		case 4:
 			editors[whichPane].setAltPressed(true);
 			altPressed = true;
-	    	break;
-	    // below are codes of the Ctl, Alt, and Shift keys
-	    // that are sent together with the values above
-	    // left ctl
-	    case 3680:
-	    	break;
-	    // right ctl
-	    case 3683:
-	    	break;
-	    // left alt
-	    case 3684:
-	    	break;
-	    // right alt
-	    case 3685:
-	    	break;
-	    // left shift
-	    case 3682:
-	    	break;
-	    // right shift
-	    case 3681:
-	    	break;
-	    case 57357:
-	    	editors[whichPane].upArrow(-1); // -1 for single increment
-	    	break;
-	    case 57359:
-	    	editors[whichPane].downArrow(-1); // -1 for single decrement
-	    	break;
-	    case 57358:
-	    	editors[whichPane].rightArrow();
-	    	break;
-	    case 57356:
-	    	editors[whichPane].leftArrow();
-	    	break;
-	    case 57360:
-	    	editors[whichPane].pageUp();
-	    	break;
-	    case 57361:
-	    	editors[whichPane].pageDown();
-	    	break;
-		// esc
-		case 27:
+			break;
+		// below are codes of the Ctl, Alt, and Shift keys
+		// that are sent together with the values above
+		// left ctl
+		case 3680:
+			break;
+		// right ctl
+		case 3683:
+			break;
+		// left alt
+		case 3684:
+			break;
+		// right alt
+		case 3685:
+			break;
+		// left shift
+		case 3682:
+			break;
+		// right shift
+		case 3681:
+			break;
+		case 57357:
+			if (!editors[whichPane].isTypingShell()) {
+				setNormalModeShift();
+				editors[whichPane].upArrow(-1); // -1 for single increment
+				editors[whichPane].setShiftPressed(shiftPressed);
+			}
+			break;
+		case 57359:
+			if (!editors[whichPane].isTypingShell()) {
+				setNormalModeShift();
+				editors[whichPane].downArrow(-1); // -1 for single decrement
+				editors[whichPane].setShiftPressed(shiftPressed);
+			}
+			break;
+		case 57358:
+			if (!editors[whichPane].isTypingShell()) {
+				setNormalModeShift();
+				editors[whichPane].rightArrow();
+				editors[whichPane].setShiftPressed(shiftPressed);
+			}
+			else {
+				shellStrCursorPos++;
+				if (shellStrCursorPos > (int)shellStr.size()) shellStrCursorPos = (int)shellStr.size();
+			}
+			break;
+		case 57356:
+			if (!editors[whichPane].isTypingShell()) {
+				setNormalModeShift();
+				editors[whichPane].leftArrow();
+				editors[whichPane].setShiftPressed(shiftPressed);
+			}
+			else {
+				shellStrCursorPos--;
+				if (shellStrCursorPos < 0) shellStrCursorPos = 0;
+			}
+			break;
+		case 57360:
+			if (!editors[whichPane].isTypingShell()) {
+				setNormalModeShift();
+				editors[whichPane].pageUp();
+				editors[whichPane].setShiftPressed(shiftPressed);
+			}
+			break;
+		case 57361:
+			if (!editors[whichPane].isTypingShell()) {
+				setNormalModeShift();
+				editors[whichPane].pageDown();
+				editors[whichPane].setShiftPressed(shiftPressed);
+			}
+			break;
+		case 27: // esc
 			editors[whichPane].setInserting(false);
-			editors[whichPane].commandStr = "";
+			editors[whichPane].setTypingShell(false);
+			editors[whichPane].setShowingShell(false);
+			// the output of a command is cleared, and the panes get back the lines they gave to it (see layoutPanesForShell())
+			shellStr = "";
+			shellLsOutputStr = "";
+			shellScroll = 0;
+			restorePaneLayout();
 			editors[whichPane].resetMaxNumLines();
-	    default:
-	    	if (key == 61 && ctrlPressed && !altPressed) { // +
-	    		fontSize += 2;
-				setFontSize();
-	    	}
-	    	else if (key == 45 && ctrlPressed && !altPressed) { // -
-	    		fontSize -= 2;
-	    		if (fontSize == 0) fontSize = 2;
-				setFontSize();
-	    	}
-	    	else if (key == 43 && ctrlPressed) { // + with shift pressed
+			if (editors[whichPane].getVisualMode()) editors[whichPane].setVisualMode(false);
+			if (editors[whichPane].highlightManyChars) editors[whichPane].highlightManyChars = false;
+			// if we have typed commands and their output is greater than two lines
+			// then sharedData.tracebackYCoord will have changed so we need to reset it
+			sharedData.tracebackYCoord = sharedData.tracebackBase;
+			// the same applies to the number of lines for commands and their output
+			numShellLines = numShellLsOutputLines = 0;
+			// and the sizes of the areas are calculated again the next time they are shown
+			shellNumLinesShown = tracebackNumLinesShown = -1;
+			//resetScoreYOffset();
+		default:
+		{
+			// keys that wait for a second key (g and the first key of a two-key binding) wait for the very next key only
+			// so their state is reset here, and what it was is kept for the checks in normal mode below
+			// (a two-key binding is also cancelled when its first key is released, see executeKeyReleased())
+			bool gWasPressed = gPressed;
+			bool dWasPressed = dPressed;
+			dPressed = false;
+			// after Ctrl+w in normal mode: h, j, k, and l move to the pane on the left, below, above, and on the right
+			// q and c close the pane, and any other key (e.g. Esc) cancels Ctrl+w
+			bool ctrlWWasPressed = ctrlWPressed;
+			ctrlWPressed = false;
+			if (ctrlWWasPressed && !editors[whichPane].getInserting() && !editors[whichPane].isTypingShell()) {
+				switch (key) {
+					case 'h': moveToPane(0); break;
+					case 'j': moveToPane(1); break;
+					case 'k': moveToPane(2); break;
+					case 'l': moveToPane(3); break;
+					case 'q':
+					case 'c':
+						if (editors[whichPane].isHelpFileOpen()) editors[whichPane].closeHelpFile();
+						else removePane();
+						break;
+					default:
+						break;
+				}
+				return;
+			}
+			editors[whichPane].setDPressed(false);
+			int pendingBindingKey = editorBindingKey;
+			int pendingBindingArg = editorBindingArg;
+			bool pendingBindingIsDollar = editorBindingIsDollar;
+			gPressed = false;
+			editorBindingArg = editorBindingKey = -1;
+			editorBindingIsDollar = false;
+			if (key == 61 && editors[whichPane].isCtrlPressed() && !editors[whichPane].isAltPressed()) { // +
+				fontSize += 2;
+				fontLoaded = false;
+				setFontSize(true); // set font size and calculate pane coordinates
+			}
+			else if (key == 45 && editors[whichPane].isCtrlPressed() && !editors[whichPane].isAltPressed()) { // -
+				fontSize -= 2;
+				if (fontSize == 0) fontSize = 2;
+				fontLoaded = false;
+				setFontSize(true);
+			}
+			else if (key == 43 && editors[whichPane].isCtrlPressed()) { // + with shift pressed
 				sharedData.staffLinesDist += 2;
 				sharedData.scoreFontSize = (int)(35.0 * sharedData.staffLinesDist / 10.0);
-	    		instFontSize = sharedData.scoreFontSize / 3.5;
-	    		instFont.load("Monaco.ttf", instFontSize);
-	    		setScoreSizes();
-	    	}
-	    	else if (key == 95 && ctrlPressed) { // - with shift pressed
+				instFontSize = sharedData.scoreFontSize / 3.5;
+				instFont.load("Monaco.ttf", instFontSize);
+				setScoreSizes();
+			}
+			else if (key == 95 && editors[whichPane].isCtrlPressed()) { // - with shift pressed
 				sharedData.staffLinesDist -= 2;
-	    		if (sharedData.staffLinesDist < 4) sharedData.staffLinesDist = 4;
+				if (sharedData.staffLinesDist < 4) sharedData.staffLinesDist = 4;
 				sharedData.scoreFontSize = (int)(35.0 * sharedData.staffLinesDist / 10.0);
-	    		instFontSize = sharedData.scoreFontSize / 3.5;
-	    		instFont.load("Monaco.ttf", instFontSize);
-	    		setScoreSizes();
-	    	}
-	    	else if (key == 102 && ctrlPressed) { // f
-	    		ofToggleFullscreen();
-	    		fullScreen = !fullScreen;
-	    	}
-	    	else if (char(key) == 'q' && ctrlPressed) {
-	    		exit();
-	    	}
-	    	// add panes. V for vertical, H for horizontal (with shift pressed)
-	    	else if (((key == 86) || (key == 72)) && ctrlPressed) {
+				instFontSize = sharedData.scoreFontSize / 3.5;
+				instFont.load("Monaco.ttf", instFontSize);
+				setScoreSizes();
+			}
+			else if (key == 61 && editors[whichPane].isCtrlPressed() && editors[whichPane].isAltPressed()) { // + (actually =)
+				brightnessCoeff += 0.01;
+				if (brightnessCoeff > 1) brightnessCoeff = 1;
+			}
+			else if (key == 45 && editors[whichPane].isCtrlPressed() && editors[whichPane].isAltPressed()) { // -
+				brightnessCoeff -= 0.01;
+				if (brightnessCoeff < 0) brightnessCoeff = 0;
+			}
+			else if (key == 102 && editors[whichPane].isCtrlPressed()) { // f
+				if (editors[whichPane].getInserting()) {
+					ofToggleFullscreen();
+					fullScreen = !fullScreen;
+				}
+				else {
+					setNormalModeShift();
+					editors[whichPane].pageDown();
+					editors[whichPane].setShiftPressed(shiftPressed);
+				}
+			}
+			else if (char(key) == 'q' && editors[whichPane].isCtrlPressed()) {
+				requestQuit();
+			}
+			else if (char(key) == 'n' && editors[whichPane].isCtrlPressed()) {
+				// remove all panes but one
+				for (size_t i = 0; i < editors.size()-1; i++) {
+					removePane();
+				}
+				{
+					// the sequencer might be playing, so the instruments are not cleared while it goes through them
+					std::lock_guard<std::recursive_mutex> instrumentsLock(sharedData.instrumentsMutex);
+					clearBars();
+					clearLoops();
+					clearLists();
+					clearFunctions();
+					clearInstruments();
+				}
+				// hide score
+				setShowScore(-1);
+				editors[whichPane].clearText();
+				editors[whichPane].createNewLine("", 1);
+				// a new session starts a new history
+				editors[whichPane].clearUndoHistory();
+			}
+			// add panes. V for vertical, H for horizontal (with shift pressed)
+			else if (((key == 86) || (key == 72)) && editors[whichPane].isCtrlPressed()) {
 				addPane(key);
 			}
-	    	// remove panes. Ctrl+w, where if only one pane, we quit 
-	    	else if (key == 119 && ctrlPressed) {
-				removePane();
-	    	}
-	    	// set which editor is active
-	    	else if ((key >= 49) && (key <= 57) && altPressed) {
-	    		if ((key - 49) < (int)editors.size()) {
-	    			editors[whichPane].setActivity(false);
-					// set all hot keys to false
-					editors[whichPane].setShiftPressed(false);
-					editors[whichPane].setCtrlPressed(false);
-					editors[whichPane].setAltPressed(false);
-	    			whichPane = key - 49;
-	    			editors[whichPane].setActivity(true);
-	    		}
-	    	}
-	    	// swap score position with Ctrl+P for horizontal
-	    	// Ctrl+Shift+P for vertical
+			// remove panes. Ctrl+w, where if only one pane, we quit
+			// in normal mode Ctrl+w waits for a key to move to another pane, or to close this one, as in Vim (see above)
+			else if (key == 119 && editors[whichPane].isCtrlPressed() && !editors[whichPane].getInserting() && !editors[whichPane].isTypingShell()) {
+				ctrlWPressed = true;
+			}
+			else if (key == 119 && editors[whichPane].isCtrlPressed()) {
+				if (editors[whichPane].isHelpFileOpen()) {
+					editors[whichPane].closeHelpFile();
+				}
+				else {
+					removePane();
+				}
+			}
+			// set which editor is active with keys 0-9 and alt pressed
+			else if ((key >= 49) && (key <= 57) && altPressed) {
+				if ((key - 49) < (int)editors.size()) {
+					setActivePane(key - 49);
+					revealActivePane();
+				}
+			}
+			// swap score position with Ctrl+P for horizontal
+			// Ctrl+Shift+P for vertical
 			// Ctrl+Alt+Shift+P for full screen
-	    	else if ((key == 112) && ctrlPressed) {
-	    		swapScorePosition(0);
-	    	}
-	    	else if ((key == 80) && ctrlPressed && !altPressed) {
-	    		swapScorePosition(1);
-	    	}
+			else if ((key == 112) && ctrlPressed) {
+				swapScorePosition(0);
+			}
+			else if ((key == 80) && ctrlPressed && !altPressed) {
+				swapScorePosition(1);
+			}
 			else if ((key == 80) && ctrlPressed && altPressed) {
 				swapScorePosition(2);
 			}
-			else if (key == 105 && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
+			else if (key == 105 && !editors[whichPane].getInserting() && !editors[whichPane].isTypingShell()) { // i
 				editors[whichPane].setInserting(true);
-				editors[whichPane].commandStr = "";
+				shellStr = "";
 				editors[whichPane].resetMaxNumLines();
 			}
-			else if ((key == 106 || key == 74) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
-				editors[whichPane].downArrow(-1); // -1 for single increment
+			else if (!editors[whichPane].getInserting() && ((key == 58 && !editors[whichPane].getVisualMode()) || editors[whichPane].isTypingShell())) { // :
+				typeShellCommand(key);
 			}
-			else if ((key == 107 || key == 75) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
-				editors[whichPane].upArrow(-1); // -1 for single decrement
+			else if (!editors[whichPane].getInserting() && !editors[whichPane].isTypingShell()) {
+				// bindings are not checked for Ctrl+key and Enter
+				bool bindingKey = !editors[whichPane].isCtrlPressed() && key != 13;
+				// if we are holding a key bound with a second key and we now press the second key
+				// this is checked first, so that the second key can be a reserved key, without the function it has in normal mode
+				if (bindingKey && pendingBindingKey >= 0 && (key == pendingBindingArg || (pendingBindingIsDollar && key >= 48 && key <= 57))) {
+					if (pendingBindingIsDollar) {
+						shellStr = editors[whichPane].bindings[pendingBindingKey].actionVec[0] + " " + std::to_string(key - 48);
+					}
+					else {
+						shellStr = genStrFromVec(editors[whichPane].bindings[pendingBindingKey].actionVec);
+					}
+					executingBind = true;
+					shellTabCounter = 0;
+					shellStrCursorPos = (int)shellStr.size();
+					editors[whichPane].setTypingShell(true);
+					editors[whichPane].setShowingShell(true);
+				}
+				// enable executing chunks of code in normal mode too
+				else if ((editors[whichPane].isCtrlPressed() || editors[whichPane].isShiftPressed()) && key == 13) {
+					editors[whichPane].allOtherKeys(key);
+				}
+				// Ctrl+r redoes and u undoes in normal mode, as in Vim (in insert mode these are Ctrl+y and Ctrl+z, see Editor::allOtherKeys())
+				else if (key == 114 && editors[whichPane].isCtrlPressed()) { // r
+					editors[whichPane].redo();
+				}
+				else if (key == 117 && !editors[whichPane].isCtrlPressed()) { // u
+					editors[whichPane].undo();
+				}
+				else if ((key == 106 || key == 74)) { // j  or J
+					setNormalModeShift();
+					editors[whichPane].downArrow(-1); // -1 for single increment
+					editors[whichPane].setShiftPressed(shiftPressed);
+				}
+				else if ((key == 107 || key == 75)) { // k or K
+					setNormalModeShift();
+					editors[whichPane].upArrow(-1); // -1 for single decrement
+					editors[whichPane].setShiftPressed(shiftPressed);
+				}
+				else if ((key == 104 || key == 72)) { // h or H
+					setNormalModeShift();
+					editors[whichPane].leftArrow();
+					editors[whichPane].setShiftPressed(shiftPressed);
+				}
+				else if ((key == 108 || key == 76)) { // l or L
+					setNormalModeShift();
+					editors[whichPane].rightArrow();
+					editors[whichPane].setShiftPressed(shiftPressed);
+				}
+				else if ((key == 98 && editors[whichPane].isCtrlPressed())) { // b
+					setNormalModeShift();
+					editors[whichPane].pageUp();
+					editors[whichPane].setShiftPressed(shiftPressed);
+				}
+				else if (key == 121) { // y
+					editors[whichPane].copyString(1); // 1 is index for yanking a string
+				}
+				else if (key == 112) { // p
+					editors[whichPane].pasteString(1); //  1 is index for pasting a yanked string
+				}
+				else if (key == 118 && editors[whichPane].isCtrlPressed()) {
+					// Ctrl+v selects a block of columns, as in Vim (in insert mode Ctrl+v pastes, see Editor::allOtherKeys())
+					editors[whichPane].startVisualSelection(2);
+				}
+				else if (key == 118) {
+					// letter v
+					editors[whichPane].startVisualSelection(0); // immitating Vim's Visual mode
+				}
+				else if (key == 86 && !editors[whichPane].isCtrlPressed()) {
+					// V selects whole lines, as in Vim (Ctrl+V adds a pane, see above)
+					editors[whichPane].startVisualSelection(1);
+				}
+				else if (key == 68 && !editors[whichPane].isCtrlPressed()) { // D
+					// in visual mode D deletes whole lines, otherwise it deletes from the cursor to the end of the line, as in Vim
+					// in visual mode D deletes the lines of the selection, as in Vim (see Editor::deleteVisualLines())
+					if (editors[whichPane].getVisualMode()) {
+						editors[whichPane].deleteVisualLines();
+					}
+					else {
+						editors[whichPane].deleteToLineEnd();
+					}
+				}
+				else if (key == 73 && !editors[whichPane].isCtrlPressed()) { // I
+					// after Ctrl+v, I inserts the same text in all lines of the block, otherwise it inserts at the start of the line
+					if (editors[whichPane].getVisualMode() && editors[whichPane].getSelectionMode() == 2) {
+						editors[whichPane].startBlockInsert();
+					}
+					else {
+						editors[whichPane].insertAtLineStart();
+					}
+				}
+				else if (key == 65) {
+					// capital A when in normal mode sets pane to insert mode and moves cursor to end of line
+					editors[whichPane].setCursorPos(editors[whichPane].maxCursorPos()+1);
+					editors[whichPane].setInserting(true);
+				}
+				else if (key == 100) { // d
+					if (editors[whichPane].highlightManyChars) {
+						// the selection is yanked without clearing it (false), so that deleteString() deletes all of it
+						// and not only the character under the cursor (deleteString() clears it afterwards)
+						editors[whichPane].copyString(1, false); // 1 is index for yanking a string
+						editors[whichPane].deleteString();
+						if (editors[whichPane].getVisualMode()) editors[whichPane].setVisualMode(false);
+					}
+					// right after v, before the cursor moves, the selection is the character under the cursor, as in Vim
+					else if (editors[whichPane].getVisualMode()) {
+						editors[whichPane].copyString(1); // 1 is index for yanking a string
+						editors[whichPane].deleteString();
+						editors[whichPane].setVisualMode(false);
+					}
+					// without a selection, dd deletes the line, as in Vim
+					else if (dWasPressed) {
+						editors[whichPane].deleteCurrentLine();
+						if (editors[whichPane].getVisualMode()) editors[whichPane].setVisualMode(false);
+						editors[whichPane].setDPressed(false);
+					}
+					else {
+						dPressed = true;
+						editors[whichPane].setDPressed(true);
+					}
+				}
+				else if (key == 120 && !editors[whichPane].isCtrlPressed()) { // x
+					// x deletes the character under the cursor, as in Vim
+					editors[whichPane].copyString(1); // 1 is index for yanking a string
+					editors[whichPane].deleteString();
+				}
+				else if (key == 48) { // 0
+					editors[whichPane].setCursorPos(0);
+				}
+				else if (key == 36) { // dollar sign
+					editors[whichPane].setCursorPos(editors[whichPane].maxCursorPos());
+				}
+				else if (key == 103) { // g, twice moves the cursor to the first line
+					if (gWasPressed) {
+						setNormalModeShift();
+						editors[whichPane].upArrow(0);
+						editors[whichPane].setShiftPressed(shiftPressed);
+					}
+					else {
+						gPressed = true;
+					}
+				}
+				else if (key == 71) { // G moves the cursor to the last line
+					// G is typed with Shift, which makes the editor select text when moving the cursor
+					// so Shift is considered pressed only in visual mode, where the selection extends
+					setNormalModeShift();
+					editors[whichPane].downArrow(editors[whichPane].lineCount-1);
+					editors[whichPane].setShiftPressed(shiftPressed);
+				}
+				// bound keys (the keys of normal mode above are reserved and can't be bound)
+				else if (bindingKey && editors[whichPane].bindings.find(key) != editors[whichPane].bindings.end()) {
+					// if the binding is two keys, we execute on the press of the second
+					if (editors[whichPane].bindings[key].bindingVec[0].size() > 0) {
+						editorBindingIsDollar = editors[whichPane].bindings[key].bindingVec[0].compare("$") == 0;
+						editorBindingKey = key;
+						editorBindingArg = static_cast<int>(editors[whichPane].bindings[key].bindingVec[0][0]);
+					}
+					// otherwise we execute on the press of the first
+					else {
+						shellStr = genStrFromVec(editors[whichPane].bindings[key].actionVec);
+						executingBind = true;
+						shellTabCounter = 0;
+						shellStrCursorPos = (int)shellStr.size();
+						editors[whichPane].setTypingShell(true);
+						editors[whichPane].setShowingShell(true);
+					}
+				}
 			}
-			else if ((key == 104 || key == 72) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
-				editors[whichPane].leftArrow();
-			}
-			else if ((key == 108 || key == 76) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
-				editors[whichPane].rightArrow();
-			}
-			else if ((key == 102 && ctrlPressed) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
-				editors[whichPane].pageDown();
-			}
-			else if ((key == 98 && ctrlPressed) && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
-				editors[whichPane].pageUp();
-			}
-			else if (key == 121 && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
-				editors[whichPane].yankString();
-			}
-			else if (key == 112 && !editors[whichPane].getInserting() && !editors[whichPane].isTypingCommand()) {
-				editors[whichPane].pasteYankedString();
-			}
-	    	else if (editors[whichPane].getInserting()) {
+			else if (editors[whichPane].getInserting()) {
 				editors[whichPane].allOtherKeys(key);
 			}
-			else if (!editors[whichPane].getInserting() && (key == 58 || editors[whichPane].isTypingCommand())) {
-				editors[whichPane].typeCommand(key);
-			}
 			break;
+		}
 	}
 }
 
@@ -1911,18 +3410,25 @@ void ofApp::executeKeyPressed(int key)
 void ofApp::executeKeyReleased(int key)
 {
 	switch (key) {
-	    case 1:
-	    	editors[whichPane].setShiftPressed(false);
-	    	shiftPressed = false;
-	    	break;
-	    case 2:
-	    	editors[whichPane].setCtrlPressed(false);
-	    	ctrlPressed = false;
-	    	break;
-	    case 4:
-	    	editors[whichPane].setAltPressed(false);
-	    	altPressed = false;
-	    	break;
+		case 1:
+			editors[whichPane].setShiftPressed(false);
+			shiftPressed = false;
+			break;
+		case 2:
+			editors[whichPane].setCtrlPressed(false);
+			ctrlPressed = false;
+			break;
+		case 4:
+			editors[whichPane].setAltPressed(false);
+			altPressed = false;
+			break;
+		default:
+			// a two-key binding works only while its first key is held, so releasing the first key cancels it
+			if (key == editorBindingKey) {
+				editorBindingArg = editorBindingKey = -1;
+				editorBindingIsDollar = false;
+			}
+			break;
 	}
 }
 
@@ -1930,7 +3436,7 @@ void ofApp::executeKeyReleased(int key)
 // overloaded keyPressed() function called from OSC
 void ofApp::keyPressedOsc(int key, int thisEditor)
 {
-	//sharedData.mutex.lock();
+	mutex.lock();
 	int whichPaneBackup = whichPane;
 	// change the currently active editor temporarily
 	// because this overloaded function is called from an editor
@@ -1940,197 +3446,1421 @@ void ofApp::keyPressedOsc(int key, int thisEditor)
 	whichPane = thisEditor;
 	executeKeyPressed(key);
 	whichPane = whichPaneBackup;
-	//sharedData.mutex.unlock();
+	mutex.unlock();
 }
 
 //--------------------------------------------------------------
 // overloaded keyReleased() function called from OSC
-void ofApp::keyReleasedOsc(int key, int thisEditor)
+void ofApp::keyReleasedOsc(int key, int thisPane)
 {
 	// the same applies to releasing a key
-	//sharedData.mutex.lock();
+	mutex.lock();
 	int whichPaneBackup = whichPane;
-	whichPane = thisEditor;
+	whichPane = thisPane;
 	executeKeyReleased(key);
 	whichPane = whichPaneBackup;
-	//sharedData.mutex.unlock();
+	mutex.unlock();
 }
 
 //--------------------------------------------------------------
 // OF's default keyPressed() function
 void ofApp::keyPressed(int key)
 {
-	//sharedData.mutex.lock();
+	mutex.lock();
 	if (editors[whichPane].getSendKeys()) {
 		ofxOscMessage m;
-		m.setAddress("/livelily"+to_string(editors[whichPane].getSendKeysPaneNdx())+"/press");
+		m.setAddress("/livelily"+std::to_string(editors[whichPane].getSendKeysPaneNdx())+"/press");
 		m.addIntArg(key);
 		editors[whichPane].oscKeys.sendMessage(m, false);
 	}
 	executeKeyPressed(key);
-	//sharedData.mutex.unlock();
+	mutex.unlock();
 }
 
 //--------------------------------------------------------------
 // OF's default keyReleased() function
 void ofApp::keyReleased(int key)
 {
-	//sharedData.mutex.lock();
+	mutex.lock();
 	if (editors[whichPane].getSendKeys()) {
 		ofxOscMessage m;
-		m.setAddress("/livelily"+to_string(editors[whichPane].getSendKeysPaneNdx())+"/release");
+		m.setAddress("/livelily"+std::to_string(editors[whichPane].getSendKeysPaneNdx())+"/release");
 		m.addIntArg(key);
 		editors[whichPane].oscKeys.sendMessage(m, false);
 	}
 	executeKeyReleased(key);
-	//sharedData.mutex.unlock();
+	mutex.unlock();
 }
 
 //--------------------------------------------------------------
-void ofApp::addPane(int key)
+// the following two functions are used to check for key modifiers received from a Python pane
+pyStdoutStrKeyModifier ofApp::checkPyStdoutKeyModifier(int ndx)
 {
-	Editor editor;
-	editor.setID(whichPane+1);
-	bool firstAddition = false;
-	if (editors.size() == 1) firstAddition = true;
-	// first move the keys of all the editors
-	for (map<int, Editor>::reverse_iterator editRevIt = editors.rbegin(); editRevIt != editors.rend(); ++editRevIt) {
-		if (editRevIt->first > whichPane) {
-			int editKey = editRevIt->first;
-			auto editNodeHolder = editors.extract(editKey);
-			editNodeHolder.key() = editKey + 1;
-			editors.insert(std::move(editNodeHolder));
-			editors[editKey+1].setID(editRevIt->second.getID()+1);
+	pyStdoutStrKeyModifier keyMod = {false, 0, 0, 0};
+	if (sharedData.pyStdoutStr[ndx] == '<' && ((ndx > 0 && sharedData.pyStdoutStr[ndx-1] != '\\') || ndx == 0)) {
+		if (sharedData.pyStdoutStr.substr(ndx).find(">") == std::string::npos) {
+			return keyMod;
+		}
+		std::string s = sharedData.pyStdoutStr.substr(ndx+1, sharedData.pyStdoutStr.substr(ndx+1).find(">"));
+		int modifierKey = 0;
+		int action = 0;
+		if (s.compare("SHIFT_DOWN") == 0) {
+			modifierKey = 1;
+			action = 1;
+		}
+		else if (s.compare("SHIFT_UP") == 0) {
+			modifierKey = 1;
+			action = 2;
+		}
+		else if (s.compare("CTRL_DOWN") == 0) {
+			modifierKey = 2;
+			action = 1;
+		}
+		else if (s.compare("CTRL_UP") == 0) {
+			modifierKey = 2;
+			action = 2;
+		}
+		else if (s.compare("ALT_DOWN") == 0) {
+			modifierKey = 4;
+			action = 1;
+		}
+		else if (s.compare("ALT_UP") == 0) {
+			modifierKey = 4;
+			action = 2;
+		}
+		if (modifierKey > 0) {
+			keyMod.isModifier = true;
+			keyMod.ndxInc = (int)s.size() + 2;
+			keyMod.modifier = modifierKey;
+			keyMod.action = action;
+			return keyMod;
 		}
 	}
-	editors[whichPane+1] = editor;
-	setFontSize();
+	return keyMod;
+}
+
+//--------------------------------------------------------------
+void ofApp::handleKeyModifier(pyStdoutStrKeyModifier modifierStruct)
+{
+	if (modifierStruct.action == 1) {
+		if (sharedData.whichPyPane == whichPane) {
+			keyPressed(modifierStruct.modifier);
+		}
+		else {
+			keyPressedOsc(modifierStruct.modifier, sharedData.whichPyPane);
+		}
+	}
+	else {
+		if (sharedData.whichPyPane == whichPane) {
+			keyReleased(modifierStruct.modifier);
+		}
+		else {
+			keyReleasedOsc(modifierStruct.modifier, sharedData.whichPyPane);
+		}
+	}
+}
+
+/********************* panes functions ************************/
+//--------------------------------------------------------------
+// sets the row and column of every pane from the layout
+// panes are laid out by the order of their keys in editors, row by row (or column by column with paneSplitOrientation 1)
+// with numPanes holding how many panes every row has (see setPaneCoords())
+void ofApp::setPanesRowsAndCols()
+{
+	int key = 0;
+	for (const auto& row : numPanes) {
+		for (int col = 0; col < row.second; col++) {
+			auto editIt = editors.find(key++);
+			if (editIt == editors.end()) continue;
+			editIt->second.setPaneRow(row.first);
+			editIt->second.setPaneCol(col);
+		}
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::moveToPane(int direction)
+{
+	Editor& current = editors[whichPane];
+	float left = current.getFrameXOffset();
+	float right = left + current.getFrameWidth();
+	float top = current.getFrameYOffset();
+	float bottom = top + current.getFrameHeight();
+	// the position of the cursor, so that of more panes in a direction, the one next to the cursor is chosen, as in Vim
+	float cursorX = current.getCursorScreenX();
+	float cursorY = current.getCursorScreenY();
+	const float tolerance = 2;
+	int best = -1;
+	float bestDistance = FLT_MAX;
+	bool bestByCursor = false;
+	for (auto& editor : editors) {
+		if (editor.first == whichPane) continue;
+		Editor& other = editor.second;
+		float oLeft = other.getFrameXOffset();
+		float oRight = oLeft + other.getFrameWidth();
+		float oTop = other.getFrameYOffset();
+		float oBottom = oTop + other.getFrameHeight();
+		// the pane must be on that side of the active one, and overlap with it on the other axis
+		float distance;
+		bool overlaps, byCursor;
+		switch (direction) {
+			case 0:
+				if (oRight > left + tolerance) continue;
+				distance = left - oRight;
+				overlaps = (oTop < bottom && oBottom > top);
+				byCursor = (cursorY >= oTop && cursorY < oBottom);
+				break;
+			case 1:
+				if (oTop < bottom - tolerance) continue;
+				distance = oTop - bottom;
+				overlaps = (oLeft < right && oRight > left);
+				byCursor = (cursorX >= oLeft && cursorX < oRight);
+				break;
+			case 2:
+				if (oBottom > top + tolerance) continue;
+				distance = top - oBottom;
+				overlaps = (oLeft < right && oRight > left);
+				byCursor = (cursorX >= oLeft && cursorX < oRight);
+				break;
+			default:
+				if (oLeft < right - tolerance) continue;
+				distance = oLeft - right;
+				overlaps = (oTop < bottom && oBottom > top);
+				byCursor = (cursorY >= oTop && cursorY < oBottom);
+				break;
+		}
+		if (!overlaps) continue;
+		// the closest pane, and of panes equally close, the one by the cursor
+		if (distance < bestDistance - tolerance || (std::abs(distance - bestDistance) <= tolerance && byCursor && !bestByCursor)) {
+			best = editor.first;
+			bestDistance = distance;
+			bestByCursor = byCursor;
+		}
+	}
+	if (best >= 0) {
+		setActivePane(best);
+		revealActivePane();
+	}
+}
+
+//--------------------------------------------------------------
+// with two columns of panes and the score shown vertically (or two rows and the score shown horizontally)
+// the score covers the panes of one column (or row), so when one of them becomes active, the score moves to the other side
+void ofApp::revealActivePane()
+{
+	if (!showScore) return;
+	if (scoreOrientation == 0 && paneSplitOrientation == 1 && numPanes.size() == 2) {
+		if ((scoreXOffset == 0 && whichPane < numPanes[0]) || (scoreXOffset > 0 && whichPane >= numPanes[0])) {
+			swapScorePosition(0);
+		}
+	}
+	if (scoreOrientation == 1 && paneSplitOrientation == 0 && numPanes.size() == 2) {
+		if ((scoreYOffset == 0 && whichPane < numPanes[0]) || (scoreYOffset > 0 && whichPane >= numPanes[0])) {
+			swapScorePosition(1);
+		}
+	}
+}
+
+//--------------------------------------------------------------
+// adds a pane next to the active one, with Ctrl+Shift+V (key 86) side by side, and with Ctrl+Shift+H (key 72) one above the other, as in Vim
+// the first split sets whether rows of panes are stacked (paneSplitOrientation 0, after Ctrl+Shift+H) or columns are put side by side (1)
+// a split in the other direction adds a new row (or column) after the one of the active pane
+void ofApp::addPane(int key)
+{
+	bool firstAddition = (editors.size() == 1);
 	if (firstAddition) {
 		if (key == 86) paneSplitOrientation = 1;
 		else paneSplitOrientation = 0;
 	}
-	if ((paneSplitOrientation == 0 && key == 86) || (paneSplitOrientation == 1 && key == 72)) {
-		int paneRowWithCursor = editors[whichPane].getPaneRow();
+	int paneRowWithCursor = editors[whichPane].getPaneRow();
+	bool sameRow = ((paneSplitOrientation == 0 && key == 86) || (paneSplitOrientation == 1 && key == 72));
+	// the key of the new pane, right after the active pane in its row, or after the last pane of its row, at the start of a new row
+	int newKey;
+	if (sameRow) {
+		newKey = whichPane + 1;
 		numPanes[paneRowWithCursor]++;
-		editors[whichPane+1].setPaneRow(paneRowWithCursor);
-		//cout << "created a new pane in row " << editors[whichPane+1].getPaneRow() << endl;
-		editors[whichPane+1].setPaneCol(numPanes[paneRowWithCursor]);
-		//cout << "added a pane column in row " << paneRowWithCursor << endl;
 	}
 	else {
-		int paneRowWithCursor = editors[whichPane].getPaneRow();
-		map<int, int>::iterator numPanesIt = numPanes.find(paneRowWithCursor);
-		map<int, int>::reverse_iterator numPanesRevIt = numPanes.rbegin();
-		//cout << "testing " << numPanesIt->first << " against " << numPanesRevIt->first << endl;
-		if (numPanesIt != numPanes.end()) {
-			// first check if we are at the last row of editors
-			if (numPanesIt->first == numPanesRevIt->first) {
-				// in this case, we add a new row that now contains one column
-				numPanes[numPanesIt->first+1] = 1;
-				editors[whichPane+1].setPaneRow(numPanesIt->first+1);
-				editors[whichPane+1].setPaneCol(1);
-			}
-			else {
-				// otherwise we insert a row somewhere in the middle
-				// so we first have to change the keys of all rows after the current one
-				for (numPanesRevIt = numPanes.rbegin(); numPanesRevIt->first > paneRowWithCursor; ++numPanesRevIt) {
-					int key = numPanesRevIt->first;
-					auto nodeHolder = numPanes.extract(key);
-					nodeHolder.key() = key + 1;
-					numPanes.insert(std::move(nodeHolder));
-					// find which editors are contained in the panes that change rows
-					for (map<int, Editor>::reverse_iterator editRevIt = editors.rbegin(); editRevIt != editors.rend(); ++editRevIt) {
-						if (editRevIt->second.getPaneRow() == key) {
-							editRevIt->second.setPaneRow(key+1);
-						}
-					}
-				}
-				numPanes[paneRowWithCursor+1] = 1;
-				editors[whichPane+1].setPaneRow(paneRowWithCursor+1);
-				editors[whichPane+1].setPaneCol(1);
-			}
+		newKey = 0;
+		std::map<int, int> rows;
+		int rowNdx = 0;
+		for (const auto& row : numPanes) {
+			rows[rowNdx++] = row.second;
+			if (row.first <= paneRowWithCursor) newKey += row.second;
+			if (row.first == paneRowWithCursor) rows[rowNdx++] = 1;
 		}
+		numPanes = rows;
 	}
+	// the panes from the key of the new one on move one key up, starting from the last one
+	for (int k = editors.rbegin()->first; k >= newKey; k--) {
+		auto nodeHolder = editors.extract(k);
+		if (nodeHolder.empty()) continue;
+		nodeHolder.key() = k + 1;
+		editors.insert(std::move(nodeHolder));
+		editors[k+1].setID(k+1);
+	}
+	editors[newKey] = Editor();
+	editors[newKey].setID(newKey);
+	setFontSize(false); // set the size for the font of the new editor but don't calculate the coordinates yet
+	setPanesRowsAndCols();
 	editors[whichPane].setActivity(false);
 	// release the Ctrl key from the previous pane before moving to the new one
 	editors[whichPane].setCtrlPressed(false);
 	// for safety, set also the shift and alt keys to released
 	editors[whichPane].setShiftPressed(false);
 	editors[whichPane].setAltPressed(false);
-	whichPane++;
+	whichPane = newKey;
 	editors[whichPane].setActivity(true);
-	setPaneCoords();
-}
-
-//--------------------------------------------------------------
-void ofApp::removePane()
-{
-	if (numPanes.size() == 1) {
-		exit();
+	// if we add a second pane with the score visible
+	// if the panes are split vertically and the score is also vertical (opposite values)
+	// or both are horizontal
+	// we need to swap the position of the score so the new pane becomes visible
+	if (firstAddition && (showScore && paneSplitOrientation != scoreOrientation)) {
+		// swap the score position without changing its orientation
+		swapScorePosition(scoreOrientation);
+		// with two panes split horizontally and the score shown horizontally
+		// setPaneCoords() is called from swapScorePosition()
+		// so we test for vertical spit to call it explicitly
+		if (paneSplitOrientation == 1) {
+			setPaneCoords();
+		}
 	}
 	else {
-		int paneRowWithCursor = editors[whichPane].getPaneRow();
-		//cout << "will remove pane from row " << paneRowWithCursor << endl;
-		// check if we're erasing the last pane, to determine which pane will become active
-		bool isLastPane = (editors.rbegin()->first == whichPane ? true : false);
-		editors.erase(whichPane);
-		// if the current row has only one pane, remove it from the map
-		if (numPanes[paneRowWithCursor] == 1) {
-			numPanes.erase(paneRowWithCursor);
-			// changes the keys of all panes with greater index than the one we just erased
-			for (map<int, int>::iterator numPanesIt = numPanes.find(paneRowWithCursor+1); numPanesIt != numPanes.end(); ++numPanesIt) {
-				int key = numPanesIt->first;
-				auto nodeHolder = numPanes.extract(key);
-				nodeHolder.key() = key-1;
-				numPanes.insert(std::move(nodeHolder));
-				// find all the editors located in this row and change it as well as their keys
-				for (map<int, Editor>::iterator editIt = editors.begin(); editIt != editors.end(); ++editIt) {
-					if (editIt->second.getPaneRow() == key) {
-						editIt->second.setPaneRow(key-1);
-						int editKey = editIt->first;
-						auto editNodeHolder = editors.extract(editKey);
-						editNodeHolder.key() = editKey - 1;
-						editors.insert(std::move(editNodeHolder));
-					}
-				}
-			}
-		}
-		else {
-			// find the editors in the same row that are above the column we are erasing
-			// or editors that are in greater rows than the one where we are erasing a column
-			for (map<int, Editor>::iterator editIt = editors.begin(); editIt != editors.end(); ++editIt) {
-				if (editIt->second.getPaneRow() >= paneRowWithCursor) {
-					// for the editors in panes of the same row where we erase a column
-					// change their column number
-					if ((editIt->second.getPaneRow() == paneRowWithCursor && editIt->second.getPaneCol() > numPanes[paneRowWithCursor]) ||
-							editIt->second.getPaneRow() > paneRowWithCursor) {
-						if (editIt->second.getPaneRow() == paneRowWithCursor) {
-							editIt->second.setPaneCol(numPanes[paneRowWithCursor]-1);
-						}
-						// for all editors in the same row and greater column or in a greater row
-						// change their index
-						int editKey = editIt->first;
-						auto editNodeHolder = editors.extract(editKey);
-						editNodeHolder.key() = editKey - 1;
-						editors.insert(std::move(editNodeHolder));
-					}
-				}
-			}
-			numPanes[paneRowWithCursor]--;
-		}
-		// if we deleted the last pane we must decrement the pane index
-		// otherwise it stays as it is, and the next pane becomes active
-		if (isLastPane) whichPane--;
-		editors[whichPane].setActivity(true);
-		// if we're left with one pane only, reset paneSplitOrientation
-		if (numPanes.size() == 1) paneSplitOrientation = 0;
 		setPaneCoords();
 	}
 }
 
 //--------------------------------------------------------------
+// closes the active pane, or quits if it is the only one
+// panes are laid out by the order of their keys in editors, row by row (or column by column with paneSplitOrientation 1)
+// with numPanes holding how many panes every row has (see setPaneCoords()), so after removing a pane the keys of the panes after it
+// go down by one, a row that is left empty is removed, and the row and column of every pane are set again from this layout
+void ofApp::removePane()
+{
+	if (editors.size() <= 1) {
+		requestQuit();
+		return;
+	}
+	int paneRowWithCursor = editors[whichPane].getPaneRow();
+	int lastKey = editors.rbegin()->first;
+	bool isLastPane = (lastKey == whichPane);
+	editors.erase(whichPane);
+	// the panes after the removed one move one key down
+	for (int key = whichPane + 1; key <= lastKey; key++) {
+		auto nodeHolder = editors.extract(key);
+		if (nodeHolder.empty()) continue;
+		nodeHolder.key() = key - 1;
+		editors.insert(std::move(nodeHolder));
+		editors[key-1].setID(key-1);
+	}
+	// the row of the removed pane has one pane less, and if it is left empty it is removed, and the rows after it move one row up
+	numPanes[paneRowWithCursor]--;
+	if (numPanes[paneRowWithCursor] <= 0) {
+		std::map<int, int> rows;
+		int rowNdx = 0;
+		for (const auto& row : numPanes) {
+			if (row.second > 0) rows[rowNdx++] = row.second;
+		}
+		numPanes = rows;
+	}
+	setPanesRowsAndCols();
+	// if we deleted the last pane we must decrement the pane index
+	// otherwise it stays as it is, and the next pane becomes active
+	if (isLastPane) whichPane--;
+	if (whichPane < 0) whichPane = 0;
+	if (whichPane > editors.rbegin()->first) whichPane = editors.rbegin()->first;
+	editors[whichPane].setActivity(true);
+	// if we're left with one pane only, reset paneSplitOrientation
+	// (with more panes in one row or column the orientation stays, as it sets whether they are side by side or one above the other)
+	if (editors.size() == 1) {
+		paneSplitOrientation = 0;
+		if ((scoreOrientation == 0 && scoreXOffset == 0) || (scoreOrientation == 1 && scoreYOffset == 0)) {
+			swapScorePosition(scoreOrientation);
+		}
+	}
+	fontLoaded = false;
+	setFontSize(true);
+}
+
+//--------------------------------------------------------------
+void ofApp::storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state)
+{
+	// this function is called by the sequencer thread when a note of an instrument starts (state is true) or stops
+	// the editors draw the tokens of the notes that play (see getActiveEditorNoteSpans()), on the main thread
+	std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
+	if (state) {
+		activeEditorNotes[instNdx] = std::make_pair(barNdx, dataCounter);
+		activeEditorRests.erase(instNdx);
+	}
+	else {
+		auto it = activeEditorNotes.find(instNdx);
+		if (it != activeEditorNotes.end() && it->second == std::make_pair(barNdx, dataCounter)) {
+			activeEditorNotes.erase(it);
+			activeEditorRests.erase(instNdx);
+		}
+	}
+}
+
+//--------------------------------------------------------------
+// a rest stays highlighted for its whole duration, as it has no release, until the next note or rest of the instrument replaces it
+void ofApp::storeActiveEditorRest(int instNdx, int barNdx, int dataCounter)
+{
+	std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
+	activeEditorNotes[instNdx] = std::make_pair(barNdx, dataCounter);
+	activeEditorRests.insert(instNdx);
+}
+
+//--------------------------------------------------------------
+void ofApp::applyMutesNow()
+{
+	// while the sequencer plays, they apply at the start of the loop (see Sequencer::checkMute())
+	if (sequencer.isThreadRunning()) return;
+	for (auto& inst : sharedData.instruments) {
+		if (inst.second.isToBeMuted()) inst.second.setMute(true);
+		else if (inst.second.isToBeUnmuted()) inst.second.setMute(false);
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::clearActiveEditorElement(int instNdx)
+{
+	std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
+	activeEditorNotes.erase(instNdx);
+	activeEditorRests.erase(instNdx);
+}
+
+//--------------------------------------------------------------
+std::vector<EditorNoteSpan> ofApp::getActiveEditorNoteSpans(int paneNdx)
+{
+	// the tokens in a pane of the notes that play, for highlighting them
+	std::vector<EditorNoteSpan> spans;
+	if (!sequencer.isThreadRunning()) {
+		std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
+		activeEditorNotes.clear();
+		return spans;
+	}
+	std::map<int, std::pair<int, int>> active;
+	std::set<int> rests;
+	{
+		std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
+		active = activeEditorNotes;
+		rests = activeEditorRests;
+	}
+	// a rest is a token that starts with r (e.g. r4 or r8.), as no note name starts with r, or a - of the x - notation of rhythm staffs
+	auto isRestToken = [](const std::string& text) { return !text.empty() && (text[0] == 'r' || text == "-"); };
+	for (auto& note : active) {
+		auto it = editorNoteSpans.find(std::make_pair(note.first, note.second.first));
+		if (it == editorNoteSpans.end() || note.second.second < 0 || note.second.second >= (int)it->second.size()) continue;
+		const std::vector<EditorNoteSpan>& noteSpans = it->second[note.second.second];
+		// a rest is highlighted only if it is written as a rest, in the line or in a copied bar, also inside \transpose
+		// (the tokens of \transpose and of the copied bar are highlighted together with it)
+		// and not if a command makes it (e.g. \euclide, whose token is the whole command)
+		if (rests.count(note.first)) {
+			bool hasRestToken = false;
+			bool written = true;
+			for (const EditorNoteSpan& span : noteSpans) {
+				if (isRestToken(span.text)) {
+					hasRestToken = true;
+				}
+				else if (span.text != "\\transpose") {
+					// a copied bar, e.g. \1 or \1.\inst
+					std::string barName = span.text.substr(0, span.text.find('.'));
+					if (sharedData.barsIndexes.find(barName) == sharedData.barsIndexes.end()) written = false;
+				}
+			}
+			if (!written || !hasRestToken) continue;
+			// only the rest is highlighted, in the bar where it is written, and not the token of the bar that copies it (e.g. \1)
+			for (const EditorNoteSpan& span : noteSpans) {
+				if (span.pane == paneNdx && isRestToken(span.text)) spans.push_back(span);
+			}
+			continue;
+		}
+		for (const EditorNoteSpan& span : noteSpans) {
+			if (span.pane == paneNdx) spans.push_back(span);
+		}
+	}
+	return spans;
+}
+
+/*************** arithmetic operations functions **************/
+//--------------------------------------------------------------
+std::pair<std::pair<std::string, std::string>, std::pair<int, double>> ofApp::getArithmeticResult(std::string strOperand1, std::string strOperand2, int operationType)
+{
+	// operationType is 0 for multiplication, 1 for division, 2 for addition, and 3 for subtraction
+	// the result is a pair of an error and a string result (for adding strings), and a pair of the result type (0 for int, 1 for float) and the result
+	// integers are calculated as integers, so that they stay exact, and anything with a float is calculated as a float
+	// isFloat() is true for integers too, as they are floats without a decimal point
+	bool numeric1 = isFloat(strOperand1);
+	bool numeric2 = isFloat(strOperand2);
+	if (!numeric1 || !numeric2) {
+		// only addition can handle strings, by joining them
+		if (operationType == 2) {
+			return std::make_pair(std::make_pair(std::string(""), strOperand1 + strOperand2), std::make_pair(0, 0.0));
+		}
+		return std::make_pair(std::make_pair(std::string("only addition is possible with non numbers"), std::string("")), std::make_pair(0, 0.0));
+	}
+	bool integers = (isNumber(strOperand1) && isNumber(strOperand2));
+	if (integers) {
+		long long operand1 = std::stoll(strOperand1);
+		long long operand2 = std::stoll(strOperand2);
+		switch (operationType) {
+			case 0:
+				return std::make_pair(std::make_pair(std::string(""), std::string("")), std::make_pair(0, (double)(operand1 * operand2)));
+			case 1:
+				if (operand2 == 0) {
+					return std::make_pair(std::make_pair(std::string("division by zero"), std::string("")), std::make_pair(0, 0.0));
+				}
+				// an integer division that doesn't divide exactly gives a float (e.g. 7 / 2 is 3.5, not 3)
+				if (operand1 % operand2 == 0) {
+					return std::make_pair(std::make_pair(std::string(""), std::string("")), std::make_pair(0, (double)(operand1 / operand2)));
+				}
+				return std::make_pair(std::make_pair(std::string(""), std::string("")), std::make_pair(1, (double)operand1 / (double)operand2));
+			case 2:
+				return std::make_pair(std::make_pair(std::string(""), std::string("")), std::make_pair(0, (double)(operand1 + operand2)));
+			default:
+				return std::make_pair(std::make_pair(std::string(""), std::string("")), std::make_pair(0, (double)(operand1 - operand2)));
+		}
+	}
+	double operand1 = std::stod(strOperand1);
+	double operand2 = std::stod(strOperand2);
+	double result = 0;
+	switch (operationType) {
+		case 0:
+			result = operand1 * operand2;
+			break;
+		case 1:
+			if (operand2 == 0) {
+				return std::make_pair(std::make_pair(std::string("division by zero"), std::string("")), std::make_pair(1, 0.0));
+			}
+			result = operand1 / operand2;
+			break;
+		case 2:
+			result = operand1 + operand2;
+			break;
+		default:
+			result = operand1 - operand2;
+			break;
+	}
+	return std::make_pair(std::make_pair(std::string(""), std::string("")), std::make_pair(1, result));
+}
+
+//--------------------------------------------------------------
+std::string ofApp::formatNumber(double value, bool isFloatValue)
+{
+	// integers are written as they are, and floats with up to 15 significant digits and without trailing zeros
+	// so that e.g. 3.14 + 2 is 5.14, and not 5.140000 or 5.1400000000000006
+	if (!isFloatValue) return std::to_string(std::llround(value));
+	std::ostringstream stream;
+	stream << std::setprecision(15) << value;
+	std::string str = stream.str();
+	// very large or small floats are written with an exponent (e.g. 1e+20), which LiveLily doesn't read as a number
+	if (str.find('e') != std::string::npos || str.find("inf") != std::string::npos || str.find("nan") != std::string::npos) {
+		std::ostringstream fixedStream;
+		fixedStream << std::fixed << std::setprecision(15) << value;
+		str = fixedStream.str();
+		if (str.find('.') != std::string::npos) {
+			str.erase(str.find_last_not_of('0') + 1);
+			if (str.back() == '.') str.pop_back();
+		}
+	}
+	return str;
+}
+
+//--------------------------------------------------------------
+std::string ofApp::stripValFromResult(std::pair<std::pair<std::string, std::string>, std::pair<int, double>> p)
+{
+	// the string result of adding strings, or the number result
+	if (!p.first.second.empty()) return p.first.second;
+	return formatNumber(p.second.second, p.second.first == 1);
+}
+
+/********************* clearing functions *********************/
+//--------------------------------------------------------------
+void ofApp::clearBars()
+{
+	for (auto it = sharedData.barsIndexes.begin(); it != sharedData.barsIndexes.end(); ++it) {
+		{ auto keywordIt = std::find(keywords.begin(), keywords.end(), it->first); if (keywordIt != keywords.end()) keywords.erase(keywordIt); }
+		commandsMap[livelily][it->first[1]].erase(it->first);
+	}
+	sharedData.barsIndexes.clear();
+	sharedData.barsOrdered.clear();
+	sharedData.barLines.clear();
+	sharedData.distBetweenBeats.clear();
+}
+
+//--------------------------------------------------------------
+void ofApp::clearLoops()
+{
+	for (auto it = sharedData.loopsIndexes.begin(); it != sharedData.loopsIndexes.end(); ++it) {
+		{ auto keywordIt = std::find(keywords.begin(), keywords.end(), it->first); if (keywordIt != keywords.end()) keywords.erase(keywordIt); }
+		commandsMap[livelily][it->first[1]].erase(it->first);
+	}
+	sharedData.loopData.clear();
+	sharedData.loopsIndexes.clear();
+	sharedData.loopsOrdered.clear();
+	sharedData.loopsVariants.clear();
+}
+
+//--------------------------------------------------------------
+void ofApp::clearLists()
+{
+	for (auto it = listIndexes.begin(); it != listIndexes.end(); ++it) {
+		{ auto keywordIt = std::find(keywords.begin(), keywords.end(), it->first); if (keywordIt != keywords.end()) keywords.erase(keywordIt); }
+		commandsMap[livelily][it->first[1]].erase(it->first);
+	}
+	listIndexes.clear();
+	listMap.clear();
+}
+
+//--------------------------------------------------------------
+void ofApp::clearFunctions()
+{
+	for (auto it = functionIndexes.begin(); it != functionIndexes.end(); ++it) {
+		{ auto keywordIt = std::find(keywords.begin(), keywords.end(), it->first); if (keywordIt != keywords.end()) keywords.erase(keywordIt); }
+		commandsMap[livelily][it->first[1]].erase(it->first);
+	}
+	{
+		std::lock_guard<std::mutex> lock(sharedData.functionsMutex);
+		functionIndexes.clear();
+		sharedData.functions.clear();
+		lastFunctionIndex = 0;
+		storingFunctionIndex = 0;
+	}
+	storingFunction = false;
+}
+
+//--------------------------------------------------------------
+void ofApp::clearInstruments()
+{
+	// the instruments merged to one staff go with the instruments
+	mergeGroups.clear();
+	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		std::string s = it->second.getName();
+		{ auto keywordIt = std::find(keywords.begin(), keywords.end(), "\\"+s); if (keywordIt != keywords.end()) keywords.erase(keywordIt); }
+		commandsMap[livelily][s[0]].erase("\\"+s);
+	}
+	sequencer.clearDelayedVisuals();
+	sharedData.instruments.clear();
+	sharedData.instrumentIndexes.clear();
+	sharedData.instrumentIndexesOrdered.clear();
+	sharedData.numInstruments = 0;
+	sharedData.grouppedOSCClients.clear();
+	instrumentOSCHostPorts.clear();
+	instGroups.clear();
+	// the tokens of the editor that play the notes of the instruments (\editor.animate)
+	editorNoteSpans.clear();
+	{
+		std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
+		activeEditorNotes.clear();
+		activeEditorRests.clear();
+	}
+}
+
+/************ command typing/executing functions **************/
+//--------------------------------------------------------------
+// completes the word that is typed last in the shell with the Tab key, as in a terminal
+// the first word is a command, an editor command (see shellCommands in ofApp.h) or a program in one of the directories of PATH
+// the other words are paths, absolute, starting with ~ (the home directory), or relative to the working directory
+// with one match the word is completed (with a white space after it, unless it is a directory, which gets a slash)
+// with more matches the first Tab completes the part they all start with, and the second one lists them
+void ofApp::completeShellCommand()
+{
+	namespace fs = std::filesystem;
+	shellLsOutputStr.clear();
+	numShellLsOutputLines = 0;
+	// any newlines are removed first (long commands are broken into lines only when they are drawn, see drawShell())
+	std::string line = shellStr;
+	line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
+	if (line.empty() || line[0] != ':') return;
+	size_t wordStart = line.find_last_of(' ');
+	bool completingCommand = (wordStart == std::string::npos);
+	wordStart = (completingCommand ? 1 : wordStart + 1);
+	std::string word = line.substr(wordStart);
+	// the part of the word that is completed, and the matches, which replace it
+	std::string prefix;
+	std::vector<std::string> matches;
+	std::vector<bool> matchIsDir;
+	std::error_code ec;
+	// a command that is a path (e.g. :~/scripts/run.sh or :./run.sh) is completed as a path, as in a terminal
+	if (completingCommand && (word.find('/') != std::string::npos || startsWith(word, "~") || startsWith(word, "."))) {
+		completingCommand = false;
+	}
+	if (completingCommand) {
+		prefix = word;
+		std::set<std::string> names;
+		for (const std::string& cmd : shellCommands) {
+			if (cmd.size() > 1 && startsWith(cmd.substr(1), prefix)) names.insert(cmd.substr(1));
+		}
+		const char* pathEnv = getenv("PATH");
+		std::vector<std::string> pathDirs = tokenizeString(pathEnv ? std::string(pathEnv) : std::string(), ":");
+		for (const std::string& dir : pathDirs) {
+			if (dir.empty()) continue;
+			for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+				std::string name = it->path().filename().string();
+				if (!startsWith(name, prefix)) continue;
+				fs::file_status status = it->status(ec);
+				if (ec || fs::is_directory(status)) continue;
+				// only programs, that are executable
+				if ((status.permissions() & (fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec)) == fs::perms::none) continue;
+				names.insert(name);
+			}
+			ec.clear();
+		}
+		// the directories and the programs of the working directory, so that a path can be typed without ./ (e.g. :Documents/run.sh)
+		std::set<std::string> dirs;
+		for (fs::directory_iterator it(fs::current_path(ec), fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+			std::string name = it->path().filename().string();
+			if (prefix.empty() || !startsWith(name, prefix) || (name[0] == '.' && !startsWith(prefix, "."))) continue;
+			fs::file_status status = it->status(ec);
+			if (ec) {
+				ec.clear();
+				continue;
+			}
+			if (fs::is_directory(status)) dirs.insert(name);
+			else if ((status.permissions() & (fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec)) != fs::perms::none) names.insert(name);
+		}
+		ec.clear();
+		for (const std::string& name : names) {
+			if (dirs.find(name) != dirs.end()) continue;
+			matches.push_back(name);
+			matchIsDir.push_back(false);
+		}
+		for (const std::string& dir : dirs) {
+			matches.push_back(dir);
+			matchIsDir.push_back(true);
+		}
+	}
+	else {
+		// the directory of the path is the part up to its last slash, and the rest is the start of a name in it
+		size_t slash = word.find_last_of('/');
+		std::string dirPart = (slash == std::string::npos ? "" : word.substr(0, slash + 1));
+		prefix = (slash == std::string::npos ? word : word.substr(slash + 1));
+		std::string dir = dirPart;
+		if (startsWith(dir, "~")) {
+			const char* home = getenv("HOME");
+			dir = (home ? std::string(home) : std::string()) + dir.substr(1);
+		}
+		else if (!startsWith(dir, "/")) {
+			dir = fs::current_path(ec).string() + "/" + dir;
+		}
+		// only ~ without a slash completes to the home directory
+		if (word == "~") {
+			prefix = "";
+			dirPart = "~";
+			matches.push_back("/");
+			matchIsDir.push_back(true);
+		}
+		else {
+			std::vector<std::pair<std::string, bool>> entries;
+			// :cd takes a directory, so only directories are completed
+			bool onlyDirs = startsWith(line, ":cd ");
+			for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+				std::string name = it->path().filename().string();
+				// hidden files are listed only when their dot is typed
+				if (!startsWith(name, prefix) || (name[0] == '.' && !startsWith(prefix, "."))) continue;
+				bool isDir = it->is_directory(ec);
+				if (onlyDirs && !isDir) continue;
+				entries.push_back(std::make_pair(name, isDir));
+			}
+			std::sort(entries.begin(), entries.end());
+			for (const auto& entry : entries) {
+				matches.push_back(entry.first);
+				matchIsDir.push_back(entry.second);
+			}
+		}
+		wordStart += dirPart.size();
+	}
+	if (matches.empty()) return;
+	std::string completion;
+	if (matches.size() == 1) {
+		completion = matches[0] + (matchIsDir[0] ? (endsWith(matches[0], "/") ? "" : "/") : " ");
+	}
+	else {
+		if (shellTabCounter > 0) {
+			// the second Tab lists the matches, with a slash after directories
+			std::vector<std::string> listed;
+			for (size_t i = 0; i < matches.size(); i++) listed.push_back(matches[i] + (matchIsDir[i] ? "/" : ""));
+			formatShellLsOutput(listed);
+			shellTabCounter++;
+			return;
+		}
+		// the first Tab completes the part all matches start with
+		completion = matches[0];
+		for (size_t i = 1; i < matches.size(); i++) {
+			size_t j = 0;
+			while (j < completion.size() && j < matches[i].size() && completion[j] == matches[i][j]) j++;
+			completion = completion.substr(0, j);
+		}
+	}
+	shellStr = line.substr(0, wordStart) + completion;
+	shellStrCursorPos = (int)shellStr.size();
+	shellTabCounter++;
+}
+
+//--------------------------------------------------------------
+void ofApp::typeShellCommand(int key)
+{
+	if (key == 13) {
+		executeShellCommand();
+		editors[whichPane].setTypingShell(false);
+		shellTabCounter = 0;
+		// a command without output (e.g. :w or :set wrap) leaves nothing to show
+		// so the area below the panes shows the error messages again, which it doesn't while it shows the shell
+		if (shellStr.empty() && numShellLsOutputLines == 0) {
+			editors[whichPane].setShowingShell(false);
+		}
+	}
+	else if (key == 8) {
+		if (shellStrCursorPos > 0) {
+			shellStr.erase(shellStrCursorPos-1, 1);
+		}
+		shellTabCounter = 0;
+		shellStrCursorPos--;
+		if (shellStrCursorPos < 0) {
+			shellStrCursorPos = 0;
+		}
+		if (shellStr.empty()) {
+			editors[whichPane].setTypingShell(false);
+			editors[whichPane].setShowingShell(false);
+		}
+	}
+	else if (key == 127) {
+		if (shellStrCursorPos < (int)shellStr.size()) {
+			shellStr.erase(shellStrCursorPos, 1);
+		}
+		if (shellStr.empty()) {
+			editors[whichPane].setTypingShell(false);
+			editors[whichPane].setShowingShell(false);
+		}
+	}
+	else if (key == 105 && shellStr.size() == 0) {
+		editors[whichPane].setTypingShell(false);
+		editors[whichPane].setShowingShell(false);
+		inserting = true;
+		shellTabCounter = 0;
+		editors[whichPane].resetMaxNumLines();
+	}
+	else if (key == 9) {
+		completeShellCommand();
+	}
+	else {
+		if (key == 58) {
+			shellStr = "";
+			shellLsOutputStr = "";
+			shellStrCursorPos = 0;
+			numShellLines = 1;
+			shellStrColor = ofColor::white;
+			numShellLsOutputLines = 0;
+			editors[whichPane].setTypingShell(true);
+			editors[whichPane].setShowingShell(true);
+		}
+		if (shellStrCursorPos < (int)shellStr.size()) shellStr.insert(shellStr.begin()+shellStrCursorPos, char(key));
+		else shellStr += char(key);
+		shellTabCounter = 0;
+		shellStrCursorPos++;
+	}
+}
+
+//--------------------------------------------------------------
+std::string ofApp::wrapShellLines(const std::string& str, int& numLines)
+{
+	std::string wrapped;
+	numLines = 0;
+	size_t start = 0;
+	while (start <= str.size()) {
+		size_t end = str.find('\n', start);
+		if (end == std::string::npos) end = str.size();
+		// every line of the string, broken into rows of maxShellChars characters, with an empty line as one row
+		size_t lineStart = start;
+		do {
+			size_t rowLength = std::min(maxShellChars, end - lineStart);
+			if (numLines > 0) wrapped += '\n';
+			wrapped += str.substr(lineStart, rowLength);
+			numLines++;
+			lineStart += rowLength;
+		} while (lineStart < end);
+		start = end + 1;
+	}
+	return wrapped;
+}
+
+//--------------------------------------------------------------
+int ofApp::run_command(const std::string& cmd, std::string& output) {
+	// Runs a shell command, stores combined STDOUT+STDERR in `output`.
+	// Returns the command's exit code, or -1 if it could not be run.
+	namespace fs = std::filesystem;
+
+	std::random_device rd;
+	std::stringstream name;
+	name << "cmdout_" << std::hex << rd() << rd();
+	fs::path tmp = fs::temp_directory_path() / name.str();
+
+	std::string full = "(" + cmd + ") > \"" + tmp.string() + "\" 2>&1";
+#ifdef _WIN32
+	full = "\"" + full + "\"";   // cmd.exe /c quoting quirk
+#endif
+
+	int status = std::system(full.c_str());
+
+	int code;
+#ifdef _WIN32
+	code = status;
+#else
+	code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+#endif
+
+	std::ifstream file(tmp, std::ios::binary);
+	std::stringstream buffer;
+	buffer << file.rdbuf();
+	output = buffer.str();
+
+	file.close();
+	std::error_code ec;
+	fs::remove(tmp, ec);         // ignore cleanup errors
+	return code;
+}
+
+//--------------------------------------------------------------
+void ofApp::executeShellCommand()
+{
+	if (executingBind) {
+		std::vector<std::string> v = tokenizeString(shellStr, " ");
+		shellStr.clear();
+		executingBind = false;
+		parseCommand(CmdInput(v, std::vector<std::string>{}, false, true), 1, 1); // dummy second and third arguments
+		return;
+	}
+	shellStrColor = ofColor::white;
+	// first extract the argument and expand it according to the symbols it uses
+	// like the tilde character or a dot
+	size_t whiteSpace = shellStr.find(" ");
+	std::string arg;
+	if (whiteSpace != std::string::npos || whiteSpace < shellStr.size()-1) {
+		std::string shellStrLocal = shellStr.substr(whiteSpace+1);
+		// remove newline characters from command
+		shellStrLocal.erase(std::remove(shellStrLocal.begin(), shellStrLocal.end(), '\n'), shellStrLocal.end());
+		// and the white spaces around the argument, as Tab completion adds a white space after a completed file name
+		shellStrLocal.erase(0, shellStrLocal.find_first_not_of(" \t"));
+		if (shellStrLocal.find_last_not_of(" \t") != std::string::npos) shellStrLocal.erase(shellStrLocal.find_last_not_of(" \t") + 1);
+		else shellStrLocal.clear();
+		if (startsWith(shellStrLocal, "~")) {
+			arg = getenv("HOME") + shellStrLocal.substr(1);
+		}
+		else if (startsWith(shellStrLocal, "/")) {
+			arg = shellStrLocal;
+		}
+		else {
+			if (startsWith(shellStr, ":bind") || startsWith(shellStr, ":unbind")) {
+				arg = shellStrLocal;
+			}
+			else {
+				std::string pwdStr = ofSystem("pwd");
+				// there's a newline character at the end of ofSystem("pwd"), so we remove it below
+				arg = pwdStr.substr(0, pwdStr.size()-1) + "/";
+				if (startsWith(shellStrLocal, "./")) {
+					arg += shellStrLocal.substr(2);
+				}
+				else {
+					arg += shellStrLocal;
+				}
+			}
+		}
+		// paths like ../bin/data/file.lyv are tidied to /full/path/bin/data/file.lyv, which is also shown as the path of a loaded file
+		if (!arg.empty() && startsWith(arg, "/") && !(startsWith(shellStr, ":bind") || startsWith(shellStr, ":unbind"))) {
+			std::string normalized = std::filesystem::path(arg).lexically_normal().string();
+			// a directory keeps no trailing slash, except the root directory
+			if (normalized.size() > 1 && endsWith(normalized, "/")) normalized.pop_back();
+			arg = normalized;
+		}
+	}
+	// then check which command we're calling
+	if (shellStr == ":save" || startsWith(shellStr, ":save ")) {
+		if (shellStr.compare(":save") == 0) {
+			shellStr = "save command called without an argument";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		if (!startsWith(shellStr, ":save ")) {
+			shellStr = shellStr + ": not an editor command";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		if (arg.empty()) {
+			shellStr = "save command called without an argument";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		editors[whichPane].saveFile(arg);
+		shellStr.clear();
+		numShellLines = 0;
+	}
+	else if (shellStr.compare(":w") == 0) {
+		editors[whichPane].saveExistingFile();
+		shellStr.clear();
+		numShellLines = 0;
+	}
+	// :wq saves the file of the active pane and closes the pane, or quits if it is the only one, as :q does
+	// a file that has no name yet is saved to the path typed after it (e.g. :wq ~/music/piece.lyv)
+	// :x does the same, as in Vim, but writes the file only if it has changes that are not saved
+	else if (shellStr == ":wq" || startsWith(shellStr, ":wq ") || shellStr == ":x" || startsWith(shellStr, ":x ")) {
+		bool onlyIfEdited = startsWith(shellStr, ":x");
+		Editor& editor = editors[whichPane];
+		if (editor.isHelpFileOpen()) {
+			// a help file is not saved, it is closed
+			editor.closeHelpFile();
+			shellStr.clear();
+			numShellLines = 0;
+			return;
+		}
+		bool hasPath = (whiteSpace != std::string::npos && shellStr.find_first_not_of(" \t\n", whiteSpace) != std::string::npos && !arg.empty());
+		if (onlyIfEdited && !hasPath && !editor.isFileEdited()) {
+			// nothing to save
+		}
+		else if (hasPath) editor.saveFile(arg);
+		else if (editor.fileLoaded) editor.saveExistingFile();
+		else {
+			shellStr = "no file name, type the path after " + std::string(onlyIfEdited ? ":x" : ":wq");
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		// the pane is closed only if its file has been saved
+		if (editor.isFileEdited()) {
+			shellStr = "could not save " + editor.getFileName();
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		shellStr.clear();
+		numShellLines = 0;
+		editors[whichPane].setTypingShell(false);
+		editors[whichPane].setShowingShell(false);
+		removePane();
+	}
+	// :wa saves the files of all panes that have changes that are not saved, and :wqa saves them and quits
+	// files without a name can't be saved this way, so they are listed, and :wqa asks for their paths (see requestQuit())
+	// :xa is the same as :wqa, as in Vim
+	else if (shellStr.compare(":wa") == 0 || shellStr.compare(":wqa") == 0 || shellStr.compare(":xa") == 0) {
+		bool quitting = (shellStr.compare(":wqa") == 0 || shellStr.compare(":xa") == 0);
+		std::vector<std::string> notSaved;
+		for (auto& editor : editors) {
+			if (!editor.second.isFileEdited() || editor.second.isHelpFileOpen()) continue;
+			if (editor.second.fileLoaded) editor.second.saveExistingFile();
+			if (editor.second.isFileEdited()) notSaved.push_back(editor.second.getFileName() + " (pane " + std::to_string(editor.first + 1) + ")");
+		}
+		shellStr.clear();
+		numShellLines = 0;
+		if (quitting) {
+			// the files that are left unsaved are asked for, with their paths if they have no name
+			requestQuit();
+			return;
+		}
+		if (!notSaved.empty()) {
+			std::string list;
+			for (size_t i = 0; i < notSaved.size(); i++) list += (i > 0 ? ", " : "") + notSaved[i];
+			shellStr = "not saved: " + list + ", save them with :save";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			}
+	}
+
+	else if (shellStr == ":load" || startsWith(shellStr, ":load ")) {
+		if (shellStr.compare(":load") == 0) {
+			shellStr = "load command called without an argument";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		if (!startsWith(shellStr, ":load ")) {
+			shellStr = shellStr + ": not an editor command";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		if (arg.empty()) {
+			shellStr = "load command called without an argument";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		editors[whichPane].loadFile(arg);
+		shellStr.clear();
+		numShellLines = 0;
+	}
+	else if (startsWith(shellStr, ":bindings")) {
+		if (shellStr.size() > 9) {
+			shellStr = shellStr + ": not an editor command";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		if (!arg.empty()) {
+			shellStr = "bindings command takes no arguments";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		shellStr.clear();
+		int counter = 0;
+		for (auto it = editors[whichPane].bindings.begin(); it != editors[whichPane].bindings.end(); ++it) {
+			if (counter > 0) shellStr += "\n";
+			counter++;
+			shellStr += {static_cast<char>(it->first)};
+			if (!it->second.bindingVec.empty()) shellStr += genStrFromVec(it->second.bindingVec);
+			shellStr += " -> ";
+			shellStr += genStrFromVec(it->second.actionVec);
+		}
+		numShellLines = editors[whichPane].bindings.size();
+	}
+	else if (shellStr == ":bind" || startsWith(shellStr, ":bind ")) {
+		if (whiteSpace == std::string::npos && shellStr.size() > 5) {
+			shellStr = shellStr + ": not an editor command";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		if (arg.empty()) {
+			shellStr = "bind command called without an argument";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		std::vector<std::string> v = tokenizeString(arg, " ");
+		if (std::find(v.begin(), v.end(), "->") == v.end()) {
+			shellStr = "wrong formatting for bind";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		bool foundArrow = false;
+		std::vector<std::string> v1;
+		std::vector<std::string> v2;
+		for (std::string s : v) {
+			if (s.compare("->") == 0) {
+				if (v1.empty()) {
+					shellStr = "wrong formatting for bind";
+					shellStrColor = ofColor::red;
+					numShellLines = 1;
+					return;
+				}
+				foundArrow = true;
+			}
+			else {
+				if (!foundArrow) {
+					v1.push_back(s);
+				}
+				else {
+					v2.push_back(s);
+				}
+			}
+		}
+		if (v1[0].size() > 1) {
+			shellStr = "binding key can be one character only";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		int key = static_cast<int>(v1[0][0]);
+		// the keys of normal mode are reserved and can't be bound
+		static const std::map<int, std::string> normalModeKeys = {
+			{':', "types commands"}, {'i', "inserts text"},
+			{'h', "moves the cursor left"}, {'H', "moves the cursor left"},
+			{'j', "moves the cursor down"}, {'J', "moves the cursor down"},
+			{'k', "moves the cursor up"}, {'K', "moves the cursor up"},
+			{'l', "moves the cursor right"}, {'L', "moves the cursor right"},
+			{'u', "undoes"}, {'y', "yanks"}, {'p', "pastes"}, {'v', "starts visual mode"},
+			{'A', "inserts at the end of the line"}, {'d', "deletes"},
+			{'0', "moves the cursor to the start of the line"}, {'$', "moves the cursor to the end of the line"},
+			{'D', "deletes to the end of the line"}, {'V', "selects whole lines"}, {'I', "inserts at the start of the line"},
+			{'x', "deletes the character under the cursor"},
+			{'g', "moves the cursor to the first line when pressed twice"}, {'G', "moves the cursor to the last line"}
+		};
+		auto normalIt = normalModeKeys.find(key);
+		if (normalIt != normalModeKeys.end()) {
+			shellStr = v1[0] + " is reserved, it " + normalIt->second + " in normal mode";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		if (editors[whichPane].bindings.find(key) != editors[whichPane].bindings.end()) {
+			shellStr = v1[0] + " is already bound";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		editors[whichPane].bindings[key] = {v1.size() > 1 ? std::vector<std::string>(v1.begin()+1, v1.end()) : std::vector<std::string>{""}, std::move(v2), false};
+		shellStr.clear();
+		shellStrColor = ofColor::white;
+		return;
+	}
+	else if (shellStr == ":unbind" || startsWith(shellStr, ":unbind ")) {
+		if (whiteSpace == std::string::npos && shellStr.size() > 7) {
+			shellStr = shellStr + ": not an editor command";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		if (arg.empty()) {
+			shellStr = "unbind command called without an argument";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		std::vector<std::string> v = tokenizeString(arg, " ");
+		int key = static_cast<int>(v[0][0]);
+		auto it = editors[whichPane].bindings.find(key);
+		if (it == editors[whichPane].bindings.end()) {
+			shellStr = v[0] + " is not bound";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		editors[whichPane].bindings.erase(it);
+		shellStr.clear();
+		shellStrColor = ofColor::white;
+		return;
+	}
+	else if (shellStr == ":ls" || startsWith(shellStr, ":ls ")) {
+		if (whiteSpace == std::string::npos && shellStr.size() > 3) {
+			shellStr = shellStr + ": not an editor command";
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		// with options (e.g. :ls -a), the arguments are passed to ls as they are typed
+		std::string rawArgs = (whiteSpace == std::string::npos ? std::string() : shellStr.substr(whiteSpace+1));
+		rawArgs.erase(std::remove(rawArgs.begin(), rawArgs.end(), '\n'), rawArgs.end());
+		std::string lsOutput = ofSystem("ls -p " + (startsWith(rawArgs, "-") ? rawArgs : arg));
+		shellStr.clear();
+		numShellLines = 0;
+		formatShellLsOutput(tokenizeString(lsOutput, "\n"));
+	}
+	else if (shellStr.compare(":pwd") == 0) {
+		shellStr = ofSystem("pwd");
+		numShellLines = 1;
+	}
+	// :cd changes the working directory of LiveLily, as in Vim, which :pwd, :ls, :load, :save, other shell commands, and Tab completion use
+	// :cd without an argument goes to the home directory, and :cd - to the previous working directory
+	else if (shellStr == ":cd" || startsWith(shellStr, ":cd ")) {
+		namespace fs = std::filesystem;
+		std::string rawArg = (whiteSpace == std::string::npos ? std::string() : shellStr.substr(whiteSpace+1));
+		rawArg.erase(std::remove(rawArg.begin(), rawArg.end(), '\n'), rawArg.end());
+		rawArg.erase(0, rawArg.find_first_not_of(" \t"));
+		if (rawArg.find_last_not_of(" \t") != std::string::npos) rawArg.erase(rawArg.find_last_not_of(" \t") + 1);
+		std::error_code ec;
+		std::string target;
+		if (rawArg.empty()) {
+			const char* home = getenv("HOME");
+			target = (home ? std::string(home) : std::string());
+		}
+		else if (rawArg == "-") {
+			if (prevWorkingDir.empty()) {
+				shellStr = "no previous directory";
+				shellStrColor = ofColor::red;
+				numShellLines = 1;
+				return;
+			}
+			target = prevWorkingDir;
+		}
+		else {
+			// the argument with ~ expanded, or relative to the working directory (see above)
+			target = arg;
+			target.erase(target.find_last_not_of(" \t") + 1);
+		}
+		std::string currentDir = fs::current_path(ec).string();
+		if (target.empty() || !fs::is_directory(target, ec)) {
+			shellStr = (rawArg.empty() ? std::string("no home directory") : rawArg + ": no such directory");
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		fs::current_path(target, ec);
+		if (ec) {
+			shellStr = rawArg + ": " + ec.message();
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		prevWorkingDir = currentDir;
+		shellStr.clear();
+		numShellLines = 0;
+	}
+	else if (shellStr.compare(":q") == 0) {
+		if (editors[whichPane].isHelpFileOpen()) {
+			editors[whichPane].closeHelpFile();
+			// the command leaves nothing to show, so the area below the panes shows the error messages again (see typeShellCommand())
+			shellStr.clear();
+			numShellLines = 0;
+		}
+		else {
+			removePane();
+		}
+	}
+	// :vs (or :vsplit) adds a pane side by side with the active one, and :sp (or :split) one below it, as in Vim
+	// with a file as an argument, the file is opened in the new pane
+	else if (shellStr == ":vs" || shellStr == ":vsplit" || shellStr == ":sp" || shellStr == ":split" ||
+			startsWith(shellStr, ":vs ") || startsWith(shellStr, ":vsplit ") || startsWith(shellStr, ":sp ") || startsWith(shellStr, ":split ")) {
+		bool vertical = startsWith(shellStr, ":vs");
+		bool hasFile = (whiteSpace != std::string::npos && !arg.empty() && shellStr.find_first_not_of(" \t\n", whiteSpace) != std::string::npos);
+		// the shell of this pane closes, as the new pane becomes the active one
+		shellStr.clear();
+		numShellLines = 0;
+		editors[whichPane].setTypingShell(false);
+		editors[whichPane].setShowingShell(false);
+		addPane(vertical ? 86 : 72);
+		// the new pane starts in normal mode, as a pane does in Vim
+		editors[whichPane].setInserting(false);
+		if (hasFile) editors[whichPane].loadFile(arg);
+	}
+	else if (shellStr.compare(":qa") == 0) {
+		requestQuit();
+	}
+	// :q! and :qa! quit without asking to save the files that have changes that are not saved, as in Vim
+	// :q! closes the pane when there are more panes (or the help file, if one is open), as :q does
+	else if (shellStr.compare(":q!") == 0) {
+		if (editors[whichPane].isHelpFileOpen()) {
+			editors[whichPane].closeHelpFile();
+			// the command leaves nothing to show, so the area below the panes shows the error messages again (see typeShellCommand())
+			shellStr.clear();
+			numShellLines = 0;
+		}
+		// the same test removePane() uses to quit instead of closing a pane
+		else if (editors.size() <= 1) {
+			exit();
+		}
+		else {
+			removePane();
+		}
+	}
+	else if (shellStr.compare(":qa!") == 0) {
+		exit();
+	}
+	// editor options, as in Vim, for the active pane
+	// :set wrap wraps long lines around the edge of the pane, and :set wrap! (or :set nowrap) scrolls them, which is the default
+	else if (startsWith(shellStr, ":set ") || shellStr.compare(":set") == 0) {
+		std::string option = (shellStr.size() > 5 ? shellStr.substr(5) : "");
+		option.erase(0, option.find_first_not_of(" \t\n"));
+		if (option.find_last_not_of(" \t\n") != std::string::npos) option.erase(option.find_last_not_of(" \t\n") + 1);
+		if (option == "wrap") {
+			editors[whichPane].setWrapLines(true);
+		}
+		else if (option == "wrap!" || option == "nowrap") {
+			editors[whichPane].setWrapLines(false);
+		}
+		else {
+			shellStr = (option.empty() ? std::string(":set needs an option") : option + ": unknown option");
+			shellStrColor = ofColor::red;
+			numShellLines = 1;
+			return;
+		}
+		shellStr.clear();
+		numShellLines = 0;
+	}
+	else {
+		// any other command is a shell command, typed after the colon (e.g. :ls -l or :git status)
+		// its output and its error messages are shown below the panes
+		std::string cmd = shellStr.substr(1);
+		cmd.erase(std::remove(cmd.begin(), cmd.end(), '\n'), cmd.end());
+		std::string output;
+		int err = run_command(cmd, output);
+		if (err && output.empty()) output = cmd + ": failed with exit code " + std::to_string(err);
+		setShellOutput(output, err != 0);
+	}
+}
+
+//--------------------------------------------------------------
+// shows the output of a shell command below the panes, with its lines broken to fit the width of the window
+// the panes are made shorter for long output, and what doesn't fit scrolls with the arrow keys (see drawShell())
+void ofApp::setShellOutput(const std::string& output, bool error)
+{
+	shellStrColor = (error ? ofColor::red : ofColor::white);
+	std::vector<std::string> lines;
+	std::string line;
+	for (char c : output) {
+		if (c == '\n') {
+			lines.push_back(line);
+			line.clear();
+		}
+		else if (c == '\t') {
+			// tabs go to the next multiple of eight characters, as in a terminal
+			line += std::string(8 - (line.size() % 8), ' ');
+		}
+		else if (c != '\r') {
+			line += c;
+		}
+	}
+	if (!line.empty()) lines.push_back(line);
+	// break long lines to fit the width of the window
+	std::vector<std::string> rows;
+	size_t width = std::max((size_t)1, maxShellChars);
+	for (const std::string& l : lines) {
+		if (l.empty()) rows.push_back("");
+		for (size_t i = 0; i < l.size(); i += width) rows.push_back(l.substr(i, width));
+	}
+	// a command without output (e.g. :touch file) leaves nothing to show, so the shell is hidden (see typeShellCommand())
+	if (rows.empty()) {
+		shellStr.clear();
+		numShellLines = 0;
+		return;
+	}
+	// all of the output is kept, and what doesn't fit the area below the panes scrolls with the arrow keys (see drawShell())
+	shellScroll = 0;
+	shellStr.clear();
+	for (size_t i = 0; i < rows.size(); i++) {
+		if (i > 0) shellStr += "\n";
+		shellStr += rows[i];
+	}
+	numShellLines = (int)rows.size();
+}
+
+//--------------------------------------------------------------
+void ofApp::formatShellLsOutput(std::vector<std::string> lsOutputTokens)
+{
+	if (lsOutputTokens.size() == 0) return;
+	// first find the longest string
+	size_t maxStrLength = 1;
+	for (const std::string& s : lsOutputTokens) {
+		if (s.size() > maxStrLength) maxStrLength = s.size();
+	}
+	// then determine how many columns fit in the width of the window, with two white spaces between them
+	// the last column doesn't need the two white spaces, so they are added to the width of the window
+	int numColumns = std::max(1, (int)((maxShellChars + 2) / (maxStrLength + 2)));
+	// the strings are listed in columns, from top to bottom and then from left to right, as ls does in a terminal
+	int numTokens = (int)lsOutputTokens.size();
+	int numRows = (numTokens + numColumns - 1) / numColumns;
+	// with the number of rows set, fewer columns might be enough (e.g. 5 strings in 4 columns need 2 rows, which need 3 columns only)
+	numColumns = (numTokens + numRows - 1) / numRows;
+	shellLsOutputStr.clear();
+	shellScroll = 0;
+	for (int row = 0; row < numRows; row++) {
+		if (row > 0) shellLsOutputStr += "\n";
+		for (int col = 0; col < numColumns; col++) {
+			int ndx = (col * numRows) + row;
+			if (ndx >= numTokens) break;
+			const std::string& s = lsOutputTokens[ndx];
+			shellLsOutputStr += s;
+			// pad all but the last string of the row, to the start of the next column
+			if (col < numColumns - 1 && ((col + 1) * numRows) + row < numTokens) {
+				shellLsOutputStr += std::string((maxStrLength + 2) - s.size(), ' ');
+			}
+		}
+	}
+	numShellLsOutputLines = numRows;
+}
+
+/****************** miscellaneous functions ********************/
+//--------------------------------------------------------------
+int ofApp::msToBPM(unsigned long ms)
+{
+	return (int)((1000 / ms) * 60);
+}
+
+//--------------------------------------------------------------
 // the following two functions are used in drawTraceback to sort the indexes based on the
-// time stamps. it is copied from https://www.geeksforgeeks.org/quick-sort/ 
+// time stamps. it is copied from https://www.geeksforgeeks.org/quick-sort/
 int ofApp::partition(uint64_t arr[], int arr2[], int low,int high)
 {
 	//choose the pivot
@@ -2153,6 +4883,7 @@ int ofApp::partition(uint64_t arr[], int arr2[], int low,int high)
 	return (i+1);
 }
 
+//--------------------------------------------------------------
 // The Quicksort function Implementation
 void ofApp::quickSort(uint64_t arr[], int arr2[], int low, int high)
 {
@@ -2170,9 +4901,16 @@ void ofApp::quickSort(uint64_t arr[], int arr2[], int low, int high)
 }
 
 //--------------------------------------------------------------
+bool ofApp::isQuoted(const std::string& s)
+{
+	return s.size() >= 2 && s.front() == '"' && s.back() == '"';
+}
+
+/****************** OSC to parts functions ********************/
+//--------------------------------------------------------------
 void ofApp::sendToParts(ofxOscMessage m, bool delay)
 {
-	for (auto it = grouppedOSCClients.begin(); it != grouppedOSCClients.end(); ++it) {
+	for (auto it = sharedData.grouppedOSCClients.begin(); it != sharedData.grouppedOSCClients.end(); ++it) {
 		if (sharedData.instruments[*it].hasDelay() && delay) {
 			std::pair<ofxOscMessage, unsigned long> p = std::make_pair(m, ofGetElapsedTimeMillis());
 			sharedData.instruments[*it].oscFifo.push_back(p);
@@ -2181,6 +4919,30 @@ void ofApp::sendToParts(ofxOscMessage m, bool delay)
 			sharedData.instruments[*it].scorePartSender.sendMessage(m, false);
 		}
 	}
+}
+
+//--------------------------------------------------------------
+void ofApp::sendBeatVizInfo(int bar)
+{
+	// calculate the time stamp regardless of whether we're showing the beat
+	// or not in the editor, in case we have connected score parts
+	sharedData.beatVizTimeStamp = ofGetElapsedTimeMillis();
+	sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData.tempoMs[bar] / 4.0);
+	sharedData.beatVizRampStart = sharedData.tempoMs[bar] / 4;
+	if (sharedData.beatAnimate) {
+		sharedData.beatViz = true;
+	}
+	// notify all score parts of the time stamp and the beat visualization counter
+	ofxOscMessage m;
+	m.setAddress("/beatinfo");
+	m.addFloatArg(sharedData.beatVizStepsPerMs);
+	m.addIntArg((int)sharedData.beatVizRampStart);
+	sendToParts(m, false);
+	m.clear();
+	m.setAddress("/beat");
+	m.addIntArg(sharedData.beatCounter);
+	sendToParts(m, false);
+	m.clear();
 }
 
 //--------------------------------------------------------------
@@ -2204,6 +4966,7 @@ void ofApp::sendBarToParts(int barIndex)
 	sendToParts(m, false);
 }
 
+//--------------------------------------------------------------
 void ofApp::sendLoopToParts()
 {
 	int lastLoopNdx = getLastLoopIndex();
@@ -2215,26 +4978,6 @@ void ofApp::sendLoopToParts()
 		m.addIntArg(sharedData.loopData[lastLoopNdx].at(i));
 	}
 	sendToParts(m, false);
-}
-
-//--------------------------------------------------------------
-void ofApp::sendCountdownToParts(int countdown)
-{
-	ofxOscMessage m;
-	m.setAddress("/countdown");
-	m.addIntArg(countdown);
-	sendToParts(m, true);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::sendStopCountdownToParts()
-{
-	ofxOscMessage m;
-	m.setAddress("/nocountdown");
-	m.addIntArg(1); // dummy arg
-	sendToParts(m, true);
-	m.clear();
 }
 
 //--------------------------------------------------------------
@@ -2270,16 +5013,6 @@ void ofApp::sendLoopIndexToParts()
 	ofxOscMessage m;
 	m.setAddress("/loopndx");
 	m.addIntArg(sharedData.loopIndex);
-	sendToParts(m, false);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::sendSequencerStateToParts(bool state)
-{
-	ofxOscMessage m;
-	m.setAddress("/seq");
-	m.addBoolArg(state);
 	sendToParts(m, false);
 	m.clear();
 }
@@ -2324,18 +5057,9 @@ void ofApp::sendCursorToPart(int instNdx, bool cursor)
 	m.clear();
 }
 
+/******************** debugging functions *********************/
 //--------------------------------------------------------------
-void ofApp::sendFinishToParts(bool finishState)
-{
-	ofxOscMessage m;
-	m.setAddress("/finish");
-	m.addBoolArg(finishState);
-	sendToParts(m, true);
-	m.clear();
-}
-
-//--------------------------------------------------------------
-void ofApp::printVector(vector<int> v)
+void ofApp::printVector(std::vector<int> v)
 {
 	for (int elem : v) {
 		cout << elem << " ";
@@ -2344,16 +5068,16 @@ void ofApp::printVector(vector<int> v)
 }
 
 //--------------------------------------------------------------
-void ofApp::printVector(vector<string> v)
+void ofApp::printVector(std::vector<std::string> v)
 {
-	for (string elem : v) {
+	for (std::string elem : v) {
 		cout << elem << " ";
 	}
 	cout << endl;
 }
 
 //--------------------------------------------------------------
-void ofApp::printVector(vector<float> v)
+void ofApp::printVector(std::vector<float> v)
 {
 	for (float elem : v) {
 		cout << elem << " ";
@@ -2361,32 +5085,16 @@ void ofApp::printVector(vector<float> v)
 	cout << endl;
 }
 
+/************** string/char state query functions *************/
 //--------------------------------------------------------------
-bool ofApp::startsWith(string a, string b)
-{
-	if (a.size() < b.size()) return false;
-	string aLocal = a.substr(0, b.size());
-	if (aLocal.compare(b) == 0) return true;
-	return false;
-}
-
-//--------------------------------------------------------------
-bool ofApp::endsWith(string a, string b)
-{
-	if (a.size() < b.size()) return false;
-	string aLocal = a.substr(a.size() - b.size(), b.size());
-	if (aLocal.compare(b) == 0) return true;
-	return false;
-}
-
-//--------------------------------------------------------------
-bool ofApp::isNumber(string str)
+bool ofApp::isNumber(std::string str)
 {
 	if (str.empty()) return false;
 	// first check if there is a hyphen in the beginning
 	int loopStart = 0;
 	if (str[0] == '-') loopStart = 1;
-	if (str.size() == 0) return false;
+	// a hyphen alone is not a number
+	if (loopStart >= (int)str.length()) return false;
 	for (int i = loopStart; i < (int)str.length(); i++) {
 		if (!isdigit(str[i])) {
 			return false;
@@ -2396,7 +5104,7 @@ bool ofApp::isNumber(string str)
 }
 
 //--------------------------------------------------------------
-bool ofApp::isFloat(string str)
+bool ofApp::isFloat(std::string str)
 {
 	if (str.empty()) return false;
 	// first check if there is a hyphen in the beginning
@@ -2412,13 +5120,19 @@ bool ofApp::isFloat(string str)
 			else return false;
 		}
 	}
-	return true;
+	// a hyphen or a dot alone, or both, is not a number
+	bool hasDigit = false;
+	for (char c : str) {
+		if (isdigit(c)) hasDigit = true;
+	}
+	return hasDigit;
 }
 
+/*************** index/char location functions ***************/
 //-------------------------------------------------------------
-vector<int> ofApp::findRepetitionInt(string str, int multIndex)
+std::vector<int> ofApp::findRepetitionInt(std::string str, int multIndex)
 {
-	vector<int> numRepNumDigits(2);
+	std::vector<int> numRepNumDigits(2);
 	int index = findNextStrCharIdx(str, " ", multIndex);
 	int numDigits = index - multIndex - 1;
 	if (isNumber(str.substr(multIndex+1, numDigits))) {
@@ -2429,7 +5143,7 @@ vector<int> ofApp::findRepetitionInt(string str, int multIndex)
 }
 
 //--------------------------------------------------------------
-int ofApp::findNextStrCharIdx(string str, string compareStr, int index)
+int ofApp::findNextStrCharIdx(std::string str, std::string compareStr, int index)
 {
 	while (index < (int)str.size()) {
 		if (str.substr(index, 1).compare(compareStr) == 0) {
@@ -2440,406 +5154,16 @@ int ofApp::findNextStrCharIdx(string str, string compareStr, int index)
 	return index;
 }
 
-//--------------------------------------------------------------
-// the following two functions are inspired by
-// https://www.geeksforgeeks.org/check-for-balanced-parentheses-in-an-expression/
-bool ofApp::areBracketsBalanced(string str)
-{
-	// Declare a stack to hold the previous brackets.
-	size_t i;
-	stack<char> temp;
-	for (i = 0; i < str.length(); i++) {
-		if (str[i] == '{' || str[i] == '[') {
-			temp.push(str[i]);
-		}
-		else if (str[i] == '}' || str[i] == ']') {
-			if (temp.empty()) return false;
-			if ((temp.top() == '{' && str[i] == '}')
-				|| (temp.top() == '[' && str[i] == ']')) {
-				temp.pop();
-			}
-		}
-	}
-	if (temp.empty()) {     
-		// If stack is empty return true
-		return true;
-	}
-	return false;
-}
-
-//--------------------------------------------------------------
-bool ofApp::areParenthesesBalanced(string str)
-{
-	// Declare a stack to hold the previous brackets.
-	size_t i;
-	stack<char> temp;
-	for (i = 0; i < str.length(); i++) {
-		if (str[i] == '(') {
-			temp.push(str[i]);
-		}
-		else if (str[i] == ')') {
-			if (temp.empty()) return false;
-			if (temp.top() == '(') {
-				temp.pop();
-			}
-		}
-	}
-	if (temp.empty()) {     
-		// If stack is empty return true
-		return true;
-	}
-	return false;
-}
-
-//--------------------------------------------------------------
-std::pair<int, string> ofApp::expandStringBasedOnBrackets(const string& str)
-{
-	int i = 0;
-	stack<int> braceNdx;
-	// we stack the opening square brackets and as soon as we find a closing one
-	// we are in the deepest nest, if brackets are nested
-	// we extract the inner part of this deepest nest and repeat it as many times as we define
-	// with the multiplication, then we return the string and this function is called again
-	// until all opening square brackets have been exhausted
-	for (char c : str) {
-		if (c == '[') {
-			braceNdx.push(i);
-		}
-		else if (c == ']') {
-			int closingBraceNdx = i;
-			if (!braceNdx.empty()) {
-				int openingBraceNdx = braceNdx.top();
-				size_t strLength = closingBraceNdx - openingBraceNdx - 1;
-				auto revit = str.substr(openingBraceNdx+1, strLength).rbegin();
-				// a string to be expanded might have a white space before the closing square bracket
-				// so we need to determine if this is the case and not repeat this space
-				int revOffset = (revit[0] == ' ' ? 1 : 0);
-				// the same stands for the beginning of the string
-				auto it = str.substr(openingBraceNdx+1, strLength).begin();
-				int offset = (it[0] == ' ' ? 1 : 0);
-				string enclosedString = str.substr(openingBraceNdx+1+offset, strLength-revOffset);
-				int multiplier = 0;
-				int digitNdx = 0;
-				if ((int)str.size() > closingBraceNdx + 2) {
-					digitNdx = closingBraceNdx + 2;
-					if (!isdigit(str[digitNdx])) {
-						std::pair p (1, str);
-						return p;
-					}
-					while (digitNdx > 0 && isdigit(str[digitNdx])) {
-						multiplier = multiplier * 10 + str[digitNdx] - '0';
-						digitNdx++;
-					}
-				}
-				else {
-					std::pair p (1, str);
-					return p;
-				}
-				string enclosedCopy = enclosedString;
-				for (int j = 1; j < multiplier; j++) {
-					enclosedCopy += " ";
-					enclosedCopy += enclosedString;
-				}
-				if (openingBraceNdx == 0) {
-					if (str.substr(closingBraceNdx+2).size() > 0) {
-						enclosedCopy += str.substr(digitNdx);
-					}
-					if (endsWith(enclosedCopy, "|")) enclosedCopy = enclosedCopy.substr(0, enclosedCopy.size()-1);
-					if (endsWith(enclosedCopy, " ")) enclosedCopy = enclosedCopy.substr(0, enclosedCopy.size()-1);
-					std::pair p (0, enclosedCopy);
-					return p;
-				}
-				string expandedString = str.substr(0, openingBraceNdx);
-				expandedString += enclosedCopy;
-				if (str.substr(digitNdx).size() > 0) {
-					expandedString += str.substr(digitNdx);
-				}
-				if (endsWith(expandedString, "|")) expandedString = expandedString.substr(0, expandedString.size()-1);
-				if (endsWith(expandedString, " ")) expandedString = expandedString.substr(0, expandedString.size()-1);
-				std::pair p (0, expandedString);
-				return p;
-			}
-			else {
-				std::pair p (1, str);
-				return p;
-			}
-		}
-		i++;
-	}
-	// in case no brackets have been found
-	std::pair p (0, str);
-	return p;
-}
-
-//--------------------------------------------------------------
-std::pair <int ,string> ofApp::expandChordsInString(const string& firstPart, const string& str)
-{
-	// in contrast to expandStringBasedOnBrackets() and expandSingleChars()
-	// here we are looking for angle brackets, which are not removed after expansion
-	// for this reason, the int in the returning pair is not a 0 or 1 error code
-	// but the size of the substring after expansion
-	// what happens is that this function looks for the first chord to be expanded
-	// and once this is done, it returns this together with anything that precedes or follows it
-	// and in detectRepetitions() we run a loop where we are looking for the next opening angle brace
-	// in the substring after the returned expanded string
-	unsigned i = 0;
-	stack<unsigned> braceNdx;
-	for (char c : str) {
-		if (c == '<') {
-			if (i == 0) {
-				braceNdx.push(i);
-			}
-			else if (str[i-1] != '\\') {
-				braceNdx.push(i);
-			}
-		}
-		else if (c == '>') {
-			if (str[i-1] == '\\') continue;
-			bool chordRepeats = true;
-			unsigned closingBraceNdx = i;
-			if (!braceNdx.empty()) {
-				unsigned openingBraceNdx = braceNdx.top();
-				string firstPartLocal = str.substr(0, openingBraceNdx);
-				while (closingBraceNdx < str.size()) {
-					if (str[closingBraceNdx] == '*') break;
-					closingBraceNdx++;
-				}
-				// a chord that does not repeat might already exist
-				// so we need to check how far the closing index has moved
-				// since the shortest duration is 64, we can only have two digits
-				if (closingBraceNdx > i+2) {
-					while (!braceNdx.empty()) braceNdx.pop();
-					chordRepeats = false;
-				}
-				if (chordRepeats) {
-					size_t strLength = closingBraceNdx - openingBraceNdx;
-					auto it = str.substr(openingBraceNdx, strLength).rbegin();
-					int offset = (it[0] == ' ' ? 1 : 0);
-					int offset2 = (it[0] == ' ' ? 1 : 0);
-					string enclosedString = str.substr(openingBraceNdx+offset2, strLength-offset);
-					int multiplier = 0;
-					unsigned digitNdx = 0;
-					if (str.size() > closingBraceNdx + 1) {
-						digitNdx = closingBraceNdx + 1;
-						if (!isdigit(str[digitNdx])) {
-							std::pair p ((int)str.size(), str);
-							return p;
-						}
-						while (digitNdx > 0 && digitNdx < str.size()) {
-							if (!isdigit(str[digitNdx])) break;
-							multiplier = multiplier * 10 + str[digitNdx] - '0';
-							digitNdx++;
-						}
-					}
-					else {
-						std::pair p ((int)str.size(), str);
-						return p;
-					}
-					int j;
-					string enclosedCopy = enclosedString;
-					for (j = 1; j < multiplier; j++) {
-						enclosedCopy += " ";
-						enclosedCopy += enclosedString;
-					}
-					string whole = firstPart + firstPartLocal + enclosedCopy;
-					int endOfStr = (int)whole.size();
-					if (str.substr(digitNdx).size() > 0) {
-						whole += str.substr(digitNdx);
-					}
-					std::pair p (endOfStr, whole);
-					return p;
-				}
-				else {
-					std::pair p ((int)(firstPart.size() + str.size()), firstPart+str);
-					return p;
-				}
-			}
-			else {
-				std::pair p ((int)str.size(), str);
-				return p;
-			}
-		}
-		i++;
-	}
-	// in case no brackets have been found
-	std::pair p ((int)str.size(), str);
-	return p;
-}
-
-//--------------------------------------------------------------
-std::pair<int, string> ofApp::expandSingleChars(string str)
-{
-	size_t multNdx = str.find("*");
-	size_t whiteSpaceBefore = str.substr(0, multNdx).find_last_of(" ");
-	size_t quoteIndex = str.substr(0, multNdx).find_last_of("\"");
-	int offset = 1;	
-	string firstPart = "";
-	if (whiteSpaceBefore != string::npos) {
-		// if there's a quote sign after the last white space
-		if ((quoteIndex != string::npos && quoteIndex > whiteSpaceBefore)) {
-			// spot the quote sign before the one we already found (which is the opening quote sing)
-			quoteIndex = str.substr(0, quoteIndex).find_last_of("\"");
-			// and move the white space index accordingly
-			whiteSpaceBefore = str.substr(0, quoteIndex).find_last_of(" ");
-			if (whiteSpaceBefore != string::npos) {
-				firstPart = str.substr(0, whiteSpaceBefore) + " ";
-			}
-			else {
-				whiteSpaceBefore = offset = 0;
-			}
-		}
-		else {
-			firstPart = str.substr(0, whiteSpaceBefore) + " ";
-		}
-	}
-	else {
-		whiteSpaceBefore = offset = 0;
-	}
-	size_t strToRepeatLength = multNdx - whiteSpaceBefore - offset;
-	string strToRepeat = str.substr(whiteSpaceBefore+offset, strToRepeatLength);
-	int multiplier = 0;
-	size_t digitNdx = multNdx + 1;
-	if (digitNdx >= str.size()) {
-		std::pair p (1, str);
-		return p;
-	}
-	if (!isdigit(str[digitNdx])) {
-		std::pair p (1, str);
-		return p;
-	}
-	while (digitNdx > 0 && digitNdx < str.size()) {
-		if (!isdigit(str[digitNdx])) break;
-		multiplier = multiplier * 10 + str[digitNdx] - '0';
-		digitNdx++;
-	}
-	int i;
-	string strToRepeatCopy = strToRepeat;
-	for (i = 1; i < multiplier; i++) {
-		strToRepeatCopy += " ";
-		strToRepeatCopy += strToRepeat;
-	}
-	string wholeString = firstPart + strToRepeatCopy;
-	if (str.length() >= digitNdx+1) {
-		wholeString += " ";
-		wholeString += str.substr(digitNdx+1);
-	}
-	std::pair p (0, wholeString);
-	return p;
-}
-
-//--------------------------------------------------------------
-vector<string> ofApp::detectRepetitions(vector<string> tokens)
-{
-	vector<string> output;
-	size_t openingSquareBracketNdx, closingSquareBracketNdx;
-	bool foundOpeningBracket = false;
-	for (size_t i = 0; i < tokens.size(); i++) {
-		size_t closingSquareBracket = tokens[i].find("]");
-		if (startsWith(tokens[i], "[")) {
-			openingSquareBracketNdx = i;
-			foundOpeningBracket = true;
-		}
-		if (!foundOpeningBracket) {
-			size_t multNdx = tokens[i].find("*");
-			if (multNdx != string::npos) {
-				if (multNdx < tokens[i].size()-1 && isNumber(tokens[i].substr(multNdx+1))) {
-					int numRepetitions = stoi(tokens[i].substr(multNdx+1));
-					for (int j = 0; j < numRepetitions; j++) {
-						output.push_back(tokens[i].substr(0, multNdx));
-					}
-				}
-			}
-			else {
-				output.push_back(tokens[i]);
-			}
-		}
-		if (closingSquareBracket != string::npos) {
-			closingSquareBracketNdx = i;
-			if (closingSquareBracket < tokens[i].size()-1 && tokens[i][closingSquareBracket+1] == '*') {
-				if (closingSquareBracket < tokens[i].size()-2 && isNumber(tokens[i].substr(closingSquareBracket+2))) {
-					int numRepetitions = stoi(tokens[i].substr(closingSquareBracket+2));
-					for (int i = 0; i < numRepetitions; i++) {
-						for (size_t j = openingSquareBracketNdx; j <= closingSquareBracketNdx; j++) {
-							if (j == openingSquareBracketNdx) output.push_back(tokens[j].substr(1));
-							else if (j == closingSquareBracketNdx) output.push_back(tokens[j].substr(0, closingSquareBracket));
-							else output.push_back(tokens[j]);
-						}
-					}
-					foundOpeningBracket = false;
-				}
-				else {
-					for (size_t j = openingSquareBracketNdx; j <= closingSquareBracketNdx; j++) {
-						output.push_back(tokens[j]);
-					}
-				}
-			}
-			else {
-				for (size_t j = openingSquareBracketNdx; j <= closingSquareBracketNdx; j++) {
-					output.push_back(tokens[j]);
-				}
-			}
-		}
-	}
-	return output;
-}
-
 //---------------------------------------------------------------
-vector<int> ofApp::findIndexesOfCharInStr(string str, string charToFind)
+std::vector<int> ofApp::findIndexesOfCharInStr(std::string str, std::string charToFind)
 {
 	size_t pos = str.find(charToFind, 0);
-	vector<int> tokensIndexes;
-	while (pos != string::npos) {
-        tokensIndexes.push_back((int)pos);
-        pos = str.find(charToFind, pos+1);
+	std::vector<int> tokensIndexes;
+	while (pos != std::string::npos) {
+		tokensIndexes.push_back((int)pos);
+		pos = str.find(charToFind, pos+1);
 	}
 	return tokensIndexes;
-}
-
-//---------------------------------------------------------------
-string ofApp::replaceCharInStr(string str, string a, string b)
-{
-	auto it = str.find(a);
-	while (it != string::npos) {
-		str.replace(it, a.size(), b);
-    it = str.find(a);
-	}
-	return str;
-}
-
-//---------------------------------------------------------------
-vector<string> ofApp::tokenizeString(string str, string delimiter)
-{
-	size_t start = 0;
-	size_t end = str.find(delimiter);
-	vector<string> tokens;
-	while (end != string::npos) {
-		tokens.push_back(str.substr(start, end));
-		start += end + 1;
-		end = str.substr(start).find(delimiter);
-	}
-	// the last token is not extracted in the loop above because end has reached string::npos
-	// so we extract it here by simply passing a substring from the last start point to the end
-	tokens.push_back(str.substr(start));
-	return tokens;
-}
-
-//---------------------------------------------------------------
-map<size_t, string> ofApp::tokenizeStringWithNdxs(string str, string delimiter)
-{
-	size_t start = 0;
-	size_t end = str.find(delimiter);
-	map<size_t, string> m;
-	vector<string> tokens;
-	vector<size_t> ndxs;
-	while (end != string::npos) {
-		m[start] = str.substr(start,end);
-		start += end + 1;
-		end = str.substr(start).find(delimiter);
-	}
-	// the last token is not extracted in the loop above because end has reached string::npos
-	// so we extract it here by simply passing a substring from the last start point to the end
-	m[start] = str.substr(start);
-	return m;
 }
 
 //--------------------------------------------------------------
@@ -2857,316 +5181,88 @@ int ofApp::findMatchingBrace(const std::string& s, size_t openPos)
 }
 
 //--------------------------------------------------------------
-void ofApp::parseStrings(int index, int numLines)
+std::string ofApp::genStrFromVec(const std::vector<std::string>& vec)
 {
-	bool noErrors = true;
-	barError = false;
-	vector<std::pair<int, string>> errors;
-	for (int i = index; i < (index+numLines); i++) {
-		// parseString() returns a pair of int and string, where the int determines the error type
-		// 0 for nothing, 1 for note, 2 for warning, and 3 for error
-		if (editors[whichPane].getSessionActivity()) {
-			errors.push_back(parseString(editors[whichPane].allStrings[i], i, numLines));
-			if (editors[whichPane].getSendLines()) {
-				ofxOscMessage m;
-				m.setAddress("/livelily"+to_string(editors[whichPane].getSendLinesPaneNdx())+"/press");
-				m.addStringArg(editors[whichPane].allStrings[i]);
-				editors[whichPane].oscKeys.sendMessage(m, false);
-			}
+	// the items are joined with a space, but not where an item ends or the next one starts with a line break or a tab
+	// as the tokens of a definition in many lines (e.g. the lines of a bar, see tokenizeLine()) keep these
+	// e.g. "c'4\n" and "}" are joined to "c'4\n}", and not "c'4\n }"
+	auto isLineSpace = [](char c) { return c == '\n' || c == '\t'; };
+	std::string result;
+	for (size_t i = 0; i < vec.size(); i++) {
+		if (i > 0 && !(result.size() > 0 && isLineSpace(result.back())) && !(vec[i].size() > 0 && isLineSpace(vec[i].front()))) {
+			result += ' ';
 		}
-		else {
-			if (editors[whichPane].allStrings[i] == "\\active") {
-				errors.push_back(parseString(editors[whichPane].allStrings[i], i, numLines));
-			}
-		}
+		result += vec[i];
 	}
-	for (auto error : errors) {
-		if (error.first == 3) {
-			if (parsingBar) {
-				// must clear bars from all passed instruments
-				// and entries in barsIndexes and loopsIndexes maps
-				if (parsingBars) {
-					for (int i = 0; i < barsIterCounter; i++) {
-						// when an error occurs not in the first bar of all the bars in the \bars command
-						// only in the first iteration of deleting the last bar we must leave the passed
-						// booleans of the instruments intact
-						// for all the other iterations, we must set them to true, as they have all passed
-						// all the previous bars, up until the error occured
-						if (i > 0) {
-							for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-								it->second.setPassed(true);
-							}
-						}
-						deleteLastBar();
-					}
-					barsIterCounter = 0;
-					numBarsToParse = 0;
-					numBarsToParseSet = false;
-					parsingBars = false;
-					firstInstForBarsSet = false;
-				}
-				else {
-					deleteLastBar();
-				}
-				parsingBar = false;
-				checkIfAllPartsReceivedBarData = false;
-			}
-			if (parsingLoop) {
-				parsingLoop = false;
-			}
-			if (parsingBars) {
-				parsingBars = false;
-				firstInstForBarsSet = false;
-			}
-			if (storingList) storingList = false;
-			noErrors = false;
+	return result;
+}
+
+/******************** tokenizing functions *********************/
+//---------------------------------------------------------------
+std::vector<std::string> ofApp::tokenizeString(std::string str, std::string delimiter, bool addDelimiter)
+{
+	size_t prev = 0, pos;
+	std::vector<std::string> tokens;
+	while ((pos = str.find_first_of(delimiter, prev)) != std::string::npos)
+	{
+		if (pos > prev) {
+			tokens.push_back(str.substr(prev, pos-prev));
 		}
-		if (!noErrors) break;
+		if (addDelimiter) tokens.push_back(str.substr(pos, 1));
+		prev = pos+1;
 	}
-	// if we have parsed at least one melodic line
-	if (noErrors && (parsingBar || parsingLoop)) {
-		// the bar index has already been stored with the \bar command
-		int barIndex = getLastLoopIndex();
-		// first send the parsed lines to any connected instruments
-		if (parsingBar && !parsingBars) {
-			sendBarToParts(barIndex);
-		}
-		if (!parsingLoop) {
-			// store the closing curly bracket in the bar lines map
-			// sharedData.barLines is a map<string, string> so we get the key with
-			// sharedData.barsOrdered[barIndex]
-			sharedData.barLines[sharedData.barsOrdered[barIndex]] += "}";
-			// then add a rest for any instrument that is not included in the bar
-			fillInMissingInsts(barIndex);
-			// if we create a bar, create a loop with this bar only
-			sharedData.loopData[barIndex] = {barIndex};
-			// check if no time has been specified and set the default 4/4
-			if (sharedData.numerator.find(barIndex) == sharedData.numerator.end()) {
-				sharedData.numerator[barIndex] = 4;
-				sharedData.denominator[barIndex] = 4;
-			}
-			setScoreNotes(barIndex);
-			if (!parsingBars) {
-				// then set the note positions and calculate the staff positions
-				setNotePositions(barIndex);
-				calculateStaffPositions(barIndex, false);
-			}
-			barError = false;
-			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				it->second.setPassed(false);
-			}
-		}
-		if (!sequencer.isThreadRunning()) {
-			sharedData.loopIndex = sharedData.tempBarLoopIndex;
-			//sendLoopIndexToParts();
-		}
-		inserting = false;
-		parsingBar = false;
-		parsingLoop = false;
+	if (prev < str.length()) {
+		tokens.push_back(str.substr(prev, std::string::npos));
 	}
-	if (storingFunction) {
-		storingFunction = false;
-		functionBodyOffset = 0;
+	return tokens;
+}
+
+//---------------------------------------------------------------
+std::map<size_t, std::string> ofApp::tokenizeStringWithNdxs(std::string str, std::string delimiter)
+{
+	size_t start = 0;
+	size_t end = str.find(delimiter);
+	std::map<size_t, std::string> m;
+	std::vector<std::string> tokens;
+	std::vector<size_t> ndxs;
+	while (end != std::string::npos) {
+		m[start] = str.substr(start,end);
+		start += end + 1;
+		end = str.substr(start).find(delimiter);
 	}
-	if (storingList) storingList = false;
-	if (traversingList) traversingList = false;
-	if (noErrors && parsingBars) {
-		// check if all instruments are done parsing all their bars
-		bool parsingBarsDone = true;
-		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-			if (!it->second.getMultiBarsDone()) {
-				parsingBarsDone = false;
-				break;
-			}
-		}
-		// call this function recursively, until all instruments are done parsing their bars
-		if (!parsingBarsDone) {
-			parseStrings(index, numLines);
-		}
-		else {
-			int barIndex = sharedData.barsIndexes["\\"+multiBarsName+"-1"];
-			setNotePositions(barIndex, barsIterCounter);
-			for (int i = 0; i < barsIterCounter; i++) {
-				barIndex = sharedData.barsIndexes["\\"+multiBarsName+"-"+to_string(i+1)];
-				sendBarToParts(barIndex);
-				calculateStaffPositions(barIndex, false);
-			}
-			parsingBars = false;
-			firstInstForBarsSet = false;
-			// once done, create a string to create a loop with all the separate bars
-			string multiBarsLoop = "\\loop " + multiBarsName + " {";
-			for (int i = 0; i < barsIterCounter-1; i++) {
-				multiBarsLoop += ("\\" + multiBarsName + "-" + to_string(i+1) + " ");
-			}
-			// last iteration outside of the loop so that we don't add the extra white space
-			// and we close the curly brackets
-			multiBarsLoop += ("\\" + multiBarsName + "-" + to_string(barsIterCounter) + "}");
-			parseCommand(genCmdInput(multiBarsLoop), index, 1);
-			// after we create the loop of the bars we have created, we send the line with the loop command to the parts
-			sendLoopToParts();
-			barsIterCounter = 0;
-		}
-	}
-	// if we're creating a pattern out of patterns
-	// the posCalculator.calculateAllStaffPositions() function
-	// is called from parseString() below, after the block that checks if
-	// a line starts with a quotation mark
+	// the last token is not extracted in the loop above because end has reached std::string::npos
+	// so we extract it here by simply passing a substd::string from the last start point to the end
+	m[start] = str.substr(start);
+	return m;
 }
 
 //--------------------------------------------------------------
-std::pair<int, string> ofApp::parseString(string str, int lineNum, int numLines)
-{
-	if (str.length() == 0) return std::make_pair(0, "");
-	if (startsWith(str, "%")) return std::make_pair(0, "");
-	// strip white spaces
-	while (startsWith(str, " ")) {
-		str = str.substr(1);
-	}
-	// then check again if the string is empty
-	if (str.length() == 0) return std::make_pair(0, "");
-	size_t commentIndex = str.find("%");
-	if (commentIndex != string::npos) {
-		str = str.substr(0, commentIndex);
-	}
-	// check if there's a trailing white space
-	if (endsWith(str, " ")) {
-		str = str.substr(0, str.size()-1);
-	}
-	// if we're left with a closing bracket only
-	if (str.compare("}") == 0) return std::make_pair(0, "");
-	if (startsWith(str, "{")) {
-		str = str.substr(1);
-		// again strip white spaces
-		while (startsWith(str, " ")) {
-			str = str.substr(1);
-		}
-	}
-	// check if the string starts with a closing bracket but has more stuff after it
-	if (startsWith(str, "}")) {
-		str = str.substr(1);
-		// and check for a trailing white space
-		if (startsWith(str, " ")) {
-			str = str.substr(1);
-		}
-	}
-	// last check if string is empty
-	if (str.length() == 0) return std::make_pair(0, "");
-	// ignore comments
-	if (startsWith(str, "%")) {
-		editors[whichPane].releaseTraceback(lineNum);
-		return std::make_pair(0, "");
-	}
-	else {
-		if (parsingLoop) {
-			std::pair<int, string> error = parseBarLoop(str, lineNum, numLines);
-			if (error.first > 0) {
-				editors[whichPane].setTraceback(error.first, error.second, lineNum);
-				deleteLastLoop();
-			}
-			else {
-				editors[whichPane].releaseTraceback(lineNum);
-				if (!sequencer.isThreadRunning()) {
-					sharedData.loopIndex = sharedData.tempBarLoopIndex;
-					sendLoopIndexToParts();
-				}
-			}
-			return error;
-		}
-		else if (storingFunction) {
-			int offset = 0;
-			int tabSize = editors[whichPane].getTabSize();
-			if ((int)str.size() >= tabSize) {
-				if (str.substr(0, tabSize).compare(editors[whichPane].tabStr) == 0) {
-					offset = tabSize;
-				}
-			}
-			if (functionBodyOffset == 0) sharedData.functions[lastFunctionIndex].copyStr(str.substr(offset), functionBodyOffset);
-			else sharedData.functions[lastFunctionIndex].copyStr("\n"+str.substr(offset), functionBodyOffset);
-			functionBodyOffset += str.substr(tabSize).size()+ 1; // + 1 for the newline
-		}
-		else if (storingList) {
-			storeList(str);
-			return std::make_pair(0, "");
-		}
-		else if (traversingList) {
-			CmdOutput cmdOutput = traverseList(str, lineNum, numLines); 
-			if (cmdOutput.errorCode > 0) {
-				editors[whichPane].setTraceback(cmdOutput.errorCode, cmdOutput.errorStr, lineNum);
-			}
-			else {
-				editors[whichPane].releaseTraceback(lineNum);
-			}
-			return std::make_pair(cmdOutput.errorCode, cmdOutput.errorStr);
-		}
-		else {
-			parsingCommand = true;
-			// first replace any command inside the string with the actual output of the command
-			CmdOutput cmdOutput = expandCommands(str, lineNum, numLines);
-			if (cmdOutput.errorCode > 0) {
-				editors[whichPane].setTraceback(cmdOutput.errorCode, cmdOutput.errorStr, lineNum);
-			}
-			if (cmdOutput.errorCode < 3) {
-				CmdInput cmdInput = {cmdOutput.outputVec, vector<string>(), false, true};
-				cmdOutput = parseCommand(cmdInput, lineNum, numLines);
-				if (cmdOutput.errorCode > 0) {
-					editors[whichPane].setTraceback(cmdOutput.errorCode, cmdOutput.errorStr, lineNum);
-				}
-				else {
-					editors[whichPane].releaseTraceback(lineNum);
-				}
-			}
-			else if (cmdOutput.errorCode == 0) {
-				editors[whichPane].releaseTraceback(lineNum);
-			}
-			return std::make_pair(cmdOutput.errorCode, cmdOutput.errorStr);
-		}
-	}
-	return std::make_pair(0, "");
-}
-
-//--------------------------------------------------------------
-CmdOutput ofApp::expandCommands(const string& input, int lineNum, int numLines)
-{
-	vector<string> tokens = tokenizeExpandedCommands(input);
-	CmdOutput cmdOutput = CmdOutput();
-	vector<string> output;
-	if (tokens.empty()) {
-		return cmdOutput;
-	}
-	else if (find(nonExpandableCommands.begin(), nonExpandableCommands.end(), tokens[0]) != nonExpandableCommands.end() || parsingBar) {
-		cmdOutput.outputVec = tokens;
-		return cmdOutput;
-	}
-	cmdOutput = parseExpandedCommands(tokens, lineNum, numLines);
-	return cmdOutput;
-}
-
-//--------------------------------------------------------------
-vector<string> ofApp::tokenizeExpandedCommands(const string& input)
+std::vector<std::string> ofApp::tokenizeChord(std::string input, bool includeAngleBrackets)
 {
 	bool isString = false;
-	bool isChord = false;
 	int quotesCounter = 0;
-	vector<string> tokens;
-	string token;
+	std::vector<std::string> tokens;
+	std::string token;
 	for (size_t i = 0; i < input.size(); i++) {
 		if (isspace(input[i])) {
-			if (!token.empty()) {
-				if (!isString && !isChord) {
-					tokens.push_back(token);
-					token.clear();
-				}
-				else {
-					token += input[i];
-				}
-			}
-		}
-		else if (input[i] == '{' || input[i] == '}') {
 			if (!token.empty() && !isString) {
 				tokens.push_back(token);
 				token.clear();
 			}
-			tokens.emplace_back(1, input[i]);
+			else {
+				token += input[i];
+			}
+		}
+		// we continue when we run into the chord opening and closing characters
+		// so that they are not concatenated to the token
+		// a '<' after a backslash is a crescendo (\<), not a chord opening, even if a dynamic follows it (e.g. \<\mp)
+		else if (input[i] == '<' && (i == 0 || input[i-1] != '\\')) {
+			if (includeAngleBrackets) token += input[i];
+			continue;
+		}
+		else if (input[i] == '>' && (i > 0 && input[i-1] != '\\' && input[i-1] != '-')) {
+			if (includeAngleBrackets) token += input[i];
+			continue;
 		}
 		else {
 			token += input[i];
@@ -3180,127 +5276,177 @@ vector<string> ofApp::tokenizeExpandedCommands(const string& input)
 					quotesCounter = 0;
 				}
 			}
-			else if (input[i] == '<' && (i < input.size()-1 && !isspace(input[i+1]))) {
-				isChord = true;
-			}
-			else if (input[i] == '>') {
-				isChord = false;
-			}
 		}
 	}
 	if (!token.empty()) tokens.push_back(token);
 	return tokens;
 }
 
+/*************** token balance ckeck functions ****************/
 //--------------------------------------------------------------
-CmdOutput ofApp::parseExpandedCommands(const vector<string>& tokens, int lineNum, int numLines)
+// the following function and its overloaded version is inspired by
+// https://www.geeksforgeeks.org/check-for-balanced-parentheses-in-an-expression/
+bool ofApp::areBracketsBalanced(std::string str)
 {
-	size_t index = tokens.size() - 1;
-	size_t firstCmdNdx = 0;
-	bool hasBrackets = false;
-	// initialize a CmdOutput structure with the first command of the string
-	// (all executable lines in LiveLily start with a string)
-	CmdOutput cmdOutput = CmdOutput();
-	if (tokens.empty()) return cmdOutput;
-	// check if there are white spaces (probably a horizontal tab) at the beginning of the input vector
-	for (string s : tokens) {
-		if (s.empty() || s == " ") firstCmdNdx++;
-		else break;
-	}
-	cmdOutput.outputVec = {tokens[firstCmdNdx]};
-	deque<string> outputDeque;
-	
-	while (index > firstCmdNdx) {
-		string token = tokens[index];
-		// if the token is a command
-		if (!token.empty() && token[firstCmdNdx] == '\\') {
-			size_t dequeNdx = 0;
-			vector<string> cmd;
-			cmd.push_back(token); // this is the command taken from the original tokens vector
-			if (dequeNdx >= outputDeque.size()) {
-				CmdInput cmdInput = {cmd, vector<string>(), false, false};
-				CmdOutput cmdOutputLocal = parseCommand(cmdInput, lineNum, numLines);
-				if (cmdOutputLocal.errorCode == 3) return cmdOutputLocal;
-				for (size_t i = 0; i < cmdOutputLocal.toPop; i++) {
-					outputDeque.pop_front();
+	// Declare a stack to hold the previous brackets.
+	size_t i;
+	std::stack<char> temp;
+	for (i = 0; i < str.length(); i++) {
+		if (str[i] == '{' || str[i] == '[' || str[i] == '(' || str[i] == '<') {
+			if (str[i] == '<') {
+				if (i == 0 || (i > 0 && str[i-1] != '\\')) {
+					temp.push(str[i]);
 				}
-				outputDeque.insert(outputDeque.begin(), cmdOutputLocal.outputVec.begin(), cmdOutputLocal.outputVec.end());
-				index--;
-				continue;
 			}
+			else {
+				temp.push(str[i]);
+			}
+		}
+		else if (str[i] == '}' || str[i] == ']' || str[i] == ')' || str[i] == '>') {
+			if (str[i] == '>') {
+				if ((i == 0 || (i > 0 && (str[i-1] != '\\' && str[i-1] != '-'))) && temp.empty()) {
+					return false;
+				}
+			}
+			else if (temp.empty()) {
+				return false;
+			}
+			if (!temp.empty() && ((temp.top() == '{' && str[i] == '}')
+					|| (temp.top() == '[' && str[i] == ']')
+					|| (temp.top() == '(' && str[i] == ')')
+					|| (temp.top() == '<' && str[i] == '>'))) {
+				if (str[i] == '>') {
+					if (i > 0 && (str[i-1] != '\\' && str[i-1] != '-')) {
+						temp.pop();
+					}
+				}
+				else {
+					temp.pop();
+				}
+			}
+		}
+		else if (str[i] == '%') {
+			break;
+		}
+	}
+	if (temp.empty()) {
+		// If stack is empty return true
+		return true;
+	}
+	return false;
+}
 
-			// check if the first argument is outside curly brackets
-			if (outputDeque[dequeNdx] != "{") {
-				// extract the first argument of the command
-				// this is extracted from the outputDeque deque instead of the tokens vector
-				cmd.push_back(outputDeque[dequeNdx++]);
+//--------------------------------------------------------------
+bool ofApp::areBracketsBalanced(std::vector<std::string> v)
+{
+	// Declare a stack to hold the previous brackets.
+	size_t i, j;
+	std::stack<std::string> strStack;
+	// first check for curly brackets, as these are tokenized and are separate strings in the vector
+	for (i = 0; i < v.size(); i++) {
+		if (v[i] == "{") {
+			strStack.push(v[i]);
+		}
+		else if (v[i] == "}") {
+			if (strStack.empty()) {
+				return false;
 			}
-			// then check if there are more arguments inside curly brackets
-			if (dequeNdx < outputDeque.size() && outputDeque[dequeNdx] == "{") {
-				hasBrackets = true;
-				dequeNdx++; // skip open curly bracket
-				while (dequeNdx < outputDeque.size() && outputDeque[dequeNdx] != "}") {
-					cmd.push_back(outputDeque[dequeNdx++]);
+			if (strStack.top() == "{" && v[i] == "}") {
+				strStack.pop();
+			}
+		}
+	}
+	if (!strStack.empty()) {
+		return false;
+	}
+	// a boolean to break a nested loop from the inner loop
+	bool breakLoop = false;
+	std::stack<char> charStack;
+	// then check for square and angle brackets, as these are included in a string of a vector with other characters
+	// round brackets are slurs, which can start in a bar and stop in the next one, so they don't have to be balanced in a line
+	for (i = 0; i < v.size(); i++) {
+		for (j = 0; j < v[i].length(); j++) {
+			if (v[i][j] ==  '[' || v[i][j] == '<') {
+				if (v[i][j] == '<') {
+					if (j == 0 || (j > 0 && v[i][j-1] != '\\')) {
+						charStack.push(v[i][j]);
+					}
+				}
+				else {
+					charStack.push(v[i][j]);
 				}
 			}
-			if (hasBrackets) dequeNdx++; // move to point to the item after the closing bracket
-			// the second argument to the data structure initialization below
-			// is the tokens after the command and its argumets
-			CmdInput cmdInput = {cmd, {outputDeque.begin()+dequeNdx, outputDeque.end()}, hasBrackets, false};
-			CmdOutput cmdOutputLocal = parseCommand(cmdInput, lineNum, numLines);
-			if (cmdOutputLocal.errorCode == 3) return cmdOutputLocal;
-			for (size_t i = 0; i < cmdOutputLocal.toPop; i++) {
-				outputDeque.pop_front();
+			else if (v[i][j] == ']' || v[i][j] == '>') {
+				if (v[i][j] == '>') {
+					if ((j == 0 || (j > 0 && (v[i][j-1] != '\\' && v[i][j-1] != '-'))) && charStack.empty()) {
+						return false;
+					}
+				}
+				else if (charStack.empty()) {
+					return false;
+				}
+				if (!charStack.empty() && ((charStack.top() == '[' && v[i][j] == ']')
+						|| (charStack.top() == '<' && v[i][j] == '>'))) {
+					if (v[i][j] == '>') {
+						if (j > 0 && (v[i][j-1] != '\\' && v[i][j-1] != '-')) {
+							charStack.pop();
+						}
+					}
+					else {
+						charStack.pop();
+					}
+				}
 			}
-			if (hasBrackets) hasBrackets = false;
-			outputDeque.insert(outputDeque.begin(), cmdOutputLocal.outputVec.begin(), cmdOutputLocal.outputVec.end());
+			else if (v[i][j] == '%') {
+				breakLoop = true;
+				break;
+			}
 		}
-		else {
-			outputDeque.push_front(token);
-		}
-		index--;
+		if (breakLoop) break;
 	}
-	cmdOutput.outputVec.insert(cmdOutput.outputVec.end(), outputDeque.begin(), outputDeque.end());
+	if (charStack.empty()) {
+		// If stack is empty return true
+		return true;
+	}
+	return false;
+}
+
+/******************* list handling functions ******************/
+//--------------------------------------------------------------
+CmdOutput ofApp::traverseList(int numLines)
+{
+	// executes the lines of \list.traverse (see isList() and parseString()) once for every item of the list, in turn
+	// with every $ replaced by the item, and stops at the first error, which is shown at the line it occurs
+	CmdOutput cmdOutput = CmdOutput();
+	// the lines are copied, as executing them might start another \list.traverse
+	std::vector<std::pair<int, std::string>> lines = traverseLines;
+	std::list<std::string> items = listMap[lastListIndex];
+	traverseLines.clear();
+	// every line shows what it outputs (e.g. \print), for the last item, or the first error
+	for (const std::pair<int, std::string>& line : lines) releaseEditorTraceback(line.first);
+	for (const std::string& item : items) {
+		for (const std::pair<int, std::string>& line : lines) {
+			std::string strToExecute = replaceCharInStr(line.second, "$", item);
+			// as in parseString(), the command at the start of the line gets the whole line, and evaluates its arguments when it runs
+			std::vector<std::string> tokens = tokenizeLine(strToExecute);
+			if (tokens.empty()) continue;
+			CmdInput cmdInput = {tokens, std::vector<std::string>(), false, true};
+			cmdOutput = parseCommand(cmdInput, line.first, numLines);
+			if (cmdOutput.errorCode == 3) {
+				setEditorTraceback(cmdOutput.errorCode, cmdOutput.errorStr, line.first);
+				return cmdOutput;
+			}
+			if (cmdOutput.errorCode > 0) setEditorTraceback(cmdOutput.errorCode, cmdOutput.errorStr, line.first);
+		}
+	}
 	return cmdOutput;
 }
 
 //--------------------------------------------------------------
-string ofApp::genStrFromVec(const vector<string>& vec)
+void ofApp::storeList(std::string str)
 {
-    std::ostringstream oss;
-    for (const auto& str : vec) {
-        oss << str << " "; // Add a space after each string
-    }
-    string result = oss.str();
-    return result.empty() ? result : result.substr(0, result.size() - 1); // Remove the trailing space
-}
-
-//--------------------------------------------------------------
-CmdOutput ofApp::traverseList(string str, int lineNum, int numLines)
-{
-	unsigned i;
-	CmdOutput cmdOutput = CmdOutput();
-	string lineWithArgs = str;
-	if (lineWithArgs.compare("{") == 0) return cmdOutput;
-	if (lineWithArgs.compare("}") == 0) return cmdOutput;
-	if (startsWith(lineWithArgs, "{")) lineWithArgs = lineWithArgs.substr(1);
-	if (endsWith(lineWithArgs, "}")) lineWithArgs = lineWithArgs.substr(0, lineWithArgs.size()-1);
-	vector<int> argNdxs = findIndexesOfCharInStr(lineWithArgs, "$");
-	for (auto it = listMap[lastListIndex].begin(); it != listMap[lastListIndex].end(); ++it) {
-		for (i = 0; i < argNdxs.size(); i++) {
-			string strToExecute = replaceCharInStr(lineWithArgs, lineWithArgs.substr(argNdxs[i],1), *it);
-			cmdOutput = parseCommand(genCmdInput(strToExecute), lineNum, numLines);
-			if (cmdOutput.errorCode == 3) return cmdOutput;
-		}
-	}
-	return cmdOutput;
-}
-
-//--------------------------------------------------------------
-void ofApp::storeList(string str)
-{
-	vector<string> items = tokenizeString(str, " ");
-	for (string item : items) {
+	std::vector<std::string> items = tokenizeString(str, " ");
+	for (std::string item : items) {
 		if (item.compare("{") == 0) continue;
 		if (item.compare("}") == 0) continue;
 		if (startsWith(item, "{")) listMap[lastListIndex].push_back(item.substr(1));
@@ -3309,23 +5455,9 @@ void ofApp::storeList(string str)
 	}
 }
 
+/******************** new bar/loop functions ******************/
 //--------------------------------------------------------------
-void ofApp::fillInMissingInsts(int barIndex)
-{
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		if (!it->second.hasPassed()) {
-			it->second.createEmptyMelody(barIndex);
-			it->second.setPassed(true);
-			// since all instruments need to set the boolean below to true
-			// for parseStrings() to know that ;all bars of a \bars commands have finished
-			// it's ok to set it to true for missing instruments right from the start
-			if (parsingBars) it->second.setMultiBarsDone(true);
-		}
-	}
-}
-
-//--------------------------------------------------------------
-int ofApp::storeNewBar(string barName)
+int ofApp::storeNewBar(std::string barName)
 {
 	int barIndex = getLastLoopIndex() + 1;
 	if (sharedData.numerator.find(barIndex) == sharedData.numerator.end()) {
@@ -3337,7 +5469,7 @@ int ofApp::storeNewBar(string barName)
 	sharedData.loopsOrdered[barIndex] = barName;
 	sharedData.barsOrdered[barIndex] = barName;
 	sharedData.loopsVariants[barIndex] = 0;
-	sharedData.tempBarLoopIndex = barIndex;
+	sharedData.tempLoopIndex = barIndex;
 	int prevBarIndex = getPrevBarIndex();
 	if (prevBarIndex < 0) {
 		sharedData.numerator[barIndex] = 4;
@@ -3347,7 +5479,7 @@ int ofApp::storeNewBar(string barName)
 		sharedData.BPMTempi[barIndex] = 120;
 		sharedData.BPMMultiplier[barIndex] = 1;
 		sharedData.beatAtDifferentThanDivisor[barIndex] = false;
-		sharedData.beatAtValues[barIndex] = 1;
+		sharedData.beatAtValues[barIndex] = {1};
 		sharedData.tempoBaseForScore[barIndex] = 4;
 		sharedData.BPMDisplayHasDot[barIndex] = false;
 		sharedData.tempo[barIndex] = sharedData.tempoMs[barIndex] / (MINDUR / sharedData.denominator[barIndex]);
@@ -3375,33 +5507,137 @@ int ofApp::storeNewBar(string barName)
 	// store the bar name
 	// the rest of the bar data will be stored in parseMelodicLine()
 	// sharedData.barLines is a map of string and string, so the key is the bar name
-	sharedData.barLines[barName] = "\\bar " + barName + " {\n";
+	sharedData.barLines[barName] = "\\bar " + barName.substr(1) + " {\n";
 	return barIndex;
 }
 
 //--------------------------------------------------------------
-void ofApp::storeNewLoop(string loopName)
+void ofApp::storeNewLoop(std::string loopName)
 {
 	int loopIndex = getLastLoopIndex() + 1;
 	sharedData.loopsIndexes[loopName] = loopIndex;
 	sharedData.loopsOrdered[loopIndex] = loopName;
 	sharedData.loopsVariants[loopIndex] = 0;
-	sharedData.tempBarLoopIndex = loopIndex;
+	sharedData.tempLoopIndex = loopIndex;
 	partsReceivedOKCounters[loopIndex] = 0;
 	keywords.push_back(loopName);
 }
 
 //--------------------------------------------------------------
-int ofApp::getBaseDurValue(string str, int denominator)
+void ofApp::deleteLastBar()
+{
+	//if (barError) return; // if a bar error has been raised, nothing has been stored
+	int bar = getLastBarIndex();
+	for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		if (it->second.hasPassed() && it->second.notes.find(bar) != it->second.notes.end()) {
+			it->second.notes.erase(bar);
+			it->second.midiNotes.erase(bar);
+			it->second.durs.erase(bar);
+			it->second.dursWithoutSlurs.erase(bar);
+			it->second.midiDursWithoutSlurs.erase(bar);
+			it->second.pitchBendVals.erase(bar);
+			it->second.dynamics.erase(bar);
+			it->second.midiVels.erase(bar);
+			it->second.dynamicsRamps.erase(bar);
+			it->second.glissandi.erase(bar);
+			it->second.midiGlissDurs.erase(bar);
+			it->second.midiDynamicsRampDurs.erase(bar);
+			it->second.articulations.erase(bar);
+			it->second.midiArticulationVals.erase(bar);
+			it->second.isSlurred.erase(bar);
+			it->second.text.erase(bar);
+			it->second.textIndexes.erase(bar);
+			it->second.slurIndexes.erase(bar);
+			it->second.isWholeBarSlurred.erase(bar);
+			it->second.tieIndexes.erase(bar);
+			it->second.scoreNotes.erase(bar);
+			it->second.scoreDurs.erase(bar);
+			it->second.scoreDotIndexes.erase(bar);
+			it->second.scoreDotsCounter.erase(bar);
+			it->second.scoreAccidentals.erase(bar);
+			it->second.scoreNaturalSignsNotWritten.erase(bar);
+			it->second.scoreOctaves.erase(bar);
+			it->second.scoreOttavas.erase(bar);
+			it->second.scoreGlissandi.erase(bar);
+			it->second.scoreArticulations.erase(bar);
+			it->second.scoreDynamics.erase(bar);
+			it->second.scoreDynamicsIndexes.erase(bar);
+			it->second.scoreDynamicsRampStart.erase(bar);
+			it->second.scoreDynamicsRampEnd.erase(bar);
+			it->second.scoreDynamicsRampDir.erase(bar);
+			it->second.scoreTupletRatios.erase(bar);
+			it->second.scoreTupletStartStop.erase(bar);
+			it->second.scoreTexts.erase(bar);
+			it->second.passed = false;
+			it->second.deleteNotesBar(bar);
+		}
+	}
+	if (sharedData.barsIndexes.find(sharedData.loopsOrdered[bar]) != sharedData.barsIndexes.end()) {
+		sharedData.barsIndexes.erase(sharedData.loopsOrdered[bar]);
+	}
+	if (sharedData.loopsIndexes.find(sharedData.loopsOrdered[bar]) != sharedData.loopsIndexes.end()) {
+		sharedData.loopsIndexes.erase(sharedData.loopsOrdered[bar]);
+	}
+	if (sharedData.numerator.find(bar) != sharedData.numerator.end()) {
+		sharedData.numerator.erase(bar);
+		sharedData.denominator.erase(bar);
+	}
+	if (sharedData.tempo.find(bar) != sharedData.tempo.end()) {
+		sharedData.tempo.erase(bar);
+	}
+	if (sharedData.tempoMs.find(bar) != sharedData.tempoMs.end()) {
+		sharedData.tempoMs.erase(bar);
+	}
+	if (sharedData.BPMTempi.find(bar) != sharedData.BPMTempi.end()) {
+		sharedData.BPMTempi.erase(bar);
+	}
+	if (sharedData.BPMMultiplier.find(bar) != sharedData.BPMMultiplier.end()) {
+		sharedData.BPMMultiplier.erase(bar);
+	}
+	if (sharedData.beatAtDifferentThanDivisor.find(bar) != sharedData.beatAtDifferentThanDivisor.end()) {
+		sharedData.beatAtDifferentThanDivisor.erase(bar);
+	}
+	if (sharedData.beatAtValues.find(bar) != sharedData.beatAtValues.end()) {
+		sharedData.beatAtValues.erase(bar);
+	}
+	commandsMap[livelily][sharedData.loopsOrdered[bar].substr(1)[0]].erase(sharedData.loopsOrdered[bar]);
+	sharedData.loopsOrdered.erase(bar);
+	sharedData.loopsVariants.erase(bar);
+	// sharedData.barLines is a map<string, string> so we get the correct key
+	// from the sharedData.barsOrdered map using the bar index as the key
+	sharedData.barLines.erase(sharedData.barsOrdered[bar]);
+	sharedData.tempLoopIndex = getLastLoopIndex();
+	if (!sequencer.isThreadRunning()) {
+		sharedData.loopIndex = sharedData.tempLoopIndex;
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::deleteLastLoop()
+{
+	std::map<int, std::string>::reverse_iterator it = sharedData.loopsOrdered.rbegin();
+	commandsMap[livelily][it->second.substr(1)[0]].erase(it->second);
+	sharedData.loopsIndexes.erase(it->second);
+	sharedData.loopsOrdered.erase(it->first);
+	sharedData.loopsVariants.erase(it->first);
+	sharedData.tempLoopIndex = getLastLoopIndex();
+	if (!sequencer.isThreadRunning()) {
+		sharedData.loopIndex = sharedData.tempLoopIndex;
+	}
+	//sendPushPopPattern();
+}
+
+//--------------------------------------------------------------
+int ofApp::getBaseDurValue(std::string str, int denominator)
 {
 	int base = 0;
 	int val;
-	if (str.find(".") != string::npos) {
+	if (str.find(".") != std::string::npos) {
 		base = stoi(str.substr(0, str.find(".")));
 		val = denominator / base;
 		// get the number of dots, copied from
-		// https://stackoverflow.com/questions/3867890/count-character-occurrences-in-a-string-in-c#3871346
-		string::difference_type n = std::count(str.begin(), str.end(), '.');
+		// https://stackoverflow.com/questions/3867890/count-character-occurrences-in-a-std::string-in-c#3871346
+		std::string::difference_type n = std::count(str.begin(), str.end(), '.');
 		int half = val / 2;
 		for (int i = 0; i < (int)n; i++) {
 			val += half;
@@ -3416,10 +5652,10 @@ int ofApp::getBaseDurValue(string str, int denominator)
 }
 
 //--------------------------------------------------------------
-std::pair<int, string> ofApp::getBaseDurError(string str)
+std::pair<int, std::string> ofApp::getBaseDurError(std::string str)
 {
 	if (!isNumber(str)) {
-		if (str.find(".") == string::npos) {
+		if (str.find(".") == std::string::npos) {
 			return std::make_pair(3, str + " is not a number");
 		}
 		else {
@@ -3428,60 +5664,50 @@ std::pair<int, string> ofApp::getBaseDurError(string str)
 			}
 		}
 	}
+	if (stoi(str) == 0) {
+		return std::make_pair(3, "got zero duration");
+	}
 	return std::make_pair(0, "");
 }
 
+/*************** API type generating functions ****************/
 //--------------------------------------------------------------
-CmdOutput ofApp::genError(string str)
+CmdOutput ofApp::genError(std::string str)
 {
-	CmdOutput error = {3, str, 0, vector<string>()};
+	CmdOutput error = {3, str, false, std::vector<std::string>()};
 	return error;
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::genWarning(string str)
+CmdOutput ofApp::genWarning(std::string str)
 {
-	CmdOutput warning = {2, str, 0, vector<string>()};
+	CmdOutput warning = {2, str, false, std::vector<std::string>()};
 	return warning;
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::genNote(string str)
+CmdOutput ofApp::genNote(std::string str)
 {
-	CmdOutput note = {1, str, 0, vector<string>()};
+	CmdOutput note = {1, str, false, std::vector<std::string>()};
 	return note;
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::genOutput(string str)
+CmdOutput ofApp::genOutput(std::string str, bool keepArgs)
 {
-	CmdOutput output = {0, "", 0, vector<string>({str})};
+	CmdOutput output = {0, "", keepArgs, std::vector<std::string>({str})};
 	return output;
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::genOutput(vector<string> v)
+CmdOutput ofApp::genOutput(std::vector<std::string> v, bool keepArgs)
 {
-	CmdOutput output = {0, "", 0, v};
+	CmdOutput output = {0, "", keepArgs, v};
 	return output;
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::genOutput(string str, size_t toPop)
-{
-	CmdOutput output = {0, "", toPop, vector<string>({str})};
-	return output;
-}
-
-//--------------------------------------------------------------
-CmdOutput ofApp::genOutput(vector<string> v, size_t toPop)
-{
-	CmdOutput output = {0, "", toPop, v};
-	return output;
-}
-
-//--------------------------------------------------------------
-CmdOutput ofApp::genOutputFuncs(std::pair<int, string> p)
+CmdOutput ofApp::genOutputFuncs(std::pair<int, std::string> p)
 {
 	switch (p.first) {
 		case 0:
@@ -3499,2345 +5725,68 @@ CmdOutput ofApp::genOutputFuncs(std::pair<int, string> p)
 }
 
 //--------------------------------------------------------------
-CmdInput ofApp::genCmdInput(string str)
+CmdInput ofApp::genCmdInput(std::string str)
 {
-	vector<string> v = tokenizeString(str, " ");
-	CmdInput cmdInput = {v, vector<string>(), false, true};
+	std::vector<std::string> v = tokenizeString(str, " ");
+	CmdInput cmdInput = {v, std::vector<std::string>(), false, true};
 	return cmdInput;
 }
 
 //--------------------------------------------------------------
-CmdInput ofApp::genCmdInput(vector<string> v)
+CmdInput ofApp::genCmdInput(std::vector<std::string> v)
 {
-	CmdInput cmdInput = {v, vector<string>(), false, true};
+	CmdInput cmdInput = {v, std::vector<std::string>(), false, true};
 	return cmdInput;
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::parseCommand(CmdInput cmdInput, int lineNum, int numLines)
+void ofApp::initPyo()
 {
-	CmdOutput cmdOutput = CmdOutput();
-
-	if (cmdInput.inputVec[0].compare("\\time") == 0) {
-		if (barError) return cmdOutput;
-		if (!parsingBar && !parsingBars) {
-			return genError("\\time command must be placed inside a bar(s) definition");
-		}
-		if (cmdInput.inputVec.size() > 2) {
-			return genError("\\time command takes one argument only");
-		}
-		else if (cmdInput.inputVec.size() < 2) {
-			return genError("\\time command needs one arguments");
-		}
-		int divisionSym = cmdInput.inputVec[1].find("/");
-		string numeratorStr = cmdInput.inputVec[1].substr(0, divisionSym);
-		string denominatorStr = cmdInput.inputVec[1].substr(divisionSym+1);
-		int numeratorLocal = 0;
-		int denominatorLocal = 0;
-		if (isNumber(numeratorStr)) {
-			numeratorLocal = stoi(numeratorStr);
-		}
-		else {
-			return genError(numeratorStr + " is not an int");
-		}
-		if (isNumber(denominatorStr)) {
-			denominatorLocal = stoi(denominatorStr);
-		}
-		else {
-			return genError(denominatorStr + " is not an int");
-		}
-		// a \time command must be placed inside a bar definition
-		// and the bar index has already been stored, so we can safely query the last bar index
-		int bar = getLastBarIndex();
-		sharedData.numerator[bar] = numeratorLocal;
-		sharedData.denominator[bar] = denominatorLocal;
-		sharedData.numBeats[bar] = sharedData.numerator[bar] * (MINDUR / sharedData.denominator[bar]);
-		if (sharedData.BPMMultiplier.find(bar) == sharedData.BPMMultiplier.end()) {
-			sharedData.BPMMultiplier[bar] = 1;
-			sharedData.beatAtValues[bar] = 1;
-			sharedData.beatAtDifferentThanDivisor[bar] = true;
-		}
-		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-			it->second.setMeter(bar, sharedData.numerator[bar],
-					sharedData.denominator[bar], sharedData.numBeats[bar]);
-			//if (it->second.sendToPart) {
-			//	sendBarIndexBeatMeterToPart(it->first, bar);
-			//}
-			ofxOscMessage m;
-			m.setAddress("/time");
-			m.addIntArg(bar);
-			m.addIntArg(sharedData.numerator[bar]);
-			m.addIntArg(sharedData.denominator[bar]);
-			m.addIntArg(sharedData.numBeats[bar]);
-			sendToParts(m, false);
-		}
-		return cmdOutput;
+	if (pyoSet) return;
+#ifdef USEPYO
+	// initialize a pyo server
+	sharedData.pyo.setup(inChannels, outChannels, bufferSize, sampleRate);
+	// empty the first comment about wxPython
+	sharedData.pyo.getStdout();
+	// then set the debug flag to 1
+	sharedData.pyo.setDebug(1);
+	// initialize OpenFrameworks audio streaming channels
+	ofSoundStreamSettings settings;
+	if (inSoundDeviceSet) {
+		settings.setInDevice(inSoundDevice);
 	}
-
-	else if (cmdInput.inputVec[0].compare("\\tempo") == 0) {
-		if (barError) return cmdOutput;
-		if (!parsingBar && !parsingBars) {
-			return genError("\\tempo command must be placed inside a bar(s) definition");
-		}
-		if (cmdInput.inputVec.size() > 4) {
-			return genError("\\tempo command takes maximum three arguments");
-		}
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\tempo command needs at least one argument");
-		}
-		// a \tempo command must be placed inside a bar definition
-		// and the bar index has already been stored, so we can safely query the last bar index
-		int bar = getLastBarIndex();
-		if (cmdInput.inputVec.size() == 4) {
-			if (cmdInput.inputVec[2].compare("=") != 0) {
-				return genError("\\tempo command takes maximum three arguments");
-			}
-			else {
-				std::pair<int, string> err = getBaseDurError(cmdInput.inputVec[1]);
-				if (err.first > 0) {
-					// using the array to function pointers that generate output here
-					// because we don't know the error code returned by geBaseDurError()
-					return genOutputFuncs(err);
-				}
-				if (!isNumber(cmdInput.inputVec[3])) {
-					return genError(cmdInput.inputVec[3] + " is not a number");
-				}
-				sharedData.BPMMultiplier[bar] = getBaseDurValue(cmdInput.inputVec[1], sharedData.denominator[bar]);
-				sharedData.beatAtValues[bar] = sharedData.BPMMultiplier[bar];
-				sharedData.beatAtDifferentThanDivisor[bar] = true;
-				sharedData.BPMTempi[bar] = stoi(cmdInput.inputVec[3]);
-				// convert BPM to ms
-				sharedData.tempoMs[bar] = 1000.0 / ((float)(sharedData.BPMTempi[bar]  * sharedData.BPMMultiplier[bar]) / 60.0);
-				// get the tempo of the minimum duration
-				sharedData.tempo[bar] = sharedData.tempoMs[bar] / (MINDUR / sharedData.denominator[bar]);
-				// get the usec duration of the PPQM
-				sharedData.PPQNPerUs[bar] = (uint64_t)(sharedData.tempoMs[bar] / (float)sharedData.PPQN) * 1000;
-				if (cmdInput.inputVec[1].find(".") != string::npos) {
-					sharedData.tempoBaseForScore[bar] = stoi(cmdInput.inputVec[1].substr(0, cmdInput.inputVec[1].find(".")));
-					sharedData.BPMDisplayHasDot[bar] = true;
-				}
-				else {
-					sharedData.tempoBaseForScore[bar] = stoi(cmdInput.inputVec[1]);
-					sharedData.BPMDisplayHasDot[bar] = false;
-				}
-			}
-		}
-		else {
-			if (isNumber(cmdInput.inputVec[1])) {
-				sharedData.BPMTempi[bar] = stoi(cmdInput.inputVec[1]);
-				// convert BPM to ms
-				sharedData.tempoMs[bar] = 1000.0 / ((float)sharedData.BPMTempi[bar] / 60.0);
-				// get the tempo of the minimum duration
-				sharedData.tempo[bar] = sharedData.tempoMs[bar] / (MINDUR / sharedData.denominator[bar]);
-				// get the usec duration of the PPQM
-				sharedData.PPQNPerUs[bar] = (uint64_t)(sharedData.tempoMs[bar] / (float)sharedData.PPQN) * 1000;
-				sharedData.BPMMultiplier[bar] = sharedData.beatAtValues[bar] = 1;
-				sharedData.beatAtDifferentThanDivisor[bar] = true;
-				sharedData.tempoBaseForScore[bar] = 4;
-				sharedData.BPMDisplayHasDot[bar] = false;
-			}
-			else {
-				return genError(cmdInput.inputVec[1] + " is not a number");
-			}
-		}
-		return cmdOutput;
+	if (outSoundDeviceSet) {
+		settings.setOutDevice(outSoundDevice);
 	}
-
-	else if (cmdInput.inputVec[0].compare("\\beatat") == 0) {
-		if (barError) return cmdOutput;
-		if (!parsingBar && !parsingBars) {
-			return genError("\\beatat command must be placed inside a bar(s) definition");
-		}
-		if (cmdInput.inputVec.size() > 2) {
-			return genError("\\beatat command takes one argument only");
-		}
-		if (cmdInput.inputVec.size() == 1) {
-			return genError("\\beatat command takes one argument");
-		}
-		std::pair<int, string> err = getBaseDurError(cmdInput.inputVec[1]);
-		if (err.first > 0) {
-			// using the array to function pointers that generate output here
-			// because we don't know the error code returned by geBaseDurError()
-			return genOutputFuncs(err);
-		}
-		int bar = getLastBarIndex();
-		sharedData.beatAtValues[bar] = getBaseDurValue(cmdInput.inputVec[1], sharedData.denominator[bar]);
-		sharedData.beatAtDifferentThanDivisor[bar] = true;
-		return cmdOutput;
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\tuplet") == 0 || cmdInput.inputVec[0].compare("\\tup") == 0) {
-		if (cmdInput.isMainCmd) {
-			return genError("stray tuplet");
-		}
-		if (cmdInput.inputVec.size() < 2 || !cmdInput.hasBrackets) {
-			return genError("badly formatted \\tuplet");
-		}
-		if (cmdInput.inputVec[1].find("/") == string::npos) {
-			return genError("badly formatted tuplet ratio");
-		}
-		size_t divisionNdx = cmdInput.inputVec[1].find("/");
-		size_t remainingStr = cmdInput.inputVec[1].size() - divisionNdx - 1;
-		if (!isNumber(cmdInput.inputVec[1].substr(0, divisionNdx)) || !isNumber(cmdInput.inputVec[1].substr(divisionNdx+1, remainingStr))) {
-			return genError("numerator or denominator of tuplet ratio is not a number");
-		}
-		string toInsert = "/" + cmdInput.inputVec[1];
-		vector<char> notes = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'r'};
-		for (size_t i = 2; i < cmdInput.inputVec.size(); i++) {
-			string strToChange = cmdInput.inputVec[i];
-			bool tupletInserted = false;
-			string changedStr = "";
-			for (size_t j = 0; j < cmdInput.inputVec[i].size(); j++) {
-				if (find(notes.begin(), notes.end(), strToChange[j]) != notes.end() || (strToChange[j] == '\'' || strToChange[j] == ',' || strToChange[j] == '<' || strToChange[j] == '>')) {
-					changedStr += strToChange[j];
-					if ((strToChange[j] == 'e' || strToChange[j] == 'i') && j + 1 < strToChange.size()) {
-						if (strToChange[j+1] == 's') {
-							changedStr += strToChange[j+1];
-							j++;
-						}
-					}
-					continue;
-				}
-				if (strToChange[j] == 'o' && j + 1 < strToChange.size()) {
-					changedStr += strToChange[j];
-					if (strToChange[j+1] == '-' && j + 2 < strToChange.size()) {
-						changedStr += strToChange[j+1];
-						j++;
-					}
-					changedStr += strToChange[j+1];
-					j++;
-					continue;
-				}
-				if (std::isdigit(strToChange[j]) || std::isspace(strToChange[j])) {
-					changedStr += strToChange[j];
-					continue;
-				}
-				if (!tupletInserted) {
-					changedStr += toInsert;
-					tupletInserted = true;
-				}
-				changedStr += strToChange[j];
-			}
-			if (!tupletInserted) {
-				changedStr += toInsert;
-			}
-			cmdOutput.outputVec.push_back(changedStr);
-		}
-		// the command vector doesn't include the curly brackets, only the command name and its arguments
-		// in case of a 3/2 tuplet, the command vector will have 5 items, e.g. \tuplet 3/2 c d e
-		// but we need to pop_front 6 elements, 3/2 c d e and the curly brackets
-		cmdOutput.toPop = cmdInput.inputVec.size() + 1;
-		return cmdOutput;
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\ottava") == 0 || cmdInput.inputVec[0].compare("\\ott") == 0) {
-		if (cmdInput.isMainCmd || !parsingBar) {
-			return genError("stray ottava");
-		}
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("no argument to \\ottava");
-		}
-		if (cmdInput.afterCmdVec.empty()) {
-			return genError("no item to apply \\ottava to");
-		}
-		string arg = cmdInput.inputVec[1];
-		if (arg.size() > 2) {
-			return genError("unkown argument to \\ottava: " + arg);
-		}
-		if (arg.size() == 2 && (arg[0] != '-' || !isdigit(arg[1]))) {
-			return genError("unkown argument to \\ottava: " + arg);
-		}
-		if (arg.size() == 1 && !isdigit(arg[0])) {
-			return genError("argument to \\ottava must be a number between -2 and 2");
-		}
-		int intArg = stoi(arg);
-		if (intArg < -2 || intArg > 2) {
-			return genError("argument to \\ottava must be between -2 and 2");
-		}
-		string strToChange = cmdInput.afterCmdVec[0];
-		bool octaveInserted = false;
-		vector<char> notes = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'r', 'i'};
-		string changedStr = "";
-		for (size_t i = 0; i < strToChange.size(); i++) {
-			if (find(notes.begin(), notes.end(), strToChange[i]) != notes.end() || (strToChange[i] == '\'' || strToChange[i] == ',' || strToChange[i] == '<')) {
-				changedStr += strToChange[i];
-				if ((strToChange[i] == 'e' || strToChange[i] == 'i') && (i+1 < strToChange.size() && strToChange[i+1] == 's')) {
-					changedStr += strToChange[i+1];
-					i++;
-				}
-				continue;
-			}
-			if (!octaveInserted) {
-				changedStr += "o" + arg;
-				octaveInserted = true;
-			}
-			changedStr += strToChange[i];
-		}
-		if (!octaveInserted) {
-			changedStr += "o" + arg;
-		}
-		cmdOutput.outputVec.push_back(changedStr);
-		cmdOutput.toPop = 2;
-		return cmdOutput;
-	}
-
-	if (cmdInput.inputVec[0].compare("\\clef") == 0) {
-		if (!parsingBar) {
-			return genError("stray \\clef command");
-		}
-		if (cmdInput.inputVec.size() != 2) {
-			return genError("\\clef command takes one argument, a clef name");
-		}
-		int clefNdx;
-		if (cmdInput.inputVec[1].compare("treble") == 0) {
-			sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 0);
-			clefNdx = 0;
-		}
-		else if (cmdInput.inputVec[1].compare("bass") == 0) {
-			sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 1);
-			clefNdx = 1;
-		}
-		else if (cmdInput.inputVec[1].compare("alto") == 0) {
-			sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 2);
-			clefNdx = 2;
-		}
-		else if (cmdInput.inputVec[1].compare("perc") == 0 || cmdInput.inputVec[1].compare("percussion") == 0) {
-			sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 3);
-			clefNdx = 3;
-		}
-		else {
-			return genError("unknown clef");
-		}
-		if (sharedData.instruments[lastInstrumentIndex].sendToPart) {
-			ofxOscMessage m;
-			m.setAddress("/clef");
-			m.addStringArg("\\"+sharedData.instruments[lastInstrumentIndex].getName());
-			m.addIntArg(clefNdx);
-			sharedData.instruments[lastInstrumentIndex].scorePartSender.sendMessage(m, false);
-			m.clear();
-		}
-		cmdOutput.toPop = 1;
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\ppqn") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\ppqn command needs the PPQN number as an argument");
-		}
-		if (cmdInput.inputVec.size() > 2) {
-			return genError("\\ppqn command takes one argument only");
-		}
-		if (!isNumber(cmdInput.inputVec[1])) {
-			return genError("the argument to \\ppqn must be a number");
-		}
-		int PPQNLocal = stoi(cmdInput.inputVec[1]);
-		if (PPQNLocal != 24 && PPQNLocal != 48 && PPQNLocal != 96) {
-			return genError("PPQN value can be 24, 48, or 96");
-		}
-		sharedData.PPQN = PPQNLocal;
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\midiclock") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\midiclock takes one argument");
-		}
-		if (cmdInput.inputVec[1].compare("on") == 0) {
-			sequencer.setSendMidiClock(true);
-			sharedData.PPQNTimeStamp = ofGetElapsedTimeMicros();
-		}
-		else if (cmdInput.inputVec[1].compare("off") == 0) {
-			sequencer.setSendMidiClock(false);
-		}
-		else {
-			return genError(cmdInput.inputVec[1] + ": unknown argument, \\midiclock takes on or off");
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\instorder") == 0) {
-		if (cmdInput.inputVec.size() != sharedData.instruments.size()+1) {
-			return genError("instrument list must be equal to number of instruments");
-		}
-		for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-			sharedData.instrumentIndexesOrdered[i-1] = sharedData.instrumentIndexes[cmdInput.inputVec[i]];
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\print") == 0) {
-		//string restOfCommand = getRestOfCommand(commands, 1);
-		//std::pair<int, string> error = parseString(restOfCommand, lineNum, numLines);
-		//if (error.first == 0) return std::make_pair(1, error.second);
-		//else return error;
-		if (!cmdInput.isMainCmd) {
-			return genError("\\print can only be a top command");
-		}
-		vector<string> v = {cmdInput.inputVec.begin()+1, cmdInput.inputVec.end()};
-		return genNote(genStrFromVec(v));
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\osc") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\osc command takes one argument, the name of the OSC client");
-		}
-		if (oscClients.find(cmdInput.inputVec[1]) != oscClients.end()) {
-			return genError("OSC client already exists");
-		}
-		string oscClientName = "\\" + cmdInput.inputVec[1];
-		oscClients[oscClientName] = ofxOscSender();
-		commandsMap[livelily][oscClientName] = ofColor::lightSeaGreen;
-	}
-	
-	else if (cmdInput.inputVec[0].compare("\\barnum") == 0) {
-		if (cmdInput.inputVec.size() > 1) {
-			return genError("\\barnum takes no arguments");
-		}
-		if (!cmdInput.isMainCmd) {
-			// since \barnum takes no arguments we don't need to pop any deque items
-			cmdOutput.outputVec.push_back(to_string(getPlayingBarIndex()));
-			return cmdOutput;
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\beatcount") == 0) {
-		if (cmdInput.inputVec.size() > 1) {
-			return genError("\\beatcount takes no arguments");
-		}
-		// livelily is 1-based, but C++ is 0-based, so we add one to the beat counter
-		// this is not needed with the \barnum command, because livelily creates the first bar
-		// with index 0 upon creating the instruments, so the first bar created by the user
-		// will have index 1
-		if (!cmdInput.isMainCmd) {
-			// since \barnum takes no arguments we don't need to pop any deque items
-			return genOutput(to_string(sharedData.beatCounter + 1));
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\insts") == 0 || startsWith(cmdInput.inputVec[0], "\\insts.")) {
-		if (cmdInput.inputVec[0].compare("\\insts") == 0 && cmdInput.inputVec.size() < 2) {
-			return genError("the \\insts command does nothing by itself, you must call one of its second level commands");
-		}
-		else if (cmdInput.inputVec[0].compare("\\insts") == 0 && cmdInput.inputVec.size() >= 2) {
-			return genError("the \\insts command takes only second level commands, not arguments");
-		}
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("second level commands of \\insts command take at least one argument");
-		}
-		vector<string> commands = tokenizeString(cmdInput.inputVec[0], ".");
-		commands.insert(commands.end(), cmdInput.inputVec.begin()+1, cmdInput.inputVec.end());
-		if (commands[1] == "init" && sharedData.numInstruments > 0) {
-			return genError("instruments have already been initialized, can only add now");
-		}
-		if (commands[1].compare("init") != 0 && commands[1].compare("add") != 0) {
-			return genError("\\insts command takes only \"init\" or \"add\" second leve commands");
-		}
-		// check the arguments to make sure they don't start with a backslash
-		for (auto it = commands.begin()+2; it != commands.end(); ++it) {
-			if (startsWith(*it, "\\")) {
-				return genError("instrument names can't start with a backslash");
-			}
-		}
-		// create the instruments of the arguments
-		for (unsigned i = 2; i < commands.size(); i++) {
-			bool instrumentExists = false;
-			for (auto it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				if (commands[i].compare(it->first) == 0) {
-					instrumentExists = true;
-					lastInstrumentIndex = it->second;
-					break;
-				}
-			}
-			if (!instrumentExists) {
-				initializeInstrument("\\" + commands[i]);
-				commandsMap[livelily]["\\" + commands[i]] = ofColor::greenYellow;
-			}
-			lastInstrument = commands[i];
-		}
-		if (commands[1].compare("init") == 0) {
-			// create a default empty bar with a -1 bar number
-			// by recursively calling parseCommand() like below
-			CmdInput cmdInput = {{"\\bar", "-1"}, vector<string>(), false, true};
-			parseCommand(cmdInput, 0, 1); // dummy line number and number of lines arguments
-		}
-		else if (commands[1].compare("add") == 0) {
-			// create an empty melodic line for all existing bars for each new instrument
-			for (auto barIt = sharedData.barsIndexes.begin(); barIt != sharedData.barsIndexes.end(); ++barIt) {
-				for (auto instIt = commands.begin()+2; instIt != commands.end(); ++instIt) {
-					sharedData.instruments[sharedData.instrumentIndexes[*instIt]].createEmptyMelody(barIt->second);
-				}
-			}
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\group") == 0) {
-		if (cmdInput.inputVec.size() < 3) {
-			return genError("\\group command takes at least two arguments");
-		}
-		if (cmdInput.inputVec.size() > sharedData.instruments.size() + 1) {
-			return genError("too many arguments to \\group");
-		}
-		string groupName;
-		for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-			if (sharedData.instrumentIndexes.find(cmdInput.inputVec[i]) == sharedData.instrumentIndexes.end()) {
-				// if we provide two arguments (3 with the command name) then we can't provide a name for the group
-				// otherwise, if we're not at the last argument, again we raise an error as only the last argument
-				// can be the name of the group, the previous arguments must be instrument names
-				if (cmdInput.inputVec.size() == 3 || i < cmdInput.inputVec.size() - 1) {
-					return genError(cmdInput.inputVec[i] + ": unknown instrument");
-				}
-				else if (i == cmdInput.inputVec.size()-1) {
-					groupName = "\\" + cmdInput.inputVec[i];
-				}
-			}
-		}
-		for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-			if (i > 1 && sharedData.instrumentIndexes.find(cmdInput.inputVec[i]) != sharedData.instrumentIndexes.end()) {
-				if (sharedData.instruments[sharedData.instrumentIndexes[cmdInput.inputVec[i]]].getID() - sharedData.instruments[sharedData.instrumentIndexes[cmdInput.inputVec[i-1]]].getID() != 1) {
-					return genError("can't group instruments that are not adjacent");
-				}
-			}
-		}
-		unsigned loopIter = (groupName.empty() ? cmdInput.inputVec.size() : cmdInput.inputVec.size()-1);
-		for (unsigned i = 2; i < loopIter; i++) {
-			sharedData.instruments[sharedData.instrumentIndexes[cmdInput.inputVec[i]]].setGroup(sharedData.instruments[sharedData.instrumentIndexes[cmdInput.inputVec[i-1]]].getID());
-		}
-		ofxOscMessage m;
-		m.setAddress("/group");
-		for (unsigned i = 1; i < loopIter; i++) {
-			m.addStringArg(cmdInput.inputVec[i]);
-		}
-		sendToParts(m, false);
-		if (!groupName.empty()) {
-			instGroups[groupName] = {cmdInput.inputVec.begin()+1, cmdInput.inputVec.end()-1};
-			commandsMap[livelily][groupName] = ofColor::lightSteelBlue;
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\score") == 0 || startsWith(cmdInput.inputVec[0], "\\score.")) {
-		if (cmdInput.inputVec[0].compare("\\score") == 0 && cmdInput.inputVec.size() < 2) {
-			return genError("the \\score command does nothing by itself, you must call one of its second level commands");
-		}
-		else if (cmdInput.inputVec[0].compare("\\score") == 0 && cmdInput.inputVec.size() >= 2) {
-			return genError("the \\score command takes only second level commands, not arguments");
-		}
-		else {
-			return scoreCommands(cmdInput.inputVec, lineNum, numLines);
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\cursor") == 0) {
-		if ((cmdInput.inputVec.size() == 1) || (cmdInput.inputVec.size() > 2)) {
-			return genError("\\cursor takes one argument");
-		}
-		// for some reason the OF functions are inverted
-		if (cmdInput.inputVec[1].compare("hide")) {
-			ofShowCursor();
-		}
-		else if (cmdInput.inputVec[1].compare("show")) {
-			ofHideCursor();
-		}
-		else {
-			return genError("unknown argument for \\cursor");
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\bar") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			barError = true;
-			return genError("\\bar command takes a name as an argument");
-		}
-		if (cmdInput.inputVec.size() >= 2 && cmdInput.inputVec[1].compare("{") == 0) {
-			barError = true;
-			return genError("\\bar command takes a name as an argument");
-		}
-		string barName = "\\" + cmdInput.inputVec[1];
-		auto barExists = sharedData.barsIndexes.find(barName);
-		if (barExists != sharedData.barsIndexes.end()) {
-			barError = true;
-			return genError((string)"bar " + barName.substr(1) + (string)" already exists");
-		}
-		parsingBar = true;
-		int barIndex = storeNewBar(barName);
-		//cout << "will parse bar " << sharedData.loopsOrdered[barIndex] << " with index " << barIndex << endl;
-		// first set all instruments to not passed and not copied
-		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-			it->second.setPassed(false);
-			it->second.setCopied(barIndex, false);
-			// if this is not the first bar, set a default clef similar to the last one
-			if (barIndex > 0) it->second.setClef(barIndex, it->second.getClef(getPrevBarIndex()));
-		}
-		commandsMap[livelily][barName] = ofColor::orchid;
-		// since bars include simple melodic lines in their definition
-		// we need to know this when we parse these lines
-		if (cmdInput.inputVec.size() > 2) {
-			vector<string> v = {cmdInput.inputVec.begin()+2, cmdInput.inputVec.end()};
-			std::pair<int, string> p = parseString(genStrFromVec(v), lineNum, numLines);
-			return genOutputFuncs(p);
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\loop") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\loop command takes a name as an argument");
-		}
-		if (cmdInput.inputVec.size() > 1 && startsWith(cmdInput.inputVec[1], "{")) {
-			return genError("\\loop command must take a name as an argument");
-		}
-		string loopName = "\\" + cmdInput.inputVec[1];
-		auto loopExists = sharedData.loopsIndexes.find(loopName);
-		if (loopExists != sharedData.loopsIndexes.end()) {
-			return genError((string)"loop " + loopName.substr(1) + (string)" already exists");
-		}
-		parsingLoop = true;
-		storeNewLoop(loopName);
-		commandsMap[livelily][loopName] = ofColor::lightSeaGreen;
-		// loops are most likely defined in one-liners, so we parse the rest of the line here
-		if (cmdInput.inputVec.size() > 2) {
-			//string restOfCommand = getRestOfCommand(commands, 2);
-			string restOfCommand = genStrFromVec({cmdInput.inputVec.begin()+2, cmdInput.inputVec.end()});
-			std::pair<int, string> error = parseString(restOfCommand, lineNum, numLines);
-			if (error.first > 0) {
-				parsingLoop = false;
-				return genOutputFuncs(error);
-			}
-			lastLoopCommand = genStrFromVec(cmdInput.inputVec);
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\bars") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			barError = true;
-			return genError("\\bars command takes a name for a set of bars as an argument");
-		}
-		if (barsIterCounter == 0) {
-			for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				it->second.setMultiBarsDone(false);
-				it->second.setMultiBarsStrBegin(0);
-			}
-			parsingBars = true;
-		}
-		multiBarsName = cmdInput.inputVec[1];
-		auto barsExist = sharedData.loopsIndexes.find("\\" + multiBarsName);
-		if (barsExist != sharedData.loopsIndexes.end()) {
-			return genError((string)"bars " + multiBarsName + (string)" already exist");
-		}
-		barsIterCounter++;
-		numBarsToParse = 0;
-		numBarsToParseSet = false;
-		// store each bar separately with the "-x" suffix, where x is the counter
-		// of the iterations, until all instruments have had all their separate bars parsed
-		cmdOutput.outputVec.insert(cmdOutput.outputVec.end(), {"\\bar", multiBarsName+"-"+to_string(barsIterCounter)});
-		CmdInput cmdInputLocal = {cmdOutput.outputVec, vector<string>(), false, true};
-		parseCommand(cmdInputLocal, lineNum, numLines);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\random") == 0 || cmdInput.inputVec[0].compare("\\rand") == 0) {
-		int start = 0, end = 0, diff = 0, randVal;
-		bool symbols = false;
-		if (cmdInput.inputVec.size() < 2) {
-			return genError(cmdInput.inputVec[0] + " takes at least one argument");
-		}
-		if (cmdInput.inputVec.size() == 2) {
-			if (isNumber(cmdInput.inputVec[1])) {
-				end = stoi(cmdInput.inputVec[1]);
-			}
-			else {
-				return genError("if only one argument is provided to " + cmdInput.inputVec[0] + ", it must be a number");
-			}
-		}
-		else {
-			if (cmdInput.inputVec.size() == 3) {
-				if ((isNumber(cmdInput.inputVec[1]) && !isNumber(cmdInput.inputVec[2])) || (!isNumber(cmdInput.inputVec[1]) && isNumber(cmdInput.inputVec[2]))) {
-					return genError("if " + cmdInput.inputVec[0] + " receives two arguments, they should both be of the same type, int or string");
-				}
-				if (isNumber(cmdInput.inputVec[1])) {
-					start = stoi(cmdInput.inputVec[1]);
-					end = stoi(cmdInput.inputVec[2]);
-				}
-				else {
-					end = (int)cmdInput.inputVec.size() - 1;
-					symbols = true;
-				}
-			}
-			else {
-				end = (int)cmdInput.inputVec.size() - 1;
-				symbols = true;
-			}
-		}
-		diff = end - start;
-		randVal = rand() % diff + start;
-		if (!cmdInput.isMainCmd) {
-			cmdOutput.toPop = cmdInput.inputVec.size();
-			if (symbols) {
-				return genOutput(cmdInput.inputVec[randVal+1]);
-			}
-			else {
-				return genOutput(to_string(randVal));
-			}
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\list") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\list takes a name as an argument");
-		}
-		if (cmdInput.inputVec.size() < 3) {
-			return genError("\\list must be assigned at least one item, inside curly brackets");
-		}
-		string listName = "\\" + cmdInput.inputVec[1];
-		bool firstList = true;
-		if (listIndexes.size() > 0) {
-			firstList = false;
-			if (listIndexes.find(listName) != listIndexes.end()) {
-				return genError("list already exists");
-			}
-		}
-		storingList = true;
-		if (firstList) lastListIndex = 0;
-		else lastListIndex = listIndexes.rbegin()->second + 1;
-		listIndexes[listName] = lastListIndex;
-		commandsMap[livelily][listName] = ofColor::lightSeaGreen;
-		string restOfCommand = genStrFromVec({cmdInput.inputVec.begin()+2, cmdInput.inputVec.end()});
-		std::pair<int, string> error = parseString(restOfCommand, lineNum, numLines);
-		if (error.first == 3) {
-			storingList = false;
-			return genError(error.second);
-		}
-		keywords.push_back(listName);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\fromosc") == 0) {
-		if (cmdInput.inputVec.size() > 2) {
-			return genError("\\fromosc commands takes maximum one argument");
-		}
-		if (cmdInput.inputVec.size() > 1) {
-			if (!startsWith(cmdInput.inputVec[1], "/")) {
-				return genError("OSC address must start with /");
-			}
-			fromOscAddr[whichPane] = cmdInput.inputVec[1];
-		}
-		else {
-			fromOscAddr[whichPane] = "/livelily" + to_string(whichPane+1);
-		}
-		fromOsc[whichPane] = true;
-		if (!oscReceiverIsSet) {
-			oscReceiver.setup(OSCPORT);
-			oscReceiverIsSet = true;
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\remaining") == 0) {
-		if (!parsingBar) {
-			return genError("\\remaining can only be called inside a bar definition");
-		}
-		int numFoundInsts = 0;
-		if (cmdInput.inputVec.size() == 2) {
-			if (sharedData.loopsIndexes.find(cmdInput.inputVec[1]) == sharedData.loopsIndexes.end()) {
-				return genError("bar " + cmdInput.inputVec[1] + " doesn't exist");
-			}
-		}
-		else {
-			return genError("\\remaining takes one argument");
-		}
-		for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-			if (!it->second.hasPassed()) {
-				numFoundInsts++;
-				break;
-			}
-		}
-		if (numFoundInsts == 0) {
-			return genWarning("all instruments have been defined, nothing left for \\remaining");
-		}
-		for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-			if (!it->second.hasPassed()) {
-				vector<string> v = {"\\" + it->second.getName()};
-				v.insert(v.end(), cmdInput.inputVec.begin()+1, cmdInput.inputVec.end());
-				// isInstrument returns a pair of bool and CmdOutput
-				// this is because in parseCommand() the bool is used to determine whether the first command is indeed an instrument
-				// if it is, parseCommand() will end at calling isInstrument()
-				// otherwise it goes on
-				// here we know that the first item in the v vector is an instrument
-				// but we need to comply with what isInstrument() returns
-				std::pair<bool, CmdOutput> p = isInstrument(v, lineNum, numLines);
-				if (p.second.errorCode > 0) {
-					return genOutputFuncs(std::make_pair(p.second.errorCode, p.second.errorStr));
-				}
-			}
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\solo") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\solo commands takes at least one argument");
-		}
-		if (cmdInput.inputVec.size() - 1 > sharedData.instrumentIndexes.size()) {
-			return genError("too many arguments for \\solo command");
-		}
-		if (cmdInput.inputVec.size() == 2 && cmdInput.inputVec[1].compare("\\all") == 0) {
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				sharedData.instruments.at(it->second).setToUnmute(true);
-			}
-		}
-		else {
-			vector<string> soloInsts;
-			for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-				if (sharedData.instrumentIndexes.find(cmdInput.inputVec[i]) == sharedData.instrumentIndexes.end()) {
-					return genError(cmdInput.inputVec[i] + ": unknown instrument");
-				}
-				else {
-					soloInsts.push_back(cmdInput.inputVec[i]);
-				}
-			}
-			// mute all instruments but the solo ones
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				if (find(soloInsts.begin(), soloInsts.end(), it->first) >= soloInsts.end()) {
-					sharedData.instruments.at(it->second).setToMute(true);
-				}
-			}
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\solonow") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\solonow commands takes at least one argument");
-		}
-		// below we test if the number of tokens is greater than the number of instruments
-		// and not greater than or equal to, because the first token in the \solonow command
-		if (cmdInput.inputVec.size() > sharedData.instrumentIndexes.size()) {
-			return genError("too many arguments for \\solonow command");
-		}
-		if (cmdInput.inputVec.size() == 2 && cmdInput.inputVec[1].compare("\\all") == 0) {
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				sharedData.instruments.at(it->second).setMute(true);
-			}
-		}
-		else {
-			vector<string> soloInsts;
-			for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-				if (sharedData.instrumentIndexes.find(cmdInput.inputVec[i]) == sharedData.instrumentIndexes.end()) {
-					return genError(cmdInput.inputVec[i] + ": unknown instrument");
-				}
-				else {
-					soloInsts.push_back(cmdInput.inputVec[i]);
-				}
-			}
-			// mute all instruments but the solo ones
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				if (find(soloInsts.begin(), soloInsts.end(), it->first) >= soloInsts.end()) {
-					sharedData.instruments.at(it->second).setMute(true);
-				}
-			}
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\mute") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\mute command takes at least one argument");
-		}
-		// again test if greater than and not if greater than or equal to
-		if (cmdInput.inputVec.size() - 1 > sharedData.instruments.size()) {
-			return genError("too many arguments for \\mute command");
-		}
-		if (cmdInput.inputVec[1].compare("\\all") == 0) {
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				sharedData.instruments.at(it->second).setToMute(true);
-			}
-		}
-		else {
-			vector<string> muteInsts;
-			for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-				if (sharedData.instrumentIndexes.find(cmdInput.inputVec[i]) == sharedData.instrumentIndexes.end()) {
-					return genError(cmdInput.inputVec[i] + ": unknown instrument");
-				}
-				else {
-					muteInsts.push_back(cmdInput.inputVec[i]);
-				}
-			}
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				if (find(muteInsts.begin(), muteInsts.end(), it->first) != muteInsts.end()) {
-					sharedData.instruments.at(it->second).setToMute(true);
-				}
-			}
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\unmute") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\unmute command takes at least one argument");
-		}
-		// again test if greater than and not if greater than or equal to
-		if (cmdInput.inputVec.size() > sharedData.instruments.size()) {
-			return genError("too many arguments for \\unmute command");
-		}
-		if (cmdInput.inputVec[1].compare("\\all") == 0) {
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				sharedData.instruments[it->second].setToUnmute(true);
-			}
-		}
-		else {
-			vector<string> unmuteInsts;
-			for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-				if (sharedData.instrumentIndexes.find(cmdInput.inputVec[i]) == sharedData.instrumentIndexes.end()) {
-					return genError(cmdInput.inputVec[i] + ": unknown instrument");
-				}
-				else {
-					unmuteInsts.push_back(cmdInput.inputVec[i]);
-				}
-			}
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				if (find(unmuteInsts.begin(), unmuteInsts.end(), it->first) != unmuteInsts.end()) {
-					sharedData.instruments.at(it->second).setToUnmute(true);
-				}
-			}
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\mutenow") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\mutenow command takes at least one argument");
-		}
-		// again test if greater than and not if greater than or equal to
-		if (cmdInput.inputVec.size() > sharedData.instruments.size()) {
-			return genError("too many arguments for \\mutenow command");
-		}
-		if (cmdInput.inputVec[1].compare("\\all") == 0) {
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				sharedData.instruments[it->second].setMute(true);
-			}
-		}
-		else {
-			vector<string> muteInsts;
-			for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-				if (sharedData.instrumentIndexes.find(cmdInput.inputVec[i]) == sharedData.instrumentIndexes.end()) {
-					return genError(cmdInput.inputVec[i] + ": unknown instrument");
-				}
-				else {
-					muteInsts.push_back(cmdInput.inputVec[i]);
-				}
-			}
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				if (find(muteInsts.begin(), muteInsts.end(), it->first) != muteInsts.end()) {
-					sharedData.instruments.at(it->second).setMute(true);
-				}
-			}
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\unmutenow") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\unmutenow command takes at least one argument");
-		}
-		// again test if greater than and not if greater than or equal to
-		if (cmdInput.inputVec.size() > sharedData.instruments.size()) {
-			return genError("too many arguments for \\unmutenow command");
-		}
-		if (cmdInput.inputVec[1].compare("\\all") == 0) {
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				sharedData.instruments[it->second].setMute(false);
-			}
-		}
-		else {
-			vector<string> unmuteInsts;
-			for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-				if (sharedData.instrumentIndexes.find(cmdInput.inputVec[i]) == sharedData.instrumentIndexes.end()) {
-					return genError(cmdInput.inputVec[i] + ": unknown instrument");
-				}
-				else {
-					unmuteInsts.push_back(cmdInput.inputVec[i]);
-				}
-			}
-			for (map<string, int>::iterator it = sharedData.instrumentIndexes.begin(); it != sharedData.instrumentIndexes.end(); ++it) {
-				if (find(unmuteInsts.begin(), unmuteInsts.end(), it->first) != unmuteInsts.end()) {
-					sharedData.instruments.at(it->second).setMute(false);
-				}
-			}
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\function") == 0) {
-		if (cmdInput.inputVec.size() < 2) {
-			return genError("\\function needs to be given a name");
-		}
-		if (startsWith(cmdInput.inputVec[1], "{")) {
-			return genError("\\function needs to be given a name");
-		}
-		if (cmdInput.inputVec.size() > 2) {
-			if (!startsWith(cmdInput.inputVec[2], "{")) {
-				return genError("after the function name, the function body must be enclosed in curly brackets");
-			}
-		}
-		if (functionIndexes.find("\\"+cmdInput.inputVec[1]) != functionIndexes.end()) {
-			lastFunctionIndex = functionIndexes["\\"+cmdInput.inputVec[1]];
-			sharedData.functions[lastFunctionIndex].clear();
-			storingFunction = true;
-		}
-		else {
-			int functionNdx = 0;
-			string functionName = "\\"+cmdInput.inputVec[1];
-			if (functionIndexes.size() > 0) {
-				map<string, int>::reverse_iterator it = functionIndexes.rbegin();
-				functionNdx = it->second + 1;
-			}
-			functionIndexes[functionName] = functionNdx;
-			Function function;
-			sharedData.functions[functionNdx] = function;
-			sharedData.functions[functionNdx].setName(functionName);
-			if (sharedData.functions[functionNdx].getNameError()) {
-				return genError("function name too long");
-			}
-			commandsMap[livelily][functionName] = ofColor::turquoise;
-			storingFunction = true;
-			lastFunctionIndex = functionNdx;
-			keywords.push_back(functionName);
-		}
-		// check if there are more characters in this line
-		// and then get all the strings in all executing lines
-		// to allocate memory for the char array of functions
-		size_t functionBodySize = 0;
-		if (cmdInput.inputVec.size() > 2) {
-			// if the line of the function definition includes more than the opening bracket
-			if (cmdInput.inputVec[2].compare("{") != 0) {
-				functionBodySize += cmdInput.inputVec[2].substr(1).size();
-				// add one character for the new line
-				functionBodySize++;
-			}
-		}
-		for (int i = lineNum+1; i < lineNum+numLines; i++) {
-			string line = editors[whichPane].getLine(i);
-			int offset = 0;
-			int tabSize = editors[whichPane].getTabSize();
-			if ((int)line.size() >= tabSize) {
-				if (line.substr(0, tabSize).compare(editors[whichPane].tabStr) == 0) {
-					offset = tabSize;
-				}
-			}
-			functionBodySize += line.substr(offset).size();
-			if (endsWith(line, "}")) functionBodySize--;
-			// add one for the new line character
-			functionBodySize++;
-		}
-		// even though there is no newline in the last line, we don't subtract one from
-		// the size to be allocated for the null terminating character
-		sharedData.functions[lastFunctionIndex].allocate(functionBodySize);
-		functionBodyOffset = 0;
-		string restOfCommand = genStrFromVec({cmdInput.inputVec.begin()+2, cmdInput.inputVec.end()});
-		std::pair<int, string> error = parseString(restOfCommand, lineNum, numLines);
-		if (error.first > 0) {
-			cmdOutput.errorCode = error.first;
-			cmdOutput.errorStr = error.second;
-			storingFunction = false;
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\miditune") == 0) {
-		if (cmdInput.inputVec.size() != 2) {
-			return genError("\\miditune takes one argument, the MIDI tuning frequency");
-		}
-		if (!isNumber(cmdInput.inputVec[1])) {
-			return genError("the argument to \\miditune must be a number");
-		}
-		int midiTune = stoi(cmdInput.inputVec[1]);
-		if (midiTune < 0) {
-			return genError("MIDI tuning frequency must be positive");
-		}
-		sequencer.setMidiTune(midiTune);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\listmidiports") == 0) {
-		if (cmdInput.inputVec.size() > 1) {
-			return genError("\\listmidiports command takes no arguments");
-		}
-		sequencer.midiOutPorts = sequencer.midiOut.getOutPortList();
-		string noteStr = "";
-		for (unsigned i = 0; i < sequencer.midiOutPorts.size()-1; i++) {
-			noteStr += "MIDI out port " + to_string(i) + ": " + sequencer.midiOutPorts[i] += "\n";
-		}
-		// append the last port separately to not include the newline
-		noteStr += "MIDI out port " + to_string(sequencer.midiOutPorts.size()-1) + ": " + sequencer.midiOutPorts.back();
-		return genNote(noteStr);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\openmidiport") == 0) {
-		if (cmdInput.inputVec.size() != 2) {
-			return genError("\\openmidiport  takes one argument, the MIDI port to open");
-		}
-		if (!isNumber(cmdInput.inputVec[1])) {
-			return genError("MIDI port must be a number");
-		}
-		int midiPort = stoi(cmdInput.inputVec[1]);
-		if (midiPort < 0) {
-			return genError("MIDI port must be positive");
-		}
-		if (midiPort >= (int)sequencer.midiOutPorts.size()) {
-			return genError("MIDI port doesn't exist");
-		}
-		if (sequencer.midiPortsMap.find(midiPort) == sequencer.midiPortsMap.end()) {
-			ofxMidiOut midiOut;
-			midiOut.openPort(midiPort);
-			sequencer.midiOuts.push_back(midiOut);
-			sequencer.midiPortsMap[midiPort] = (int)sequencer.midiOuts.size()-1;
-			return genNote("opened MIDI port " + cmdInput.inputVec[1]);
-		}
-		else {
-			return genError("MIDI port " + cmdInput.inputVec[1] + " is already open");
-		}
-	}
-	
-	else if (cmdInput.inputVec[0].compare("\\ctlchange") == 0) {
-		if (cmdInput.inputVec.size() != 5) {
-			return genError("\\ctlchange takes four arguments, port, channel, controller nr, and value");
-		}
-		if (!isNumber(cmdInput.inputVec[1]) || !isNumber(cmdInput.inputVec[2]) || !isNumber(cmdInput.inputVec[3]) || !isNumber(cmdInput.inputVec[4])) {
-			return genError("all arguments to \\ctlchange must be integers");
-		}
-		int port = stoi(cmdInput.inputVec[1]);
-		if (sequencer.midiPortsMap.find(port) == sequencer.midiPortsMap.end()) {
-			return genError("selected MIDI port is not open");
-		}
-		int channel = stoi(cmdInput.inputVec[2]);
-		int control = stoi(cmdInput.inputVec[3]);
-		int val = stoi(cmdInput.inputVec[4]);
-		if (channel < 1 || channel > 16) {
-			return genError("MIDI channel must be between 1 and 16");
-		}
-		if (control < 0) {
-			return genError("control number must be positive");
-		}
-		if (val < 0 || val > 127) {
-			return genError("MIDI value must be between 0 and 127");
-		}
-		sequencer.midiOuts[sequencer.midiPortsMap[port]].sendControlChange(channel, control, val);
-	}
-	
-	else if (cmdInput.inputVec[0].compare("\\pgmchange") == 0) {
-		if (cmdInput.inputVec.size() != 4) {
-			return genError("\\pgmchange takes three arguments, port, channel, and value");
-		}
-		if (!isNumber(cmdInput.inputVec[1]) || !isNumber(cmdInput.inputVec[2]) || !isNumber(cmdInput.inputVec[3])) {
-			return genError("all arguments to \\pgmchange must be integers");
-		}
-		int port = stoi(cmdInput.inputVec[1]);
-		if (sequencer.midiPortsMap.find(port) == sequencer.midiPortsMap.end()) {
-			return genError("selected MIDI port is not open");
-		}
-		int channel = stoi(cmdInput.inputVec[2]);
-		int val = stoi(cmdInput.inputVec[3]);
-		if (channel < 1 || channel > 16) {
-			return genError("MIDI channel must be between 1 and 16");
-		}
-		if (val < 0 || val > 127) {
-			return genError("MIDI value must be between 0 and 127");
-		}
-		sequencer.midiOuts[sequencer.midiPortsMap[port]].sendProgramChange(channel, val);
-	}
-
-	// the test below includes all functions that set duration percetanges for notes
-	// currently default Note On duration, staccato, staccatissimo, and tenuto
-	else if (cmdInput.inputVec[0].compare("\\dur") == 0 || startsWith(cmdInput.inputVec[0], "\\dur.")) {
-		if (cmdInput.inputVec[0].compare("\\dur") == 0 && cmdInput.inputVec.size() < 2) {
-			return genError("the \\dur command does nothing by itself, you must call one of its second level commands");
-		}
-		else if (cmdInput.inputVec[0].compare("\\dur") == 0 && cmdInput.inputVec.size() >= 2) {
-			return genError("the \\dur command takes only second level commands, not arguments");
-		}
-		string subcommand = cmdInput.inputVec[0].substr(cmdInput.inputVec[0].find(".")+1);
-		if (cmdInput.inputVec.size() == 1) {
-			return genError("no percentage value provided");
-		}
-		if (cmdInput.inputVec.size() > 2) {
-			return genError("\\dur." + subcommand + " command takes one argument only");
-		}
-		if (!isNumber(cmdInput.inputVec[1])) {
-			return genError("percentage to \\dur." + subcommand + " must be an integer");
-		}
-		int percentage = stoi(cmdInput.inputVec[1]);
-		if (percentage < 0) {
-			return genError("percentage to \\dur." + subcommand + " can't be below 0");
-		}
-		if (percentage == 0) {
-			return genError("percentage to \\dur." + subcommand + " can't be 0");
-		}
-		if (percentage > 100) {
-			return genError("percentage to \\dur." + subcommand + " can't be over 100\%");
-		}
-		for (unsigned i = 0; i < sharedData.instruments.size(); i++) {
-			int error = sharedData.instruments[i].setDuration(subcommand, (float)percentage/10.0);
-			if (error) return genError("unknown duration second level command");
-		}
-		if (percentage == 100) {
-			return genWarning("percentage to \\dur." + subcommand + " set to 100\% of Note On duration");
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\listserialports") == 0) {
-		if (cmdInput.inputVec.size() > 1) {
-			return genError("\\listserialports command takes no arguments");
-		}
-		serial.listDevices();
-		serialDeviceList = serial.getDeviceList();
-		string outPortsOneStr = "";
-		for (unsigned i = 0; i < serialDeviceList.size()-1; i++) {
-			outPortsOneStr += "Serial port " + ofToString(serialDeviceList[i].getDeviceID()) + \
-							  ": " + serialDeviceList[i].getDevicePath() + "\n";
-		}
-		// append last port separately to not include the newline
-		outPortsOneStr += "Serial port " + ofToString(serialDeviceList.back().getDeviceID()) + \
-						  ": " + serialDeviceList.back().getDevicePath();
-		return genNote(outPortsOneStr);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\openserialport") == 0) {
-		if (cmdInput.inputVec.size() < 3 || cmdInput.inputVec.size() > 3) {
-			return genError("\\openserialport takes two arguments, port path and baud rate");
-		}
-		int serialPort;
-		bool serialPortNumSet = false;
-		if (isNumber(cmdInput.inputVec[1])) {
-			serialPort = stoi(cmdInput.inputVec[1]);
-			if (serialPort < 0) {
-				return genError("serial port list number must be positive");
-			}
-			if (serialPort >= (int)serialDeviceList.size()) {
-				return genError("serial port list number out of range");
-			}
-			serialPortNumSet = true;
-		}
-		if (!isNumber(cmdInput.inputVec[2])) {
-			return genError("second argument must be baud rate");
-		}
-		if (serialPortNumSet) {
-			serial.setup(serialDeviceList[serialPort].getDevicePath(), stoi(cmdInput.inputVec[2]));
-		}
-		else {
-			bool serialPortPathFound = false;
-			for (unsigned i = 0; i < serialDeviceList.size(); i++) {
-				if (serialDeviceList[i].getDevicePath().compare(cmdInput.inputVec[1]) == 0) {
-					serialPortPathFound = true;
-					break;
-				}
-			}
-			if (serialPortPathFound) {
-				serial.setup(cmdInput.inputVec[1], stoi(cmdInput.inputVec[2]));
-			}
-			else {
-				return genError("serial port path \"" + cmdInput.inputVec[1] + "\" doesn't exist");
-			}
-		}
-		serialPortOpen = true;
-		return genNote("opened " + cmdInput.inputVec[1] + " at baud " + cmdInput.inputVec[2]);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\serialwrite") == 0) {
-		if (cmdInput.inputVec.size() == 1) {
-			return genError("\\serialwrite takes at least one argument, a byte to send over serial");
-		}
-		if (!serial.isInitialized()) {
-			return genError("serial port is not open");
-		}
-		for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-			if (!isNumber(cmdInput.inputVec[i])) {
-				return genError("\\serialwrite takes numbers from 0 to 255 only");
-			}
-			int value = stoi(cmdInput.inputVec[i]);
-			if (value < 0 || value > 255) {
-				return genError("\\serialwrite takes numbers from 0 to 255");
-			}
-			serial.writeByte((char)value);
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\serialprint") == 0) {
-		if (cmdInput.inputVec.size() == 1) {
-			return genError("\\serialprint takes at least one argument, a character to send over serial");
-		}
-		if (!serial.isInitialized()) {
-			return genError("serial port is not open");
-		}
-		size_t charSize = 0;
-		for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-			for (unsigned j = 0; j < cmdInput.inputVec[i].size(); j++) {
-				charSize++;
-			}
-			charSize++;
-		}
-		// the last addition happens one time two many, so we subtract one here
-		charSize--;
-		unsigned char buf[charSize];
-		int index = 0;
-		for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-			for (unsigned j = 0; j < cmdInput.inputVec[i].size(); j++) {
-				buf[index++] = cmdInput.inputVec[i][j];
-			}
-			if (i < cmdInput.inputVec.size() - 1) buf[index++] = ' ';
-		}
-		serial.writeBytes(&buf[0], charSize);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\barlines") == 0) {
-		if (cmdInput.inputVec.size() != 2) {
-			return genError("\\barlines takes one argument, the name of the bar to get its lines");
-		}
-		if (sharedData.barLines.find(cmdInput.inputVec[1]) == sharedData.barLines.end()) {
-			return genError((string)"bar name \"" + cmdInput.inputVec[1] + (string)"\" doesn't exist");
-		}
-		return genOutput(sharedData.barLines[cmdInput.inputVec[1]]);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\closeserialport") == 0) {
-		if (serial.isInitialized()) {
-			serial.close();
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\system") == 0) {
-		if (cmdInput.inputVec.size() == 1) {
-			return genWarning("no command added to \\system");
-		}
-		unsigned i;
-		string sysCommand = "";
-		for (i = 1; i < cmdInput.inputVec.size(); i++) {
-			if (i > 1) sysCommand += " ";
-			sysCommand += cmdInput.inputVec[i];
-		}
-		return genOutput(ofSystem(sysCommand), cmdInput.inputVec.size()-1);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\autobrackets") == 0) {
-		if (cmdInput.inputVec.size() != 2) {
-			return genError("\\autobrackets takes one argument only, \"on\" or \"off\"");
-		}
-		if (cmdInput.inputVec[1].compare("on") != 0 && cmdInput.inputVec[1].compare("off") != 0) {
-			return genError(" argument to \\autobrackets must be \"on\" or \"off\"");
-		}
-		if (cmdInput.inputVec[1].compare("on") == 0) {
-			editors[whichPane].setAutocomplete(true);
-		}
-		else {
-			editors[whichPane].setAutocomplete(false);
-		}
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\active") == 0) {
-		if (cmdInput.inputVec.size() > 1) {
-			return genError("\\active takes no arguments");
-		}
-		editors[whichPane].setSessionActivity(true);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\inactive") == 0) {
-		if (cmdInput.inputVec.size() > 1) {
-			return genError("\\inactive takes no arguments");
-		}
-		editors[whichPane].setSessionActivity(false);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\sendkeys") == 0) {
-		if (cmdInput.inputVec.size() != 3) {
-			return genError("\\sendkeys takes two arguments, host IP and pane index");
-		}
-		string hostIP = cmdInput.inputVec[1];
-		int paneNdx;
-		if (!isNumber(cmdInput.inputVec[2])) {
-			return genError("pane index of host is not a number");
-		}
-		paneNdx = stoi(cmdInput.inputVec[2]);
-		editors[whichPane].oscKeys.setup(hostIP, OSCPORT);
-		editors[whichPane].setSendKeys(paneNdx);
-	}
-		
-	else if (cmdInput.inputVec[0].compare("\\sendlines") == 0) {
-		if (cmdInput.inputVec.size() != 3) {
-			return genError("\\sendlines takes two arguments, host IP and pane index");
-		}
-		string hostIP = cmdInput.inputVec[1];
-		int paneNdx;
-		if (!isNumber(cmdInput.inputVec[2])) {
-			return genError("pane index of host is not a number");
-		}
-		paneNdx = stoi(cmdInput.inputVec[2]);
-		editors[whichPane].oscKeys.setup(hostIP, OSCPORT);
-		editors[whichPane].setSendLines(paneNdx);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\maestro") == 0) {
-		return maestroCommands(cmdInput.inputVec, lineNum, numLines);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\framerate") == 0) {
-		if (cmdInput.inputVec.size() == 1) {
-			return genOutput(ofToString(ofGetFrameRate()));
-		}
-		if (cmdInput.inputVec.size() != 2) {
-			return genError("\\framerate takes one argument, the framerate");
-		}
-		if (!isNumber(cmdInput.inputVec[1])) {
-			return genError("argument to \\framerate must be an integer");
-		}
-		int framerate = stoi(cmdInput.inputVec[1]);
-		if (framerate <= 0) {
-			return genError("framerate must be positive and higher than 0");
-		}
-		ofSetFrameRate(framerate);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\livelily") == 0) {
-		if (cmdInput.inputVec.size() > 1) {
-			return genError("language command takes no arguments");
-		}
-		editors[whichPane].setLanguage(livelily);
-	}
-	
-	else if (cmdInput.inputVec[0].compare("\\python") == 0) {
-		if (cmdInput.inputVec.size() > 1) {
-			return genError("language command takes no arguments");
-		}
-		editors[whichPane].setLanguage(python);
-	}
-	
-	else if (cmdInput.inputVec[0].compare("\\lua") == 0) {
-		if (cmdInput.inputVec.size() > 1) {
-			return genError("language command takes no arguments");
-		}
-		editors[whichPane].setLanguage(lua);
-	}
-
-	else if (cmdInput.inputVec[0].compare("\\accoffset") == 0) {
-		if (cmdInput.inputVec.size() != 2) {
-			return genError("\\accoffset command takes one argument, the offset for accidentals that are close together");
-		}
-		if (!isFloat(cmdInput.inputVec[1])) {
-			return genError("argument to \\accoffset is not a number");
-		}
-		float coef = std::stof(cmdInput.inputVec[1]);
-		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-			it->second.setAccidentalsOffsetCoef(coef);
-		}
-	}
-	
-	else {
-		// the functions return a pair with a boolean stating if an instrument, loop, function, or list is found
-		// and an error string
-		// if the boolean is true, we just return the error string, otherwise we go on to the next function
-		std::pair<bool, CmdOutput> p;
-		p = isInstrument(cmdInput.inputVec, lineNum, numLines);
-		if (p.first) return p.second;
-		p = isBarLoop(cmdInput.inputVec, cmdInput.isMainCmd, lineNum, numLines);
-		if (p.first) return p.second;
-		p = isFunction(cmdInput.inputVec, lineNum, numLines);
-		if (p.first) return p.second;
-		p = isList(cmdInput.inputVec, lineNum, numLines);
-		if (p.first) return p.second;
-		p = isOscClient(cmdInput.inputVec, lineNum, numLines);
-		if (p.first) return p.second;
-		p = isGroup(cmdInput.inputVec, lineNum, numLines);
-		if (p.first) return p.second;
-		return genError(cmdInput.inputVec[0] + ": unknown command");
-	}
-	return cmdOutput;
+	//settings.numInputChannels = inChannels;
+	settings.numOutputChannels = outChannels;
+	settings.sampleRate = sampleRate;
+	settings.bufferSize = bufferSize;
+	settings.numBuffers = 4;
+	settings.setOutListener(this);
+	// the click track might have set up a stream without input, which pyo replaces
+	if (soundStreamSet) soundStream.close();
+	soundStream.setup(settings);
+	soundStreamSet = true;
+	// set the size of the array for displaying the oscilloscope
+	scopeWaveforms.resize(outChannels);
+#endif
+	pyoSet = true;
 }
 
 //--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isInstrument(vector<string>& originalCommands, int lineNum, int numLines)
+CmdOutput ofApp::functionFuncs(std::vector<std::string>& originalCommands)
 {
-	CmdOutput cmdOutput = CmdOutput();
-	bool hasDot = false;
-	vector<string> commands;
-	// the initial command is \instname which might be followed by a second level command
-	// to separate the second level command we create a new vector that will copy the originalCommands vector
-	// except from the first item where we trim the \instname. part
-	for (unsigned i = 0; i < originalCommands.size(); i++) {
-		if (!i) {
-			// separate the name of the instrument from a possible second level command
-			vector<string> tokens = tokenizeString(originalCommands[i], ".");
-			for (unsigned j = 0; j < tokens.size(); j++) {
-				commands.push_back(tokens[j]);
-			}
-			if (tokens.size() > 1) hasDot = true;
-		}
-		else {
-			commands.push_back(originalCommands[i]);
-		}
-	}
-	bool instrumentExists = false;
-	unsigned commandNdxOffset = 1;
-	std::pair<int, string> error = std::make_pair(0, "");
-	if (sharedData.instruments.size() > 0) {
-		if (sharedData.instrumentIndexes.find(commands[0]) != sharedData.instrumentIndexes.end()) {
-			instrumentExists = true;
-			lastInstrument = commands[0];
-			lastInstrumentIndex = sharedData.instrumentIndexes[commands[0]];
-			if (commands.size() > 1) {
-				//if (commands[1].compare("\\clef") == 0) {
-				//	if (hasDot) {
-				//		return std::make_pair(instrumentExists, genError("\\clef is a first level command, should not be concatenated to instrument name with a dot"));
-				//	}
-				//	if (commands.size() < 3) {
-				//		return std::make_pair(instrumentExists, genError("\\clef command takes a clef name as an argument"));
-				//	}
-				//	else if (commands.size() > 3 && !(parsingBar || parsingBars)) {
-				//		return std::make_pair(instrumentExists, genError("\\clef command takes one argument only"));
-				//	}
-				//	if (commands[2].compare("treble") == 0) {
-				//		sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 0);
-				//	}
-				//	else if (commands[2].compare("bass") == 0) {
-				//		sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 1);
-				//	}
-				//	else if (commands[2].compare("alto") == 0) {
-				//		sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 2);
-				//	}
-				//	else if (commands[2].compare("perc") == 0 || commands[2].compare("percussion") == 0) {
-				//		sharedData.instruments[lastInstrumentIndex].setClef(getLastBarIndex(), 3);
-				//	}
-				//	else {
-				//		return std::make_pair(instrumentExists, genError("unknown clef"));
-				//	}
-				//	if (commands.size() > 3) {
-				//		commandNdxOffset = 3;
-				//		goto parseMelody;
-				//	}
-				//	// the \clef command must be included inside a melodic line definition which is expanded before fully interpreted
-				//	// that's why we generate an empty string output here
-				//	return std::make_pair(instrumentExists, genOutput(""));
-				//}
-				if (commands[1].compare("rhythm") == 0) {
-					if (hasDot) {
-						return std::make_pair(instrumentExists, genError("\"rhythm\" is an arguement, not a second level command, should not be concatenated to instrument name with a dot"));
-					}
-					if (commands.size() > 2) {
-						return std::make_pair(instrumentExists, genError("\"rhythm\" argument takes no further arguments"));
-					}
-					sharedData.instruments[lastInstrumentIndex].setRhythm(true);
-				}
-				else if (commands[1].compare("transpose") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"transpose\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (commands.size() != 3) {
-						return std::make_pair(instrumentExists, genError("\"transpose\" command takes one argument"));
-					}
-					if (!isNumber(commands[2])) {
-						return std::make_pair(instrumentExists, genError("argument to \"transpose\" command must be a number"));
-					}
-					int transposition = stoi(commands[2]);
-					if (transposition < -11 || transposition > 11) {
-						return std::make_pair(instrumentExists, genError("argument to \"transpose\" command must be between -11 and 11"));
-					}
-					sharedData.instruments[lastInstrumentIndex].setTransposition(transposition);
-					if (transposition == 0) {
-						return std::make_pair(instrumentExists, genWarning("0 \"transpose\" has no effect"));
-					}
-				}
-				else if (commands[1].compare("sendmidi") == 0) {
-					if (hasDot) {
-						return std::make_pair(instrumentExists, genError("\"sendmidi\" is an arguement, not a second level command, should not be concatenated to instrument name with a dot"));
-					}
-					if (commands.size() > 2) {
-						return std::make_pair(instrumentExists, genError("\"sendmidi\" takes no arguments"));
-					}
-					sharedData.instruments[lastInstrumentIndex].setSendMIDI(true);
-				}
-				else if (commands[1].compare("sendto") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"sendto\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					int sendNotice = 0;
-					if (commands.size() > 4) {
-						return std::make_pair(instrumentExists, genError("\"sendto\" takes zero to two arguments, remote IP and/or port"));
-					}
-					string remoteIP;
-					int port;
-					if (commands.size() < 3) {
-						remoteIP = "127.0.0.1";
-						port = SCOREPARTPORT;
-						sendNotice = 1;
-					}
-					else if (commands.size() > 2) {
-						if (commands.size() == 4) {
-							if (isNumber(commands[2]) || !isNumber(commands[3])) {
-								return std::make_pair(instrumentExists, genError("if two arguments are provided, first argument must be remote IP and second must be port number"));
-							}
-							remoteIP = commands[2];
-							port = stoi(commands[3]);
-						}
-						else {
-							if (isNumber(commands[2])) {
-								remoteIP = "127.0.0.1";
-								port = stoi(commands[2]);
-								sendNotice = 2;
-							}
-							else {
-								remoteIP = commands[2];
-								port = SCOREPARTPORT;
-								sendNotice = 3;
-							}
-						}
-					}
-					std::pair<string, int> IPAndPort = std::make_pair(remoteIP, port);
-					bool clientExists = false;
-					for (auto it = instrumentOSCHostPorts.begin(); it != instrumentOSCHostPorts.end(); ++it) {
-						if (IPAndPort == it->second) {
-							// if there is already a client that sends to the same server
-							// ignore this instrument, as the already existing client will send
-							// the generic OSC messages
-							clientExists = true;
-							break;
-						}
-					}
-					if (!clientExists) {
-						grouppedOSCClients.push_back(lastInstrumentIndex);
-					}
-					instrumentOSCHostPorts[lastInstrumentIndex] = IPAndPort;
-					sharedData.instruments[lastInstrumentIndex].sendToPart = true;
-					sharedData.instruments[lastInstrumentIndex].scorePartSender.setup(remoteIP, port);
-					numScorePartSenders++;
-					ofxOscMessage m;
-					m.setAddress("/initinst");
-					m.addIntArg(lastInstrumentIndex);
-					m.addStringArg(sharedData.instruments[lastInstrumentIndex].getName());
-					sharedData.instruments[lastInstrumentIndex].scorePartSender.sendMessage(m, false);
-					m.clear();
-					if (sendNotice > 0) {
-						switch (sendNotice) {
-							case 1:
-								cmdOutput = genNote("setting localhost and port 9000");
-								break;
-							case 2:
-								cmdOutput = genNote("setting localhost");
-								break;
-							case 3:
-								cmdOutput = genNote("setting port 9000");
-								break;
-							default:
-								break;
-						}
-						return std::make_pair(instrumentExists, cmdOutput);
-					}
-				}
-				else if (commands[1].compare("fullscreen") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"fullscreen\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
-						return std::make_pair(instrumentExists, genError("instrument doesn't have OSC set"));
-					}
-					if (commands.size() < 3) {
-						return std::make_pair(instrumentExists, genError("\"fullscreen\" takes one argument, on or off"));
-					}
-					if (commands.size() > 3) {
-						return std::make_pair(instrumentExists, genError("\"fullscreen\" takes one argument only"));
-					}
-					if (commands[2].compare("on") == 0) {
-						sendFullscreenToPart(lastInstrumentIndex, true);
-					}
-					else if (commands[2].compare("off") == 0) {
-						sendFullscreenToPart(lastInstrumentIndex, false);
-					}
-					else {
-						return std::make_pair(instrumentExists, genError("unknown argument to \"fullscreen\""));
-					}
-				}
-				else if (commands[1].compare("cursor") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"cursor\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
-						return std::make_pair(instrumentExists, genError("instrument doesn't have OSC set"));
-					}
-					if (commands.size() < 3) {
-						return std::make_pair(instrumentExists, genError("\"cursor\" takes one argument, show or hide "));
-					}
-					if (commands.size() > 3) {
-						return std::make_pair(instrumentExists, genError("\"cursor\" takes one argument only"));
-					}
-					if (commands[2].compare("show") == 0) {
-						sendCursorToPart(lastInstrumentIndex, true);
-					}
-					else if (commands[2].compare("hide") == 0) {
-						sendCursorToPart(lastInstrumentIndex, false);
-					}
-					else {
-						return std::make_pair(instrumentExists, genError("unknown argument to \"cursor\""));
-					}
-				}
-				else if (commands[1].compare("update") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"update\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (commands.size() < 3) {
-						return std::make_pair(instrumentExists, genError("\"update\" takes one argument, \"onlast\" or \"immediately\""));
-					}
-					if (commands[2].compare("onlast") == 0) {
-						sendScoreChangeToPart(lastInstrumentIndex, true);
-					}
-					else if (commands[2].compare("immediately") == 0) {
-						sendScoreChangeToPart(lastInstrumentIndex, false);
-					}
-					else {
-						return std::make_pair(instrumentExists, genError(commands[2] + (string)"unknown argument to \"update\", must be \"onlast\" or \"immediately\""));
-					}
-				}
-				else if (commands[1].compare("beatcolor") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"beatcolor\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (commands.size() < 3) {
-						return std::make_pair(instrumentExists, genError("\"beatcolor\" takes one argument, \"change\" or \"keep\""));
-					}
-					if (commands[2].compare("change") == 0) {
-						sendChangeBeatColorToPart(lastInstrumentIndex, true);
-					}
-					else if (commands[2].compare("keep") == 0) {
-						sendChangeBeatColorToPart(lastInstrumentIndex, false);
-					}
-					else {
-						return std::make_pair(instrumentExists, genError(commands[2] + (string)"unknown argument to \"beatcolor\", must be \"change\" or \"keep\""));
-					}
-				}
-				else if (commands[1].compare("midiport") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"midiport\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (commands.size() != 3) {
-						return std::make_pair(instrumentExists, genError("\"midiport\"  takes one argument, the MIDI port to open"));
-					}
-					if (!isNumber(commands[2])) {
-						return std::make_pair(instrumentExists, genError("MIDI port must be a number"));
-					}
-					int midiPort = stoi(commands[2]);
-					if (midiPort < 0) {
-						return std::make_pair(instrumentExists, genError("MIDI port must be positive"));
-					}
-					if (midiPort >= (int)sequencer.midiOutPorts.size()) {
-						return std::make_pair(instrumentExists, genError("MIDI port doesn't exist"));
-					}
-					bool openedMidiPort = false;
-					if (sequencer.midiPortsMap.find(midiPort) == sequencer.midiPortsMap.end()) {
-						ofxMidiOut midiOut;
-						midiOut.openPort(midiPort);
-						sequencer.midiOuts.push_back(midiOut);
-						sequencer.midiPortsMap[midiPort] = (int)sequencer.midiOuts.size()-1;
-						openedMidiPort = true;
-					}
-					sharedData.instruments[lastInstrumentIndex].setMidiPort(midiPort);
-					if (openedMidiPort) {
-						return std::make_pair(instrumentExists, genNote("opened MIDI port " + commands[2]));
-					}
-				}
-				else if (commands[1].compare("midichan") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"midichan\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (commands.size() == 2) {
-						return std::make_pair(instrumentExists, genError("no MIDI channel set"));
-					}
-					if (commands.size() > 3) {
-						return std::make_pair(instrumentExists, genError("\"midichan\"  takes one argument only"));
-					}
-					if (!isNumber(commands[2])) {
-						return std::make_pair(instrumentExists, genError("MIDI channel must be a number"));
-					}
-					if (sharedData.instruments[lastInstrumentIndex].getMidiPort() < 0) {
-						return std::make_pair(instrumentExists, genError("no MIDI port has been set for this instrument"));
-					}
-					int midiChan = stoi(commands[2]);
-					if (midiChan < 1 || midiChan > 16) {
-						return std::make_pair(instrumentExists, genError("MIDI must be between 1 and 16"));
-					}
-					sharedData.instruments[lastInstrumentIndex].setMidiChan(midiChan);
-					sharedData.instruments[lastInstrumentIndex].setMidi(true);
-				}
-				else if (commands[1].compare("size") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"size\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
-						return std::make_pair(instrumentExists, genError("instrument doesn't have OSC set"));
-					}
-					if (commands.size() != 3) {
-						return std::make_pair(instrumentExists, genError("\"size\" command takes one argument, the size value"));
-					}
-					if (!isNumber(commands[2])) {
-						return std::make_pair(instrumentExists, genError(commands[2] + " is not a number"));
-					}
-					sendSizeToPart(lastInstrumentIndex, stoi(commands[2]));
-				}
-				else if (commands[1].compare("numbars") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"numbars\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
-						return std::make_pair(instrumentExists, genError("instrument doesn't have OSC set"));
-					}
-					if (commands.size() != 3) {
-						return std::make_pair(instrumentExists, genError("\"numbars\" command takes one argument, the number of bars to display"));
-					}
-					if (!isNumber(commands[2])) {
-						return std::make_pair(instrumentExists, genError(commands[2] + " is not a number"));
-					}
-					sendNumBarsToPart(lastInstrumentIndex, stoi(commands[2]));
-				}
-				else if (commands[1].compare("accoffset") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"accoffset\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (!sharedData.instruments[lastInstrumentIndex].sendToPart) {
-						return std::make_pair(instrumentExists, genError("instrument doesn't have OSC set"));
-					}
-					if (commands.size() != 3) {
-						return std::make_pair(instrumentExists, genError("\"accoffset\" command takes one argument, the offset for accidentals that are close together"));
-					}
-					if (!isFloat(commands[2])) {
-						return std::make_pair(instrumentExists, genError(commands[2] + " is not a number"));
-					}
-					sendAccOffsetToPart(lastInstrumentIndex, std::stof(commands[2]));
-					
-				}
-				else if (commands[1].compare("delay") == 0) {
-					if (!hasDot) {
-						return std::make_pair(instrumentExists, genError("\"delay\" is a second level command, must be concatenated to instrument name with a dot"));
-					}
-					if (commands.size() != 3) {
-						return std::make_pair(instrumentExists, genError("\"delay\" command takes one argument, the delay to send messages in milliseconds"));
-					}
-					if (!isNumber(commands[2])) {
-						return std::make_pair(instrumentExists, genError(commands[2] + " is not a number"));
-					}
-					int delayTime = stoi(commands[2]);
-					sharedData.instruments[lastInstrumentIndex].setDelay((int64_t)delayTime);
-				}
-				else {
-					if (parsingBars && barsIterCounter == 1 && !firstInstForBarsSet) {
-						firstInstForBarsIndex = lastInstrumentIndex;
-						firstInstForBarsSet = true;
-					}
-					std::pair<int, string> p = parseMelodicLine({commands.begin()+commandNdxOffset, commands.end()}, lineNum, numLines);
-					if (p.first > 0) return std::make_pair(instrumentExists, genOutputFuncs(p));
-					else return std::make_pair(instrumentExists, genOutput(p.second));
-				}
-			}
-		}
-	}
-	return std::make_pair(instrumentExists, cmdOutput);
-}
-
-//--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isBarLoop(vector<string>& originalCommands, bool isMainCmd, int lineNum, int numLines)
-{
-	bool barLoopExists = false;
-	CmdOutput cmdOutput = CmdOutput();
-	if (sharedData.loopsIndexes.size() > 0) {
-		string barLoopName;
-		if (originalCommands[0].find(".") != string::npos) barLoopName = originalCommands[0].substr(0, originalCommands[0].find("."));
-		else barLoopName = originalCommands[0];
-		if (sharedData.loopsIndexes.find(barLoopName) != sharedData.loopsIndexes.end()) {
-			barLoopExists = true;
-			int indexLocal = sharedData.loopsIndexes[barLoopName];
-			// the initial command is \barloopname which might be followed by a second level command
-			// to separate the second level command we create a new vector that will copy the originalCommands vector
-			// except from the first item where we trim the \barloopname. part
-			bool hasDot = false;
-			vector<string> commands;
-			for (unsigned i = 0; i < originalCommands.size(); i++) {
-				if (!i) {
-					// separate the name of the bar/loop from the second level command
-					vector<string> tokens = tokenizeString(originalCommands[i], ".");
-					for (unsigned j = 0; j < tokens.size(); j++) {
-						commands.push_back(tokens[j]);
-					}
-					if (tokens.size() > 1) hasDot = true;
-				}
-				else {
-					commands.push_back(originalCommands[i]);
-				}
-			}
-			if (commands.size() > 1) {
-				if (!hasDot) {
-					return std::make_pair(barLoopExists, genError("second level commands must be concatenated to the bar/loop name with a dot"));
-				}
-				if (commands.size() > 3) {
-					return std::make_pair(barLoopExists, genError("if arguments are provided to a loop, these either \"locate [bar/loop-name]\", \"goto bar/loop-name/index\", or name of instrument"));
-				}
-				if (commands[1].compare("goto") != 0 && commands[1].compare("locate") != 0 && \
-						sharedData.instrumentIndexes.find(commands[1]) == sharedData.instrumentIndexes.end()) {
-					return std::make_pair(barLoopExists, genError("if arguments are provided to a loop, first must be \"goto\", \"locate\", or name of instrument"));
-				}
-				if (commands.size() < 3 && commands[1].compare("goto") == 0) {
-					return std::make_pair(barLoopExists, genError("\"goto\" takes one argument, the bar/loop-name/index to go to"));
-				}
-				if (commands.size() == 3) {
-					if (sharedData.instrumentIndexes.find(commands[1]) == sharedData.instrumentIndexes.end()) {
-						return std::make_pair(barLoopExists, genError("a bar/loop with an instrument name as a second level command takes no arguments"));
-					}
-					auto it = find(sharedData.loopData[indexLocal].begin(), sharedData.loopData[indexLocal].end(), sharedData.loopsIndexes[commands[2]]);
-					int gotoIndexOrBarName = 0;
-					if (it == sharedData.loopData[indexLocal].end()) {
-						if (isNumber(commands[2])) {
-							size_t indexToGoto = stoi(commands[2]);
-							if (indexToGoto < 1) {
-								return std::make_pair(barLoopExists, genError("index to \"goto\" must be greater than 0"));
-							} 
-							if (indexToGoto <= sharedData.loopData[indexLocal].size()) {
-								sharedData.thisLoopIndex = indexToGoto - 1; // argument is 1-based
-								gotoIndexOrBarName = 1;
-							}
-							else {
-								return std::make_pair(barLoopExists, genError("index to \"goto\" is greater than loop's size"));
-							}
-						}
-						else {
-							return std::make_pair(barLoopExists, genError(commands[2] + " doesn't exist in " + sharedData.loopsOrdered[indexLocal]));
-						}
-					}
-					if (commands[1].compare("goto") == 0) {
-						if (gotoIndexOrBarName == 0) sharedData.thisLoopIndex = it - sharedData.loopData[indexLocal].begin();
-						ofxOscMessage m;
-						m.setAddress("/thisloopndx");
-						m.addIntArg(sharedData.thisLoopIndex);
-						sendToParts(m, false);
-						m.clear();
-					}
-					else {
-						return std::make_pair(barLoopExists, genOutput(to_string(it - sharedData.loopData[indexLocal].begin() + 1)));
-					}
-				}
-				else if (commands.size() == 2) {
-					if (sharedData.instrumentIndexes.find(commands[1]) == sharedData.instrumentIndexes.end()) {
-						return std::make_pair(barLoopExists, genError("unkown second level command to " + commands[0]));
-					}
-					// first check if this is a loop and not a bar
-					if (sharedData.barsIndexes.find(barLoopName) == sharedData.barsIndexes.end()) {
-						vector<string> v;
-						for (int i : sharedData.loopData[sharedData.loopsIndexes[barLoopName]]) {
-							v.push_back(sharedData.loopsOrdered.at(i) + "." + commands[1]);
-							v.push_back("|");
-						}
-						// remove the last slash
-						v.pop_back();
-						return std::make_pair(barLoopExists, genOutput(v));
-					}
-					vector<string> barLinesTokens = tokenizeString(sharedData.barLines[barLoopName], "\n");
-					for (auto it = barLinesTokens.begin(); it != barLinesTokens.end(); ++it) {
-						vector<string> instBarLinesTokens = tokenizeString(*it, " ");
-						size_t instNameNdx = 0;
-						// bar definitions have their lines indented by a horizontal tab written as single white spaces
-						// these white spaces have been left out when the string is tokenized
-						// below we determine which token in the vector to look at, which must be the first after these spaces
-						while (instBarLinesTokens.size() > 0 && instBarLinesTokens[instNameNdx].empty()) instNameNdx++;
-						if (instBarLinesTokens.size() > 0 && instBarLinesTokens[instNameNdx] == commands[1]) {
-							vector<string> v = {instBarLinesTokens.begin()+instNameNdx, instBarLinesTokens.end()};
-							return std::make_pair(barLoopExists, genOutput(v));
-						}
-					}
-					return std::make_pair(barLoopExists, genError("couldn't find " + commands[1] + " in " + barLoopName));
-				}
-			}
-			else {
-				if (isMainCmd) {
-					// without any arguments and as a main command we're calling a loop to be played
-					sharedData.tempBarLoopIndex = sharedData.loopsIndexes[commands[0]];
-					if (sequencer.isThreadRunning()) {
-						sequencer.update();
-						mustUpdateScore = true;
-						ofxOscMessage m;
-						m.setAddress("/update");
-						m.addIntArg(sharedData.tempBarLoopIndex);
-						sendToParts(m, true);
-						m.clear();
-					}
-					else {
-						sharedData.loopIndex = sharedData.tempBarLoopIndex;
-						sendLoopIndexToParts();
-						// update the previous number of bars displayed and the previous position to properly display single bars in horizontal view
-						sharedData.prevNumBars = sharedData.numBars;
-						sharedData.prevPosition = sharedData.thisPosition;
-					}
-				}
-				else  {
-					vector<string> v;
-					// first check if this is a loop and not a bar
-					if (sharedData.barsIndexes.find(barLoopName) == sharedData.barsIndexes.end()) {
-						for (int i : sharedData.loopData[sharedData.loopsIndexes[barLoopName]]) {
-							v.push_back(sharedData.loopsOrdered.at(i));
-							v.push_back("|");
-						}
-						// remove the last slash
-						v.pop_back();
-					}
-					else {
-						v = tokenizeString(sharedData.barLines[barLoopName], " ");
-					}
-					return std::make_pair(barLoopExists, genOutput(v));
-				}
-			}
-		}
-	}
-	return std::make_pair(barLoopExists, cmdOutput);
-}
-
-//--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isFunction(vector<string>& commands, int lineNum, int numLines)
-{
-	bool functionExists = false;
-	bool executeFunction = false;
-	CmdOutput cmdOutput = CmdOutput();
-	if (functionIndexes.size() > 0) {
-		string functionName;
-		if (commands[0].find(".") != string::npos) functionName = commands[0].substr(0, commands[0].find("."));
-		else functionName = commands[0];
-		if (functionIndexes.find(functionName) != functionIndexes.end()) {
-			functionExists = true;
-			executeFunction = true;
-			lastFunctionIndex = functionIndexes[functionName];
-			cmdOutput = functionFuncs(commands);
-			if (cmdOutput.errorCode > 0) return std::make_pair(functionExists, cmdOutput);
-			if (cmdOutput.outputVec[0].compare("noexec") == 0) executeFunction = false;
-		}
-	}
-	if (functionExists && executeFunction) {
-		vector<string> functionLines = tokenizeString(sharedData.functions[lastFunctionIndex].printStr(), "\n");
-		size_t counter = 0;
-		for (string line : functionLines) {
-			// for some reason, the first line has an extra character, which we need to remove
-			if (counter == 0) line = line.substr(0, line.size()-1);
-			counter++;
-			// detect $ args and replace them with actual args
-			vector<int> argNdxs = findIndexesOfCharInStr(line, "$");
-			size_t nextWhiteSpaceNdx;
-			int dollarVal;
-			unsigned i;
-			string lineWithArgs = line;
-			for (i = 0; i < argNdxs.size(); i++) {
-				nextWhiteSpaceNdx = lineWithArgs.substr(argNdxs[i]).find(" ");
-				if (nextWhiteSpaceNdx == string::npos) nextWhiteSpaceNdx = 2;
-				if (isNumber(lineWithArgs.substr(argNdxs[i]+1, nextWhiteSpaceNdx-1))) {
-					dollarVal = stoi(lineWithArgs.substr(argNdxs[i]+1, nextWhiteSpaceNdx-1));
-					if (dollarVal <= sharedData.functions[lastFunctionIndex].getNumArgs()) {
-						lineWithArgs = replaceCharInStr(lineWithArgs,
-										lineWithArgs.substr(argNdxs[i], nextWhiteSpaceNdx),
-										sharedData.functions[lastFunctionIndex].getArgument(dollarVal-1));
-						for (unsigned j = i; j < argNdxs.size(); j++) {
-							argNdxs[j] += (2 - (int)sharedData.functions[lastFunctionIndex].getArgument(dollarVal-1).size());
-						}
-					}
-					else {
-						if (i + 1 < commands.size()) {
-							lineWithArgs = replaceCharInStr(lineWithArgs,
-								lineWithArgs.substr(argNdxs[i], nextWhiteSpaceNdx),
-								commands[i+1]);
-						}
-						else {
-							lineWithArgs = replaceCharInStr(lineWithArgs,
-								lineWithArgs.substr(argNdxs[i], nextWhiteSpaceNdx),
-								"0");
-						}
-						for (unsigned j = i; j < argNdxs.size(); j++) {
-							argNdxs[j]--;
-						}
-					}
-				}
-			}
-			std::pair<int, string> p = parseString(lineWithArgs, lineNum, numLines);
-			if (p.first == 3) { // on error, return
-				return std::make_pair(functionExists, genError(p.second));
-			}
-		}
-		int onUnbindFuncNdx = sharedData.functions[lastFunctionIndex].incrementCallCounter();
-		if (onUnbindFuncNdx > -1) {
-			CmdInput cmdInput = {{sharedData.functions[onUnbindFuncNdx].getName()}, vector<string>(), false, true};
-			return std::make_pair(functionExists, parseCommand(cmdInput, 1, 1));
-		}
-	}
-	return std::make_pair(functionExists, cmdOutput);
-}
-
-//--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isList(vector<string>& originalCommands, int lineNum, int numLines)
-{
-	bool listExists = false;
-	CmdOutput cmdOutput = CmdOutput();
-	if (listIndexes.size() > 0) {
-		string listName;
-		if (originalCommands[0].find(".") != string::npos) listName = originalCommands[0].substr(0, originalCommands[0].find("."));
-		else listName = originalCommands[0];
-		if (listIndexes.find(listName) != listIndexes.end()) {
-			listExists = true;
-			lastListIndex = listIndexes[listName];
-			// the initial command is \listname which might be followed by a second level command
-			// to separate the second level command we create a new vector that will copy the originalCommands vector
-			// except from the first item where we trim the \listname. part
-			bool hasDot = false;
-			vector<string> commands;
-			for (unsigned i = 0; i < originalCommands.size(); i++) {
-				if (!i) {
-					// separate the name of the list from the second level command
-					vector<string> tokens = tokenizeString(originalCommands[i], ".");
-					for (unsigned j = 0; j < tokens.size(); j++) {
-						commands.push_back(tokens[j]);
-					}
-					if (tokens.size() > 1) hasDot = true;
-				}
-				else {
-					commands.push_back(originalCommands[i]);
-				}
-			}
-			if (commands.size() < 2) {
-				return std::make_pair(listExists, cmdOutput);
-			}
-			if (commands[1].compare("traverse") == 0) {
-				if (!hasDot) {
-					return std::make_pair(listExists, genError("second level commands must be concatenated to the list name with a dot"));
-				}
-				traversingList = true;
-				listIndexCounter = 0;
-				CmdInput cmdInput = {{commands.begin()+2, commands.end()}, vector<string>(), false, true};
-				cmdOutput = traverseList(genStrFromVec(cmdInput.inputVec), lineNum, numLines);
-				if (cmdOutput.errorCode == 3) {
-					traversingList = false;
-					return std::make_pair(listExists, cmdOutput);
-				}
-			}
-			else if (isNumber(commands[1])) {
-				std::pair<int, string> p = listItemExists(stoi(commands[1]));
-				if (p.first > 0) return std::make_pair(listExists, genOutputFuncs(p));
-				else return std::make_pair(listExists, genOutput(""));
-			}
-			else {
-				vector<string> v = {commands.begin()+1, commands.end()};
-				cmdOutput = parseCommand(genCmdInput(v), lineNum, numLines);
-				if (cmdOutput.errorCode > 0) {
-					return std::make_pair(listExists, cmdOutput);
-				}
-				else {
-					if (!isNumber(cmdOutput.outputVec[0])) {
-						return std::make_pair(listExists, genError("list can only be indexed with an integer"));
-					}
-					size_t listItemNdx = stoi(cmdOutput.outputVec[0]);
-					std::pair<int, string> p = listItemExists(listItemNdx);
-					if (p.first > 0) return std::make_pair(listExists, genOutputFuncs(p));
-					else return std::make_pair(listExists, genOutput(""));
-				}
-			}
-		}
-	}
-	return std::make_pair(listExists, cmdOutput);
-}
-
-//--------------------------------------------------------------
-std::pair<int, string> ofApp::listItemExists(size_t listItemNdx)
-{
-	if (listItemNdx < 1) {
-		return std::make_pair(3, "lists are 1-base indexed");
-	}
-	if (listItemNdx > listMap[lastListIndex].size()) {
-		return std::make_pair(3, "list index out of range");
-	}
-	listItemNdx--; // LiveLily is 1-based counting
-	auto lit = listMap[lastListIndex].begin();
-	std::advance(lit, listItemNdx);
-	return std::make_pair(0, *lit);
-}
-
-//--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isOscClient(vector<string>& originalCommands, int lineNum, int numLines)
-{
-	bool oscClientExists = false;
-	CmdOutput cmdOutput = CmdOutput();
-	if (oscClients.size() > 0) {
-		string oscClientName;
-		if (originalCommands[0].find(".") != string::npos) oscClientName = originalCommands[0].substr(0, originalCommands[0].find("."));
-		else oscClientName = originalCommands[0];
-		if (oscClients.find(oscClientName) != oscClients.end()) {
-			oscClientExists = true;
-			// the initial command is \oscclientname which might be followed by a second level command
-			// to separate the second level command we create a new vector that will copy the originalCommands vector
-			// except from the first item where we trim the \oscclientname. part
-			bool hasDot = false;
-			vector<string> commands;
-			for (unsigned i = 0; i < originalCommands.size(); i++) {
-				if (!i) {
-					// separate the name of the OSC client from the second level command
-					vector<string> tokens = tokenizeString(originalCommands[i], ".");
-					for (unsigned j = 0; j < tokens.size(); j++) {
-						commands.push_back(tokens[j]);
-					}
-					if (tokens.size() > 1) hasDot = true;
-				}
-				else {
-					commands.push_back(originalCommands[i]);
-				}
-			}
-			if (!hasDot) {
-				return std::make_pair(oscClientExists, genError("OSC client name and second level command must be concatenated with a dot"));
-			}
-			if (commands.size() < 2) {
-				return std::make_pair(oscClientExists, genWarning("no second level commands provided"));
-			}
-			for (unsigned i = 1; i < commands.size(); i++) {
-				if (commands[i].compare("setup") == 0) {
-					if (i > 1) {
-						return std::make_pair(oscClientExists, genError("\"setup\" can't be combined with other commands"));
-					}
-					if (commands.size() > i+3) {
-						return std::make_pair(oscClientExists, genError("\"setup\" takes two arguments maximum, host IP and port"));
-					}
-					string host;
-					int port;
-					if (commands.size() > i+2) {
-						if (isNumber(commands[i+1]) || !isNumber(commands[i+2])) {
-							return std::make_pair(oscClientExists, genError("when two arguments are provided to \"setup\", the first must be the IP address"));
-						}
-						host = commands[i+1];
-						port = stoi(commands[i+2]);
-					}
-					else {
-						if (isNumber(commands[i+1])) {
-							host = "localhost";
-							port = stoi(commands[i+1]);
-						}
-						else {
-							return std::make_pair(oscClientExists, genError("if one argument is provided to \"setup\", this must be the port number"));
-						}
-					}
-					oscClients[commands[0]].setup(host, port);
-					return std::make_pair(oscClientExists, cmdOutput);
-				}
-				else if (commands[i].compare("send") == 0) {
-					if (i > 1) {
-						return std::make_pair(oscClientExists, genError("\"send\" can't be combined with other commands"));
-					}
-					if (commands.size() < i+1) {
-						return std::make_pair(oscClientExists, genWarning("no data sepcified, not sending message"));
-					}
-					if (startsWith(commands[i+1], "/")) {
-						if (commands.size() < i+2) {
-							return std::make_pair(oscClientExists, genWarning("no data sepcified, not sending message"));
-						}
-						ofxOscMessage m;
-						m.setAddress(commands[i+1]);
-						// create an empty string to concatenate all vector items that are not numbers
-						// but are not defined as strings either, in case they are missing quotes
-						string oscStr = "";
-						for (unsigned j = i+2; j < commands.size(); j++) {
-							if (isNumber(commands[j])) {
-								// when encountering a number item in the arguments vector
-								// check if the string is not empty, and if that's true
-								// store the number as a string argument instead of an int
-								if (!oscStr.empty()) {
-									oscStr += commands[j];
-								}
-								else {
-									m.addIntArg(stoi(commands[j]));
-								}
-							}
-							else if (isFloat(commands[j])) {
-								// the same applies for floats
-								if (!oscStr.empty()) {
-									oscStr += commands[j];
-								}
-								else {
-									m.addFloatArg(stof(commands[j]));
-								}
-							}
-							else if (startsWith(commands[j], "\"") && endsWith(commands[j], "\"")) {
-								// is we get a string with quotes, store the oscStr and clear it
-								// and then store the quoted string separatelly
-								if (!oscStr.empty()) {
-									m.addStringArg(oscStr);
-									oscStr.clear();
-								}
-								m.addStringArg(commands[j].substr(1, commands[j].size()-2));
-							}
-							else {
-								if (!oscStr.empty()) oscStr += " ";
-								oscStr += commands[j];
-							}
-						}
-						// after running through all vector items, check if the string has been populated
-						// if it has, store it
-						if (!oscStr.empty()) m.addStringArg(oscStr);
-						oscClients[commands[0]].sendMessage(m, false);
-						m.clear();
-					}
-					else {
-						return std::make_pair(oscClientExists, genError("no OSC address specified, must begin with \"/\""));
-					}
-				}
-			}
-		}
-	}
-	return std::make_pair(oscClientExists, cmdOutput);
-}
-
-//--------------------------------------------------------------
-std::pair<bool, CmdOutput> ofApp::isGroup(vector<string>& originalCommands, int lineNum, int numLines)
-{
-	bool groupExists = false;
-	CmdOutput cmdOutput = CmdOutput();
-	if (instGroups.size() > 0) {
-		string groupName;
-		if (originalCommands[0].find(".") != string::npos) groupName = originalCommands[0].substr(0, originalCommands[0].find("."));
-		else groupName = originalCommands[0];
-		if (instGroups.find(groupName) != instGroups.end()) {
-			groupExists = true;
-			// the initial command is \grouptname which might be followed by a second level command
-			// to separate the second level command we create a new vector that will copy the originalCommands vector
-			// except from the first item where we trim the \groupname. part
-			bool hasDot = false;
-			vector<string> commands;
-			for (unsigned i = 0; i < originalCommands.size(); i++) {
-				if (!i) {
-					// separate the name of the group from the second level command
-					vector<string> tokens = tokenizeString(originalCommands[i], ".");
-					for (unsigned j = 0; j < tokens.size(); j++) {
-						commands.push_back(tokens[j]);
-					}
-					if (tokens.size() > 1) hasDot = true;
-				}
-				else {
-					commands.push_back(originalCommands[i]);
-				}
-			}
-			if (commands.size() == 1) {
-				return std::make_pair(groupExists, genWarning("group called with no second level commands or arguments"));
-			}
-			for (string inst : instGroups[groupName]) {
-				size_t cmdOffset = 1;
-				vector<string> v;
-				if (hasDot) {
-					v.push_back(inst + "." + commands[1]);
-					cmdOffset = 2;
-				}
-				else {
-					v.push_back(inst);
-				}
-				if (cmdOffset < commands.size()) {
-					v.insert(v.end(), commands.begin()+cmdOffset, commands.end());
-				}
-				std::pair<bool, CmdOutput> p = isInstrument(v, lineNum, numLines);
-				if (p.second.errorCode == 3) {
-					return p;
-				}
-				if (p.second.errorCode > cmdOutput.errorCode) {
-					cmdOutput.errorCode = p.second.errorCode;
-					cmdOutput.errorStr = p.second.errorStr;
-				}
-			}
-		}
-	}
-	return std::make_pair(groupExists, cmdOutput);
-}
-
-//--------------------------------------------------------------
-CmdOutput ofApp::functionFuncs(vector<string>& originalCommands)
-{
-	// the initial command is \functionname which might be followed by a second level command
-	// to separate the second level command we create a new vector that will copy the originalCommands vector
+	// the initial command is \functionname which might be followed by a method
+	// to separate the method we create a new vector that will copy the originalCommands vector
 	// except from the first item where we trim the \functionname. part
 	bool hasDot = false;
 	CmdOutput cmdOutput = CmdOutput();
-	vector<string> commands;
+	std::vector<std::string> commands;
 	for (unsigned i = 0; i < originalCommands.size(); i++) {
 		if (!i) {
-			// separate the name of the function from a possible second level command
-			vector<string> tokens = tokenizeString(originalCommands[i], ".");
+			// separate the name of the function from a possible method
+			std::vector<std::string> tokens = tokenizeString(originalCommands[i], ".");
 			for (unsigned j = 0; j < tokens.size(); j++) {
 				commands.push_back(tokens[j]);
 			}
@@ -5847,9 +5796,14 @@ CmdOutput ofApp::functionFuncs(vector<string>& originalCommands)
 			commands.push_back(originalCommands[i]);
 		}
 	}
-	if (!hasDot) return genError("function name and second level command must be concatenated with a dot");
 	for (unsigned i = 1; i < commands.size(); i++) {
 		if (commands[i].compare("setargs") == 0) {
+			if (commands.size() < i+2) {
+				return genError("\"setargs\" method takes at least one argument");
+			}
+			if (!hasDot) {
+				return genError("setargs must be concatenated to the function name with a dot");
+			}
 			sharedData.functions[lastFunctionIndex].resetArgumentIndex();
 			for (unsigned j = i+1; j < commands.size(); j++) {
 				sharedData.functions[lastFunctionIndex].setArgument(commands[j]);
@@ -5868,13 +5822,16 @@ CmdOutput ofApp::functionFuncs(vector<string>& originalCommands)
 		}
 		else if (commands[i].compare("bind") == 0) {
 			if (commands.size() < i+2) {
-				return genError("\\bind command takes at least one argument");
+				return genError("\"bind\" method takes at least one argument");
+			}
+			if (!hasDot) {
+				return genError("setargs must be concatenated to the function name with a dot");
 			}
 			if (sharedData.instrumentIndexes.find(commands[i+1]) == sharedData.instrumentIndexes.end() && \
 				!(commands[i+1].compare("beat") == 0 || commands[i+1].compare("barstart") == 0 || \
 				  commands[i+1].compare("framerate") == 0 || commands[i+1].compare("fr") == 0 || \
 				  commands[i+1].compare("loopstart") == 0)) {
-				return genError(commands[i+1] + (string)" is not a defined instrument");
+				return genError(commands[i+1] + (std::string)" is not a defined instrument");
 			}
 			int instNdx = -1;
 			int callingStep = 1;
@@ -5956,18 +5913,24 @@ CmdOutput ofApp::functionFuncs(vector<string>& originalCommands)
 		}
 		else if (commands[i].compare("unbind") == 0) {
 			if (commands.size() > i+1) {
-				return genError("\"unbind\" command takes no arguments");
+				return genError("\"unbind\" method takes no arguments");
+			}
+			if (!hasDot) {
+				return genError("setargs must be concatenated to the function name with a dot");
 			}
 			sharedData.functions[lastFunctionIndex].releaseBind();
 			return genOutput("");
 		}
 		else if (commands[i].compare("onrelease") == 0) {
 			if (commands.size() < i+2) {
-				return genError("\"onrelease\" takes at least one argument");
+				return genError("\"onrelease\" method takes at least one argument");
+			}
+			if (!hasDot) {
+				return genError("setargs must be concatenated to the function name with a dot");
 			}
 			if (isNumber(commands[i+1])) {
 				sharedData.functions[lastFunctionIndex].onUnbindFunc(stoi(commands[i+1]));
-			} 
+			}
 			else if (commands[i+1].compare("release") == 0) {
 				sharedData.functions[lastFunctionIndex].onUnbindFunc(-1);
 			}
@@ -5983,26 +5946,16 @@ CmdOutput ofApp::functionFuncs(vector<string>& originalCommands)
 	return cmdOutput;
 }
 
-//--------------------------------------------------------------
-string ofApp::getRestOfCommand(vector<string>& commands, unsigned startNdx)
-{
-	string restOfCommand;
-	for (unsigned i = startNdx; i < commands.size(); i++) {
-		restOfCommand += commands[i];
-		if (i < commands.size() - 1) restOfCommand += " ";
-	}
-	return restOfCommand;
-}
-
+/************* bar/loop index querying functions **************/
 //--------------------------------------------------------------
 int ofApp::getLastLoopIndex()
 {
 	int loopIndex = -1;
-	// since every bar is copied to the loop maps, but loops are not copied to the bar map
+	// since every bar is copied to the loops map, but loops are not copied to the bars map
 	// we query the loopsIndexes map instead of the barIndexes map
 	// so that the keys between bars and loops are the same
 	if (sharedData.loopsOrdered.size() > 0) {
-		map<int, string>::reverse_iterator it = sharedData.loopsOrdered.rbegin();
+		std::map<int, std::string>::reverse_iterator it = sharedData.loopsOrdered.rbegin();
 		loopIndex = it->first;
 	}
 	return loopIndex;
@@ -6043,1957 +5996,248 @@ int ofApp::getPlayingBarIndex()
 	if (sharedData.loopData.find(sharedData.loopIndex) == sharedData.loopData.end()) {
 		return -1;
 	}
-	if (sharedData.thisLoopIndex >= sharedData.loopData[sharedData.loopIndex].size()) {
+	if (sharedData.thisBarIndex >= sharedData.loopData[sharedData.loopIndex].size()) {
 		return -1;
 	}
-	return sharedData.loopData[sharedData.loopIndex][sharedData.thisLoopIndex];
+	return sharedData.loopData[sharedData.loopIndex][sharedData.thisBarIndex];
 }
 
 //--------------------------------------------------------------
-std::pair<int, string> ofApp::stripLineFromBar(string str)
+CmdOutput ofApp::stripLineFromBar(std::vector<std::string> tokens, int lineNum, int numLines)
 {
-	auto barToCopyIt = sharedData.loopsIndexes.find(str);
-	int barIndex = getLastLoopIndex();
-	if (barToCopyIt == sharedData.loopsIndexes.end()) {
-		return std::make_pair(3, (string)"bar/loop " + str + (string)" doesn't exist");
-	}
-	barToCopy = barToCopyIt->second;
-	//sharedData.numBeats[barIndex] = sharedData.numBeats[barToCopy];
-	sharedData.instruments[lastInstrumentIndex].setPassed(true);
-	sharedData.instruments[lastInstrumentIndex].setCopied(barIndex, true);
-	sharedData.instruments[lastInstrumentIndex].setCopyNdx(barIndex, barToCopy);
-	sharedData.instruments[lastInstrumentIndex].copyMelodicLine(barIndex);
-	return std::make_pair(0, "");
-}
-
-//--------------------------------------------------------------
-void ofApp::deleteLastBar()
-{
-	//if (barError) return; // if a bar error has been raised, nothing has been stored
-	int bar = getLastBarIndex();
-	for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		if (it->second.hasPassed() && it->second.notes.find(bar) != it->second.notes.end()) {
-			it->second.notes.erase(bar);
-			it->second.midiNotes.erase(bar);
-			it->second.durs.erase(bar);
-			it->second.dursWithoutSlurs.erase(bar);
-			it->second.midiDursWithoutSlurs.erase(bar);
-			it->second.pitchBendVals.erase(bar);
-			it->second.dynamics.erase(bar);
-			it->second.midiVels.erase(bar);
-			it->second.dynamicsRamps.erase(bar);
-			it->second.glissandi.erase(bar);
-			it->second.midiGlissDurs.erase(bar);
-			it->second.midiDynamicsRampDurs.erase(bar);
-			it->second.articulations.erase(bar);
-			it->second.midiArticulationVals.erase(bar);
-			it->second.isSlurred.erase(bar);
-			it->second.text.erase(bar);
-			it->second.textIndexes.erase(bar);
-			it->second.slurIndexes.erase(bar);
-			it->second.isWholeBarSlurred.erase(bar);
-			it->second.tieIndexes.erase(bar);
-			it->second.scoreNotes.erase(bar);
-			it->second.scoreDurs.erase(bar);
-			it->second.scoreDotIndexes.erase(bar);
-			it->second.scoreDotsCounter.erase(bar);
-			it->second.scoreAccidentals.erase(bar);
-			it->second.scoreNaturalSignsNotWritten.erase(bar);
-			it->second.scoreOctaves.erase(bar);
-			it->second.scoreOttavas.erase(bar);
-			it->second.scoreGlissandi.erase(bar);
-			it->second.scoreArticulations.erase(bar);
-			it->second.scoreDynamics.erase(bar);
-			it->second.scoreDynamicsIndexes.erase(bar);
-			it->second.scoreDynamicsRampStart.erase(bar);
-			it->second.scoreDynamicsRampEnd.erase(bar);
-			it->second.scoreDynamicsRampDir.erase(bar);
-			it->second.scoreTupletRatios.erase(bar);
-			it->second.scoreTupletStartStop.erase(bar);
-			it->second.scoreTexts.erase(bar);
-			it->second.passed = false;
-			it->second.deleteNotesBar(bar);
-		}
-	}
-	if (sharedData.barsIndexes.find(sharedData.loopsOrdered[bar]) != sharedData.barsIndexes.end()) {
-		sharedData.barsIndexes.erase(sharedData.loopsOrdered[bar]);
-	}
-	if (sharedData.loopsIndexes.find(sharedData.loopsOrdered[bar]) != sharedData.loopsIndexes.end()) {
-		sharedData.loopsIndexes.erase(sharedData.loopsOrdered[bar]);
-	}
-	if (sharedData.numerator.find(bar) != sharedData.numerator.end()) {
-		sharedData.numerator.erase(bar);
-		sharedData.denominator.erase(bar);
-	}
-	commandsMap[livelily].erase(sharedData.loopsOrdered[bar]);
-	sharedData.loopsOrdered.erase(bar);
-	sharedData.loopsVariants.erase(bar);
-	// sharedData.barLines is a map<string, string> so we get the correct key
-	// from the sharedData.barsOrdered map using the bar index as the key
-	sharedData.barLines.erase(sharedData.barsOrdered[bar]);
-}
-
-//--------------------------------------------------------------
-void ofApp::deleteLastLoop()
-{
-	map<int, string>::reverse_iterator it = sharedData.loopsOrdered.rbegin();
-	commandsMap[livelily].erase(it->second);
-	sharedData.loopsIndexes.erase(it->second);
-	sharedData.loopsOrdered.erase(it->first);
-	sharedData.loopsVariants.erase(it->first);
-	//sendPushPopPattern();
-}
-
-//--------------------------------------------------------------
-std::pair<int, string> ofApp::parseBarLoop(string str, int lineNum, int numLines)
-{
-	// first check if there is anything after the closing bracket
-	size_t closingBracketIndex = str.find("}");
-	if (str.substr(closingBracketIndex-1, 1).compare(" ") == 0) {
-		str = str.substr(0, closingBracketIndex-1) + str.substr(closingBracketIndex);
-	}
-	size_t strLength = str.size();
-	string restOfCommand = "";
-	// storing anything after a closing bracket enables us
-	// to call a loop in the same line we define it, like this
-	// \loop name {\bar1 \bar2} \name
-	if (closingBracketIndex != string::npos) {
-		restOfCommand = str.substr(closingBracketIndex);
-		strLength = closingBracketIndex;
-	}
-	string wildCardStr = (endsWith(str, "}") ? str.substr(0, str.size()-1) : str);
-	// if we get only an asterisk, it means we want to create a loop with all the bars
-	if (wildCardStr.compare("*") == 0) {
-		vector<int> thisLoopIndexes;
-		for (auto it = sharedData.barsOrdered.begin(); it != sharedData.barsOrdered.end(); ++it) {
-			// the first, default bar (a tacet) has index 0, which we must ignore here
-			if (it->first > 0) thisLoopIndexes.push_back(it->first);
-		}
-		// find the last index of the stored loops and store the vector we just created to the value of loopData
-		int loopNdx = getLastLoopIndex();
-		sharedData.loopData[loopNdx] = thisLoopIndexes;
-		return std::make_pair(0, "");
-	}
-	size_t multIndex = wildCardStr.find("*");
-	vector<string> names;
-	if (multIndex != string::npos) {
-		if (!isNumber(wildCardStr.substr(multIndex+1))) {
-			// look for file names that include the characters of the wild card
-			vector<int> multNdxs = findIndexesOfCharInStr(wildCardStr, "*");
-			vector<string> strParts(multNdxs.size(), "");
-			int prevMultNdx = 0;
-			for (unsigned i = 0; i < multNdxs.size(); i++) {
-				if (wildCardStr.substr(prevMultNdx, multNdxs[i]-prevMultNdx).size() > 0) {
-					strParts[i] = wildCardStr.substr(prevMultNdx, multNdxs[i]-prevMultNdx);
-				}
-				prevMultNdx = multNdxs[i]+1;
-			}
-			if (wildCardStr.substr(multNdxs.back()+1).size() > 0) {
-				strParts.back() = wildCardStr.substr(multNdxs.back()+1);
-			}
-			for (auto it = sharedData.loopsOrdered.begin(); it != sharedData.loopsOrdered.end(); ++it) {
-				if (sharedData.barsIndexes.find(it->second) == sharedData.barsIndexes.end()) {
-					// look for bars only, not for loops
-					continue;
-				}
-				bool matches = true;
-				for (auto it2 = strParts.begin(); it2 != strParts.end(); ++it2) {
-					// in case the pattern doesn't match
-					if (it->second.find(*it2) == string::npos) {
-						matches = false;
-						break;
-					}
-					// a wildcard might include a 1, which will result in including the default first bar
-					// so we make sure not to include it with the test below
-					if (it->second.compare("\\-1") == 0) {
-						matches = false;
-						break;
-					}
-				}
-				if (matches) {
-					names.push_back(it->second);
-				}
-			}
-		}
-		else {
-			names = tokenizeString(str.substr(0, strLength), " ");
-		}
-	}
-	else {
-		names = tokenizeString(str.substr(0, strLength), " ");
-	}
-	//vector<string> names = tokenizeString(str.substr(0, strLength), " ");
-	// initialize all variables used in the loop below, so we can initialize the growing vector
-	// after them, to ensure it is at the top of the stack
-	//size_t multIndex;
-	size_t nameLength;
-	int howManyTimes;
-	map<string, int>::iterator thisBarLoopIndexIt;
-	map<int, vector<int>>::iterator thisBarLoopDataIt;
-	vector<int>::iterator barIndex;
-	int i;
-	vector<int> thisLoopIndexes;
-	for (string name : names) {
-		nameLength = name.size();
-		multIndex = name.find("*");
-		howManyTimes = 1;
-		if (multIndex != string::npos) {
-			nameLength = multIndex;
-			if (!isNumber(name.substr(multIndex+1))) {
-				return std::make_pair(3, "repetition coefficient not an int");
-			}
-			else if (multIndex == 0) {
-				// the multiplication symbol cannot be the first symbol in the token
-				return std::make_pair(3, "the multiplication character must be concatenated to the bar/loop name");
-			}
-			else if (multIndex == name.size()-1) {
-				// the multiplication symbol must be followed by a number
-				return std::make_pair(3, "the multiplication symbol must be concatenated to a number");
-			}
-			howManyTimes = stoi(name.substr(multIndex+1));
-		}
-		// first check for barLoops because when we define a bar with data
-		// and not with combinations of other bars, we create a barLoop with the same name
-		thisBarLoopIndexIt = sharedData.loopsIndexes.find(name.substr(0, nameLength));
-		if (thisBarLoopIndexIt == sharedData.loopsIndexes.end()) {
-			// check if the substring ends with a closing curly bracket, in which case we must remove it
-			if (endsWith(name.substr(0, nameLength), "}")) {
-				thisBarLoopIndexIt = sharedData.loopsIndexes.find(name.substr(0, nameLength-1));
-			}
-			else {
-				return std::make_pair(3, name.substr(0, nameLength) + (string)" doesn't exist");
-			}
-		}
-		// find the map of the loop with the vector that contains indexes of bars
-		thisBarLoopDataIt = sharedData.loopData.find(thisBarLoopIndexIt->second);
-		// then iterate over the number of repetitions of this loop
-		for (i = 0; i < howManyTimes; i++) {
-			// and push back every item in the vector that contains the indexes of bars
-			for (barIndex = thisBarLoopDataIt->second.begin(); barIndex != thisBarLoopDataIt->second.end(); ++barIndex) {
-				thisLoopIndexes.push_back(*barIndex);
-			}
-		}
-	}
-	// once all the bar indexes have been pushed, we check if any of the bars in this loop is linked
-	// to a bar that is not sequential within the loop we're trying to create
-	for (i = 0; i < (int)thisLoopIndexes.size(); i++) {
-		for (auto instIt = sharedData.instruments.begin(); instIt != sharedData.instruments.end(); ++instIt) {
-			std::pair<int, int> barLinks = instIt->second.isLinked(thisLoopIndexes[i]);
-			if (barLinks.first < 0 || barLinks.second > 0) {
-				// if we find a link, first determine whether the linked bar(s) is not present in the loop
-				if (abs(barLinks.first) > i) goto linkError;
-				if (barLinks.second > (int)thisLoopIndexes.size() - i - 1) goto linkError;
-				for (int j = i; j > i-abs(barLinks.first); j--) {
-					if (thisLoopIndexes[j-1] > thisLoopIndexes[j]) goto linkError;
-					if (thisLoopIndexes[j] - thisLoopIndexes[j-1] > 1) goto linkError;
-				}
-				if (i+barLinks.second > (int)thisLoopIndexes.size()) goto linkError;
-				for (int j = i; j < i + barLinks.second; j++) {
-					if (thisLoopIndexes[j] > thisLoopIndexes[j+1]) goto linkError;
-					if (thisLoopIndexes[j+1] - thisLoopIndexes[j] > 1) goto linkError;
-				}
-				continue; // in case goto is not invoked
-			linkError:
-				int linkLevel = max(abs(barLinks.first), barLinks.second);
-				string err = (string)"bar " + sharedData.loopsOrdered[thisLoopIndexes[i]] + " links ";
-				if (linkLevel > 1) {
-					err += "through ";
-				}
-				err += "to ";
-				if (abs(barLinks.first) > barLinks.second) {
-					err += sharedData.loopsOrdered[thisLoopIndexes[i]-linkLevel];
-				}
-				else {
-					err += sharedData.loopsOrdered[thisLoopIndexes[i]+linkLevel];
-				}
-				return std::make_pair(3, err);
-			}
-		}
-	}
-	// find the last index of the stored loops and store the vector we just created to the value of loopData
-	int loopNdx = getLastLoopIndex();
-	sharedData.loopData[loopNdx] = thisLoopIndexes;
-	if (restOfCommand.size() > 0) {
-		// falsify this so that the name of the loop is treated properly in parseString()
-		// otherwise, parseString() will again call this function
-		parsingLoop = false;
-		parseString(restOfCommand, lineNum, numLines);
-	}
-	if (!sequencer.isThreadRunning()) {
-		sharedData.loopIndex = sharedData.tempBarLoopIndex;
-		//sendLoopIndexToParts();
-	}
-	sendLoopToParts();
-	return std::make_pair(0, "");
-}
-
-//--------------------------------------------------------------
-vector<string> ofApp::tokenizeChord(string input, bool includeAngleBrackets)
-{
-	bool isString = false;
-	int quotesCounter = 0;
-	vector<string> tokens;
-	string token;
-	for (size_t i = 0; i < input.size(); i++) {
-		if (isspace(input[i])) {
-			if (!token.empty() && !isString) {
-				tokens.push_back(token);
-				token.clear();
-			}
-			else {
-				token += input[i];
-			}
-		}
-		// we continue when we run into the chord opening and closing characters
-		// so that they are not concatenated to the token
-		else if (input[i] == '<' && ((i < input.size()-1 && !isspace(input[i+1])) || (i > 0 && input[i-1] != '\\'))) {
-			if (includeAngleBrackets) token += input[i];
-			continue;
-		}
-		else if (input[i] == '>' && (i > 0 && input[i-1] != '\\' && input[i-1] != '-')) {
-			if (includeAngleBrackets) token += input[i];
-			continue;
-		}
-		else {
-			token += input[i];
-			if (input[i] == '"') {
-				quotesCounter++;
-				if (quotesCounter == 1) {
-					isString = true;
-				}
-				else {
-					isString = false;
-					quotesCounter = 0;
-				}
-			}
-		}
-	}
-	if (!token.empty()) tokens.push_back(token);
-	return tokens;
-}
-
-//--------------------------------------------------------------
-std::pair<int, string> ofApp::parseMelodicLine(vector<string> tokens, int lineNum, int numLines)
-{
-	if (barError) {
-		// if a barError occurs, it concerns the line where the bar name is defined
-		// in this case, we don't proceed to parse the melodic lines defined in the bar
-		// but we also don't raise an error here, as this has been raised in parseCommand()
-		return std::make_pair(0, "");
-	}
-	if (!parsingBar) {
-		return std::make_pair(3, "stray melodic line");
-	}
-	//if (!areBracketsBalanced(str)) {
-	//	return std::make_pair(3, "brackets are not balanced");
-	//}
-	//if (!areParenthesesBalanced(str)) {
-	//	return std::make_pair(3, "parentheses are not balanced");
-	//}
-	//bool parsingBarsFromLoop = false;
-	//int ndx;
-	//string parsingBarsFromLoopName;
-	//if (parsingBars && startsWith(str, "\\") && str.find("|") == string::npos) {
-	//	if (sharedData.barsIndexes.find(str) == sharedData.barsIndexes.end()) {
-	//		if (sharedData.loopsIndexes.find(str) != sharedData.loopsIndexes.end()) {
-	//			parsingBarsFromLoop = true;
-	//			parsingBarsFromLoopName = str;
-	//		}
-	//		else {
-	//			return std::make_pair(3, (string)"bar/loop " + str + (string)" doesn't exist");
-	//		}
-	//	}
-	//}
-	//size_t strBegin, strLen;
-	//string strToProcess = detectRepetitions(str);
-	tokens = detectRepetitions(tokens);
-	if (parsingBars) {
-		if (startsWith(tokens[0], "\\")) {
-			// first determine whether there is an instrument name as a second level command
-			size_t dotNdx = tokens[0].find_last_of(".");
-			bool foundDot = (dotNdx != string::npos ? true : false);
-			string barName;
-			if (foundDot) barName = tokens[0].substr(0, dotNdx);
-			else barName = tokens[0];
-			// determine if this is a single bar or a loop
-			// if it is a loop, replace the tokens vector with the output of parseExpandedCommands()
-			if (sharedData.loopsIndexes.find(barName) != sharedData.loopsIndexes.end() && sharedData.barsIndexes.find(barName) == sharedData.barsIndexes.end()) {
-				CmdInput cmdInput = {tokens, vector<string>(), false, false};
-				CmdOutput cmdOutput = parseCommand(cmdInput, lineNum, numLines);
-				if (cmdOutput.errorCode == 3) return std::make_pair(3, cmdOutput.errorStr);
-				tokens.clear();
-				tokens = cmdOutput.outputVec;
-			}
-		}
-		if (lastInstrumentIndex == firstInstForBarsIndex && !numBarsToParseSet) {
-			// if this is the first instrument, determine the number of bars to compare to other instruments
-			numBarsToParse = 0;
-			for (string s : tokens) if (s == "|") numBarsToParse++;
-			numBarsToParse++;
-			// check in case the user ends bars definition with |
-			if (tokens.back() == "|") numBarsToParse--;
-			numBarsToParseSet = true;
-		}
-		int numBarsToParseLocal = 0;
-		for (string s : tokens) if (s == "|") numBarsToParseLocal++;
-		numBarsToParseLocal++; // have to double check in case the user ends bars definition with |
-		if (lastInstrumentIndex != firstInstForBarsIndex && numBarsToParseLocal != numBarsToParse) {
-			return std::make_pair(3, (string)"parsed " + to_string(numBarsToParseLocal) + (string)" bars, while first instrument parsed " + to_string(numBarsToParse));
-		}
-		// the int below is compared to barsIterCounter which increments to 1 as soon as we start parsing many bars
-		int verticalBarsCounter = 1;
-		vector<string> newTokens;
-		for (string s : tokens) {
-			if (s == "|") verticalBarsCounter++;
-			if (verticalBarsCounter == barsIterCounter && s != "|") {
-				newTokens.push_back(s);
-			}
-			if (verticalBarsCounter > barsIterCounter) {
-				// reset verticalBarsCounter so that the test agaist numBarsToParse below works
-				// otherwise it will be true after the first iteration
-				verticalBarsCounter = barsIterCounter;
-				break;
-			}
-		}
-		if (verticalBarsCounter == numBarsToParse) sharedData.instruments[lastInstrumentIndex].setMultiBarsDone(true);
-		tokens.clear();
-		tokens = newTokens;
-	}
-	// if we are parsing many bars and in one of those we define an earlier bar from the same bars definition
-	// we need to isolate the bar number from the loop name, which is loopname-barnumber (e.g. \1-4-1 for the first bar from loop \1-4)
-	// so we can use it further down in the else if (tokens[0] == "\\bars") test
-	int verticalBarsNdx = 1;
-	// as we might ask for a previous bar of the same bars definition but from another instrument
-	// we need to detect if this is the case and store the name of the desired instrument
-	// the default instrument name though is the one we're parsing the current line for
-	string instFromBars = "\\" + sharedData.instruments[lastInstrumentIndex].getName();
-	if (parsingBars && startsWith(tokens[0], "\\")) {
-		size_t lastHyphenNdx = tokens[0].find_last_of("-");
-		size_t dotNdx = tokens[0].find_last_of(".");
-		bool foundDot = (dotNdx != string::npos ? true : false);
-		size_t endOfSubstr = (foundDot ? dotNdx : tokens[0].size());
-		string barName;
-		if (foundDot) barName = tokens[0].substr(0, dotNdx);
-		else barName = tokens[0];
-		if (sharedData.barsIndexes.find(barName) != sharedData.barsIndexes.end()) {
-			if (lastHyphenNdx != string::npos && isNumber(tokens[0].substr(lastHyphenNdx+1, endOfSubstr-lastHyphenNdx-1))) {
-				verticalBarsNdx = stoi(tokens[0].substr(lastHyphenNdx+1, endOfSubstr-lastHyphenNdx-1));
-			}
-			if (foundDot) {
-				if (sharedData.instrumentIndexes.find(tokens[0].substr(dotNdx+1)) != sharedData.instrumentIndexes.end()) {
-					instFromBars = tokens[0].substr(dotNdx+1);
-				}
-			}
-		}
-	}
-	// before we parse the input vector to detect commands, we store it as a string
-	// which will be the string of the currect bar
-	string barLine = genStrFromVec(tokens);
-	// parse the string to detect any containing commands like \ottava, \tuplet, or a bar or loop name
-	// first insert the instrument name as this has been striped
-	vector<string> v = {"\\" + sharedData.instruments[lastInstrumentIndex].getName()};
-	// then append the rest of the input vector
-	v.insert(v.end(), tokens.begin(), tokens.end());
-	CmdOutput cmdOutput = parseExpandedCommands(v, lineNum, numLines);
-	if (cmdOutput.errorCode == 3) return std::make_pair(3, cmdOutput.errorStr);
-	tokens.clear();
-	tokens = {cmdOutput.outputVec.begin()+1, cmdOutput.outputVec.end()};
-	// the boolean below is used to determine if we need to update the barLine string
-	bool barLineChanged = false;
-	if (tokens[0] == "\\bars") {
-		// the algorithm of this if test is similar to the if (parsingBars) above
-		// but here we need a boolean too because we get the entire bars definition strings e.g.
-		// \bars 1-4 {
-		//     \inst1 c''2 d'' | e''2 f'' | \1-4-1 | g''1
-		//     \inst2 c'2 d' | e'2 f' | g'1 | \1-4-2
-		// }
-		// so we need to determine where to start pushing back to the newTokens vector
-		int verticalBarsCounter = 1;
-		bool startInserting = false;
-		vector<string> newTokens;
-		for (string s : tokens) {
-			if (s == "|" && startInserting) {
-				verticalBarsCounter++;
-			}
-			if (verticalBarsCounter == verticalBarsNdx && s != "|" && startInserting) {
-				newTokens.push_back(s);
-			}
-			if (instFromBars == s) {
-				newTokens.push_back(s);
-				startInserting = true;
-			}
-			if (verticalBarsCounter > verticalBarsNdx) {
-				break;
-			}
-		}
-		CmdOutput cmdOutput = parseExpandedCommands(newTokens, lineNum, numLines);
-		if (cmdOutput.errorCode == 3) return std::make_pair(3, cmdOutput.errorStr);
-		barLine = genStrFromVec(newTokens);
-		tokens.clear();
-		// check for possible newline characters that might be inserted when inputing a loop name in a bars definition
-		for (auto it = cmdOutput.outputVec.begin()+1; it != cmdOutput.outputVec.end(); ++it) {
-			size_t newlineNdx = (*it).find('\n');
-			if (newlineNdx != string::npos) tokens.push_back((*it).substr(0, newlineNdx));
-			else tokens.push_back(*it);
-		}
-		//barLineChanged = true;
-	}
-	// if we provide a bar name, the tokens vector will contain the bar lines
-	// so below we check if the output starts with \bar
-	if (tokens[0] == "\\bar") {
-		// the output of calling a bar is a vector of strings with single tokens
-		// so we run through it to determine which strings we'll use to assemble a new string vector
-		bool startPushing = false;
-		vector<string> newTokens;
-		for (auto it = tokens.begin(); it != tokens.end(); ++it) {
-			auto newlineNdx = (*it).find("\n");
-			auto openCurlyBracketNdx = (*it).find("{");
-			auto closeCurlyBracketNdx = (*it).find("}");
-			if (startPushing) {
-				// don't include the newline character
-				if (newlineNdx != string::npos) {
+	// the output of calling a bar is a vector of strings with single tokens
+	// so we run through it to determine which strings we'll use to assemble a new string vector
+	bool startPushing = false;
+	std::vector<std::string> newTokens;
+	for (auto it = tokens.begin(); it != tokens.end(); ++it) {
+		size_t newlineNdx = (*it).find("\n");
+		size_t tabNdx = (*it).find("\t");
+		if (startPushing) {
+			// don't include the newline character
+			if (newlineNdx != std::string::npos) {
+				if (!(*it).substr(0, newlineNdx).empty() && sharedData.instrumentIndexes.find((*it).substr(0, newlineNdx)) == sharedData.instrumentIndexes.end()) {
 					newTokens.push_back((*it).substr(0, newlineNdx));
-					startPushing = false;
-					break;
 				}
-				else if (closeCurlyBracketNdx != string::npos) {
-					newTokens.push_back((*it).substr(0, closeCurlyBracketNdx));
-					startPushing = false;
-					break;
-				}
-				else {
+				startPushing = false;
+				break;
+			}
+			else {
+				if (!(*it).empty() && sharedData.instrumentIndexes.find(*it) == sharedData.instrumentIndexes.end()) {
 					newTokens.push_back(*it);
 				}
 			}
-			if (openCurlyBracketNdx != string::npos && (*it).substr(openCurlyBracketNdx) == "\\" + sharedData.instruments[lastInstrumentIndex].getName()) {
-				startPushing = true;
-				newTokens.push_back((*it).substr(openCurlyBracketNdx));
-			}
-			else if (*it == "\\" + sharedData.instruments[lastInstrumentIndex].getName()) {
-				startPushing = true;
-				newTokens.push_back(*it);
-			}
 		}
-		CmdOutput cmdOutput = parseExpandedCommands(newTokens, lineNum, numLines);
-		if (cmdOutput.errorCode == 3) return std::make_pair(3, cmdOutput.errorStr);
-		barLine = genStrFromVec(newTokens);
-		tokens.clear();
-		// the first item of the CmdOutput structure returned by parseExpandedCommands()
-		// is the name of the instrument the line of which we're extracting here
-		// so we discard it and keep the rest of the information
-		tokens = {cmdOutput.outputVec.begin()+1, cmdOutput.outputVec.end()};
-		cout << "from bar: \"" << genStrFromVec(tokens) << "\"\n";
-		//barLineChanged = true;
+		if (tabNdx != std::string::npos && (*it).substr(tabNdx+1) == "\\" + sharedData.instruments[lastInstrumentIndex].getName()) {
+			newTokens.push_back((*it).substr(tabNdx+1));
+			startPushing = true;
+		}
 	}
-	// if we provide a bar name and an instrument name as a second level command
-	// then the tokens vector will contain the melodic line of this instrument at this bar
-	// so we check if the first item of the tokens vector is an instrument name
-	// the else if test below can also be true if we parse many bars and for one of them
-	// we ask for a previous bar of this bars definition but for another instrument
-	// in this case, we'll get the instrument name and the entire line with all the bars
-	else if (sharedData.instrumentIndexes.find(tokens[0]) != sharedData.instrumentIndexes.end()){
-		CmdOutput cmdOutput = parseExpandedCommands(tokens, lineNum, numLines);
-		tokens.clear();
-		// the first item of the CmdOutput structure returned by parseExpandedCommands()
-		// is the name of the instrument the line of which we're extracting here
-		// so we discard it and keep the rest of the information
-		tokens = {cmdOutput.outputVec.begin()+1, cmdOutput.outputVec.end()};
-		barLineChanged = true;
-	}
-	// now we'll store the parsed tokens as a string to the sharedData.barLines map
-	// the line is supposed to start with a horizontal tab, so we store that first
-	// the bar index has already been stored with the \bar command
-	// so we can retrieve it with geLastLoopIndex()
-	int barIndex = getLastLoopIndex();
-	string barName = sharedData.barsOrdered[barIndex];
-	sharedData.barLines[barName] += editors[0].tabStr + "\\" + sharedData.instruments[lastInstrumentIndex].getName() + " ";
-	if (barLineChanged) {
-		sharedData.barLines[barName] += genStrFromVec(tokens);
-	}
-	else {
-		sharedData.barLines[barName] += barLine;
-	}
-	sharedData.barLines[barName] += "\n";
+	return evaluateTokens(newTokens, lineNum, numLines);
+}
 
-	// now that the tokens have been expanded, we can save it, in case this instrument sends to an OSC server
-	if (instrumentOSCHostPorts.find(lastInstrumentIndex) != instrumentOSCHostPorts.end()) {
-		string forOSCPart = "\\" + sharedData.instruments[lastInstrumentIndex].getName() + " " + genStrFromVec(tokens);
-		sharedData.instruments[lastInstrumentIndex].barLines[barIndex] = forOSCPart;
-	}
+std::vector<std::string> ofApp::detectRepetitions(std::vector<std::string> tokens)
+{
+	// join the tokens back into one expression.
+	std::string expression;
 
-	// once the line has been parsed to expand commands and stored as a string we can move on and create the melodic line
-	int tempDur = 0;
-	// the following array is used to map the dynamic values
-	// to the corresponding MIDI velocity values
-	int dynsArr[8] = {-9, -6, -3, -1, 1, 3, 6, 9};
-	// an array to test against durations
-	vector<int> dursArr{1, 2, 4, 8, 16, 32, 64};
-	// the notes of the natural scale in MIDI values
-	int midiNotes[7] = {0, 2, 4, 5, 7, 9, 11};
-	bool dynamicsRampStarted = false;
-	// booleans to determine whether we're writing a chord or not
-	//bool chordStarted = false;
-	bool firstChordNote = false;
-	
-	bool foundArticulation = false;
-	// boolean for dynamics, whether it's a mezzo forte or mezzo piano
-	bool mezzo = false;
-	// index variables for loop so that they are initialized before vectors with unkown size
-	unsigned i = 0, j = 0, k = 0; //  initialize to avoid compiler warnings
-	// then detect any chords, as the size of most vectors equals the number of notes vertically
-	// and not single notes within chords
-	unsigned numNotesVertical = tokens.size();
+	for (size_t i = 0; i < tokens.size(); ++i) {
+		if (i > 0) expression += " ";
+		expression += tokens[i];
+	}
+	size_t pos = 0;
+	// skip whitespace
+	auto skipWhitespace = [&]() {
+		while (pos < expression.size() &&
+			   std::isspace(static_cast<unsigned char>(expression[pos]))) {
+			++pos;
+		}
+	};
+	// parse an integer coefficient following '*'.
+	auto parseMultiplier = [&]() -> int {
+		skipWhitespace();
+		if (pos >= expression.size() || expression[pos] != '*') return 1;
+		++pos;
+		skipWhitespace();
+		size_t start = pos;
+		while (pos < expression.size() &&
+			   std::isdigit(static_cast<unsigned char>(expression[pos]))) {
+			++pos;
+		}
+		if (start == pos) return 1;
+		return std::stoi(expression.substr(start, pos - start));
+	};
+	// parse a sequence until ']' (or until the end).
+	std::function<std::vector<std::string>(bool)> parseSequence;
+	// Parse one item: [ ... ]*N or token* N
+	std::function<std::vector<std::string>()> parseItem;
 
-	map<int, std::pair<int, int>> tupletRatios;
-	map<int, std::pair<unsigned, unsigned>> tupletStartStop;
-
-	// once we define the number of tokens and vertical notes, we can create the vectors with known size
-	vector<int> durIndexes(tokens.size(), -1);
-	vector<int> dynamicsIndexes(tokens.size(), -1);
-	vector<int> midiVels(tokens.size(), 0);
-	vector<int> midiPitchBendVals(tokens.size(), 0);
-	vector<int> dursData(tokens.size(), 0);
-	vector<int> dursDataWithoutSlurs(tokens.size(), 0);
-	vector<int> midiDursDataWithoutSlurs(tokens.size(), 0);
-	// pitch bend values are calculated by the sequencer
-	// so here we store the microtones only
-	vector<int> pitchBendVals(tokens.size(), 0);
-	vector<int> dotIndexes(tokens.size(), 0);
-	vector<unsigned> dotsCounter(tokens.size(), 0);
-	vector<int> dynamicsData(tokens.size(), 0);
-	vector<int> dynamicsRampData(tokens.size(), 0);
-	vector<int> slurBeginningsIndexes(tokens.size(), -1);
-	vector<int> slurEndingsIndexes(tokens.size(), -1);
-	vector<int> tieIndexes(tokens.size(), -1);
-	//vector<int> textIndexesLocal(tokens.size(), 0);
-	vector<int> dursForScore(tokens.size(), 0);
-	vector<int> dynamicsForScore(tokens.size(), -1);
-	vector<int> dynamicsForScoreIndexes(tokens.size(), -1);
-	vector<int> dynamicsRampStart(tokens.size(), 0);
-	vector<int> dynamicsRampEnd(tokens.size(), 0);
-	vector<pair<unsigned, unsigned>> dynamicsRampIndexes(tokens.size());
-	vector<int> midiDynamicsRampDurs(tokens.size(), 0);
-	vector<int> glissandiIndexes(tokens.size(), 0);
-	vector<int> glissandiIndexesForScore(tokens.size(), 0);
-	vector<int> midiGlissDurs(tokens.size(), 0);
-	vector<int> dynamicsRampStartForScore(tokens.size(), -1);
-	vector<int> dynamicsRampEndForScore(tokens.size(), -1);
-	vector<int> dynamicsRampDirForScore(tokens.size(), -1);
-	vector<bool> isSlurred (tokens.size(), false);
-	vector<int> notesCounter(tokens.size(), 0);
-	vector<int> verticalNotesIndexes(tokens.size()+1, 0); // plus one to easily break out of loops in case of chords
-	vector<int> beginningOfChords(tokens.size(), 0);
-	vector<int> endingOfChords(tokens.size(), 0);
-	vector<unsigned> accidentalIndexes(tokens.size());
-	vector<unsigned> chordNotesIndexes(tokens.size(), 0);
-	vector<int> ottavas(tokens.size(), 0);
-	vector<bool> foundNotes(tokens.size());
-	size_t transposedVecSize = 0;
-	for (i = 0; i < tokens.size(); i++) {
-		vector<string> subtokens = tokenizeChord(tokens[i]);
-		transposedVecSize += subtokens.size();
-	}
-	vector<int> transposedOctaves(transposedVecSize, 0);
-	vector<int> transposedAccidentals(transposedVecSize, 0);
-	// variable to determine which character we start looking at
-	// useful in case we start a bar with a chord
-	vector<unsigned> firstChar(tokens.size(), 0);
-	vector<unsigned> firstCharOffset(tokens.size(), 1); // this is zeroed in case of a rhythm staff with durations only
-	int lastMidiNote = -1, lastNaturalScaleNote = -1; // these are used for tied notes
-	// boolean used to set the values to isSlurred vector
-	bool slurStarted = false;
-	bool isLastNoteTied = false;
-	// a counter for the number of notes in each chord
-	unsigned index1 = 0, index2 = 0; // variables to index various data
-	// create an unpopullated vector of vector of pairs of the notes as MIDI and natural scale
-	// after all vectors with known size and all single variables have been created
-	vector<vector<std::pair<int, int>>> notePairs;
-	//vector<vector<intPair>> notePairs;
-	// then iterate over all the tokens and parse them to store the notes
-	for (i = 0; i < tokens.size(); i++) {
-		firstChar.at(i) = 0;
-		// first check if the token is a comment so we exit the loop
-		if (startsWith(tokens.at(i), "%")) continue;
-		// further tokenize the token to detect chords
-		vector<string> subtokens = tokenizeChord(tokens.at(i));
-		foundNotes.at(i) = false;
-		transposedOctaves.at(index1) = 0;
-		transposedAccidentals.at(index1) = 0;
-		// the first element of each token is the note
-		// so we first check for it in a separate loop
-		// and then we check for the rest of the stuff
-		for (j = 0; j < subtokens.size(); j++) {
-			int midiNote = -1, naturalScaleNote = -1; // the second is for the score
-			for (k = 0; k < 8; k++) {
-				if (subtokens.at(j).at(0) == noteChars[k]) {
-					midiNote = -1;
-					if (k < 7) {
-						midiNote = midiNotes[k];
-						// we start one octave below the middle C
-						midiNote += 48;
-						naturalScaleNote = k;
-						if (sharedData.instruments.at(lastInstrumentIndex).isRhythm()) {
-							if (j > 0) return std::make_pair(3, "chords are not allowed in rhythm staffs");
-							midiNote = 59;
-							naturalScaleNote = 6;
-						}
-						//else if (sharedData.instruments.at(lastInstrumentIndex).getTransposition() != 0) {
-						//	int transposedMidiNote = midiNotes[k] + sharedData.instruments.at(lastInstrumentIndex).getTransposition();
-						//	// testing against the midiNote it is easier to determine whether we need to add an accidental
-						//	if (transposedMidiNote < 0) {
-						//		transposedMidiNote = 12 + midiNotes[k] + sharedData.instruments.at(lastInstrumentIndex).getTransposition();
-						//	}
-						//	else if (transposedMidiNote > 11) {
-						//		transposedMidiNote %= 12;
-						//	}
-						//	if (midiNotes[k] < 4) {
-						//		transposedOctaves.at(index1) -= 1;
-						//	}
-						//	if (transposedMidiNote > 4 && (transposedMidiNote % 2) == 0) {
-						//		transposedAccidentals.at(index1) = 2;
-						//	}
-						//	else if (transposedMidiNote <= 4 && (transposedMidiNote % 2) == 1) {
-						//		transposedAccidentals.at(index1) = 2;
-						//	}
-						//	naturalScaleNote = distance(midiNotes, find(begin(midiNotes), end(midiNotes), (transposedMidiNote-(transposedAccidentals.at(index1)/2))));
-						//}
-					}
-					else {
-						// the last element of the noteChars array is the rest
-						if (j > 0) return std::make_pair(3, "rests can't be included in chords");
-						midiNote = naturalScaleNote = -1;
-					}
-				storeNote:
-					lastMidiNote = midiNote;
-					lastNaturalScaleNote = naturalScaleNote;
-					if (j == 0) {
-						// create a new vector for each single note or a group of notes of a chord
-						std::pair p = std::make_pair(midiNote, naturalScaleNote);
-						std::vector<std::pair<int, int>> aVector(1, p);
-						notePairs.push_back(std::move(aVector));
-						chordNotesIndexes.at(i) = 0;
-        	            notesCounter.at(i)++;
-						dotIndexes.at(i) = 0;
-						glissandiIndexes.at(i) = 0;
-						glissandiIndexesForScore.at(i) = 0;
-						midiGlissDurs.at(i) = 0;
-						midiDynamicsRampDurs.at(i) = 0;
-						pitchBendVals.at(i) = 0;
-						//textIndexesLocal.at(index2) = 0;
-						index2++;
-						if (firstChordNote) firstChordNote = false;
-					}
-					else {
-						// if we have a chord, push this note to the current vector
-						notePairs.back().push_back(std::make_pair(midiNote, naturalScaleNote));
-						// increment the counter of the chord notes
-						// so we can set the index for each note in a chord properly
-						chordNotesIndexes.at(i)++;
-        	            notesCounter.at(i)++;
-					}
-					foundNotes.at(i) = true;
-					break;
-				}
-			}
-			if (!foundNotes.at(i)) {
-				if (sharedData.instruments.at(lastInstrumentIndex).isRhythm() || isLastNoteTied) {
-					// to be able to write a duration without a note, for rhythm staffs
-					// we need to check if the first character is a number
-					int dur = 0;
-					if (subtokens.at(j).size() > 1) {
-						if (isdigit(subtokens.at(j).at(0)) && isdigit(subtokens.at(j).at(1))) {
-							dur = int(subtokens.at(j).at(0)+subtokens.at(j).at(1));
-						}
-						else if (isdigit(subtokens.at(j).at(0))) {
-							dur = int(subtokens.at(j).at(0));
-						}
-						else {
-							return std::make_pair(3, (string)"first character must be a note or a chord opening symbol (<), not \"" + subtokens.at(j).at(0) + (string)"\"");
-						}
-					}
-					else if (isdigit(subtokens.at(j).at(0))) {
-						dur = int(subtokens.at(j).at(0));
-					}
-					else {
-						return std::make_pair(3, (string)"first character must be a note or a chord opening symbol (<), not \"" + subtokens.at(j).at(0) +(string)"\"");
-					}
-					if (std::find(std::begin(dursArr), std::end(dursArr), dur) == std::end(dursArr)) {
-						if (isLastNoteTied) {
-							midiNote = lastMidiNote;
-							naturalScaleNote = lastNaturalScaleNote;
-						}
-						else {
-							midiNote = 59;
-							naturalScaleNote = 6;
-						}
-						// we need to assign 0 to firstCharOffset which defaults to 1
-						// because further down it is added to firstChar
-						// but, in this case, we want to check the token from its beginning, index 0
-						firstCharOffset.at(i) = 0;
-						goto storeNote;
-					}
-					else {
-						return std::make_pair(3, to_string(dur) + ": wrong duration");
-					}
-				}
-				else {
-					return std::make_pair(3, (string)"first character must be a note or a chord opening symbol (<), not \"" + subtokens.at(j).at(0) + (string)"\"");
-				}
-			}
-			for (k = 0; k < subtokens.at(j).size(); k++) {
-				// if we have a tilde, it means that this note is tide to the next one
-				if (subtokens.at(j).at(k) == 126) {
-					isLastNoteTied = true;
-					break;
-				}
-			}
-		}
-		index1++;
-	}
-
-	// now run through the entire subtoken to check if we have a character that is forbidden inside a chord
-	for (i = 0; i < tokens.size(); i++) {
-		// here we need to include the angle brackets to make sure we check for invalid characters inside a chord and not outside of it
-		vector<string> subtokens = tokenizeChord(tokens.at(i), true);
-		vector<char> forbiddenCharsInChord{'(', ')', '-', '.', '\\', '^', '_', '{', '}'};
-		bool outsideChord = true;
-		for (j = 0; j < subtokens.size(); j++) {
-			if (subtokens.at(j).size() == 0) break;
-			if (j == 0 && subtokens.at(j).at(0) == '<') outsideChord = false;
-			for (k = 0; k < subtokens.at(j).size(); k++) {
-				if (j == subtokens.size()-1 && subtokens.at(j).at(k) == '>') {
-					outsideChord = true;
-					break;
-				}
-				if (j > 0 && find(forbiddenCharsInChord.begin(), forbiddenCharsInChord.end(), subtokens.at(j).at(k)) != forbiddenCharsInChord.end()) {
-					// first check if we have a backslash, in which case we should check if it's actually a dynamic
-					if (subtokens.at(j).at(k) == 92) {
-						if (k < subtokens.at(j).size()) {
-							// compare with "m", "p", "f", "<", ">", and "!"
-							if (subtokens.at(j).at(k+1) == char(109) || subtokens.at(j).at(k+1) == char(112) || subtokens.at(j).at(k+1) == char(102) || \
-									subtokens.at(j).at(k+1) == char(60) || subtokens.at(j).at(k+1) == char(62) || subtokens.at(j).at(k+1) == char(33)) {
-								return std::make_pair(3, "dynamic can't be included within a chord, only outside of it");
-							}
-							return std::make_pair(3, char(subtokens.at(j).at(k)) + (string)" can't be included within a chord, only outside of it");
-						}
-						return std::make_pair(3, char(subtokens.at(j).at(k)) + (string)" can't be included within a chord, only outside of it");
-					}
-					return std::make_pair(3, char(subtokens.at(j).at(k)) + (string)" can't be included within a chord, only outside of it");
-				}
-			}
-			// stop checking after exiting the chord
-			if (outsideChord) break;
-		}
-	}
-	
-	// reset the indexes
-	index1 = index2 = 0;
-
-	// now we have enough information to allocate memory for the rest of the vectors
-	// but we do it one by one, to allocate the required memory only
-	// as each note might be a chord or not
-	vector<vector<int>> midiNotesData;
-	for (i = 0; i < notePairs.size(); i++) {
-		int value = notePairs.at(i).at(0).first;
-		std::vector<int> aVector(1, value);
-		midiNotesData.push_back(std::move(aVector));
-		for (j = 1; j < notePairs.at(i).size(); j++) {
-			midiNotesData.back().push_back(notePairs.at(i).at(j).first);
-		}
-	}
-	vector<vector<float>> notesData;
-	for (i = 0; i < midiNotesData.size(); i++) {
-		float value = midiNotesData.at(i).at(0);
-		std::vector<float> aVector(1, value);
-		notesData.push_back(std::move(aVector));
-		for (j = 1; j < midiNotesData.at(i).size(); j++) {
-			notesData.back().push_back((float)midiNotesData.at(i).at(j));
-		}
-	}
-	vector<vector<int>> notesForScore;
-	for (i = 0; i < notePairs.size(); i++) {
-		int value = notePairs.at(i).at(0).second;
-		std::vector<int> aVector(1, value);
-		notesForScore.push_back(std::move(aVector));
-		for (j = 1; j < notePairs.at(i).size(); j++) {
-			notesForScore.back().push_back(notePairs.at(i).at(j).second);
-		}
-	}
-	vector<vector<int>> accidentalsForScore;
-	for (i = 0; i < midiNotesData.size(); i++) {
-		std::vector<int> aVector(1, -1);
-		accidentalsForScore.push_back(std::move(aVector));
-		for (j = 1; j < midiNotesData.at(i).size(); j++) {
-			accidentalsForScore.back().push_back(-1);
-		}
-	}
-	// the 2D vector below is used here only for memory allocation
-	// its contents are updated in drawNotes() of the Notes() class
-	vector<vector<int>> naturalSignsNotWrittenForScore;
-	for (i = 0; i < midiNotesData.size(); i++) {
-		std::vector<int> aVector(1, 0);
-		naturalSignsNotWrittenForScore.push_back(std::move(aVector));
-		for (j = 1; j < midiNotesData.at(i).size(); j++) {
-			naturalSignsNotWrittenForScore.back().push_back(0);
-		}
-	}
-	int transposedIndex = 0;
-	vector<vector<int>> octavesForScore;
-	for (i = 0; i < midiNotesData.size(); i++) {
-		if (sharedData.instruments.at(lastInstrumentIndex).isRhythm()) {
-			std::vector<int> aVector(1, 1);
-			octavesForScore.push_back(std::move(aVector));
-		}
-		else {
-			std::vector<int> aVector(1, transposedOctaves[transposedIndex++]);
-			octavesForScore.push_back(std::move(aVector));
-		}
-		for (j = 1; j < midiNotesData.at(i).size(); j++) {
-			octavesForScore.back().push_back(transposedOctaves[transposedIndex++]);
-		}
-	}
-
-	// before we move on to the rest of the data, we need to store the texts
-	// because this is dynamically allocated memory too
-	int textsCounter;
-	vector<vector<int>> textIndexesLocal;
-	for (i = 0; i < tokens.size(); i++) {
-		// check if we have a comment, so we exit the loop
-		if (startsWith(tokens.at(i), "%")) break;
-		// create an empty entry for every note/chord
-		if (textIndexesLocal.size() <= i) {
-			textIndexesLocal.push_back({0});
-		}
-		textsCounter = 0;
-		// then check for carrets or underscores
-		for (j = 0; j < tokens.at(i).size(); j++) {
-			if (tokens.at(i).at(j) == (94)) {
-				if (j > 0) {
-					// a carret is also used for articulations, so we must check if the previous character is not a hyphen
-					if (tokens.at(i).at(j-1) != '-') {
-						if (textsCounter == 0) {
-							textIndexesLocal.back().back() = 1;
-						}
-						else {
-							textIndexesLocal.back().push_back(1);
-						}
-						textsCounter++;
-					}
-				}
-				else {
-					if (textsCounter == 0) {
-						textIndexesLocal.back().back() = 1;
-					}
-					else {
-						textIndexesLocal.back().push_back(1);
-					}
-					textsCounter++;
-				}
-			}
-			else if (tokens.at(i).at(j) == 95) {
-				if (tokens.at(i).at(j-1) != '-') {
-					if (textsCounter == 0) {
-						textIndexesLocal.back().back() = -1;
-					}
-					else {
-						textIndexesLocal.back().push_back(-1);
-					}
-					textsCounter++;
-				}
-			}
-		}
-	}
-	// once we have sorted out the indexes of the texts, we can sort out the actual texts
-	unsigned openQuote, closeQuote;
-	vector<string> texts;
-	for (i = 0; i < tokens.size(); i++) {
-		// again, check if we have a comment, so we exit the loop
-		if (startsWith(tokens.at(i), "%")) break;
-		for (j = 0; j < tokens.at(i).size(); j++) {
-			// ^ or _ for adding text above or below the note
-			if ((tokens.at(i).at(j) == char(94)) || (tokens.at(i).at(j) == char(95))) {
-				if (j > 0) {
-					if (tokens.at(i).at(j-1) == '-') foundArticulation = true;
-				}
-				if (j >= (tokens.at(i).size()-1) && !foundArticulation) {
-					if (tokens.at(i).at(j) == char(94)) {
-						return std::make_pair(3, "a carret must be followed by text in quotes");
-					}
-					else {
-						return std::make_pair(3, "an undescore must be followed by text in quotes");
-					}
-				}
-				if (j < tokens.at(i).size()-1) {
-					if (tokens.at(i).at(j+1) != char(34) && !foundArticulation) { // "
-						if (tokens.at(i).at(j) == char(94)) {
-							return std::make_pair(3, "a carret must be followed by a bouble quote sign");
-						}
-						else {
-							return std::make_pair(3, "an underscore must be followed by a bouble quote sign");
-						}
-					}
-				}
-				if (!foundArticulation) {
-					openQuote = j+2;
-					index2 = j+2;
-					closeQuote = j+2;
-					while (index2 < tokens.at(i).size()) {
-						if (tokens.at(i).at(index2) == char(34)) {
-							closeQuote = index2;
-							break;
-						}
-						index2++;
-					}
-					if (closeQuote <= openQuote) {
-						return std::make_pair(3, "text must be between two double quote signs");
-					}
-					texts.push_back(tokens.at(i).substr(openQuote, closeQuote-openQuote));
-					//if (tokens.at(i).at(j) == char(94)) {
-					//	textIndexesLocal.at(i) = 1;
-					//}
-					//else if (tokens.at(i).at(j) == char(95)) {
-					//	textIndexesLocal.at(i) = -1;
-					//}
-					j = closeQuote;
-				}
-			}
-		}
-		foundArticulation = false;
-	}
-	// then copy the texts to textsForScore
-	vector<string> textsForScore;
-	for (i = 0; i < texts.size(); i++) {
-		textsForScore.push_back(texts.at(i));
-	}
-	// store articulation symbols, as these have to be allocated dynamically too
-	int quotesCounter = 0; // so we can ignore anything that is passed as text
-	vector<vector<int>> articulationIndexes;
-	for (i = 0; i < tokens.size(); i++) {
-		foundArticulation = false;
-		unsigned firstArticulIndex = 0;
-		if (articulationIndexes.size() <= i) {
-			articulationIndexes.push_back({0});
-		}
-		vector<string> subtokens = tokenizeChord(tokens.at(i));
-		for (j = 0; j < subtokens.back().size(); j++) {
-			if (int(subtokens.back().at(j)) == 34 && quotesCounter >= 1) {
-				quotesCounter++;
-				if (quotesCounter > 2) quotesCounter = 0;
-			}
-			if (quotesCounter > 0) continue; // if we're inside text, ignore
-			if (subtokens.back().at(j) == char(45) && (j > 0 && subtokens.back().at(j-1) != 'o')) { // - for articulation symbols
-				if (j >= (subtokens.back().size()-1)) {
-					return std::make_pair(3, "a hyphen must be followed by an articulation symbol");
-				}
-				if (!foundArticulation) {
-					firstArticulIndex = j;
-				}
-				// since the hyphen is used both for indicating the command for articulation
-				// but also for the tenuto symbol, we have to iterate through these symbols
-				// every two, otherwise, if we write a tenuto, the else if (tokens.at(i).at(j) == char(45)) test
-				// will be successful not only for the articulation command, but also for the symbol
-				else if ((j - firstArticulIndex) < 2) {
-					continue;
-				}
-				foundArticulation = true;
-				int articulChar = char(subtokens.back().at(j+1));
-				int articulIndex = 0;
-				switch (articulChar) {
-					// articulation symbol indexes start from 1 because 0 is reserved for no articulation
-					case 94: // ^ for marcato
-						articulIndex = 1;
-						break;
-					case 43: // + for trill
-						articulIndex = 2;
-						break;
-					case 45: // - for tenuto
-						articulIndex = 3;
-						break;
-					case 33: // ! for staccatissimo
-						articulIndex = 4;
-						break;
-					case 62: // > for accent
-						articulIndex = 5;
-						break;
-					case 46: // . for staccato
-						articulIndex = 6;
-						break;
-					case 95: // _ for portando
-						articulIndex = 7;
-						break;
-					default:
-						return std::make_pair(3, "unknown articulation symbol");
-				}
-				if (articulationIndexes.at(i).size() == 1 && articulationIndexes.at(i).at(0) == 0) {
-					articulationIndexes.at(i).at(0) = articulIndex;
-				}
-				else {
-					articulationIndexes.at(i).push_back(articulIndex);
-				}
-				j++;
+	parseSequence = [&](bool stopAtClosingBracket)
+			-> std::vector<std::string> {
+		std::vector<std::string> result;
+		while (pos < expression.size()) {
+			skipWhitespace();
+			if (pos >= expression.size()) break;
+			if (expression[pos] == ']') {
+				if (stopAtClosingBracket) break;
+				// unmatched closing bracket.
+				++pos;
 				continue;
 			}
+			std::vector<std::string> item = parseItem();
+			result.insert(
+				result.end(),
+				item.begin(),
+				item.end()
+			);
 		}
-	}
-	// copy the articulation indexes with an offset for MIDI
-	vector<vector<int>> midiArticulationVals;
-	for (i = 0; i < articulationIndexes.size(); i++) {
-		vector<int> aVector(1, (articulationIndexes.at(i).at(0) > 0 ? articulationIndexes.at(i).at(0)+9 : 1));
-		midiArticulationVals.push_back(std::move(aVector));
-		for (j = 1; j < articulationIndexes.at(i).size(); j++) {
-			midiArticulationVals.back().push_back(articulationIndexes.at(i).at(j)+9);
-		}
-	}
+		return result;
+	};
 
-	// now check for tuplets
-	int tupletNdx = 0;
-	int tupletNumerator = 1, tupletDenominator = 1;
-	vector<char> allowedChars = {'c', 'd', 'e', 'f', 'g', 'a', 'b', 'r', 'i', 's', 'h', '\'', ',', 'o', '-'};
-	for (i = 0; i < tokens.size(); i++) {
-		vector<string> subtokens = tokenizeChord(tokens.at(i));
-		bool isTuplet = true;
-		// tuplets are converted to a forward slash and the tuplet ration after it
-		// for example, \tuplet 3/2 {c''8 d'' e''} is converted to c''8/3/2 d''/3/2 e''/3/2
-		// so we need to look for digits after a note character, an octave symbol (, or ') or a duration digit
-		size_t slashNdx = subtokens.back().find('/');
-		if (slashNdx != string::npos) {
-			for (j = 0; j < slashNdx; j++) {
-				// if we find a character that is not allowed
-				if (find(allowedChars.begin(), allowedChars.end(), subtokens.back().at(j)) == allowedChars.end() && !isdigit(subtokens.back().at(j))) {
-					// this is not a tuplet, move on
-					isTuplet = false;
-					break;
-				}
+	parseItem = [&]() -> std::vector<std::string> {
+		std::vector<std::string> item;
+		skipWhitespace();
+		if (pos >= expression.size()) return item;
+		// bracketed group
+		if (expression[pos] == '[') {
+			++pos; // move pointer on opening square bracket
+			// recursively parse everything inside the brackets.
+			std::vector<std::string> contents = parseSequence(true);
+			// move pointer on closing square bracket
+			if (pos < expression.size() && expression[pos] == ']') ++pos;
+			// read the multiplier immediately following ']'.
+			int repetitions = parseMultiplier();
+			for (int i = 0; i < repetitions; ++i) {
+				item.insert(
+					item.end(),
+					contents.begin(),
+					contents.end()
+				);
 			}
-			if (isTuplet) {
-				size_t secondSlashNdx = subtokens.back().substr(slashNdx+1).find('/');
-				if (secondSlashNdx != string::npos) {
-					if (isNumber(subtokens.back().substr(slashNdx+1, secondSlashNdx))) {
-						tupletNumerator = stoi(subtokens.back().substr(slashNdx+1, secondSlashNdx));
-						k = slashNdx + secondSlashNdx + 2;
-						bool foundDenominator = false;
-						while (k < subtokens.back().size()) {
-							if (!isdigit(subtokens.back().at(k))) {
-								if (isNumber(subtokens.back().substr(slashNdx+secondSlashNdx+1, k-slashNdx-secondSlashNdx-1))) {
-									tupletDenominator = stoi(subtokens.back().substr(slashNdx+secondSlashNdx+1, k-slashNdx-secondSlashNdx-1));
-									foundDenominator = true;
-								}
-								else {
-									isTuplet = false;
-								}
-								break;
-							}
-							k++;
-						}
-						if (!foundDenominator && isdigit(subtokens.back().at(k-1))) {
-							tupletDenominator = stoi(subtokens.back().substr(k-1, 1));
-							isTuplet = true;
-						}
-						else {
-							isTuplet = false;
-						}
-					}
-					else {
-						isTuplet = false;
-					}
-				}
-				else {
-					isTuplet = false;
-				}
+			return item;
+		}
+		// regular token or chord
+		size_t start = pos;
+		std::string token;
+		//if (expression[pos] == '<') {
+		//	// a chord: keep everything from '<' through '>'
+		//	// as one token, including internal whitespace.
+		//	++pos;
+		//	while (pos < expression.size() && expression[pos] != '>') {
+		//		++pos;
+		//	}
+		//	if (pos < expression.size()) {
+		//		++pos; // move pointer on closing angle bracket
+		//		// include the duration and any following suffix,
+		//		// e.g. <c' e'>2 or <c' e'>4.
+		//		while (pos < expression.size() &&
+		//				!std::isspace(static_cast<unsigned char>(expression[pos])) &&
+		//				expression[pos] != '[' &&
+		//				expression[pos] != ']') {
+		//			++pos;
+		//		}
+		//	}
+		//	token = expression.substr(start, pos - start);
+		//}
+		//else {
+		//	// ordinary token
+		//	while (pos < expression.size() &&
+		//			!std::isspace(static_cast<unsigned char>(expression[pos])) &&
+		//			expression[pos] != '[' &&
+		//			expression[pos] != ']') {
+		//		++pos;
+		//	}
+		//	token = expression.substr(start, pos - start);
+		//}
+		//// handle multipliers on regular tokens, while preserving
+		//// chords as single tokens.
+		//size_t star = token.find('*');
+		//if (star != std::string::npos &&
+		//		star + 1 < token.size() &&
+		//		isNumber(token.substr(star + 1))) {
+		//	int repetitions = std::stoi(token.substr(star + 1));
+		//	token = token.substr(0, star);
+		//	for (int i = 0; i < repetitions; ++i)
+		//		item.push_back(token);
+		//}
+		//else {
+		//	item.push_back(token);
+		//}
+		//return item;
+		bool insideQuotes = false;
+		int angleBracketDepth = 0;
+		while (pos < expression.size()) {
+			char c = expression[pos];
+			// toggle quoted-string state.
+			if (c == '"') {
+				insideQuotes = !insideQuotes;
+				++pos;
+				continue;
 			}
-		}
-		else {
-			isTuplet = false;
-		}
-		if (isTuplet) {
-			tupletStartStop[tupletNdx] = std::make_pair(i, i+tupletNumerator-1);
-			tupletRatios[tupletNdx++] = std::make_pair(tupletNumerator, tupletDenominator);
-			// move the i index to test notes beyond the tuplet we just stored
-			i += tupletNumerator;
-			i--; // because i is incremented before testing if the loop must continue
-		}
-	}
-
-	// we are now done with dynamically allocating memory, so we can move on to the rest of the data
-	// we can now create more variables without worrying about memory
-
-	// the vector below is used later to check if we encounter some unkown character
-	vector<int> foundAccidentals(tokens.size(), 0);
-	float accidental = 0.0;
-	// various counters
-	unsigned numDurs = 0;
-	unsigned numDynamics = 0;
-	unsigned dynamicsRampCounter = 0;
-	unsigned slursCounter = 0;
-	for (i = 0; i < tokens.size(); i++) {
-		// first check for accidentals, if any
-		vector<string> subtokens = tokenizeChord(tokens.at(i));
-		for (j = 0; j < subtokens.size(); j++) {
-			bool foundAccidental = false;
-			// the first character of a note token is the actual note, so we start from 1 in the loop below
-			for (k = 1; k < subtokens.at(j).size(); k++) {
-				if (subtokens.at(j).at(k) == char(101)) { // 101 is "e"
-					if (k < subtokens.at(j).size()-1) {
-						// if the character after "e" is "s" or "h" we have an accidental
-						if (subtokens.at(j).at(k+1) == char(115)) { // 115 is "s"
-							accidental -= 1.0; // in which case we subtract one semitone
-							foundAccidental = true;
-							foundAccidentals.at(i) = 1;
-						}
-						else if (subtokens.at(j).at(k+1) == char(104)) { // 104 is "h"
-							accidental -= 0.5;
-							foundAccidental = true;
-							foundAccidentals.at(i) = 1;
-						}
-						else {
-							return std::make_pair(3, subtokens.at(j).at(k+1) + (string)": unknown accidental character");
-						}
-					}
-					else {
-						return std::make_pair(3, "\"e\" must be followed by \"s\" or \"h\"");
-					}
-				}
-				else if (subtokens.at(j).at(k) == char(105)) { // 105 is "i"
-					if (k < subtokens.at(j).size()-1) {
-						if (subtokens.at(j).at(k+1) == char(115)) { // 115 is "s"
-							accidental += 1.0; // in which case we add one semitone
-							foundAccidental = true;
-							foundAccidentals.at(i) = 1;
-						}
-						else if (subtokens.at(j).at(k+1) == char(104)) { // 104 is "h"
-							accidental += 0.5;
-							foundAccidental = true;
-							foundAccidentals.at(i) = 1;
-						}
-						else {
-							return std::make_pair(3, subtokens.at(j).at(k+1) + (string)": unknown accidental character");
-						}
-					}
-					else {
-						return std::make_pair(3, "\"i\" must be followed by \"s\" or \"h\"");
-					}
-				}
-				// we ignore "s" and "h" as we have checked them above
-				else if (subtokens.at(j).at(k) == char(115) || subtokens.at(j).at(k) == char(104)) {
-					accidentalIndexes.at(i)++;
+			// ignore whitespace and bracket delimiters inside quotes.
+			if (!insideQuotes) {
+				// preserve chords, including spaces inside <...>.
+				// a '<' after a backslash is a crescendo (\<), and a '>' after a backslash or a hyphen
+				// is a diminuendo (\>) or an accent (->), so they don't open or close a chord
+				// otherwise a crescendo after a note would merge all the following tokens into one chord token
+				bool notChordBracket = (pos > 0 && (expression[pos-1] == '\\' || (c == '>' && expression[pos-1] == '-')));
+				if (c == '<' && !notChordBracket) {
+					++angleBracketDepth;
+					++pos;
 					continue;
 				}
-				// when the accidentals characters are over we move on
-				else {
-					break;
+				if (c == '>' && angleBracketDepth > 0 && !notChordBracket) {
+					--angleBracketDepth;
+					++pos;
+					continue;
 				}
-				accidentalIndexes.at(i)++;
-			}
-			if (foundAccidental) {
-				notesData.at(i).at(j) += accidental;
-				midiNotesData.at(i).at(j) += (int)accidental;
-				// accidentals can go up to a whole tone, which is accidental=2.0
-				// but in case it's one and a half tone, one tone is already added above
-				// so we need the half tone only, which we get with accidental-(int)accidental
-				pitchBendVals.at(i) = (abs(accidental)-abs((int)accidental));
-				if (accidental < 0.0) pitchBendVals.at(i) *= -1.0;
-				// store accidentals in the following order with the following indexes
-				// 0 - double flat, 1 - one and half flat, 2 - flat, 3 - half flat,
-				// 4 - natural, 5 - half sharp, 6 - sharp, 7 - one and half sharp, 8 - double sharp
-				// to map the -2 to 2 range of the accidental float variable to a 0 to 8 range
-				// we use the map function below
-				// this is subtracting the fromLow value (-2) which results in adding 2
-				// and mutliplying by the division between the difference between toHigh - toLow and fromHigh - fromLow
-				// which again results to 2, since (8 - 0) / (2 - -2) = 8 / 4 = 2
-				// a proper mapping function then adds the toLow value, but here it's 0 so we omit it
-				int mapped = (accidental + 2) * 2; 
-				accidentalsForScore.at(i).at(j) = mapped;
-				//accidentalsForScore.at(i).at(j) += transposedAccidentals.at(i);
-				// go back one character because of the last accidentalIndexes.at(i)++ above this if chunk
-				accidentalIndexes.at(i)--;
-			}
-			else {
-				accidentalsForScore.at(i).at(j) = -1;
-			}
-			// add the accidentals based on transposition (if set)
-			if (accidentalsForScore.at(i).at(j) == -1) {
-				// if we have no accidental, add the transposition to the natural sign indexes with 4
-				accidentalsForScore.at(i).at(j) = 4 + transposedAccidentals.at(i);
-			}
-			else {
-				accidentalsForScore.at(i).at(j) += transposedAccidentals.at(i);
-			}
-			// if the transposed accidental results in natural, assign -1 instead of 4 so as to not display the natural sign
-			// if the natural sign is needed to be displayed, this will be taken care of at the end of the last loop
-			// that iterates through the tokens of the string we parse in this function
-			if (accidentalsForScore.at(i).at(j) == 4) {
-				accidentalsForScore.at(i).at(j) = -1;
-			}
-			accidental = 0;
-		}
-	}
-	
-	vector<int> foundDynamics(tokens.size(), 0);
-	vector<int> foundOctaves(tokens.size(), 0);
-	bool dynAtFirstNote = false;
-	unsigned beginningOfChordIndex = 0;
-	bool tokenInsideChord = false;
-	int prevScoreDynamic = -1;
-	int ottava = 0;
-	quotesCounter = 0;
-	for (i = 0; i < tokens.size(); i++) {
-		foundArticulation = false;
-		if (beginningOfChords.at(i)) {
-			beginningOfChordIndex = i;
-			tokenInsideChord = true;
-		}
-		vector<string> subtokens = tokenizeChord(tokens.at(i));
-		// first check for octaves and ottavas
-		for (j = 0; j < subtokens.size(); j++) {
-			for (k = 0; k < subtokens.at(j).size(); k++) {
-				if (int(subtokens.at(j).at(k)) == 34 && quotesCounter >= 1) {
-					quotesCounter++;
-					if (quotesCounter > 2) quotesCounter = 0;
-				}
-				if (quotesCounter > 0) continue; // if we're inside text, ignore
-				if (int(subtokens.at(j).at(k)) == 39) {
-					if (!sharedData.instruments.at(lastInstrumentIndex).isRhythm()) {
-						notesData.at(i).at(j) += 12;
-						midiNotesData.at(i).at(j) += 12;
-						octavesForScore.at(i).at(j)++;
-					}
-					foundOctaves.at(i) = 1;
-				}
-				else if (int(subtokens.at(j).at(k)) == 44) {
-					if (!sharedData.instruments.at(lastInstrumentIndex).isRhythm()) {
-						notesData.at(i).at(j) -= 12;
-						midiNotesData.at(i).at(j) -= 12;
-						octavesForScore.at(i).at(j)--;
-					}
-					foundOctaves.at(i) = 1;
-				}
-				else if (subtokens.at(j).at(k) == 'o') {
-					if (k < subtokens.at(j).size()-1) {
-						if (isNumber(string(1, subtokens.at(j).at(k+1)))) {
-							int ndxOffset = 1;
-							if (subtokens.at(j).at(k+1) == '-') ndxOffset++;
-							ottava = stoi(string(1, subtokens.at(j).at(k+ndxOffset)));
-							if (ndxOffset == 2) ottava *= -1;
-							// we have already checked the argument to \ottava in parseCommand()
-							// but we need to check here too, in case the user writes in "raw" LiveLily
-							if (ottava < -2 || ottava > 2) {
-								return std::make_pair(3, "argument to \\ottava must be between -2 and 2");
-							}
-						}
-					}
-				}
-			}
-		}
-		ottavas.at(i) = ottava;
-		// then check for the rest of the characters
-		// we don't check inside chords, as the characters we look for in this loop
-		// are not permitted inside chords, so we check only at the last chord note
-		bool tupletDigits = false;
-		for (j = 0; j < subtokens.back().size(); j++) {
-			if (int(subtokens.back().at(j)) == 34 && quotesCounter >= 1) {
-				quotesCounter++;
-				if (quotesCounter > 2) quotesCounter = 0;
-			}
-			if (quotesCounter > 0) continue; // if we're inside text, ignore
-			if (subtokens.back().at(j) == '/') {
-				// a forward slash after duration digits means that the digits that come after it belong to a tuplet definition
-				tupletDigits = true;
-			}
-			if (isdigit(subtokens.back().at(j))) {
-				// make sure this is not an ottava digit or a tuplet
-				if (j > 0 && subtokens.back().at(j-1) != 'o' && subtokens.back().at(j-1) != '-' && !tupletDigits) {
-					// assemble the value from its ASCII characters
-					tempDur = tempDur * 10 + int(subtokens.back().at(j)) - 48;
-					if (i == 0) {
-						dynAtFirstNote = true;
-					}
-					if (i > 0 && !tokenInsideChord && !dynAtFirstNote) {
-						return std::make_pair(3, "first note doesn't have a duration");
-					}
-				}
-			}
-			
-			else if (subtokens.back().at(j) == char(92)) { // back slash
-				index2 = j;
-				int dynamic = 0;
-				bool foundDynamicLocal = false;
-				bool foundGlissandoLocal = false;
-				if (index2 > (subtokens.back().size()-1)) {
-					return std::make_pair(3, "a backslash must be followed by a command");
-				}
-				// loop till you find all dynamics or other commands
-				while (index2 < subtokens.back().size()) {
-					if (index2+1 == subtokens.back().size()) {
-						goto foundDynamicTest;
-					}
-					if (subtokens.back().at(index2+1) == char(102)) { // f for forte
-						if (mezzo) {
-							dynamic++;
-							mezzo = false;
-						}
-						else {
-							dynamic += 3;
-						}
-						dynamicsIndexes.at(i) = i;
-						dynamicsForScoreIndexes.at(i) = i;
-						if (dynamicsRampStarted) {
-							dynamicsRampStarted = false;
-							dynamicsRampEnd.at(i) = i;
-							dynamicsRampEndForScore.at(i) = i;
-							dynamicsRampIndexes.at(dynamicsRampCounter-1).second = i;
-							if (dynamicsRampStart.at(i) == dynamicsRampEnd.at(i)) {
-								std::pair<int, string> p = std::make_pair(3, "can't start and end a crescendo/diminuendo on the same note");
-								return p;
-							}
-						}
-						foundDynamics.at(i) = 1;
-						foundDynamicLocal = true;
-					}
-					else if (subtokens.back().at(index2+1) == char(112)) { // p for piano
-						if (mezzo) {
-							dynamic--;
-							mezzo = false;
-						}
-						else {
-							dynamic -= 3;
-						}
-						dynamicsIndexes.at(i) = i;
-						dynamicsForScoreIndexes.at(i) = i;
-						if (dynamicsRampStarted) {
-							dynamicsRampStarted = false;
-							dynamicsRampEnd.at(i) = i;
-							dynamicsRampEndForScore.at(i) = i;
-							dynamicsRampIndexes.at(dynamicsRampCounter-1).second = i;
-							if (dynamicsRampStart.at(i) == dynamicsRampEnd.at(i)) {
-								std::pair<int, string> p = std::make_pair(3, "can't start and end a crescendo/diminuendo on the same note");
-								return p;
-							}
-						}
-						foundDynamics.at(i) = 1;
-						foundDynamicLocal = true;
-					}
-					else if (subtokens.back().at(index2+1) == char(109)) { // m for mezzo
-						mezzo = true;
-						//if (dynamicsRampStarted) {
-						//	dynamicsRampStarted = false;
-						//	dynamicsRampEnd.at(i) = i;
-						//	dynamicsRampEndForScore.at(i) = i;
-						//	dynamicsRampIndexes.at(dynamicsRampCounter-1).second = i;
-						//	if (dynamicsRampStart.at(i) == dynamicsRampEnd.at(i)) {
-						//		std::pair<int, string> p = std::make_pair(3, "can't start and end a crescendo/diminuendo on the same note");
-						//		return p;
-						//	}
-						//}
-					}
-					else if (subtokens.back().at(index2+1) == char(60)) { // <
-						if (!dynamicsRampStarted) {
-							dynamicsRampStarted = true;
-							dynamicsRampStart.at(i) = i;
-							dynamicsRampStartForScore.at(i) = i;
-							dynamicsRampDirForScore.at(i) = 1;
-							dynamicsRampIndexes.at(dynamicsRampCounter).first = i;
-							dynamicsRampCounter++;
-						}
-					}
-					else if (subtokens.back().at(index2+1) == char(62)) { // >
-						if (!dynamicsRampStarted) {
-							dynamicsRampStarted = true;
-							dynamicsRampStart.at(i) = i;
-							dynamicsRampStartForScore.at(i) = i;
-							dynamicsRampDirForScore.at(i) = 0;
-							dynamicsRampIndexes.at(dynamicsRampCounter).first = i;
-							dynamicsRampCounter++;
-						}
-					}
-					else if (subtokens.back().at(index2+1) == char(33)) { // exclamation mark
-						if (dynamicsRampStarted) {
-							dynamicsRampStarted = false;
-							dynamicsRampEnd.at(i) = i;
-							dynamicsRampEndForScore.at(i) = i;
-							dynamicsRampIndexes.at(dynamicsRampCounter-1).second = i;
-							if (dynamicsRampStart.at(i) == dynamicsRampEnd.at(i)) {
-								std::pair<int, string> p = std::make_pair(3, "can't start and end a crescendo/diminuendo on the same note");
-								return p;
-							}
-						}
-						else {
-							return std::make_pair(3, "no crescendo or diminuendo initiated");
-						}
-					}
-					else if (subtokens.back().at(index2+1) == char(103)) { // g for gliss
-						if ((subtokens.back().substr(index2+1,5).compare("gliss") == 0) ||
-							(subtokens.back().substr(index2+1,9).compare("glissando") == 0)) {
-							glissandiIndexes.at(i) = 1;
-							glissandiIndexesForScore.at(i) = 1;
-							foundGlissandoLocal = true;
-						}
-					}
-					else {
-					foundDynamicTest:
-						if (foundDynamicLocal) {
-							// dynamics are stored like this:
-							// ppp = -9, pp = -6, p = -3, mp = -1, mf = 1, f = 3, ff = 6, fff = 9
-							// so to map this range to 60-100 (dB) we must first add 9 (subtract -9)
-							// multiply by 40 (100 - 60) / (9 - (-9)) = 40 / 18
-							// and add 60 (the lowest value)
-							if (dynamic < -9) dynamic = -9;
-							else if (dynamic > 9) dynamic = 9;
-							int scaledDynamic = (int)((float)(dynamic + 9) * ((100.0-(float)MINDB) / 18.0)) + MINDB;
-							dynamicsData.at(i) = scaledDynamic;
-							// convert the range MINDB to 100 to indexes from 0 to 7
-							// subtract the minimum dB value from the dynamic, multipled by (7/dB-range)
-							// add 0.5 and get the int to round the float properly
-							int dynamicForScore = (int)((((float)dynamicsData.at(i)-(float)MINDB)*(7.0/(100.0-(float)MINDB)))+0.5);
-							if (dynamicForScore != prevScoreDynamic) {
-								dynamicsForScore.at(i) = dynamicForScore;
-								prevScoreDynamic = dynamicForScore;
-							}
-							else {
-								// if it's the same dynamic, we must invalidate this index
-								dynamicsForScoreIndexes.at(i) = -1;
-							}
-							numDynamics++;
-							// to get the dynamics in MIDI velocity values, we map ppp to 16, and fff to 127
-							// based on this website https://www.hedsound.com/p/midi-velocity-db-dynamics-db-and.html
-							// first find the index of the dynamic value in the array {-9, -6, -3, -1, 1, 3, 6, 9}
-							int midiVelIndex = std::distance(dynsArr, std::find(dynsArr, dynsArr+8, dynamic));
-							midiVels.at(i) = (midiVelIndex+1)*16;
-							if (midiVels.at(i) > 127) midiVels.at(i) = 127;
-						}
-						// if we haven't found a dynamic and the ramp vectors are empty
-						// it means that we have received some unknown character
-						else if (dynamicsRampCounter == 0 && !foundGlissandoLocal) {
-							return std::make_pair(3, tokens.at(i).at(index2+1) + (string)": unknown character");
-						}
-						break;
-					}
-					index2++;
-				}
-				j = index2;
-			}
-			
-			// . for dotted note, which is also used for staccato, hence the second test against 45 (hyphen)
-			else if (subtokens.back().at(j) == char(46) && subtokens.back().at(j-1) != char(45)) {
-				dotIndexes.at(i) = 1;
-				dotsCounter.at(i)++;
-			}
-
-			else if (subtokens.back().at(j) == char(40)) { // ( for beginning of slur
-				slurStarted = true;
-				slurBeginningsIndexes.at(i) = i;
-				//slurIndexes.at(i).first = i;
-				slursCounter++;
-			}
-
-			else if (subtokens.back().at(j) == char(41)) { // ) for end of slur
-				slurStarted = false;
-				slurEndingsIndexes.at(i) = i;
-				//slurIndexes.at(i).second = i;
-			}
-
-			else if (subtokens.back().at(j) == char(126)) { // ~ for tie
-				tieIndexes.at(i) = i;
-			}
-
-			// check for _ or ^ and make sure that the previous character is not -
-			else if ((int(subtokens.back().at(j)) == 94 || int(subtokens.back().at(j)) == 95) && int(subtokens.back().at(j-1)) != 45) {
-				if (textIndexesLocal.at(i).at(0) == 0) {
-					return std::make_pair(3, (string)"stray " + subtokens.back().at(j));
-				}
-				if (subtokens.back().size() < j+3) {
-					return std::make_pair(3, "incorrect text notation");
-				}
-				if (int(subtokens.back().at(j+1)) != 34) {
-					return std::make_pair(3, "a text symbol must be followed by quote signs");
-				}
-				else {
-					quotesCounter++;
-				}
-			}
-		}
-		// add the extracted octave with \ottava
-		for (j = 0; j <= chordNotesIndexes.at(i); j++) {
-			octavesForScore.at(i).at(j) -= ottavas.at(i);
-		}
-		// store durations at the end of each token only if tempDur is greater than 0
-		if (tempDur > 0) {
-			if (std::find(std::begin(dursArr), std::end(dursArr), tempDur) == std::end(dursArr)) {
-				return std::make_pair(3, to_string(tempDur) + " is not a valid duration");
-			}
-			dursData.at(i) = tempDur;
-			durIndexes.at(i) = i;
-			numDurs++;
-			if (tokenInsideChord) {
-				for (unsigned k = beginningOfChordIndex; k < i; k++) {
-					dursData.at(k) = tempDur;
-				}
-			}
-			tempDur = 0;
-		}
-		if (endingOfChords.at(i)) {
-			tokenInsideChord = false;
-		}
-		// once done parsing everything, check if we need to change an accidental by placing the natural sign
-		// in case the same note has already been used in this bar with an accidental and now without
-		int thisNote = notesForScore.at(i).at(chordNotesIndexes.at(i));
-		int thisOctave = octavesForScore.at(i).at(chordNotesIndexes.at(i));
-		// do a reverse loop to see if the last same note had its accidental corrected
-		bool foundSameNote = false;
-		// use ints instead of j (we are inside a loop using i) because j is unsigned
-		// and a backwards loop won't work as it will wrap around instead of going below 0
-		if (accidentalsForScore.at(i).at(chordNotesIndexes.at(i)) == -1) {
-			for (int k = (int)i-1; k >= 0; k--) {
-				for (int l = (int)notesForScore.at(k).size()-1; l >= 0; l--) {
-					if (notesForScore.at(k).at(l) == thisNote && ((correctOnSameOctaveOnly && octavesForScore.at(k).at(l) == thisOctave) || !correctOnSameOctaveOnly)) {
-						if (accidentalsForScore.at(k).at(l) > -1 && accidentalsForScore.at(k).at(l) != 4) {
-							accidentalsForScore.at(i).at(chordNotesIndexes.at(i)) = 4;
-							foundSameNote = true;
-						}
-						else {
-							accidentalsForScore.at(i).at(chordNotesIndexes.at(i)) = -1;
-							foundSameNote = true;
-						}
+				// stop at whitespace or repetition-group delimiters
+				// only when outside chords and quoted strings.
+				if (angleBracketDepth == 0) {
+					if (std::isspace(static_cast<unsigned char>(c)) || c == '[' || c == ']') {
 						break;
 					}
 				}
-				if (foundSameNote) break;
 			}
-			if (!foundSameNote) accidentalsForScore.at(i).at(chordNotesIndexes.at(i)) = -1;
+			++pos;
 		}
-		if (slurStarted) {
-			isSlurred.at(i) = true;
-		}
-	}
-
-	if (dynamicsRampStarted) {
-		dynamicsRampIndexes.at(dynamicsRampCounter-1).second = i;
-	}
-
-	// check if there are any unmatched quote signs
-	if (quotesCounter > 0) {
-		return std::make_pair(3, "unmatched quote sign");
-	}
-
-	// once all elements have been parsed we can determine whether we're fine to go on
-	for (i = 0; i < tokens.size(); i++) {
-		if (!foundNotes.at(i) && !foundDynamics.at(i) && !foundAccidentals.at(i) && !foundOctaves.at(i)) {
-			return std::make_pair(3, tokens.at(i) + (string)": unknown token");
-		}
-	}
-
-	if (numDurs == 0) {
-		return std::make_pair(3, "no durations added");
-	}
-
-	// fill in possible empty slots of durations
-	for (i = 0; i < tokens.size(); i++) {
-		if ((int)i != durIndexes.at(i)) {
-			dursData.at(i) = dursData.at(i-1);
-		}
-	}
-
-	// fill in possible empty slots of dynamics
-	if (numDynamics == 0) {
-		for (i = 0; i < tokens.size(); i++) {
-			// if this is not the very first bar get the last value of the previous bar
-			if (sharedData.loopData.size() > 0) {
-				int prevBar = getPrevBarIndex();
-				// get the last stored dynamic
-				dynamicsData.at(i) = sharedData.instruments.at(lastInstrumentIndex).dynamics.at(prevBar).back();
-				// do the same for the MIDI velocities
-				midiVels.at(i) = sharedData.instruments.at(lastInstrumentIndex).midiVels.at(prevBar).back();
-			}
-			else {
-				// fill in a default value of halfway from min to max dB
-				dynamicsData.at(i) = 100-((100-MINDB)/2);
-				midiVels.at(i) = 72; // half way between mp and mf in MIDI velocity
-			}
-		}
-	}
-	else {
-		for (i = 0; i < tokens.size(); i++) {
-			// if a dynamic has not been stored, fill in the last
-			// stored dynamic in this empty slot
-			if ((int)i != dynamicsIndexes.at(i)) {
-				// we don't want to add data for the score, only for the sequencer
-				if (i > 0) {
-					dynamicsData.at(i) =  dynamicsData.at(i-1);
-					midiVels.at(i) = midiVels.at(i-1);
-				}
-				else {
-					// fill in a default value of halfway from min to max dB
-					dynamicsData.at(i) = 100-((100-MINDB)/2);
-					midiVels.at(i) = 72; // half way between mp and mf in MIDI velocity
-				}
-			}
-		}
-	}
-	// correct dynamics in case of crescendi or decrescendi
-	for (i = 0; i < dynamicsRampCounter; i++) {
-		int numSteps = dynamicsRampIndexes.at(i).second - dynamicsRampIndexes.at(i).first;
-		int valsDiff = dynamicsData.at(dynamicsRampIndexes.at(i).second) - dynamicsData[dynamicsRampIndexes.at(i).first];
-		int midiVelsDiff = midiVels.at(dynamicsRampIndexes.at(i).second) - midiVels[dynamicsRampIndexes.at(i).first];
-		int step = valsDiff / max(numSteps, 1);
-		int midiVelsStep = midiVelsDiff / max(numSteps, 1);
-		index2 = 1;
-		for (j = dynamicsRampIndexes.at(i).first+1; j < dynamicsRampIndexes.at(i).second; j++) {
-			dynamicsData.at(j) += (step * index2);
-			midiVels.at(j) += (midiVelsStep * index2);
-			index2++;
-		}
-	}
-	// store the next dynamic in case of the dynamics ramps
-	// replace all values within a ramp with the dynamic value of the next index
-	for (i = 0; i < dynamicsRampCounter; i++) {
-		for (j = dynamicsRampIndexes.at(i).first; j < dynamicsRampIndexes.at(i).second; j++) {
-			// if a ramp ends at the end of the bar without setting a new dynamic
-			// go back to the pre-last dynamic
-			if (j == notesData.size()-1) {
-				// if there's only one ramp in the bar store the first dynamic
-				if (i == 0) {
-					dynamicsRampData.at(j) = dynamicsData.at(0);
-				}
-				else {
-					dynamicsRampData.at(j) = dynamicsData.at(dynamicsRampIndexes.at(i-1).first);
-				}
-			}
-			// otherwise store the next dynamic so that the receiving program
-			// ramps from its current dynamic to the next one in the duration
-			// of the current note (retrieved by the sharedData.durs vector)
-			else {
-				dynamicsRampData.at(j) = dynamicsData.at(j+1);
-			}
-		}
-	}
-	// get the tempo of the minimum duration
-	// barIndex has been defined at the beginning of parseMelodicLine() after done expanding commands
-	if (sharedData.numerator.find(barIndex) == sharedData.numerator.end()) {
-		sharedData.numerator.at(barIndex) = sharedData.denominator.at(barIndex) = 4;
-	}
-	int dursAccum = 0;
-	int diff = 0; // this is the difference between the expected and the actual sum of tuplets
-	int scoreDur; // durations for score should not be affected by tuplet calculations
-	int halfDur; // for halving for every dot
-	// convert durations to number of beats with respect to minimum duration
-	for (i = 0; i < tokens.size(); i++) {
-		dursData.at(i) = MINDUR / dursData.at(i);
-		halfDur = dursData.at(i) / 2;
-		if (dotIndexes.at(i) == 1) {
-			for (j = 0; j < dotsCounter.at(i); j++) {
-				dursData.at(i) += halfDur;
-				halfDur /= 2;
-			}
-		}
-		scoreDur = dursData.at(i);
-		for (auto it = tupletStartStop.begin(); it != tupletStartStop.end(); ++it) {
-			if (i >= it->second.first && i <= it->second.second) {
-				// check if truncated sum is less than the expected sum
-				if (i == it->second.first) {
-					int tupletDurAccum = 0;
-					int expectedSum = 0;
-					for (j = it->second.first; j <= it->second.second; j++) {
-						tupletDurAccum += (dursData.at(i) * tupletRatios.at(it->first).second / tupletRatios.at(it->first).first);
-						expectedSum += dursData.at(i);
-					}
-					expectedSum = expectedSum * tupletRatios.at(it->first).second / tupletRatios.at(it->first).first;
-					diff += expectedSum - tupletDurAccum;
-				}
-				dursData.at(i) = dursData.at(i) * tupletRatios.at(it->first).second / tupletRatios.at(it->first).first;
-				if (diff > 0) {
-					dursData.at(i)++;
-					diff--;
-				}
-			}
-			//break;
-		}
-		// make sure there's no difference left between the expected duration and the modified duration
-		dursData.at(i) += diff;
-		diff = 0;
-		dursAccum += dursData.at(i);
-		dursForScore.at(i) = scoreDur;
-		dursDataWithoutSlurs.at(i) = dursData.at(i);
-	}
-	// if all we have is "r1", then it's a tacet, otherwise, we need to check the durations sum
-	if (!(tokens.size() == 1 && tokens.at(0).compare("r1") == 0)) {
-		if (dursAccum < sharedData.numBeats.at(barIndex)) {
-			return std::make_pair(3, "durations sum is less than bar duration");
-		}
-		if (dursAccum > sharedData.numBeats.at(barIndex)) {
-			return std::make_pair(3, "durations sum is greater than bar duration");
-		}
-	}
-	// now we can create a vector of pairs with the indexes of the slurs
-	int numSlurStarts = 0, numSlurStops = 0;
-	for (i = 0; i < numNotesVertical; i++) {
-		if (slurBeginningsIndexes.at(i) > -1) numSlurStarts++;
-		if (slurEndingsIndexes.at(i) > -1) numSlurStops++;
-	}
-	vector<std::pair<int, int>> slurIndexes (max(max(numSlurStarts, numSlurStops), 1), std::make_pair(-1, -1));
-	int slurNdx = 0;
-	for (i = 0; i < numNotesVertical; i++) {
-		if (slurBeginningsIndexes.at(i) > -1) slurIndexes.at(slurNdx).first = slurBeginningsIndexes.at(i);
-		if (slurEndingsIndexes.at(i) > -1) slurIndexes.at(slurNdx).second = slurEndingsIndexes.at(i);
-	}
-	// once the melodic line has been parsed, we can insert the new data to the maps of the Instrument object
-	map<string, int>::iterator it = sharedData.instrumentIndexes.find(lastInstrument);
-	if (it == sharedData.instrumentIndexes.end()) {
-		return std::make_pair(3, "instrument does not exist");
-	}
-	int thisInstIndex = it->second;
-	sharedData.instruments.at(thisInstIndex).notes[barIndex] = std::move(notesData);
-	sharedData.instruments.at(thisInstIndex).midiNotes[barIndex] = std::move(midiNotesData);
-	sharedData.instruments.at(thisInstIndex).durs[barIndex] = std::move(dursData);
-	sharedData.instruments.at(thisInstIndex).dursWithoutSlurs[barIndex] = std::move(dursDataWithoutSlurs);
-	sharedData.instruments.at(thisInstIndex).midiDursWithoutSlurs[barIndex] = std::move(midiDursDataWithoutSlurs);
-	sharedData.instruments.at(thisInstIndex).dynamics[barIndex] = std::move(dynamicsData);
-	sharedData.instruments.at(thisInstIndex).midiVels[barIndex] = std::move(midiVels);
-	sharedData.instruments.at(thisInstIndex).pitchBendVals[barIndex] = std::move(pitchBendVals);
-	sharedData.instruments.at(thisInstIndex).dynamicsRamps[barIndex] = std::move(dynamicsRampData);
-	sharedData.instruments.at(thisInstIndex).glissandi[barIndex] = std::move(glissandiIndexes);
-	sharedData.instruments.at(thisInstIndex).midiGlissDurs[barIndex] = std::move(midiGlissDurs);
-	sharedData.instruments.at(thisInstIndex).midiDynamicsRampDurs[barIndex] = std::move(midiDynamicsRampDurs);
-	sharedData.instruments.at(thisInstIndex).articulations[barIndex] = std::move(articulationIndexes);
-	sharedData.instruments.at(thisInstIndex).midiArticulationVals[barIndex] = std::move(midiArticulationVals);
-	sharedData.instruments.at(thisInstIndex).isSlurred[barIndex] = std::move(isSlurred);
-	sharedData.instruments.at(thisInstIndex).text[barIndex] = std::move(texts);
-	sharedData.instruments.at(thisInstIndex).textIndexes[barIndex] = std::move(textIndexesLocal);
-	sharedData.instruments.at(thisInstIndex).slurIndexes[barIndex] = std::move(slurIndexes);
-	sharedData.instruments.at(thisInstIndex).tieIndexes[barIndex] = std::move(tieIndexes);
-	sharedData.instruments.at(thisInstIndex).scoreNotes[barIndex] = std::move(notesForScore);
-	sharedData.instruments.at(thisInstIndex).scoreDurs[barIndex] = std::move(dursForScore);
-	sharedData.instruments.at(thisInstIndex).scoreDotIndexes[barIndex] = std::move(dotIndexes);
-	sharedData.instruments.at(thisInstIndex).scoreDotsCounter[barIndex] = std::move(dotsCounter);
-	sharedData.instruments.at(thisInstIndex).scoreAccidentals[barIndex] = std::move(accidentalsForScore);
-	sharedData.instruments.at(thisInstIndex).scoreNaturalSignsNotWritten[barIndex] = std::move(naturalSignsNotWrittenForScore);
-	sharedData.instruments.at(thisInstIndex).scoreOctaves[barIndex] = std::move(octavesForScore);
-	sharedData.instruments.at(thisInstIndex).scoreOttavas[barIndex] = std::move(ottavas);
-	sharedData.instruments.at(thisInstIndex).scoreGlissandi[barIndex] = std::move(glissandiIndexesForScore);
-	//sharedData.instruments.at(thisInstIndex).scoreArticulations[barIndex] = std::move(articulationIndexes);
-	sharedData.instruments.at(thisInstIndex).scoreDynamics[barIndex] = std::move(dynamicsForScore);
-	sharedData.instruments.at(thisInstIndex).scoreDynamicsIndexes[barIndex] = std::move(dynamicsForScoreIndexes);
-	sharedData.instruments.at(thisInstIndex).scoreDynamicsRampStart[barIndex] = std::move(dynamicsRampStartForScore);
-	sharedData.instruments.at(thisInstIndex).scoreDynamicsRampEnd[barIndex] = std::move(dynamicsRampEndForScore);
-	sharedData.instruments.at(thisInstIndex).scoreDynamicsRampDir[barIndex] = std::move(dynamicsRampDirForScore);
-	sharedData.instruments.at(thisInstIndex).scoreTupletRatios[barIndex] = std::move(tupletRatios);
-	sharedData.instruments.at(thisInstIndex).scoreTupletStartStop[barIndex] = std::move(tupletStartStop);
-	sharedData.instruments.at(thisInstIndex).scoreTexts[barIndex] = std::move(textsForScore);
-	sharedData.instruments.at(thisInstIndex).isWholeBarSlurred[barIndex] = false;
-	// in case we have no slurs, we must check if there is a slurred that is not closed in the previous bar
-	// of if the whole previous bar is slurred
-	if (slurIndexes.size() == 1 && slurIndexes.at(0).first == -1 && slurIndexes.at(0).second == -1) {
-		int prevBar = getPrevBarIndex();
-		if ((sharedData.instruments.at(thisInstIndex).slurIndexes.at(prevBar).back().first > -1 && \
-				sharedData.instruments.at(thisInstIndex).slurIndexes.at(prevBar).back().second == -1) ||
-				sharedData.instruments.at(thisInstIndex).isWholeBarSlurred.at(prevBar)) {
-			sharedData.instruments.at(thisInstIndex).isWholeBarSlurred.at(barIndex) = true;
-		}
-	}
-	sharedData.instruments.at(thisInstIndex).setPassed(true);
-	return std::make_pair(0, "");
-}
-
-//--------------------------------------------------------------
-void ofApp::setPaneCoords()
-{
-	// this is the minimum height of the traceback space
-	// used to calculate the size of the panes
-	sharedData.tracebackBase = (float)sharedData.screenHeight - cursorHeight;
-	// we need the anchor so we can change the traceback height in case the traceback
-	// has more than two lines
-	// get the width and height for each pane
-	// initializing 0 to avoid warning messages during compilation
-	float paneWidth = 0, paneHeight = 0;
-	// we compute the maximum number of lines for a pane with the height of the window
-	int maxNumLines = sharedData.tracebackBase / cursorHeight;
-	// we need an even number of lines so that more than one panes in a column can halve this number
-	if (maxNumLines % 2) {
-		if (maxNumLines > 1) maxNumLines--;
-		else maxNumLines++;
-	}
-	// depending on the orientation, we must first create either the height or the width of the editors
-	if (paneSplitOrientation == 0) {
-		paneHeight = ((float)maxNumLines * cursorHeight) / (float)numPanes.size();
-	}
-	else {
-		paneWidth = (float)sharedData.screenWidth / (float)numPanes.size();
-	}
-	int paneNdx = 0;
-	for (map<int, int>::iterator it = numPanes.begin(); it != numPanes.end(); ++it) {
-		// each row sets the number of lines for its panes according to the number of rows (it->first) for paneSplitOrientation == 0
-		// or number of columns (it->second) for paneSplitOrientation == 1
-		int divisor = paneSplitOrientation == 0 ? (int)numPanes.size() : it->second;
-		int numLines = maxNumLines / (divisor > 0 ? divisor : 1);
-		int additionalLines = 0;
-		if (numLines * it->second != maxNumLines) additionalLines = maxNumLines - (numLines * it->second);
-		if (paneSplitOrientation == 0) {
-			paneWidth = sharedData.screenWidth / it->second;
-			for (int col = 0; col < it->second; col++) {
-				editors[paneNdx].setFrameWidth(paneWidth); // - (float)(lineWidth / 2));
-				editors[paneNdx].setFrameXOffset(paneWidth * (float)col);
-				editors[paneNdx].setFrameHeight(paneHeight);
-				editors[paneNdx].setFrameYOffset(paneHeight * (float)(it->first));
-				//if (!col) editors[paneNdx].setMaxNumLines(numLines+additionalLines);
-				//else editors[paneNdx].setMaxNumLines(numLines);
-				editors[paneNdx].setMaxNumLines(numLines);
-				editors[paneNdx].setMaxCharactersPerString();
-				paneNdx++;
-			}
+		token = expression.substr(start, pos - start);
+		// ------------------------------------------------------------
+		// handle token multipliers, e.g.:
+		//
+		// c'2*3
+		// c'2^"foo bar"*2
+		// <c' e'>2*2
+		// ------------------------------------------------------------
+		size_t star = token.find_last_of('*');
+		if (star != std::string::npos &&
+				star + 1 < token.size() &&
+				isNumber(token.substr(star + 1))) {
+			int repetitions = std::stoi(token.substr(star + 1));
+			token = token.substr(0, star);
+			for (int i = 0; i < repetitions; ++i)
+				item.push_back(token);
 		}
 		else {
-			float paneYOffset = 0;
-			float prevHeight = 0;
-			for (int col = 0; col < it->second; col++) {
-				if (col < additionalLines) paneHeight = (numLines + 1) * cursorHeight;
-				else paneHeight = numLines * cursorHeight;
-				paneYOffset += prevHeight;
-				prevHeight = paneHeight;
-				editors[paneNdx].setFrameHeight(paneHeight);
-				editors[paneNdx].setFrameYOffset(paneYOffset);
-				editors[paneNdx].setFrameWidth(paneWidth);
-				editors[paneNdx].setFrameXOffset(paneWidth * (float)it->first);
-				if (!col) editors[paneNdx].setMaxNumLines(numLines+additionalLines);
-				else editors[paneNdx].setMaxNumLines(numLines);
-				editors[paneNdx].setMaxCharactersPerString();
-				paneNdx++;
-			}
+			item.push_back(token);
 		}
-	}
-	// once all the editors have their dimensions and coordinates set
-	// we correct the traceback position so that there is no gap
-	// between the last line of an editor and the traceback rectangle
-	//maxNumLines = 0;
-	//for (map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
-	//	maxNumLines = max(maxNumLines, it->second.getMaxNumLines());
-	//}
-	sharedData.tracebackBase = (float)maxNumLines * cursorHeight;;
-	sharedData.tracebackYCoord = sharedData.tracebackBase;
+		return item;
+	};
+	return parseSequence(false);
 }
 
+/***** functions that contain commands/data for the score *****/
 //--------------------------------------------------------------
-void ofApp::setFontSize()
-{
-	font.load("DroidSansMono.ttf", fontSize);
-	cursorHeight = font.stringHeight("q");
-	float heightDiff = font.stringHeight("l") - font.stringHeight("o");
-	cursorHeight += heightDiff;
-	for (map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
-		it->second.setFontSize(fontSize, cursorHeight);
-	}
-	setPaneCoords();
-}
-
-//--------------------------------------------------------------
-CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, int numLines)
+CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
-	// the initial command is \score. followed by a second level command
-	// to separate the second level command we create a new vector that will copy the originalCommands vector
+	// the initial command is \score. followed by a method
+	// to separate the method we create a new vector that will copy the originalCommands vector
 	// except from the first item where we trim the \score. part
-	vector<string> commands;
+	std::vector<std::string> commands;
 	for (unsigned i = 0; i < originalCommands.size(); i++) {
 		if (!i) {
-			// remove the "\score." part of the command so we isolate the second level command
-			string thisCommand = originalCommands[i].substr(originalCommands[i].find(".")+1);
+			// remove the "\score." part of the command so we isolate the method
+			std::string thisCommand = originalCommands[i].substr(originalCommands[i].find(".")+1);
 			commands.push_back(thisCommand);
 		}
 		else {
@@ -8007,12 +6251,16 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 		}
 		// reset animation in case it is on
 		if (sharedData.setAnimation) {
-			for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 				it->second.setAnimation(true);
 			}
 			sharedData.animate = true;
 		}
 		startSequencer = true;
+		//sharedData.pianoRollTimeStamp = ofGetElapsedTimeMillis();
+		// ties at the end of bars that are followed by other notes are ignored
+		std::string warning = tieWarning(sharedData.loopIndex);
+		if (!warning.empty()) return genWarning(warning);
 	}
 
 	else if (commands[0].compare("stop") == 0) {
@@ -8022,13 +6270,130 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 		sequencer.stop();
 	}
 
+	else if (commands[0].compare("colors") == 0) {
+		int rgbVal = 0;
+		int itemCounter = 0;
+		int colorCounter = 0;
+		for (size_t i = 1; i < commands.size(); i++) {
+			if (isNumber(commands[i])) {
+				rgbVal = stoi(commands[i]);
+				if (rgbVal < 0 || rgbVal > 255) {
+					return genError("RGB values must be between 0 and 255");
+				}
+				switch (itemCounter) {
+					case 0:
+						switch (colorCounter) {
+							case 0:
+								scoreBackgroundColor.r = rgbVal;
+								break;
+							case 1:
+								scoreBackgroundColor.g = rgbVal;
+								break;
+							case 2:
+								scoreBackgroundColor.b = rgbVal;
+								break;
+							default:
+								break;
+						}
+						break;
+					case 1:
+						for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+							it->second.setStaffColor(colorCounter, rgbVal);
+							it->second.setNotesColor(colorCounter, rgbVal);
+						}
+						break;
+					case 2:
+						for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+							it->second.setActiveNotesColor(colorCounter, rgbVal);
+						}
+						break;
+					case 3:
+						switch (colorCounter) {
+							case 0:
+								beatColor.r = rgbVal;
+								break;
+							case 1:
+								beatColor.g = rgbVal;
+								break;
+							case 2:
+								beatColor.b = rgbVal;
+								break;
+							default:
+								break;
+						}
+						break;
+					default:
+						break;
+				}
+				colorCounter++;
+				if (colorCounter >= 3) {
+					colorCounter = 0;
+					itemCounter++;
+				}
+			}
+			else {
+				if (commands[i].compare("invert") == 0) {
+					scoreBackgroundColor.r = 255 - scoreBackgroundColor.r;
+					scoreBackgroundColor.g = 255 - scoreBackgroundColor.g;
+					scoreBackgroundColor.b = 255 - scoreBackgroundColor.b;
+					beatColor.r = 255 - beatColor.r;
+					beatColor.g = 255 - beatColor.g;
+					beatColor.b = 255 - beatColor.b;
+					for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+						it->second.invertColor();
+					}
+				}
+				else if (commands[i].compare("reset") == 0){
+					scoreBackgroundColor = ofColor::white;
+					beatColor = ofColor::paleGreen;
+					for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+						it->second.setStaffColor(ofColor::black);
+						it->second.setNotesColor(ofColor::black);
+						it->second.setActiveNotesColor(ofColor::red);
+					}
+				}
+				else {
+					ofColor color;
+					if (colorNameMap.find(commands[i]) != colorNameMap.end()) {
+						color = colorNameMap[commands[i]];
+						switch (itemCounter) {
+							case 0:
+								scoreBackgroundColor = color;
+								break;
+							case 1:
+								for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+									it->second.setStaffColor(color);
+									it->second.setNotesColor(color);
+								}
+								break;
+							case 2:
+								for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+									it->second.setActiveNotesColor(color);
+								}
+								break;
+							case 3:
+								beatColor = color;
+								break;
+							default:
+								break;
+						}
+						itemCounter++;
+					}
+					else {
+						return genError(commands[i] + ": unknown color");
+					}
+				}
+			}
+		}
+	}
+
 	else if (commands[0].compare("stopnow") == 0) {
 		if (commands.size() > 1) {
 			return genError("\"stopnow\" subcommand takes no arguments");
 		}
 		sequencer.stopNow();
 		if (sharedData.animate) {
-			for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 				it->second.setAnimation(false);
 			}
 			sharedData.animate = false;
@@ -8077,8 +6442,24 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 
 	else if (commands[0].compare("show") == 0) {
 		if (commands.size() > 1) {
-			if (commands.size() > 2) {
-				return genError("second level command \"show\" takes up to one argument, not more");
+			// \score.show pianoroll takes the lowest and highest keys too (e.g. \score.show pianoroll c1 a5)
+			bool pianoRollRange = (commands[1].compare("pianoroll") == 0 && commands.size() == 4);
+			if (commands.size() > 2 && !pianoRollRange) {
+				if (commands[1].compare("pianoroll") == 0) {
+					return genError("\"pianoroll\" takes no arguments, or the lowest and the highest keys (e.g. c1 a5)");
+				}
+				return genError("method \"show\" takes up to one argument, not more");
+			}
+			if (commands[1].compare("pianoroll") == 0) {
+				int lowest = 21, highest = 108;
+				if (pianoRollRange) {
+					lowest = noteNameToMidi(commands[2]);
+					highest = noteNameToMidi(commands[3]);
+					if (lowest < 0) return genError(commands[2] + ": not a note name with an octave (e.g. c1 or a5)");
+					if (highest < 0) return genError(commands[3] + ": not a note name with an octave (e.g. c1 or a5)");
+					if (highest <= lowest) return genError("the highest key of the piano roll must be higher than its lowest key");
+				}
+				setPianoRollRange(lowest, highest);
 			}
 			if (commands[1].compare("barcount") == 0) {
 				showBarCount = true;
@@ -8094,19 +6475,31 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 					sharedData.setBeatAnimation = true;
 				}
 			}
+			else if (commands[1].compare("notes") == 0) {
+				setShowScore(0);
+			}
+			else if (commands[1].compare("pianoroll") == 0) {
+				setShowScore(1);
+			}
+			else if (commands[1].compare("scope") == 0) {
+				setShowScore(2);
+			}
+			else if (commands[1].compare("seq") == 0 || commands[1].compare("sequencer") == 0) {
+				setShowScore(3);
+			}
 			else {
-				return genError("unkown argument");
+				return genError("unknown argument to method \"show\"");
 			}
 		}
 		else {
-			sharedData.showScore = true;
-			editors[whichPane].setMaxCharactersPerString();
+			setShowScore(0);
 		}
 	}
+
 	else if (commands[0].compare("hide") == 0) {
 		if (commands.size() > 1) {
 			if (commands.size() > 2) {
-				return genError("second level command \"hide\" takes up to one argument, not more");
+				return genError("method \"hide\" takes up to one argument, not more");
 			}
 			if (commands[1].compare("barcount") == 0) {
 				showBarCount = false;
@@ -8119,38 +6512,39 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 				sharedData.setBeatAnimation = false;
 			}
 			else {
-				return genError("unkown argument");
+				return genError("unknown argument");
 			}
 		}
 		else {
-			sharedData.showScore = false;
-			editors[whichPane].setMaxCharactersPerString();
+			setShowScore(-1);
 		}
 	}
-	else if (commands[0].compare("animate") == 0) {
-		if (commands.size() > 1) {
-			return genError("second level command \"animate\" takes no arguments");
+
+	else if (commands[0].compare("animation") == 0) {
+		if (commands.size() != 2 || (commands[1] != "on" && commands[1] != "off")) {
+			return genError("\\score.animation takes one argument, \"on\" or \"off\"");
 		}
-		if (sequencer.isThreadRunning()) {
-			for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				it->second.setAnimation(true);
+		bool animationState = (commands[1] == "on");
+		if (animationState) {
+			if (sequencer.isThreadRunning()) {
+				for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+					it->second.setAnimation(animationState);
+				}
+				sharedData.animate = animationState;
 			}
-			sharedData.animate = true;
+			else {
+				sharedData.setAnimation = animationState;
+			}
 		}
 		else {
-			sharedData.setAnimation = true;
+			for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+				it->second.setAnimation(animationState);
+			}
+			sharedData.animate = animationState;
+			sharedData.setAnimation = animationState;
 		}
 	}
-	else if (commands[0].compare("inanimate") == 0) {
-		if (commands.size() > 1) {
-			return genError("second level command \"inanimate\" takes no arguments");
-		}
-		for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-			it->second.setAnimation(false);
-		}
-		sharedData.animate = false;
-		sharedData.setAnimation = false;
-	}
+
 	else if (commands[0].compare("beattype") == 0) {
 		if (commands.size() < 2) {
 			return genError("\"beattype\" takes a 1 or a 2 as an argument");
@@ -8160,7 +6554,7 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 		}
 		int beattype;
 		if (!isNumber(commands[1])) {
-			vector<string> v = {commands.begin()+1, commands.end()};
+			std::vector<std::string> v = {commands.begin()+1, commands.end()};
 			CmdInput cmdInput = genCmdInput(v);
 			cmdOutput = parseCommand(cmdInput, lineNum, numLines);
 			if (cmdOutput.errorCode > 0) return cmdOutput;
@@ -8175,13 +6569,33 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 		}
 		sharedData.beatVizType = beattype;
 	}
+
+	else if (commands[0].compare("seqres") == 0) {
+		if (commands.size() != 2) {
+			return genError("\"seqres\" takes one argument, the sequencer resolution");
+		}
+		if (!isNumber(commands[1])) {
+			return genError("\"seqres\" takes a number as argument, the sequencer resolution");
+		}
+		int res = std::stoi(commands[1]);
+		if (res <= 0) {
+			return genError("sequencer resolution must be greater than zero");
+		}
+		// an array to test against durations
+		std::vector<int> dursArr{1, 2, 4, 8, 16, 32, 64};
+		if (find(dursArr.begin(), dursArr.end(), res) == dursArr.end()) {
+			return genError(std::to_string(res) + " is not a valid resolutions");
+		}
+		seqResolution = res;
+	}
+
 	else if (commands[0].compare("movex") == 0) {
 		if (commands.size() < 2) {
 			return genError("\"movex\" takes a number as an argument");
 		}
 		int numPixels;
 		if (!isNumber(commands[1])) {
-			vector<string> v = {commands.begin()+1, commands.end()};
+			std::vector<std::string> v = {commands.begin()+1, commands.end()};
 			cmdOutput = parseCommand(genCmdInput(v), lineNum, numLines);
 			if (cmdOutput.errorCode > 0) return cmdOutput;
 			if (!isNumber(cmdOutput.outputVec[0])) return genError("\"movex\" takes a number as an argument");
@@ -8194,13 +6608,14 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 			it->second.moveScoreX(numPixels);
 		}
 	}
+
 	else if (commands[0].compare("movey") == 0) {
 		if (commands.size() < 2) {
 			return genError("\"movey\" takes a number as an argument");
 		}
 		int numPixels;
 		if (!isNumber(commands[1])) {
-			vector<string> v = {commands.begin()+1, commands.end()};
+			std::vector<std::string> v = {commands.begin()+1, commands.end()};
 			cmdOutput = parseCommand(genCmdInput(v), lineNum, numLines);
 			if (cmdOutput.errorCode > 0) return cmdOutput;
 			if (!isNumber(cmdOutput.outputVec[0])) return genError("\"movey\" takes a number as an argument");
@@ -8213,22 +6628,23 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 			it->second.moveScoreY(numPixels);
 		}
 	}
-	//else if (commands[0].compare("recenter") == 0) {
-	//	if (commands.size() > 1) {
-	//		return std::make_pair(3, "\"recenter\" takes no arguments");
-	//	}
-	//	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-	//		it->second.recenterScore();
-	//	}
-	//	return std::make_pair(0, "");
-	//}
+
+	else if (commands[0].compare("recenter") == 0) {
+		if (commands.size() > 1) {
+			return genError("\"recenter\" takes no arguments");
+		}
+		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			it->second.recenterScore();
+		}
+	}
+
 	else if (commands[0].compare("numbars") == 0) {
 		if (commands.size() < 2) {
 			return genError("\"numbars\" takes a number as an argument");
 		}
 		int numBarsLocal;
 		if (!isNumber(commands[1])) {
-			vector<string> v = {commands.begin()+1, commands.end()};
+			std::vector<std::string> v = {commands.begin()+1, commands.end()};
 			cmdOutput = parseCommand(genCmdInput(v), lineNum, numLines);
 			if (cmdOutput.errorCode > 0) return cmdOutput;
 			if (!isNumber(cmdOutput.outputVec[0])) return genError("\"numbars\" takes a number as an argument");
@@ -8244,7 +6660,10 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 			it->second.setNumBarsToDisplay(numBarsToDisplay);
 		}
+		// the length of the staves depends on the number of bars displayed, so set it and the note positions again
+		setScoreSizes();
 	}
+
 	else if (commands[0].compare("update") == 0) {
 		if (commands.size() != 2) {
 			return genError("\"update\" takes one argument, \"onlast\" or \"immediately\"");
@@ -8256,9 +6675,10 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 			scoreChangeOnLastBar = false;
 		}
 		else {
-			return genError(commands[1] + (string)"unknown argument to \"update\", must be onlast or immediately");
+			return genError(commands[1] + (std::string)"unknown argument to \"update\", must be onlast or immediately");
 		}
 	}
+
 	else if (commands[0].compare("correct") == 0) {
 		if (commands.size() != 2) {
 			return genError("\"correct\" takes one argument, \"onoctave\" or \"all\"");
@@ -8270,23 +6690,83 @@ CmdOutput ofApp::scoreCommands(vector<string>& originalCommands, int lineNum, in
 			correctOnSameOctaveOnly = false;
 		}
 		else {
-			return genError( commands[1] + (string)": unknown argument to \"correct\"");
+			return genError( commands[1] + (std::string)": unknown argument to \"correct\"");
 		}
 	}
+
 	else {
-		return genError("unkown second level command");
+		return genError("unknown method to \\score");
 	}
 	return cmdOutput;
 }
 
 //--------------------------------------------------------------
-CmdOutput ofApp::maestroCommands(vector<string>& commands, int lineNum, int numLines)
+void ofApp::setShowScore(int ndx)
+{
+	if (ndx >= 0) {
+		showScore = true;
+		scoreType = ndx;
+		if (ndx == 0) sharedData.showNotes = true;
+		else sharedData.showNotes = false;
+	}
+	else {
+		showScore = false;
+		sharedData.showNotes = false;
+	}
+
+	//switch (ndx) {
+	//	case 0:
+	//		sharedData.showNotes = true;
+	//		showPianoRoll = false;
+	//		showScope = false;
+	//		showScore = true;
+	//		break;
+	//	case 1:
+	//		sharedData.showNotes = false;
+	//		showPianoRoll = true;
+	//		showScope = false;
+	//		showScore = true;
+	//		break;
+	//	case 2:
+	//		sharedData.showNotes = false;
+	//		showPianoRoll = false;
+	//		showScope = true;
+	//		showScore = true;
+	//		break;
+	//	default:
+	//		sharedData.showNotes = false;
+	//		showPianoRoll = false;
+	//		showScope = false;
+	//		showScore = false;
+	//		break;
+	//}
+	setPaneCoords();
+	editors[whichPane].setMaxCharactersPerString();
+}
+
+//--------------------------------------------------------------
+CmdOutput ofApp::maestroCommands(std::vector<std::string>& originalCommands, int lineNum, int numLines)
 {
 	CmdOutput cmdOutput = CmdOutput();
-	for (unsigned i = 1; i < commands.size(); i++) {
-		if (commands[i].compare("address") == 0) {
+	// the initial command is \maestro. followed by a method
+	// to separate the method we create a new vector that will copy the originalCommands vector
+	// except from the first item where we trim the \maestro. part
+	std::vector<std::string> commands;
+	for (unsigned i = 0; i < originalCommands.size(); i++) {
+		if (!i) {
+			// remove the "\maestro." part of the command so we isolate the method
+			std::string thisCommand = originalCommands[i].substr(originalCommands[i].find(".")+1);
+			commands.push_back(thisCommand);
+		}
+		else {
+			commands.push_back(originalCommands[i]);
+		}
+	}
+
+	for (unsigned i = 0; i < commands.size(); i++) {
+		if (commands[i].compare("mainaddr") == 0) {
 			if (commands.size() < i + 2) {
-				return genError("\\maestro address takes one argument, the OSC address to receive sensor data");
+				return genError("\"mainaddr\" takes one argument, the OSC address to receive sensor data");
 			}
 			maestroAddress = commands[i+1];
 			if (!maestroToggleSet) receivingMaestro = true;
@@ -8297,50 +6777,66 @@ CmdOutput ofApp::maestroCommands(vector<string>& commands, int lineNum, int numL
 			i++;
 		}
 
-		else if (commands[i].compare("toggle") == 0) {
+		else if (commands[i].compare("toggleaddr") == 0) {
 			if (commands.size() < i + 2) {
-				return genError("\\maestro toggle takes one argument, the OSC address to receive a 0 or 1");
+				return genError("\"toggleaddr\" takes one argument, the OSC address to receive a 0 or 1");
 			}
 			maestroToggleAddress = commands[i+1];
 			maestroToggleSet = true;
+			if (!oscReceiverIsSet) {
+				oscReceiver.setup(OSCPORT);
+				oscReceiverIsSet = true;
+			}
 			i++;
 		}
-		
-		else if (commands[i].compare("reset") == 0) {
+
+		else if (commands[i].compare("levareaddr") == 0) {
 			if (commands.size() < i + 2) {
-				return genError("\\maestro reset takes one argument, the OSC address to receive sensor data");
+				return genError("\"reset\" takes one argument, the OSC address to receive sensor data");
 			}
-			maestroResetAddress = commands[i+1];
+			maestroLevareAddress = commands[i+1];
+			if (!oscReceiverIsSet) {
+				oscReceiver.setup(OSCPORT);
+				oscReceiverIsSet = true;
+			}
 			i++;
 		}
 
 		else if (commands[i].compare("valndx") == 0) {
 			if (commands.size() < i + 2) {
-				return genError("\\maestro valndx takes one argument, the index of the OSC data packet");
+				return genError("\"valndx\" takes one argument, the index of the OSC data packet");
 			}
 			if (!isNumber(commands[i+1])) {
-				return genError("argument to \\maestro valndx must be a number");
+				return genError("argument to \"valndx\" must be a number");
 			}
 			int val = stoi(commands[i+1]);
 			if (val < 0) {
 				return genError("OSC data packet index must be positive");
 			}
 			maestroValNdx = val;
+			if (!oscReceiverIsSet) {
+				oscReceiver.setup(OSCPORT);
+				oscReceiverIsSet = true;
+			}
 			i++;
 		}
 
 		else if (commands[i].compare("valthresh") == 0) {
 			if (commands.size() < i + 2) {
-				return genError("\\maestro valthresh takes one argument, the threshold for triggering beats");
+				return genError("\"valthresh\" takes one argument, the threshold for triggering beats");
 			}
 			if (!isFloat(commands[i+1])) {
-				return genError("argument to \\maestro valthresh must be a number");
+				return genError("argument to \"valthresh\" must be a number");
 			}
 			float val = stof(commands[i+1]);
 			if (val < 0) {
-				return genError("maestro beat thresh must be positive");
+				return genError("maestro beat threshold must be positive");
 			}
 			maestroValThresh = val;
+			if (!oscReceiverIsSet) {
+				oscReceiver.setup(OSCPORT);
+				oscReceiverIsSet = true;
+			}
 			i++;
 		}
 	}
@@ -8348,14 +6844,22 @@ CmdOutput ofApp::maestroCommands(vector<string>& commands, int lineNum, int numL
 }
 
 //--------------------------------------------------------------
-void ofApp::initializeInstrument(string instName)
+bool ofApp::isScoreVisible()
+{
+	return showScore;
+}
+
+/********************* instrument functions *******************/
+//--------------------------------------------------------------
+void ofApp::initializeInstrument(std::string instName)
 {
 	int maxInstIndex = (int)sharedData.instruments.size();
 	sharedData.instrumentIndexes[instName] = maxInstIndex;
 	sharedData.instruments[maxInstIndex] = Instrument();
-	sharedData.instruments[maxInstIndex].setID(maxInstIndex); // this is for debugging the Notes()
+	sharedData.instruments[maxInstIndex].setID(maxInstIndex);
 	sharedData.instruments[maxInstIndex].setName(instName.substr(1)); // remove the back slash at the beginning
 	sharedData.instruments[maxInstIndex].setMute(false);
+	sharedData.instruments[maxInstIndex].setColor(colorNameMap[instrumentColors[maxInstIndex%(int)instrumentColors.size()]]);
 
 	// score part OSC stuff
 	sharedData.instruments[maxInstIndex].sendToPart = false;
@@ -8366,6 +6870,14 @@ void ofApp::initializeInstrument(string instName)
 		sharedData.longestInstNameWidth = thisInstNameWidth;
 	}
 	sharedData.instruments[maxInstIndex].setNotesFontSize(sharedData.scoreFontSize, sharedData.staffLinesDist);
+	// a new instrument must be displayed like the existing ones, in case the score is not in its default state
+	sharedData.instruments[maxInstIndex].setScoreOrientation(scoreOrientation);
+	sharedData.instruments[maxInstIndex].setNumBarsToDisplay(numBarsToDisplay);
+	// an instrument added while the score is animated (e.g. with \insts.add while the sequencer plays) is animated too
+	if (sharedData.animate) sharedData.instruments[maxInstIndex].setAnimation(true);
+	// so does an instrument created after \notedur or \accoffset was called
+	for (const auto& noteDur : noteDurSettings) sharedData.instruments[maxInstIndex].setDuration(noteDur.first, noteDur.second);
+	if (accOffsetSet) sharedData.instruments[maxInstIndex].setAccidentalsOffsetCoef(accOffsetCoef);
 	sharedData.instrumentIndexesOrdered[maxInstIndex] = maxInstIndex;
 	sharedData.numInstruments++;
 	keywords.push_back(instName);
@@ -8373,11 +6885,315 @@ void ofApp::initializeInstrument(string instName)
 }
 
 //--------------------------------------------------------------
+void ofApp::addedInstruments(int numInstsBefore)
+{
+	int numInsts = (int)sharedData.instruments.size();
+	int numAdded = numInsts - numInstsBefore;
+	if (numAdded <= 0) return;
+	// functions bound to the beat, the start of the bar, etc. are bound to the number of instruments and above (see functionFuncs())
+	// so these bindings move with the number of instruments
+	{
+		std::lock_guard<std::mutex> lock(sharedData.functionsMutex);
+		for (auto& func : sharedData.functions) {
+			int bound = func.second.getBoundInst();
+			if (bound >= numInstsBefore) func.second.setBoundInst(bound + numAdded);
+		}
+	}
+	// an empty bar (a whole rest) for every bar defined before the new instruments, for the sequencer and the score
+	// only the new instruments are laid out, the bars of the other instruments don't change
+	for (auto barIt = sharedData.barsOrdered.begin(); barIt != sharedData.barsOrdered.end(); ++barIt) {
+		int bar = barIt->first;
+		for (int instNdx = numInstsBefore; instNdx < numInsts; instNdx++) {
+			Instrument& inst = sharedData.instruments[instNdx];
+			inst.createEmptyMelody(bar);
+			inst.setPassed(false);
+			if (sharedData.numerator.find(bar) == sharedData.numerator.end()) continue;
+			inst.setMeter(bar, sharedData.numerator[bar], sharedData.denominator[bar], sharedData.numBeats[bar]);
+			inst.setScoreNotes(bar, sharedData.numerator[bar], sharedData.denominator[bar], sharedData.numBeats[bar],
+					sharedData.BPMTempi[bar], sharedData.tempoBaseForScore[bar], sharedData.BPMDisplayHasDot[bar], sharedData.BPMMultiplier[bar]);
+			inst.setNotePositions(bar);
+		}
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::removeInstrument(int instNdx)
+{
+	auto removedIt = sharedData.instruments.find(instNdx);
+	if (removedIt == sharedData.instruments.end()) return;
+	int numInsts = (int)sharedData.instruments.size();
+	std::string name = "\\" + removedIt->second.getName();
+	int removedGroup = removedIt->second.getGroup();
+	sequencer.silenceInstrument(removedIt->second);
+	// the highlights of instruments with a delay that haven't been shown yet refer to the indexes of the instruments, which change
+	sequencer.clearDelayedVisuals();
+	// its name is not a command any more
+	auto mapIt = commandsMap[livelily].find(name[1]);
+	if (mapIt != commandsMap[livelily].end()) mapIt->second.erase(name);
+	auto keywordIt = std::find(keywords.begin(), keywords.end(), name);
+	if (keywordIt != keywords.end()) keywords.erase(keywordIt);
+	// the indexes of the instruments after it go one down, in everything that refers to instruments by their index
+	auto newIndex = [instNdx](int ndx) { return (ndx > instNdx ? ndx - 1 : ndx); };
+	// groups of instruments (\group), by their names
+	for (auto groupIt = instGroups.begin(); groupIt != instGroups.end();) {
+		auto& members = groupIt->second;
+		members.erase(std::remove(members.begin(), members.end(), name), members.end());
+		if (members.size() < 2) {
+			auto groupMapIt = commandsMap[livelily].find(groupIt->first[1]);
+			if (groupMapIt != commandsMap[livelily].end()) groupMapIt->second.erase(groupIt->first);
+			groupIt = instGroups.erase(groupIt);
+		}
+		else {
+			++groupIt;
+		}
+	}
+	// instruments merged to one staff (\merge)
+	for (auto& group : mergeGroups) {
+		group.erase(std::remove(group.begin(), group.end(), instNdx), group.end());
+		for (int& member : group) member = newIndex(member);
+	}
+	mergeGroups.erase(std::remove_if(mergeGroups.begin(), mergeGroups.end(), [](const std::vector<int>& group) { return group.size() < 2; }), mergeGroups.end());
+	// functions bound to it are unbound, and the bindings to the beat, bars, etc. (the number of instruments and above) move too
+	{
+		std::lock_guard<std::mutex> lock(sharedData.functionsMutex);
+		for (auto& func : sharedData.functions) {
+			int bound = func.second.getBoundInst();
+			if (bound == instNdx) func.second.setBoundInst(-1);
+			else if (bound > instNdx) func.second.setBoundInst(bound - 1);
+		}
+	}
+	// the instruments themselves, with their IDs and the IDs their staves are connected to (\group)
+	sharedData.instruments.erase(removedIt);
+	for (int ndx = instNdx + 1; ndx < numInsts; ndx++) {
+		auto nodeHolder = sharedData.instruments.extract(ndx);
+		if (nodeHolder.empty()) continue;
+		nodeHolder.key() = ndx - 1;
+		sharedData.instruments.insert(std::move(nodeHolder));
+		sharedData.instruments[ndx - 1].setID(ndx - 1);
+	}
+	for (auto& inst : sharedData.instruments) {
+		int group = inst.second.getGroup();
+		// the instrument after the removed one connects to the instrument the removed one was connected to
+		if (group == instNdx) inst.second.setGroup(removedGroup >= 0 ? newIndex(removedGroup) : -1);
+		else if (group > instNdx) inst.second.setGroup(group - 1);
+	}
+	// the indexes by name, and in the order of the score parts
+	sharedData.instrumentIndexes.clear();
+	for (auto& inst : sharedData.instruments) sharedData.instrumentIndexes["\\" + inst.second.getName()] = inst.first;
+	std::map<int, int> ordered;
+	int order = 0;
+	for (auto& entry : sharedData.instrumentIndexesOrdered) {
+		if (entry.second == instNdx) continue;
+		ordered[order++] = newIndex(entry.second);
+	}
+	sharedData.instrumentIndexesOrdered = ordered;
+	std::vector<int> oscClients;
+	for (int client : sharedData.grouppedOSCClients) {
+		if (client != instNdx) oscClients.push_back(newIndex(client));
+	}
+	sharedData.grouppedOSCClients = oscClients;
+	if (lastInstrumentIndex == instNdx) lastInstrumentIndex = 0;
+	else lastInstrumentIndex = newIndex(lastInstrumentIndex);
+	// the widths of the names, for the space of the names left of the score
+	instNameWidths.clear();
+	sharedData.longestInstNameWidth = 0;
+	for (auto& inst : sharedData.instruments) {
+		int width = instFont.stringWidth(inst.second.getName());
+		instNameWidths[inst.first] = width;
+		sharedData.longestInstNameWidth = std::max(sharedData.longestInstNameWidth, width);
+	}
+	// the tokens of the editor that play the notes of the instruments (\editor.animate)
+	std::map<std::pair<int, int>, std::vector<std::vector<EditorNoteSpan>>> spans;
+	for (auto& entry : editorNoteSpans) {
+		if (entry.first.first == instNdx) continue;
+		spans[std::make_pair(newIndex(entry.first.first), entry.first.second)] = entry.second;
+	}
+	editorNoteSpans = spans;
+	{
+		std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
+		activeEditorNotes.clear();
+		activeEditorRests.clear();
+	}
+	// the lines of the editors that the bars of the instruments are written in
+	for (auto& editor : editors) {
+		std::map<int, std::map<int, int>> connected;
+		for (auto& entry : editor.second.instsConnectedToLine) {
+			if (entry.first == instNdx) continue;
+			connected[newIndex(entry.first)] = entry.second;
+		}
+		editor.second.instsConnectedToLine = connected;
+	}
+	sharedData.numInstruments = (int)sharedData.instruments.size();
+	setScoreCoords();
+}
+
+//--------------------------------------------------------------
+void ofApp::fillInMissingInsts(int barIndex)
+{
+	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		if (!it->second.hasPassed()) {
+			it->second.createEmptyMelody(barIndex);
+			it->second.setPassed(true);
+			// since all instruments need to set the boolean below to true
+			// for parseStrings() to know that ;all bars of a \bars commands have finished
+			// it's ok to set it to true for missing instruments right from the start
+			if (parsingBars) it->second.setMultiBarsDone(true);
+		}
+	}
+}
+
+/*********** coordinates/positions/sizes functions ************/
+//--------------------------------------------------------------
+void ofApp::setFontSize(bool calculateCoords)
+{
+	if (!fontLoaded) {
+		font.load("DroidSansMono.ttf", fontSize);
+		fontLoaded = true;
+		oneCharacterWidth = font.stringWidth("a");
+		halfCharacterWidth = oneCharacterWidth / 2;
+		cursorHeight = font.stringHeight("q");
+		float heightDiff = font.stringHeight("l") - font.stringHeight("o");
+		cursorHeight += heightDiff;
+		maxShellChars = (size_t)(sharedData.screenWidth / oneCharacterWidth);
+	}
+	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
+		it->second.setFontSize(fontSize, oneCharacterWidth, cursorHeight);
+	}
+	if (calculateCoords) setPaneCoords();
+}
+
+//--------------------------------------------------------------
+void ofApp::setPaneCoords()
+{
+	// this is the minimum height of the traceback space, used to calculate the size of the panes
+	// MINTRACEBACKLINES lines of the current font, with their baselines one and two lines below the panes (see drawTraceback() and drawShell())
+	// and the part of the last line below its baseline, as low as the cursor reaches (0.15 of a line, see drawShell())
+	// the panes get a whole number of lines in the rest of the window, so the area below them is at least this high
+	sharedData.tracebackBase = (float)sharedData.screenHeight - (cursorHeight * ((float)MINTRACEBACKLINES + 0.15f));
+	// we need the anchor so we can change the traceback height in case the traceback
+	// has more than two lines
+	// get the width and height for each pane
+	// initializing 0 to avoid warning messages during compilation
+	float paneWidth = 0, paneHeight = 0;
+	// we compute the maximum number of lines for a pane with the height of the window
+	int maxNumLines = sharedData.tracebackBase / cursorHeight;
+	// we need an even number of lines so that more than one panes in a column can halve this number
+	if (maxNumLines % 2) {
+		if (maxNumLines > 1) maxNumLines--;
+		else maxNumLines++;
+	}
+	// depending on the orientation, we must first create either the height or the width of the editors
+	if (paneSplitOrientation == 0) {
+		paneHeight = ((float)maxNumLines * cursorHeight) / (float)numPanes.size();
+	}
+	else {
+		paneWidth = (float)sharedData.screenWidth / (float)numPanes.size();
+	}
+	int paneNdx = 0;
+	for (std::map<int, int>::iterator it = numPanes.begin(); it != numPanes.end(); ++it) {
+		// each row sets the number of lines for its panes according to the number of rows (it->first) for paneSplitOrientation == 0
+		// or number of columns (it->second) for paneSplitOrientation == 1
+		bool calcAdditionalLines = true;
+		int numLinesDivisor = 1;
+		int widthDivisor = 1;
+		// if we are showing the score and we have only one pane or two panes
+		if (isScoreVisible() && ((numPanes.size() == 1 && numPanes[0] == 1) || (numPanes.size() == 2 && (numPanes[0] == 1 && numPanes[1] == 1)))) {
+			if (numPanes.size() == 1) {
+				if (scoreOrientation == 0) {
+					widthDivisor = 2;
+				}
+				else {
+					numLinesDivisor = 2;
+				}
+			}
+			else {
+				if (paneSplitOrientation == 1) {
+					if (scoreOrientation == 1) {
+						numLinesDivisor = 2;
+						widthDivisor = it->second;
+					}
+					else {
+						numLinesDivisor = it->second;
+						widthDivisor = 2;
+					}
+				}
+				else {
+					if (scoreOrientation == 0) {
+						numLinesDivisor = widthDivisor = 2;
+					}
+					else {
+						numLinesDivisor = 2;
+						widthDivisor = it->second;
+					}
+				}
+			}
+			calcAdditionalLines = false;
+		}
+		else {
+			numLinesDivisor = paneSplitOrientation == 0 ? (int)numPanes.size() : it->second;
+			widthDivisor = it->second;
+		}
+		int numLines = maxNumLines / (numLinesDivisor > 0 ? numLinesDivisor : 1);
+		int additionalLines = 0;
+		int numLinesMultiplier = paneSplitOrientation == 0 ? (int)numPanes.size() : it->second;
+		if (calcAdditionalLines && numLines * numLinesMultiplier != maxNumLines) {
+			additionalLines = maxNumLines - (numLines * numLinesMultiplier);
+		}
+		if (paneSplitOrientation == 0) {
+			paneWidth = sharedData.screenWidth / widthDivisor;
+			for (int col = 0; col < it->second; col++) {
+				editors[paneNdx].setFrameWidth(paneWidth); // - (float)(lineWidth / 2));
+				editors[paneNdx].setFrameXOffset(paneWidth * (float)col);
+				editors[paneNdx].setFrameHeight(paneHeight);
+				editors[paneNdx].setFrameYOffset(paneHeight * (float)(it->first));
+				//if (!col) editors[paneNdx].setMaxNumLines(numLines+additionalLines);
+				//else editors[paneNdx].setMaxNumLines(numLines);
+				editors[paneNdx].setMaxNumLines(numLines);
+				editors[paneNdx].setMaxCharactersPerString();
+				paneNdx++;
+			}
+		}
+		else {
+			float paneYOffset = 0;
+			float prevHeight = 0;
+			for (int col = 0; col < it->second; col++) {
+				if (col < additionalLines) paneHeight = (numLines + 1) * cursorHeight;
+				else paneHeight = numLines * cursorHeight;
+				paneYOffset += prevHeight;
+				prevHeight = paneHeight;
+				editors[paneNdx].setFrameHeight(paneHeight);
+				editors[paneNdx].setFrameYOffset(paneYOffset);
+				editors[paneNdx].setFrameWidth(paneWidth);
+				editors[paneNdx].setFrameXOffset(paneWidth * (float)it->first);
+				if (!col) editors[paneNdx].setMaxNumLines(numLines+additionalLines);
+				else editors[paneNdx].setMaxNumLines(numLines);
+				editors[paneNdx].setMaxCharactersPerString();
+				paneNdx++;
+			}
+		}
+	}
+	// once all the editors have their dimensions and coordinates set
+	// we correct the traceback position so that there is no gap
+	// between the last line of an editor and the traceback rectangle
+	//maxNumLines = 0;
+	//for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
+	//	maxNumLines = max(maxNumLines, it->second.getMaxNumLines());
+	//}
+	sharedData.tracebackBase = (float)maxNumLines * cursorHeight;
+	sharedData.tracebackYCoord = sharedData.tracebackBase;
+	// the panes have a new layout, which the shell makes shorter again if it needs to (see layoutPanesForShell())
+	paneBase.clear();
+	// the area below the panes is reset, so its size is calculated again in drawTraceback() and drawShell()
+	// for the lines that are shown in it, which are broken again to fit the width of the window (e.g. after it is resized)
+	tracebackNumLinesShown = shellNumLinesShown = -1;
+}
+
+//--------------------------------------------------------------
 void ofApp::setScoreCoords()
 {
 	scoreXStartPnt = sharedData.longestInstNameWidth + (sharedData.blankSpace * 1.5);
 	float staffLength = scoreBackgroundWidth - sharedData.blankSpace - scoreXStartPnt;
-	if (scoreOrientation > 0) staffLength /= min(2, numBarsToDisplay);
+	if (scoreOrientation > 0) staffLength /= std::min(2, numBarsToDisplay);
 	sharedData.notesXStartPnt = 0;
 	notesLength = staffLength - (sharedData.staffLinesDist * NOTESXOFFSETCOEF);
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
@@ -8391,15 +7207,19 @@ void ofApp::setScoreCoords()
 	}
 }
 
-//--------------------------------------------------------------
-void ofApp::setScoreNotes(int barIndex)
+void ofApp::resetScoreYOffset()
 {
-	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		it->second.setScoreNotes(barIndex, sharedData.numerator[barIndex],
-								 sharedData.denominator[barIndex], sharedData.numBeats[barIndex],
-								 sharedData.BPMTempi[barIndex], sharedData.tempoBaseForScore[barIndex],
-								 sharedData.BPMDisplayHasDot[barIndex], sharedData.BPMMultiplier[barIndex]);
-	}
+	// reset the Y offset for the score through swapScorePosition() which deals with it
+	// set the existing orientation value and reset the Y coord if it's smaller than 0
+	// so that they don't change
+	if (scoreYOffset < 0) scoreYOffset = 0;
+	// call swapScorePosition() twice to reset the score position without actually swapping its position
+	// swapScorePosition() also makes the pane on the other side of the score active (e.g. with two panes side by side)
+	// which the two calls can leave on the first pane, so the active pane is kept as it was (e.g. when Esc resets the traceback area)
+	int activePane = whichPane;
+	swapScorePosition(scoreOrientation);
+	swapScorePosition(scoreOrientation);
+	if (whichPane != activePane && editors.find(activePane) != editors.end()) setActivePane(activePane);
 }
 
 //--------------------------------------------------------------
@@ -8408,6 +7228,7 @@ void ofApp::setNotePositions(int barIndex)
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 		if (!it->second.getCopied(barIndex)) it->second.setNotePositions(barIndex);
 	}
+	applyMergeLayout(barIndex);
 }
 
 //--------------------------------------------------------------
@@ -8416,57 +7237,195 @@ void ofApp::setNotePositions(int barIndex, int numBars)
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 		if (!it->second.getCopied(barIndex)) it->second.setNotePositions(barIndex, numBars);
 	}
+	for (int i = 0; i < numBars; i++) applyMergeLayout(barIndex + i);
+}
+
+//--------------------------------------------------------------
+bool ofApp::isReservedName(const std::string& name)
+{
+	return reservedNames.find(name) != reservedNames.end();
+}
+
+//--------------------------------------------------------------
+int ofApp::mergeHostOf(int instNdx)
+{
+	for (const auto& group : mergeGroups) {
+		if (group.size() < 2) continue;
+		if (std::find(group.begin() + 1, group.end(), instNdx) != group.end()) return group.front();
+	}
+	return instNdx;
+}
+
+//--------------------------------------------------------------
+void ofApp::updateMergedVoices()
+{
+	for (auto& inst : sharedData.instruments) inst.second.setVoice(1, 1);
+	for (const auto& group : mergeGroups) {
+		for (size_t v = 0; v < group.size(); v++) {
+			auto it = sharedData.instruments.find(group[v]);
+			if (it != sharedData.instruments.end()) it->second.setVoice((int)v + 1, (int)group.size());
+		}
+	}
+	// the stems and the positions of the notes change, so all bars are laid out again
+	for (auto barIt = sharedData.barsIndexes.begin(); barIt != sharedData.barsIndexes.end(); ++barIt) {
+		setNotePositions(barIt->second);
+	}
+	if (!sharedData.barsIndexes.empty()) calculateStaffPositions(getLastBarIndex(), false);
+}
+
+//--------------------------------------------------------------
+void ofApp::applyMergeLayout(int bar)
+{
+	// the notes of the voices of a staff are placed by their time, so notes that sound together have the same X coordinate
+	// when their note heads would collide, one of them moves to the right, as in LilyPond by default:
+	// - a voice with stems up moves when its note heads are a unison or a second away from those of a voice with stems down
+	//   except for a unison of the same note head and dots, where the two note heads are drawn as one
+	// - a third (and further) voice with the same stem direction as a voice before it moves when they sound together
+	//   (voices 3 and 4 by one note head, 5 and 6 by two, etc.), so that their stems and beams don't run into each other
+	//   voices with stems up move to the right, and voices with stems down to the left
+	const float sameTime = 0.5;
+	for (const auto& group : mergeGroups) {
+		if (group.size() < 2) continue;
+		std::vector<std::vector<Notes::NoteColumn>> columns;
+		std::vector<int> dirs;
+		for (int inst : group) {
+			auto it = sharedData.instruments.find(inst);
+			if (it == sharedData.instruments.end()) return;
+			columns.push_back(it->second.getNoteColumns(bar));
+			dirs.push_back(it->second.getForcedStemDir());
+		}
+		float noteWidth = sharedData.instruments[group.front()].getScoreNoteWidth();
+		float halfStaffDist = sharedData.staffLinesDist / 2.0f;
+		// the column of a voice that starts at the X coordinate, or -1
+		auto columnAt = [&](size_t voice, float x) {
+			for (size_t k = 0; k < columns[voice].size(); k++) {
+				if (!columns[voice][k].rest && std::abs(columns[voice][k].x - x) < sameTime) return (int)k;
+			}
+			return -1;
+		};
+		for (size_t v = 0; v < group.size(); v++) {
+			for (size_t i = 0; i < columns[v].size(); i++) {
+				const Notes::NoteColumn& column = columns[v][i];
+				if (column.rest) continue;
+				float shift = 0;
+				if (v >= 2) {
+					for (size_t u = 0; u < v; u++) {
+						if (dirs[u] == dirs[v] && columnAt(u, column.x) >= 0) shift = noteWidth * (float)(v / 2) * (float)dirs[v];
+					}
+				}
+				if (dirs[v] == 1) {
+					for (size_t u = 0; u < group.size(); u++) {
+						if (dirs[u] != -1) continue;
+						int k = columnAt(u, column.x);
+						if (k < 0) continue;
+						const Notes::NoteColumn& other = columns[u][k];
+						float closest = FLT_MAX;
+						for (float y1 : column.headsY) {
+							for (float y2 : other.headsY) closest = std::min(closest, std::abs(y1 - y2));
+						}
+						if (closest > halfStaffDist + sameTime) continue;
+						bool sharedHead = (column.headsY.size() == 1 && other.headsY.size() == 1 && closest < sameTime &&
+								column.headType == other.headType && column.dots == other.dots);
+						if (!sharedHead && shift < noteWidth) shift = noteWidth;
+					}
+				}
+				if (shift != 0) sharedData.instruments[group[v]].shiftNoteColumn(bar, (int)i, shift);
+			}
+		}
+	}
 }
 
 //--------------------------------------------------------------
 void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 {
-	float maxHeightSum = 0;
-	float lastMaxPosition = 0;
-	float firstMinPosition = 0;
-	int i = 0;
+	// the staves are drawn one below the other, each one (allStaffDiffs + staffLinesDist * 2) pixels below the previous one
+	// (see draw()), so allStaffDiffs determines the gap between them
+	// the Y coordinates of the notes of each bar are relative to the top line of its staff
+	// with minimum Y coordinates (stems, beams, notes above the staff, etc.) of 0 or less
+	// and maximum Y coordinates (notes below the staff, dynamics, etc.) of (staffLinesDist * 4) or more
+	// two neighbouring staves don't overlap if the upper one doesn't reach down further than the lower one reaches up
+	// so the gap is set by (max Y of the upper staff - min Y of the lower staff), not by the height of each staff
+	// all the bars are checked, and not only the given one, as several bars are displayed side by side
+	// and the spacing must be enough for all of them, without changing every time a bar is displayed
+	// the arguments are kept for compatibility, as the calculation is the same for a new bar or a window change
+	(void)bar;
+	(void)windowChanged;
+	// instruments merged into the staff of another one (see \merge) have no staff of their own
+	// so only the staves are counted, and each staff reaches as far as all its voices
+	size_t numInsts = 0;
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-		float maxPosition = it->second.getMaxYPos(bar);
-		float minPosition = it->second.getMinYPos(bar);
-		if (i == 0 && it->first == 0) {
-			firstMinPosition = minPosition;
-		}
-		float diff = maxPosition - minPosition;
-		if (diff > maxHeightSum) {
-			maxHeightSum = diff;
-		}
-		lastMaxPosition = maxPosition;
-		i++;
+		if (mergeHostOf(it->first) == it->first) numInsts++;
 	}
-	// if the current bar is wider than the existing ones, we need to change the current Y coordinates
-	if (maxHeightSum >= sharedData.allStaffDiffs || windowChanged) {
-		sharedData.allStaffDiffs = min(maxHeightSum, (sharedData.tracebackBase - cursorHeight) / (float)sharedData.instruments.size());
-		float totalDiff = lastMaxPosition - firstMinPosition;
-		for (int i = 0; i < 2; i++) {
-			float heightCompare = sharedData.tracebackBase - cursorHeight;
-			if (i == 1) {
-				heightCompare = (sharedData.tracebackBase - cursorHeight) / 2;
+	if (numInsts == 0) return;
+	float requiredDiff = 0;
+	// how far the first staff reaches up, and how far the last one reaches down, in any bar
+	float firstMinPosition = 0;
+	float lastMaxPosition = sharedData.staffLinesDist * 4;
+	for (auto barIt = sharedData.barsIndexes.begin(); barIt != sharedData.barsIndexes.end(); ++barIt) {
+		int barNdx = barIt->second;
+		float prevMaxPosition = 0;
+		bool firstInst = true;
+		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			if (mergeHostOf(it->first) != it->first) continue;
+			float maxPosition = it->second.getMaxYPos(barNdx);
+			float minPosition = it->second.getMinYPos(barNdx);
+			for (auto voiceIt = sharedData.instruments.begin(); voiceIt != sharedData.instruments.end(); ++voiceIt) {
+				if (voiceIt->first == it->first || mergeHostOf(voiceIt->first) != it->first) continue;
+				maxPosition = std::max(maxPosition, voiceIt->second.getMaxYPos(barNdx));
+				minPosition = std::min(minPosition, voiceIt->second.getMinYPos(barNdx));
 			}
-			if (totalDiff < heightCompare) {
-				sharedData.yStartPnts[i] = ((sharedData.tracebackBase - cursorHeight) / (2*(i+1)));
-				sharedData.yStartPnts[i] -= (((sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2)) * \
-							(sharedData.numInstruments / 2)));
-				sharedData.yStartPnts[i] -= (sharedData.staffLinesDist * 2);
-				if ((sharedData.instruments.size() % 2) == 0) {
-					sharedData.yStartPnts[i] += ((sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2)) / 2); 
-				}
-				// make sure anything that sticks out of the staff doesn't go below 0 in the Y axis
-				if ((sharedData.yStartPnts[i] - firstMinPosition) < 0) {
-					sharedData.yStartPnts[i] += firstMinPosition;
-				}
+			if (firstInst) {
+				firstMinPosition = std::min(firstMinPosition, minPosition);
+				// with one staff only, there are no neighbours, so we keep the height of the staff
+				if (numInsts == 1) requiredDiff = std::max(requiredDiff, maxPosition - minPosition);
 			}
 			else {
-				// if the full score exceeds the screen just place it 10 pixels below the top part of the window
-				sharedData.yStartPnts[i] = firstMinPosition + 10;
+				requiredDiff = std::max(requiredDiff, prevMaxPosition - minPosition);
 			}
+			prevMaxPosition = maxPosition;
+			firstInst = false;
 		}
-		sharedData.yStartPnts[2] = sharedData.yStartPnts[0];
+		lastMaxPosition = std::max(lastMaxPosition, prevMaxPosition);
 	}
+	// the clefs reach about two staff spaces above the top line and below the bottom line of the staff
+	// so the first and last staves include them, and the gap between two staves must be large enough
+	// for the clefs of neighbouring staves not to touch, even when the bars are empty
+	firstMinPosition = std::min(firstMinPosition, -(sharedData.staffLinesDist * 2));
+	lastMaxPosition = std::max(lastMaxPosition, sharedData.staffLinesDist * 6);
+	// the staves must not overlap each other, even if the score doesn't fit
+	// the gap between two staves is (allStaffDiffs - staffLinesDist * 2), so this leaves four staff spaces between them
+	float minDiff = sharedData.staffLinesDist * 6;
+	requiredDiff = std::max(requiredDiff, minDiff);
+	// the score is displayed in the whole height (vertical view), or in the upper half (horizontal view)
+	float fullHeight = sharedData.tracebackBase - cursorHeight;
+	// in horizontal view, the height of the score background depends on the pane configuration
+	// (see swapScorePosition()), so we use that, if the score is currently displayed horizontally
+	float horizontalHeight = fullHeight / 2;
+	if (scoreOrientation == 1 && scoreBackgroundHeight > 0) horizontalHeight = std::min(horizontalHeight, scoreBackgroundHeight);
+	float availableHeight = (scoreOrientation == 1 ? horizontalHeight : fullHeight);
+	// the total height of the score is the distance from the top staff to the bottom staff
+	// plus what sticks out above the first and below the last staff
+	// so the most the distance between the staves can be for the score to fit is
+	float fittingDiff = requiredDiff;
+	if (numInsts > 1) {
+		fittingDiff = ((availableHeight - (lastMaxPosition - firstMinPosition)) / (float)(numInsts - 1)) - (sharedData.staffLinesDist * 2);
+	}
+	sharedData.allStaffDiffs = std::max(minDiff, std::min(requiredDiff, fittingDiff));
+	float staffDistance = sharedData.allStaffDiffs + (sharedData.staffLinesDist * 2);
+	float totalHeight = (staffDistance * (float)(numInsts - 1)) + (lastMaxPosition - firstMinPosition);
+	// index 0 is for the vertical view, 1 for the horizontal view (upper half of the window), 2 is the same as 0
+	for (int i = 0; i < 2; i++) {
+		float height = (i == 0 ? fullHeight : horizontalHeight);
+		if (totalHeight < height) {
+			// center the score, with whatever sticks out above the first staff included
+			sharedData.yStartPnts[i] = ((height - totalHeight) / 2.0) - firstMinPosition;
+		}
+		else {
+			// if the full score exceeds the screen just place it 10 pixels below the top part of the window
+			sharedData.yStartPnts[i] = 10 - firstMinPosition;
+		}
+	}
+	sharedData.yStartPnts[2] = sharedData.yStartPnts[0];
 }
 
 //--------------------------------------------------------------
@@ -8475,41 +7434,139 @@ void ofApp::swapScorePosition(int orientation)
 	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 		it->second.setScoreOrientation(orientation);
 	}
-	bool setCoords = (scoreOrientation != orientation ? true : false);
+	// use a boolean to determine whether before exiting the function we will calculate coords for the score
+	bool setCoords = scoreOrientation != orientation ? true : false;
+	// update the scoreOrientation variable before anything else because it is used in setPaneCoords()
+	// which in turn is called when viewing the score in horizontal view, before calculating the score's size and coords
 	scoreOrientation = orientation;
 	switch (orientation) {
 		case 0:
 			scoreYOffset = 0;
+			// if we have one pane only or two panes in horizontal split
 			scoreBackgroundWidth = sharedData.screenWidth / 2;
-			scoreBackgroundHeight = sharedData.tracebackBase - cursorHeight;
+			if ((numPanes.size() == 1 && numPanes[0] == 1) || (paneSplitOrientation == 0 && (numPanes.size() == 2 && (numPanes[0] == 1 && numPanes[1] == 1)))) {
+				// we set the space between the top of the window the beginning of the traceback as the height of the score
+				// in this pane configuration we don't mind which pane index we'll use, so the first is the safest
+				// we add one to the number of editor lines to include the pane separating line
+				scoreBackgroundHeight = sharedData.tracebackBase;
+			}
+			else {
+				scoreBackgroundHeight = sharedData.tracebackBase - cursorHeight;
+			}
+			sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+			sharedData.pianoRollKeysHeight = scoreBackgroundHeight / sharedData.pianoRollLength;
+			sharedData.pianoRollMinDur = (scoreBackgroundWidth - sharedData.pianoRollKeysWidth) / (float)MINDUR;
 			if (scoreXOffset == 0) scoreXOffset = sharedData.screenWidth / 2;
 			else scoreXOffset = 0;
+			// check if the editor is split in panes and change the active pane accordingly
+			if (paneSplitOrientation == 1 && numPanes.size() == 2) {
+				if (scoreXOffset == 0 && whichPane < numPanes[0]) {
+					setActivePane(numPanes[0]);
+				}
+				else if (scoreXOffset > 0 && whichPane >= numPanes[0]) {
+					setActivePane(0);
+				}
+			}
+			// if we have one pane only or two panes spit horizontally, swap its position with the score
+			else if (paneSplitOrientation == 0 && numPanes.size() < 3 &&
+					(numPanes.size() == 1 || (numPanes[0] == 1 && numPanes[1] == 1))) {
+				if (scoreXOffset == 0) {
+					editors[0].setFrameXOffset(sharedData.screenWidth / 2);
+					if (numPanes.size() > 1) editors[1].setFrameXOffset(sharedData.screenWidth / 2);
+				}
+				else {
+					editors[0].setFrameXOffset(0);
+					if (numPanes.size() > 1) editors[1].setFrameXOffset(0);
+				}
+			}
+			// if we change from horizontal to vertical view, set the coordinates of the panes
+			if (setCoords) setPaneCoords();
 			break;
 		case 1:
 			scoreXOffset = 0;
 			scoreBackgroundWidth = sharedData.screenWidth;
-			scoreBackgroundHeight = (sharedData.tracebackBase / 2) - cursorHeight;
-			// in horizontal view of the score, the height of the score background is rounded half the editor lines
-			// this is because the number of lines of an editor is always odd, so that the line with the file name
-			// and pane index is also included, which makes the total number of lines even
-			// when we view the score horizontally, the background should match an exact number of lines
-			// and since the number of total lines is odd, we make this background one less
-			// e.g. for 37 lines, the score background will be 18 lines, not 19, or 18.5
-			// but when viewed on the lower side, it should touch the white line of the editor
-			// hence the scoreYOffset is not the same as the scoreBackgroundHeith
-			// as is the case with scoreXOffset and scoreBarckgroundWidth, in the case above
-			if (scoreYOffset == 0) scoreYOffset = (sharedData.tracebackBase / 2);
-			else scoreYOffset = 0;
+			// if we have one pane only or two panes in vertical split
+			if ((numPanes.size() == 1 && numPanes[0] == 1) || (paneSplitOrientation == 1 && (numPanes.size() == 2 && (numPanes[0] == 1 && numPanes[1] == 1)))) {
+				// we first calculate the panes coordinates because in case we have one pane only
+				// or two panes split vertically, we want to reduce their number of lines
+				// so the horizontal score can nicely fit in the window without obscuring the panes
+				setPaneCoords();
+				// then we set the space between the end of the pane(s) and the beginning of the traceback as the height of the score
+				// in this pane configuration we don't mind which pane index we'll use, so the first is the safest
+				// getMaxNumLines() returns the number of lines minus 1 for the pane separator
+				// but in this case we need this additional line for the score height so we add it
+				int numLines = editors[0].getMaxNumLines() + 1;
+				scoreBackgroundHeight = sharedData.tracebackBase - (numLines * cursorHeight);
+				if (scoreYOffset == 0) {
+					scoreYOffset = numLines * cursorHeight;
+				}
+				else {
+					scoreYOffset = 0;
+					editors[0].setFrameYOffset(scoreBackgroundHeight);
+					if (editors.size() > 1) editors[1].setFrameYOffset(scoreBackgroundHeight);
+				}
+			}
+			// with horizontal split and two rows
+			else if (paneSplitOrientation == 0 && numPanes.size() == 2) {
+				// get the number of lines of the first column in the last row
+				int paneNdx = 0;
+				// first determine the index of the pane we need to get the correct Y coordinates from
+				// with a 0 pane split orientation, we use the last row
+				auto lastRowPane = std::prev(numPanes.end());
+				// to get the correct pane index though, we need to accumulate all panes up to that point
+				for (std::map<int, int>::iterator it = numPanes.begin(); it != lastRowPane; ++it) {
+					paneNdx += it->second;
+				}
+				scoreBackgroundHeight = editors[paneNdx].getMaxNumLines() * cursorHeight;
+				if (scoreYOffset == 0) scoreYOffset = editors[paneNdx].getFrameYOffset();
+				else scoreYOffset = 0;
+				// if we change from horizontal to vertical view, set the coordinates of the panes
+				if (setCoords) setPaneCoords();
+			}
+			else {
+				scoreBackgroundHeight = (sharedData.tracebackBase / 2) - cursorHeight;
+				// in horizontal view of the score, the height of the score background is rounded half the editor lines
+				// this is because the number of lines of an editor is always odd, so that the line with the file name
+				// and pane index is also included, which makes the total number of lines even
+				// when we view the score horizontally, the background should match an exact number of lines
+				// and since the number of total lines is odd, we make this background one less
+				// e.g. for 37 lines, the score background will be 18 lines, not 19, or 18.5
+				// but when viewed on the lower side, it should touch the white line of the editor
+				// hence the scoreYOffset is not the same as the scoreBackgroundHeith
+				// as is the case with scoreXOffset and scoreBarckgroundWidth, in the case above
+				if (scoreYOffset == 0) scoreYOffset = (sharedData.tracebackBase / 2);
+				else scoreYOffset = 0;
+				// check if the editor is split in panes and change the active pane accordingly
+				if (paneSplitOrientation == 0 && numPanes.size() == 2) {
+					if (scoreYOffset == 0 && whichPane < numPanes[0]) {
+						setActivePane(numPanes[0]);
+					}
+					else if (scoreYOffset > 0 && whichPane >= numPanes[0]) {
+						setActivePane(0);
+					}
+				}
+			}
+			sharedData.pianoRollKeysWidth = scoreBackgroundWidth / sharedData.pianoRollLength;
+			sharedData.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
+			sharedData.pianoRollMinDur = (scoreBackgroundHeight - sharedData.pianoRollKeysHeight) / (float)MINDUR;
 			break;
 		case 2:
 			scoreXOffset = 0;
 			scoreYOffset = 0;
 			scoreBackgroundWidth = sharedData.screenWidth;
 			scoreBackgroundHeight = sharedData.tracebackBase - cursorHeight;
+			sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+			sharedData.pianoRollKeysHeight = scoreBackgroundHeight / sharedData.pianoRollLength;
+			sharedData.pianoRollMinDur = (scoreBackgroundWidth - sharedData.pianoRollKeysWidth) / (float)MINDUR;
 		default:
 			break;
 	}
-	if (setCoords) setScoreCoords();
+	if (setCoords) {
+		// the length of the staves changes with the orientation, so the notes must be positioned again
+		// and the available height changes too, so the distance between the staves must be calculated again
+		setScoreSizes();
+		calculateStaffPositions(getLastBarIndex(), true);
+	}
 }
 
 //--------------------------------------------------------------
@@ -8534,15 +7591,148 @@ void ofApp::setScoreSizes()
 						sharedData.denominator[it->second], sharedData.numBeats[it->second]);
 				it2->second.setNotePositions(it->second);
 			}
+			applyMergeLayout(it->second);
 		}
 	}
+}
+
+//--------------------------------------------------------------
+void ofApp::setScoreNotes(int barIndex)
+{
+	for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		it->second.setScoreNotes(barIndex, sharedData.numerator[barIndex],
+								 sharedData.denominator[barIndex], sharedData.numBeats[barIndex],
+								 sharedData.BPMTempi[barIndex], sharedData.tempoBaseForScore[barIndex],
+								 sharedData.BPMDisplayHasDot[barIndex], sharedData.BPMMultiplier[barIndex]);
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::setActivePane(int activePane)
+{
+	editors[whichPane].setActivity(false);
+	// set all hot keys to false
+	editors[whichPane].setShiftPressed(false);
+	editors[whichPane].setCtrlPressed(false);
+	editors[whichPane].setAltPressed(false);
+	if (editors[whichPane].highlightManyChars) editors[whichPane].highlightManyChars = false;
+	whichPane = activePane;
+	editors[whichPane].setActivity(true);
+}
+
+//--------------------------------------------------------------
+void ofApp::requestQuit()
+{
+	quitPromptPanes.clear();
+	for (auto& editor : editors) {
+		// a help file is not saved, it replaces the text of its pane only while it is open
+		if (editor.second.isFileEdited() && !editor.second.isHelpFileOpen()) quitPromptPanes.push_back(editor.first);
+	}
+	quitPromptNext();
+}
+
+//--------------------------------------------------------------
+void ofApp::quitPromptNext()
+{
+	if (quitPromptPanes.empty()) {
+		quitPromptState = 0;
+		exit();
+		return;
+	}
+	int pane = quitPromptPanes.front();
+	// quitting can be called while typing in the shell of another pane (with :qa), which stops here
+	for (auto& editor : editors) {
+		editor.second.setTypingShell(false);
+		editor.second.setShowingShell(false);
+	}
+	// the pane that is asked for becomes the active one, so it can be seen which file it is
+	if (pane != whichPane && editors.find(pane) != editors.end()) setActivePane(pane);
+	quitPromptState = 1;
+	shellStr = "save " + editors[whichPane].getFileName() + "? y/n";
+	shellStrColor = ofColor::yellow;
+	shellStrCursorPos = (int)shellStr.size();
+	shellLsOutputStr.clear();
+	numShellLsOutputLines = 0;
+	numShellLines = 1;
+	editors[whichPane].setTypingShell(false);
+	editors[whichPane].setShowingShell(true);
+}
+
+//--------------------------------------------------------------
+void ofApp::quitPromptKey(int key)
+{
+	// Esc cancels quitting
+	if (key == 27) {
+		quitPromptState = 0;
+		quitPromptPanes.clear();
+		shellStr.clear();
+		shellLsOutputStr.clear();
+		numShellLines = numShellLsOutputLines = 0;
+		editors[whichPane].setTypingShell(false);
+		editors[whichPane].setShowingShell(false);
+		return;
+	}
+	if (quitPromptState == 1) {
+		if (key == 'n' || key == 'N') {
+			quitPromptPanes.erase(quitPromptPanes.begin());
+			quitPromptNext();
+		}
+		else if (key == 'y' || key == 'Y') {
+			// a file that has a path is saved to it, otherwise (or if it can't be saved there) the path is asked for
+			if (editors[whichPane].fileLoaded) editors[whichPane].saveExistingFile();
+			if (!editors[whichPane].isFileEdited()) {
+				quitPromptPanes.erase(quitPromptPanes.begin());
+				quitPromptNext();
+				return;
+			}
+			// the path is typed after :save, as when saving with :save, so Tab completion works (see completeShellCommand())
+			quitPromptState = 2;
+			shellStr = ":save ";
+			shellStrColor = ofColor::white;
+			shellStrCursorPos = (int)shellStr.size();
+			shellTabCounter = 0;
+			numShellLines = 1;
+			editors[whichPane].setTypingShell(true);
+			editors[whichPane].setShowingShell(true);
+		}
+		return;
+	}
+	// typing the path
+	if (key == 13) {
+		std::string path = shellStr.substr(std::min(shellStr.size(), (size_t)6));
+		path.erase(std::remove(path.begin(), path.end(), '\n'), path.end());
+		if (path.find_first_not_of(" \t") == std::string::npos) return;
+		// :save expands ~ and relative paths, and saves the file
+		executeShellCommand();
+		if (!editors[whichPane].isFileEdited()) {
+			quitPromptPanes.erase(quitPromptPanes.begin());
+			quitPromptNext();
+		}
+		else {
+			// the file couldn't be saved there (e.g. a directory that doesn't exist), so the path is asked for again
+			shellStr = ":save ";
+			shellStrColor = ofColor::white;
+			shellStrCursorPos = (int)shellStr.size();
+			shellLsOutputStr = "could not save " + editors[whichPane].getFileName() + " there, type another path, or Esc to cancel quitting";
+			numShellLsOutputLines = 1;
+			numShellLines = 1;
+			editors[whichPane].setTypingShell(true);
+			editors[whichPane].setShowingShell(true);
+		}
+		return;
+	}
+	// the :save at the start of the line can't be deleted, and : would start a new command
+	if ((key == 8 && shellStrCursorPos <= 6) || (key == 127 && shellStrCursorPos < 6) || key == ':') return;
+	typeShellCommand(key);
+	// the text typed so far keeps the cursor after :save
+	if (shellStrCursorPos < 6) shellStrCursorPos = 6;
 }
 
 //--------------------------------------------------------------
 void ofApp::exit()
 {
 	// should print a warning message first
-	sequencer.stop();
+	sequencer.stopNow();
 	ofxOscMessage m;
 	m.setAddress("/exit");
 	m.addIntArg(1);
@@ -8554,13 +7744,16 @@ void ofApp::exit()
 	if (serialPortOpen) {
 		serial.close();
 	}
+	exiting = true;
 	ofExit();
 }
 
 //--------------------------------------------------------------
 void ofApp::mouseMoved(int x, int y)
 {
-
+	// store mouse's X and Y coords coontinuously
+	mouseX = x;
+	mouseY = y;
 }
 
 //--------------------------------------------------------------
@@ -8596,21 +7789,25 @@ void ofApp::mouseExited(int x, int y)
 //--------------------------------------------------------------
 void ofApp::resizeWindow()
 {
-	//sharedData.mutex.lock();
 	setPaneCoords();
 	if (scoreOrientation == 0) {
 		scoreBackgroundWidth = sharedData.screenWidth / 2;
 		scoreBackgroundHeight = sharedData.tracebackBase - cursorHeight;
+		sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+		sharedData.pianoRollKeysHeight = scoreBackgroundHeight / sharedData.pianoRollLength;
+		sharedData.pianoRollMinDur = (scoreBackgroundWidth - sharedData.pianoRollKeysWidth) / (float)MINDUR;
 		if (scoreXOffset > 0) scoreXOffset = sharedData.screenWidth / 2;
 	}
 	else {
 		scoreBackgroundWidth = sharedData.screenWidth;
 		scoreBackgroundHeight = (sharedData.tracebackBase / 2) - cursorHeight;
-		if (scoreYOffset > 0) scoreYOffset = (sharedData.tracebackBase / 2);
+		sharedData.pianoRollKeysWidth = scoreBackgroundWidth / sharedData.pianoRollLength;
+		sharedData.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
+		sharedData.pianoRollMinDur = (scoreBackgroundHeight - sharedData.pianoRollKeysHeight) / (float)MINDUR;
 	}
+	resetScoreYOffset();
 	setScoreSizes();
 	calculateStaffPositions(getLastBarIndex(), true);
-	//sharedData.mutex.unlock();
 }
 
 //--------------------------------------------------------------
@@ -8645,4 +7842,53 @@ void ofApp::gotMessage(ofMessage msg)
 void ofApp::dragEvent(ofDragInfo dragInfo)
 {
 
+}
+
+/********************** audio functions ***********************/
+//--------------------------------------------------------------
+void ofApp::audioIn(ofSoundBuffer & buffer)
+{
+#ifdef USEPYO
+	if (pyoSet && !exiting) {
+		// send audio samples to pyo
+		sharedData.pyo.fillin(&buffer[0]);
+	}
+#endif
+}
+
+//--------------------------------------------------------------
+void ofApp::audioOut(ofSoundBuffer & buffer)
+{
+	bool pyoProcessed = false;
+#ifdef USEPYO
+	if (pyoSet && !exiting) {
+		// process and get new audio samples from pyo
+		sharedData.pyo.process(&buffer[0]);
+		if (showScope) scopeBuffer = buffer;
+		pyoProcessed = true;
+	}
+#endif
+	// without pyo, the stream plays the click track only
+	if (!pyoProcessed) buffer.set(0);
+	// the click track is added to the output (see \clicktrack)
+	if (!exiting) sharedData.clickTrack.process(buffer);
+}
+
+//--------------------------------------------------------------
+void ofApp::startSoundStream()
+{
+	// the click track plays through the sound stream of pyo, and if pyo hasn't started, through a stream of its own
+	// which pyo replaces when it starts (see initPyo())
+	if (soundStreamSet) return;
+	ofSoundStreamSettings settings;
+	if (outSoundDeviceSet) {
+		settings.setOutDevice(outSoundDevice);
+	}
+	settings.numInputChannels = 0;
+	settings.numOutputChannels = outChannels;
+	settings.sampleRate = sampleRate;
+	settings.bufferSize = bufferSize;
+	settings.numBuffers = 4;
+	settings.setOutListener(this);
+	soundStreamSet = soundStream.setup(settings);
 }

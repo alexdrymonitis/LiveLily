@@ -1,0 +1,12 @@
+\instorder sets an order for the instruments, meant for
+sending data to the LiveLily-part programs.
+Its syntax is the following:
+
+\instorder \inst2 \inst1 \inst3
+
+All the instruments must be given, otherwise it throws an
+error.
+
+Note that at the moment this order is only stored. It
+doesn't change the order of the staves on the score, which
+follows the order of \insts.init.

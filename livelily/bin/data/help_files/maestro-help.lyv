@@ -1,0 +1,39 @@
+\maestro sets up conducting LiveLily with a sensor that
+sends its data via OSC (for example an accelerometer held
+by a conductor). The data is received on port 9050.
+It does nothing by itself and takes no arguments, you must
+call one of its methods, concatenated with a dot.
+
+\maestro.mainaddr sets the OSC address where the sensor
+data is received (default /maestro):
+
+\maestro.mainaddr /acc
+
+\maestro.valndx sets which value of the OSC message is
+read (default 0), and \maestro.valthresh sets the threshold
+above which a value triggers a beat (default 7.5):
+
+\maestro.valndx 2
+\maestro.valthresh 9.5
+
+Each beat moves the score on by one beat, and the tempo of
+the bar is set from the time between two beats. The first
+beat only starts the counting.
+
+\maestro.toggleaddr sets an OSC address that receives a 1
+or a 0 to start or stop receiving beats (default /toggle).
+If it is set, receiving starts only with a 1 on this
+address, otherwise it starts with \maestro.mainaddr.
+
+\maestro.toggleaddr /conduct
+
+\maestro.levareaddr sets an OSC address that receives an
+integer, the number of beats to count in when receiving is
+turned on (default /levare, see \score.beatsin).
+
+Several methods can be written in one line, like:
+
+\maestro.mainaddr /acc valndx 2 valthresh 9.5
+
+Each method takes one argument, a missing one results in
+an error.

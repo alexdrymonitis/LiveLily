@@ -1,0 +1,14 @@
+\pgmchange sends a MIDI Program Change message.
+It takes three integer arguments, the MIDI port, the
+channel, and the program number:
+
+\pgmchange 1 1 41
+
+The line above sets program 41 on channel 1 of MIDI
+port 1.
+
+The port must already be open, with \openmidiport or with
+the midiport method of an instrument, otherwise you will
+get a "selected MIDI port is not open" error.
+The channel must be between 1 and 16, and the program
+number between 0 and 127.

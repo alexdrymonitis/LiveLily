@@ -1,0 +1,7 @@
+\closeserialport closes the serial port opened with
+\openserialport.
+It takes no arguments:
+
+\closeserialport
+
+If no serial port is open, it does nothing.

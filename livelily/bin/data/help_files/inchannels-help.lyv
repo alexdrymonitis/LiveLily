@@ -1,0 +1,17 @@
+\inchannels sets the number of audio input channels of
+Python (pyo). The default is 2.
+It takes one argument, an integer:
+
+\inchannels 1
+
+Like all audio settings, it must be called before \python
+is called for the first time, otherwise it has no effect.
+
+Note that currently the audio stream of LiveLily is opened
+with output channels only, so this value is passed to pyo
+but audio input is not streamed to it.
+
+To set both input and output channels at once, use
+\nchannels:
+
+\nchannels 2

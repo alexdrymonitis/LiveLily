@@ -1,0 +1,14 @@
+\buffersize sets the size of the audio buffer used by
+Python (pyo), in samples. The default is 256.
+It takes one argument, an integer:
+
+\buffersize 512
+
+The audio settings are applied only once, when \python is
+called for the first time. For this reason, this command
+must be called before \python, otherwise it has no
+effect. It also has no effect if LiveLily is built
+without pyo.
+
+See also \samplerate, \inchannels, \outchannels and
+\setaudiodev.

@@ -1,0 +1,23 @@
+\solo plays only the instruments given as arguments and
+mutes all others.
+Its syntax is the following:
+
+\solo \violin \cello
+
+where \violin and \cello are instruments created with
+\insts.init. The solo instruments are unmuted, if they
+have been muted before.
+To play all instruments again, call:
+
+\solo \all
+
+While the sequencer is playing, the change takes effect at
+the start of the next bar. If the sequencer is stopped, it
+takes effect at once.
+To solo instruments immediately, use \solonow.
+
+Muted instruments show a whole rest in the score and are
+hidden in the piano roll.
+
+\solo needs at least one argument. An argument that is not
+an instrument results in an "unknown instrument" error.

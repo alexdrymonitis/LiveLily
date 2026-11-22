@@ -1,0 +1,35 @@
+\clicktrack turns a click track on and off. It is off by
+default. Its syntax is the following:
+
+\clicktrack on
+\clicktrack off
+
+The click track clicks on the beats of the bar that plays,
+as these are set with \beatat (or with \tempo), the same
+beats the beat visualization pulses on. For example, with
+\beatat 4. 4 in a bar of 5/8, it clicks on the first and
+on the fourth eighth of the bar.
+It clicks on the beats of a countdown too.
+
+Each click is a short triangle wave at 440Hz, and the click
+of the first beat of a bar is an octave higher, at 880Hz.
+To change the frequency of the clicks, call its tune method
+with a frequency in Hz:
+
+\clicktrack.tune 442
+
+This plays the clicks at 442Hz, and the first beat at
+884Hz. The frequency can be a decimal number, and must be
+greater than 0.
+
+To change the volume of the clicks, call its volume method
+with a value from 0 to 1. The default is 0.5:
+
+\clicktrack.volume 0.3
+
+The click track plays through the audio output of LiveLily,
+together with Python (pyo), if it runs. The audio settings
+(e.g. \samplerate and \buffersize) apply to it too, if they
+are set before the click track or Python starts.
+It is in time with the score and the instruments without a
+delay (see the delay method in the help of \insts).

@@ -1,0 +1,19 @@
+\time sets the time measure for a bar.
+It must be included inside a bar definition,
+otherwise it will throw an error.
+Its syntax is the following:
+
+\time 3/4
+
+The line above will create a 3 quarter measure.
+When a time measure is set, it is held for all
+bars defined after it, until a new time measure
+is set.
+For this reason, when setting a new time measure
+it should be set at the beginning of the bar,
+like the example below.
+
+\bar time-1 {
+    \time 3/4
+    \inst c'4 cis'8 c' b4
+}

@@ -1,0 +1,21 @@
+\mutenow mutes one or more instruments immediately.
+Its syntax is the following:
+
+\mutenow \violin \cello
+
+where \violin and \cello are instruments created with
+\insts.init. To mute all instruments, call:
+
+\mutenow \all
+
+Unlike \mute, which waits for the start of the next bar,
+\mutenow mutes the instruments at once, even in the middle
+of a bar.
+To bring them back, use \unmutenow or \unmute.
+
+A muted instrument shows a whole rest in the score and is
+hidden in the piano roll.
+
+\mutenow needs at least one argument, and an argument that
+is not an instrument results in an "unknown instrument"
+error.

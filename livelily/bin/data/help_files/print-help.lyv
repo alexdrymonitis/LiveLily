@@ -1,0 +1,9 @@
+\print prints to LiveLily's traceback area (the area at the
+bottom of the LiveLily window).
+You can use it to print something arbitrary, like:
+
+\print "hello world!"
+
+or use it with a command as its argument, like:
+
+\print \system date

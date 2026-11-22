@@ -1,0 +1,53 @@
+\loop defines a loop, a sequence of bars and/or other loops.
+Its syntax is the following:
+
+\loop name {\bar1 \bar2 \bar3}
+
+The name is given without the backslash, and once the loop
+is defined it is called with a backslash, like a command.
+Calling it alone in a line makes it the loop to be played.
+It can also be called right after its definition:
+
+\loop name {\bar1 \bar2} \name
+
+A loop can be written in more lines too:
+
+\loop name {
+    \bar1 \bar2
+    \bar3
+}
+
+A bar or loop can be repeated with * and a number,
+concatenated to its name:
+
+\loop name {\bar1*2 \bar2 \otherloop*3}
+
+An asterisk can also be a wild card:
+
+\loop all {*}
+
+creates a loop with all bars, and
+
+\loop all {**}
+
+with the bars of all loops, one after the other, while
+
+\loop verses {\verse*}
+
+includes all bars the names of which contain \verse.
+
+Methods (after a dot):
+
+\name.goto 3
+
+jumps to a bar of the loop, by its index (1-based).
+
+\name.\inst1
+
+returns the lines of \inst1 in the bars of the loop,
+separated by |.
+
+Errors worth knowing: a name that doesn't exist, a loop
+name that already exists, a bar that is linked to another
+bar that doesn't follow it in the loop, and a name that is
+a LiveLily command.

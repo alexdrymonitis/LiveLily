@@ -1,0 +1,13 @@
+\mousey returns the vertical position of the mouse
+inside the LiveLily window, in pixels.
+It takes no arguments. To see its value, call it with
+\print:
+
+\print \mousey
+
+It can also be used as an argument to other commands,
+like send of an OSC client:
+
+\myosc.send "/mousey" \mousey
+
+See also \mousex and \mouse.

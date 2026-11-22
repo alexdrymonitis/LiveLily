@@ -1,0 +1,14 @@
+\ctlchange sends a MIDI Control Change message.
+It takes four integer arguments, the MIDI port, the
+channel, the controller number, and the value:
+
+\ctlchange 1 1 7 100
+
+The line above sends value 100 to controller 7 (volume)
+on channel 1 of MIDI port 1.
+
+The port must already be open, with \openmidiport or with
+the midiport method of an instrument, otherwise you will
+get a "selected MIDI port is not open" error.
+The channel must be between 1 and 16, and the value
+between 0 and 127.

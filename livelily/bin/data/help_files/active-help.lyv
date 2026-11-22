@@ -1,0 +1,13 @@
+\active makes the editor pane it is executed in active.
+It takes no arguments:
+
+\active
+
+Its counterpart is \inactive. When a pane is inactive,
+executing lines in it does nothing, except for a line that
+contains only \active (without any indentation or other
+text), which makes the pane active again.
+Panes are active by default.
+
+This is useful to prevent code in a pane from being
+executed by accident.

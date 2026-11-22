@@ -1,0 +1,7 @@
+Steps to add a command to the LiveLily language:
+
+1. Write the cmdName() function in parser.cpp.
+2. Declare it in ofApp.h (see entries after CommandHandler commandHandler(const std::string& name);).
+3. Add one line to commandTable() in parser.cpp
+4. Add the command's methods (if any) to the commandsMap map in ofApp::setup() and to the commandMethods map in ofApp::getMethodCompletions().
+5. Add tests to make sure it works.

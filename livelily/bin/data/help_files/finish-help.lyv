@@ -1,0 +1,14 @@
+\finish is not a command on its own, calling it results in
+an "unknown command" error. Finishing a piece is done with
+the finish method of \score:
+
+\score.finish
+
+This makes the sequencer stop at the end of the loop that
+is currently playing, and marks the end of the score, also
+in any connected LiveLily-part programs.
+It takes no arguments.
+
+To stop at the start of the next bar instead, use
+\score.stop, and to stop immediately, use \score.stopnow.
+See also the help file of \score.
