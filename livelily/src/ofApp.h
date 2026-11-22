@@ -224,6 +224,12 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		void setFrameRate(int framesPerSecond) override { ofSetFrameRate(framesPerSecond); }
 		void setPaneLanguage(int pane, int language) override { editors[pane].setLanguage(language); }
 		bool openHelp(int pane, const std::string& filePath, int newPane) override;
+		void setEditorOption(int pane, const std::string& option, const std::string& value) override;
+		void setPaneActive(int pane, bool active) override { editors[pane].setSessionActivity(active); }
+		void sendKeysTo(int pane, const std::string& host, int targetPane) override { editors[pane].oscKeys->setup(host, OSCPORT); editors[pane].setSendKeys(targetPane); }
+		void sendLinesTo(int pane, const std::string& host, int targetPane) override { editors[pane].oscKeys->setup(host, OSCPORT); editors[pane].setSendLines(targetPane); }
+		int tabSize(int pane) override { return editors[pane].getTabSize(); }
+		void connectLineToBar(int pane, int line, int instNdx, int bar) override { editors[pane].connectLineToBar(line, instNdx, bar); }
 		// the user interface, as the engine (the parser and the sequencer) sees it, which is this app for now
 		FrontendHost* frontend = this;
 		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);

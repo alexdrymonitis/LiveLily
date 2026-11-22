@@ -124,7 +124,7 @@ std::vector<std::pair<int, std::string>> ofApp::normalizeDefinitionLines(const s
 		return depth;
 	};
 	auto firstWord = [](const std::string& str) { return str.substr(0, str.find_first_of(" \t{")); };
-	std::string indent(std::max(1, editors[whichPane].getTabSize()), ' ');
+	std::string indent(std::max(1, frontend->tabSize(whichPane)), ' ');
 	// the words that start a statement inside a bar: the names of instruments and of groups of instruments
 	// (also with a method, e.g. \violin.transpose), and the commands of a bar
 	auto startsStatement = [&](const std::string& word) {
@@ -2648,16 +2648,7 @@ CmdOutput ofApp::cmdEditor(CmdInput& cmdInput, int lineNum, int numLines)
 		if (editorCommands.size() != 2 || std::find(arguments.begin(), arguments.end(), editorCommands[1]) == arguments.end()) {
 			return genError("\\editor.alignment takes one argument, \"on\", \"off\", \"short\", or \"long\"");
 		}
-		Editor& editor = editors[whichPane];
-		if (editorCommands[1] == "short" || editorCommands[1] == "long") {
-			editor.alignShort = (editorCommands[1] == "short");
-			if (editor.alignment) alignBars(whichPane);
-		}
-		else {
-			editor.alignment = (editorCommands[1] == "on");
-			if (editor.alignment) alignBars(whichPane);
-			else unalignBars(whichPane);
-		}
+		frontend->setEditorOption(whichPane, "alignment", editorCommands[1]);
 	}
 	// highlighting the tokens of the notes that play is set for the pane the command is executed in
 	//closing brackets and quotes automatically
@@ -2666,10 +2657,7 @@ CmdOutput ofApp::cmdEditor(CmdInput& cmdInput, int lineNum, int numLines)
 		if (editorCommands.size() != 2 || (editorCommands[1] != "on" && editorCommands[1] != "off")) {
 			return genError("\\editor." + editorCommands[0] + " takes one argument, \"on\" or \"off\"");
 		}
-		bool on = (editorCommands[1] == "on");
-		if (editorCommands[0] == "animation") editors[whichPane].setAnimation(on);
-		else if (editorCommands[0] == "autobrackets") editors[whichPane].setAutocomplete(on);
-		else editors[whichPane].setAutocompletion(on);
+		frontend->setEditorOption(whichPane, editorCommands[0], editorCommands[1]);
 	}
 	else {
 		return genError(editorCommands[0] + ": unknown editor command");
@@ -3690,7 +3678,7 @@ CmdOutput ofApp::cmdActive(CmdInput& cmdInput, int lineNum, int numLines)
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\active takes no arguments");
 	}
-	editors[whichPane].setSessionActivity(true);
+	frontend->setPaneActive(whichPane, true);
 	return CmdOutput();
 }
 
@@ -3700,7 +3688,7 @@ CmdOutput ofApp::cmdInactive(CmdInput& cmdInput, int lineNum, int numLines)
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\inactive takes no arguments");
 	}
-	editors[whichPane].setSessionActivity(false);
+	frontend->setPaneActive(whichPane, false);
 	return CmdOutput();
 }
 
@@ -3716,8 +3704,7 @@ CmdOutput ofApp::cmdSendkeys(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("pane index of host is not a number");
 	}
 	paneNdx = stoi(cmdInput.inputVec[2]);
-	editors[whichPane].oscKeys->setup(hostIP, OSCPORT);
-	editors[whichPane].setSendKeys(paneNdx);
+	frontend->sendKeysTo(whichPane, hostIP, paneNdx);
 	return CmdOutput();
 }
 
@@ -3733,8 +3720,7 @@ CmdOutput ofApp::cmdSendlines(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("pane index of host is not a number");
 	}
 	paneNdx = stoi(cmdInput.inputVec[2]);
-	editors[whichPane].oscKeys->setup(hostIP, OSCPORT);
-	editors[whichPane].setSendLines(paneNdx);
+	frontend->sendLinesTo(whichPane, hostIP, paneNdx);
 	return CmdOutput();
 }
 
@@ -4020,6 +4006,27 @@ CmdOutput ofApp::cmdHelp(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("couldn't find help file for " + cmdInput.inputVec[1]);
 	}
 	return CmdOutput();
+}
+
+//--------------------------------------------------------------
+void ofApp::setEditorOption(int pane, const std::string& option, const std::string& value)
+{
+	Editor& editor = editors[pane];
+	if (option == "alignment") {
+		// the width of a unit of the grid applies at once if alignment is on, and the next time it is turned on otherwise
+		if (value == "short" || value == "long") {
+			editor.alignShort = (value == "short");
+			if (editor.alignment) alignBars(pane);
+		}
+		else {
+			editor.alignment = (value == "on");
+			if (editor.alignment) alignBars(pane);
+			else unalignBars(pane);
+		}
+	}
+	else if (option == "animation") editor.setAnimation(value == "on");
+	else if (option == "autobrackets") editor.setAutocomplete(value == "on");
+	else if (option == "autocomplete") editor.setAutocompletion(value == "on");
 }
 
 //--------------------------------------------------------------
@@ -6113,7 +6120,7 @@ std::pair<int, std::string> ofApp::parseMelodicLine(std::vector<std::string> tok
 	}
 
 	sharedData.instruments.at(thisInstIndex).setPassed(true);
-	editors[whichPane].connectLineToBar(lineNum, thisInstIndex, barIndex);
+	frontend->connectLineToBar(whichPane, lineNum, thisInstIndex, barIndex);
 	// the tokens of the notes, for highlighting them in the editor while they play (see \editor.animate)
 	storeEditorNoteSpans(lineNum, thisInstIndex, barIndex, (int)numNotesVertical);
 	// the map below is used by the sequencer, to determine which pane will have its active element set

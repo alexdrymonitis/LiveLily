@@ -31,6 +31,18 @@ class FrontendHost
 		// opens a help file in a pane, in place of its text, or in a new pane beside it (newPane is 1) or below it (newPane is 2)
 		// and returns false if the file can't be opened (\help)
 		virtual bool openHelp(int pane, const std::string& filePath, int newPane) = 0;
+		// an option of the editor of a pane (\editor), which the parser has checked:
+		// alignment (on, off, short, or long), animation, autobrackets, or autocomplete (on or off)
+		virtual void setEditorOption(int pane, const std::string& option, const std::string& value) = 0;
+		// whether the code of a pane runs (\active and \inactive)
+		virtual void setPaneActive(int pane, bool active) = 0;
+		// sends the keys typed in a pane, or the lines executed in it, to a pane of LiveLily on another computer (\sendkeys, \sendlines)
+		virtual void sendKeysTo(int pane, const std::string& host, int targetPane) = 0;
+		virtual void sendLinesTo(int pane, const std::string& host, int targetPane) = 0;
+		// the number of spaces of a tab in a pane, for the lines the parser writes (e.g. a bar of one line split into lines)
+		virtual int tabSize(int pane) = 0;
+		// a line of a pane is the melodic line of an instrument in a bar, for the animation of the editor
+		virtual void connectLineToBar(int pane, int line, int instNdx, int bar) = 0;
 };
 
 #endif
