@@ -508,6 +508,8 @@ class ofApp : public ofBaseApp
 		//---------------------------------
 		// instrument functions
 		void initializeInstrument(std::string instName);
+		// the data directory of LiveLily (bin/data), where relative paths start, e.g. of a SoundFont, set by setup()
+		std::string dataDirectory;
 		// test mode, set from the command line (see main.cpp and testmode.cpp)
 		std::string testFile;
 		std::string testOut;

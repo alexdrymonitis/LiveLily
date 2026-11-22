@@ -10,6 +10,9 @@
 #include <cmath> // to add abs()
 #include <utility> // to add pair and make_pair
 #include <sstream> // to create a string from vector<string>
+#include <cstdio> // popen() for \system
+#include <filesystem>
+#include "clock.h"
 #include <fstream>
 #include <numeric> // std::lcm
 #include <iostream>
@@ -2220,7 +2223,7 @@ CmdOutput ofApp::cmdMidiclock(CmdInput& cmdInput, int lineNum, int numLines)
 	}
 	if (cmdInput.inputVec[1].compare("on") == 0) {
 		sequencer.setSendMidiClock(true);
-		sharedData.PPQNTimeStamp = ofGetElapsedTimeMicros();
+		sharedData.PPQNTimeStamp = Clock::micros();
 	}
 	else if (cmdInput.inputVec[1].compare("off") == 0) {
 		sequencer.setSendMidiClock(false);
@@ -3438,11 +3441,11 @@ CmdOutput ofApp::cmdListserialports(CmdInput& cmdInput, int lineNum, int numLine
 	}
 	std::string outPortsOneStr = "";
 	for (unsigned i = 0; i < serialDeviceList.size()-1; i++) {
-		outPortsOneStr += "Serial port " + ofToString(serialDeviceList[i].getDeviceID()) + \
+		outPortsOneStr += "Serial port " + std::to_string(serialDeviceList[i].getDeviceID()) + \
 						  ": " + serialDeviceList[i].getDevicePath() + "\n";
 	}
 	// append last port separately to not include the newline
-	outPortsOneStr += "Serial port " + ofToString(serialDeviceList.back().getDeviceID()) + \
+	outPortsOneStr += "Serial port " + std::to_string(serialDeviceList.back().getDeviceID()) + \
 					  ": " + serialDeviceList.back().getDevicePath();
 	return genNote(outPortsOneStr);
 }
@@ -3579,6 +3582,28 @@ CmdOutput ofApp::cmdCloseserialport(CmdInput& cmdInput, int lineNum, int numLine
 }
 
 //--------------------------------------------------------------
+// the output of a system command (what it prints to the standard output), for \system
+static std::string systemCommandOutput(const std::string& command)
+{
+	std::string output;
+#ifdef _WIN32
+	FILE* pipe = _popen(command.c_str(), "r");
+#else
+	FILE* pipe = popen(command.c_str(), "r");
+#endif
+	if (!pipe) return output;
+	char buffer[256];
+	size_t numRead;
+	while ((numRead = fread(buffer, 1, sizeof(buffer), pipe)) > 0) output.append(buffer, numRead);
+#ifdef _WIN32
+	_pclose(pipe);
+#else
+	pclose(pipe);
+#endif
+	return output;
+}
+
+//--------------------------------------------------------------
 CmdOutput ofApp::cmdSystem(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() == 1) {
@@ -3590,7 +3615,7 @@ CmdOutput ofApp::cmdSystem(CmdInput& cmdInput, int lineNum, int numLines)
 		if (i > 1) sysCommand += " ";
 		sysCommand += cmdInput.inputVec[i];
 	}
-	return genOutput(ofSystem(sysCommand));
+	return genOutput(systemCommandOutput(sysCommand));
 }
 
 //--------------------------------------------------------------
@@ -3742,7 +3767,10 @@ CmdOutput ofApp::cmdMaestro(CmdInput& cmdInput, int lineNum, int numLines)
 CmdOutput ofApp::cmdFramerate(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() == 1) {
-		return genOutput(ofToString(ofGetFrameRate()));
+		// the frame rate as a number with its default formatting (e.g. 60 or 59.9401)
+		std::ostringstream frameRate;
+		frameRate << ofGetFrameRate();
+		return genOutput(frameRate.str());
 	}
 	if (cmdInput.inputVec.size() != 2) {
 		return genError("\\framerate takes one argument, the framerate");
@@ -6372,7 +6400,7 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 					std::string path = commands[2];
 					if (path.size() > 1 && path.front() == '"' && path.back() == '"') path = path.substr(1, path.size()-2);
 					if (startsWith(path, "~")) path = getenv("HOME") + path.substr(1);
-					else if (!startsWith(path, "/")) path = ofToDataPath(path, true);
+					else if (!startsWith(path, "/")) path = (std::filesystem::path(dataDirectory) / path).string();
 					// the preset (e.g. an instrument of a General MIDI SoundFont) and its bank, 0 by default
 					int preset = 0, bank = 0;
 					if (commands.size() > 3) {

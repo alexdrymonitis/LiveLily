@@ -32,6 +32,7 @@ void ofApp::setup()
 {
 	// setup() runs on the main thread, store its id to detect calls from other threads
 	mainThreadId = std::this_thread::get_id();
+	dataDirectory = ofToDataPath("", true);
 	brightnessCoeff = 0.85;
 	backgroundColor = ofColor::black;
 	foregroundColor = ofColor::white;
