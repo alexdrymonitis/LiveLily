@@ -3,7 +3,7 @@
 
 #include "ofMain.h"
 #include "ofxOsc.h"
-#include "ofxMidi.h"
+#include "of_midi.h"
 #include <map>
 #include <vector>
 #include <utility> // to add pair
@@ -588,6 +588,9 @@ class ofApp : public ofBaseApp
 
 		SharedData sharedData;
 		Sequencer sequencer;
+		// the MIDI output, with openFrameworks for now, which the parser and the sequencer use through the interface of midi.h
+		OfMidiOutput ofMidiOutput;
+		MidiOutput* midi = &ofMidiOutput;
 
 		// Pyo stuff
 		ofSoundStream soundStream;

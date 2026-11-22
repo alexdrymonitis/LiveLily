@@ -3,7 +3,7 @@
 
 #include "ofMain.h"
 #include "ofxOsc.h"
-#include "ofxMidi.h"
+#include "midi.h"
 #include "ofTimer.h"
 #include <map>
 #include <vector>
@@ -32,10 +32,10 @@ class Sequencer : public ofThread
 		void setMidiTune(float tuneVal);
 		void setCheckLoop(std::string barLoopName, int numIter);
 
-		ofxMidiOut midiOut;
-		std::vector<ofxMidiOut> midiOuts;
+		// the MIDI output (see midi.h), which the app sets before the sequencer plays
+		void setMidiOutput(MidiOutput* output) { midi = output; }
+		// the MIDI out ports of the system, as \listmidiports listed them last, which \openmidiport and \instname.midiport check
 		std::vector<std::string> midiOutPorts;
-		std::map<int, int> midiPortsMap;
 
 		// stops the sound of an instrument, before it is removed (see ofApp::removeInstrument())
 		void silenceInstrument(Instrument& inst);
@@ -46,6 +46,10 @@ class Sequencer : public ofThread
 		// it plays the loop that plays twice, after the longest delay of the instruments and the countdown, and at most one minute
 		std::vector<std::string> dryRun();
 	private:
+		MidiOutput* midi = nullptr;
+		// the port the MIDI clock is sent to, -1 for none
+		// nothing sets it yet, so the MIDI clock is not sent, as before this interface, when it went to a port that was never opened
+		int midiClockPort = -1;
 		// the messages of a dry run (see dryRun()), null when the sequencer plays for real
 		std::vector<std::string>* dryRunLog = nullptr;
 		uint64_t dryRunStart = 0;

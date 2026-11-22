@@ -3289,7 +3289,7 @@ CmdOutput ofApp::cmdListmidiports(CmdInput& cmdInput, int lineNum, int numLines)
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\listmidiports command takes no arguments");
 	}
-	sequencer.midiOutPorts = sequencer.midiOut.getOutPortList();
+	sequencer.midiOutPorts = midi->portNames();
 	if (sequencer.midiOutPorts.empty()) {
 		return genNote("no MIDI out ports available");
 	}
@@ -3318,11 +3318,8 @@ CmdOutput ofApp::cmdOpenmidiport(CmdInput& cmdInput, int lineNum, int numLines)
 	if (midiPort >= (int)sequencer.midiOutPorts.size()) {
 		return genError("MIDI port doesn't exist");
 	}
-	if (sequencer.midiPortsMap.find(midiPort) == sequencer.midiPortsMap.end()) {
-		ofxMidiOut midiOut;
-		midiOut.openPort(midiPort);
-		sequencer.midiOuts.push_back(midiOut);
-		sequencer.midiPortsMap[midiPort] = (int)sequencer.midiOuts.size()-1;
+	if (!midi->isOpen(midiPort)) {
+		midi->open(midiPort);
 		return genNote("opened MIDI port " + cmdInput.inputVec[1]);
 	}
 	else {
@@ -3341,7 +3338,7 @@ CmdOutput ofApp::cmdCtlchange(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("all arguments to \\ctlchange must be integers");
 	}
 	int port = stoi(cmdInput.inputVec[1]);
-	if (sequencer.midiPortsMap.find(port) == sequencer.midiPortsMap.end()) {
+	if (!midi->isOpen(port)) {
 		return genError("selected MIDI port is not open");
 	}
 	int channel = stoi(cmdInput.inputVec[2]);
@@ -3356,7 +3353,7 @@ CmdOutput ofApp::cmdCtlchange(CmdInput& cmdInput, int lineNum, int numLines)
 	if (val < 0 || val > 127) {
 		return genError("MIDI value must be between 0 and 127");
 	}
-	sequencer.midiOuts[sequencer.midiPortsMap[port]].sendControlChange(channel, control, val);
+	midi->controlChange(port, channel, control, val);
 	return CmdOutput();
 }
 
@@ -3370,7 +3367,7 @@ CmdOutput ofApp::cmdPgmchange(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("all arguments to \\pgmchange must be integers");
 	}
 	int port = stoi(cmdInput.inputVec[1]);
-	if (sequencer.midiPortsMap.find(port) == sequencer.midiPortsMap.end()) {
+	if (!midi->isOpen(port)) {
 		return genError("selected MIDI port is not open");
 	}
 	int channel = stoi(cmdInput.inputVec[2]);
@@ -3381,7 +3378,7 @@ CmdOutput ofApp::cmdPgmchange(CmdInput& cmdInput, int lineNum, int numLines)
 	if (val < 0 || val > 127) {
 		return genError("MIDI value must be between 0 and 127");
 	}
-	sequencer.midiOuts[sequencer.midiPortsMap[port]].sendProgramChange(channel, val);
+	midi->programChange(port, channel, val);
 	return CmdOutput();
 }
 
@@ -6611,11 +6608,8 @@ std::pair<bool, CmdOutput> ofApp::isInstrument(std::vector<std::string>& origina
 						return std::make_pair(instrumentExists, genError("MIDI port doesn't exist"));
 					}
 					bool openedMidiPort = false;
-					if (sequencer.midiPortsMap.find(midiPort) == sequencer.midiPortsMap.end()) {
-						ofxMidiOut midiOut;
-						midiOut.openPort(midiPort);
-						sequencer.midiOuts.push_back(midiOut);
-						sequencer.midiPortsMap[midiPort] = (int)sequencer.midiOuts.size()-1;
+					if (!midi->isOpen(midiPort)) {
+						midi->open(midiPort);
 						openedMidiPort = true;
 					}
 					sharedData.instruments[lastInstrumentIndex].setMidiPort(midiPort);

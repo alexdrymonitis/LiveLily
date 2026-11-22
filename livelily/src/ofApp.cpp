@@ -47,6 +47,7 @@ void ofApp::setup()
 	unsigned int framerate = 60;
 
 	sequencer.setup(&sharedData);
+	sequencer.setMidiOutput(midi);
 
 	// define audio properties
 	sampleRate = 48000;
@@ -7739,9 +7740,7 @@ void ofApp::exit()
 	m.addIntArg(1);
 	sendToParts(m, false);
 	m.clear();
-	for (unsigned i = 0; i < sequencer.midiOuts.size(); i++) {
-		sequencer.midiOuts[i].closePort();
-	}
+	midi->closeAll();
 	if (serialPortOpen) {
 		serial.close();
 	}

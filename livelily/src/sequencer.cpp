@@ -85,7 +85,7 @@ void Sequencer::midiNoteOn(Instrument& inst, int note, int velocity, int voice)
 	int channel = midiVoiceChannel(inst, voice);
 	if (logged(midiText(inst, "note on", channel, note, velocity))) return;
 	if (inst.getSoundFontChannel() >= 0) sharedData->soundFonts.noteOn(channel, note, velocity);
-	else midiOuts[midiPortsMap[inst.getMidiPort()]].sendNoteOn(channel, note, velocity);
+	else midi->noteOn(inst.getMidiPort(), channel, note, velocity);
 }
 
 //--------------------------------------------------------------
@@ -101,7 +101,7 @@ void Sequencer::midiNoteOff(Instrument& inst, int note)
 	int channel = midiVoiceChannel(inst, voice);
 	if (logged(midiText(inst, "note off", channel, note))) return;
 	if (inst.getSoundFontChannel() >= 0) sharedData->soundFonts.noteOff(channel, note);
-	else midiOuts[midiPortsMap[inst.getMidiPort()]].sendNoteOff(channel, note, 0);
+	else midi->noteOff(inst.getMidiPort(), channel, note, 0);
 }
 
 //--------------------------------------------------------------
@@ -110,7 +110,7 @@ void Sequencer::midiPitchBend(Instrument& inst, int value, int voice)
 	int channel = midiVoiceChannel(inst, voice);
 	if (logged(midiText(inst, "pitch bend", channel, value))) return;
 	if (inst.getSoundFontChannel() >= 0) sharedData->soundFonts.pitchBend(channel, value);
-	else midiOuts[midiPortsMap[inst.getMidiPort()]].sendPitchBend(channel, value);
+	else midi->pitchBend(inst.getMidiPort(), channel, value);
 }
 
 //--------------------------------------------------------------
@@ -119,7 +119,7 @@ void Sequencer::midiProgramChange(Instrument& inst, int program)
 	// articulations are sent as program changes, which on a SoundFont would select another instrument, so they are not sent there
 	if (inst.getSoundFontChannel() >= 0) return;
 	if (logged(midiText(inst, "program change", inst.getMidiChan(), program))) return;
-	midiOuts[midiPortsMap[inst.getMidiPort()]].sendProgramChange(inst.getMidiChan(), program);
+	midi->programChange(inst.getMidiPort(), inst.getMidiChan(), program);
 }
 
 //--------------------------------------------------------------
@@ -134,7 +134,7 @@ void Sequencer::midiAllSoundOff(Instrument& inst)
 		}
 		else {
 			// all sound off is control change 120 with value 0
-			midiOuts[midiPortsMap[inst.getMidiPort()]].sendControlChange(channel, 120, 0);
+			midi->controlChange(inst.getMidiPort(), channel, 120, 0);
 		}
 		if (voice > 0) midiPitchBend(inst, 0, voice);
 	}
@@ -152,7 +152,7 @@ void Sequencer::silenceInstrument(Instrument& inst)
 			int channel = midiVoiceChannel(inst, note.second);
 			if (logged(midiText(inst, "note off", channel, note.first))) continue;
 			if (inst.getSoundFontChannel() >= 0) sharedData->soundFonts.noteOff(channel, note.first);
-			else midiOuts[midiPortsMap[inst.getMidiPort()]].sendNoteOff(channel, note.first, 0);
+			else midi->noteOff(inst.getMidiPort(), channel, note.first, 0);
 		}
 		midiAllSoundOff(inst);
 	}
@@ -443,7 +443,7 @@ void Sequencer::midiExpression(Instrument& inst, int value)
 		int channel = midiVoiceChannel(inst, voice);
 		if (logged(midiText(inst, "control change 11", channel, value))) continue;
 		if (inst.getSoundFontChannel() >= 0) sharedData->soundFonts.controlChange(channel, 11, value);
-		else midiOuts[midiPortsMap[inst.getMidiPort()]].sendControlChange(channel, 11, value);
+		else midi->controlChange(inst.getMidiPort(), channel, 11, value);
 	}
 	inst.lastExpressionSent = value;
 }
@@ -1745,7 +1745,7 @@ void Sequencer::sendMidiByte(int byte)
 	std::ostringstream hex;
 	hex << "midi byte 0x" << std::uppercase << std::hex << byte;
 	if (logged(hex.str())) return;
-	midiOut.sendMidiByte(byte);
+	if (midiClockPort >= 0) midi->sendByte(midiClockPort, (unsigned char)byte);
 }
 
 //--------------------------------------------------------------
