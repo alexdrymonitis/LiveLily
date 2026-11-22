@@ -1494,11 +1494,23 @@ void ofApp::update()
 		for (int i = 0; i < outChannels; i++) {
 			scopeWaveforms[i].clear();
 		}
-		scopeRms = scopeBuffer.getRMSAmplitude();
-		for(size_t i = 0; i < scopeBuffer.getNumFrames(); i++) {
-			for (int j = 0; j < outChannels; j++) {
-				float sample = scopeBuffer.getSample(i, j);
-				float x = ofMap(i, 0, scopeBuffer.getNumFrames(), scoreXOffset, scoreBackgroundWidth+scoreXOffset);
+		// the last output buffer, copied from the audio thread
+		std::vector<float> samples;
+		int channels;
+		{
+			std::lock_guard<std::mutex> lock(scopeMutex);
+			samples = scopeSamples;
+			channels = scopeChannels;
+		}
+		size_t numFrames = (channels > 0 ? samples.size() / channels : 0);
+		// the root mean square of all the samples, as ofSoundBuffer::getRMSAmplitude() computed it
+		double squares = 0;
+		for (float sample : samples) squares += (double)sample * sample;
+		scopeRms = (samples.empty() ? 0.0f : (float)std::sqrt(squares / samples.size()));
+		for(size_t i = 0; i < numFrames; i++) {
+			for (int j = 0; j < outChannels && j < channels; j++) {
+				float sample = samples[i * channels + j];
+				float x = ofMap(i, 0, numFrames, scoreXOffset, scoreBackgroundWidth+scoreXOffset);
 				float y = ((sample * (scoreBackgroundHeight / 2)) * scopeRms) + (scoreBackgroundHeight / 2);
 				if (scoreOrientation == 1) y += scoreYOffset;
 				scopeWaveforms[j].addVertex(x, y);
@@ -5752,23 +5764,14 @@ void ofApp::initPyo()
 	sharedData.pyo.getStdout();
 	// then set the debug flag to 1
 	sharedData.pyo.setDebug(1);
-	// initialize OpenFrameworks audio streaming channels
-	ofSoundStreamSettings settings;
-	if (inSoundDeviceSet) {
-		settings.setInDevice(inSoundDevice);
-	}
-	if (outSoundDeviceSet) {
-		settings.setOutDevice(outSoundDevice);
-	}
-	//settings.numInputChannels = inChannels;
-	settings.numOutputChannels = outChannels;
-	settings.sampleRate = sampleRate;
-	settings.bufferSize = bufferSize;
-	settings.numBuffers = 4;
-	settings.setOutListener(this);
+	// the audio stream, with the input device if one is set, but without input channels, as before
+	// (pyo's input, audioIn(), is not used)
+	AudioSettings settings = audioSettings();
+	settings.inDeviceSet = inSoundDeviceSet;
+	settings.inDevice = inSoundDevice;
 	// the click track might have set up a stream without input, which pyo replaces
-	if (soundStreamSet) soundStream.close();
-	soundStream.setup(settings);
+	if (soundStreamSet) audioStream->close();
+	audioStream->setup(settings, this);
 	soundStreamSet = true;
 	// set the size of the array for displaying the oscilloscope
 	scopeWaveforms.resize(outChannels);
@@ -7846,32 +7849,50 @@ void ofApp::dragEvent(ofDragInfo dragInfo)
 
 /********************** audio functions ***********************/
 //--------------------------------------------------------------
-void ofApp::audioIn(ofSoundBuffer & buffer)
+AudioSettings ofApp::audioSettings()
+{
+	AudioSettings settings;
+	settings.outDeviceSet = outSoundDeviceSet;
+	settings.outDevice = outSoundDevice;
+	settings.inChannels = 0;
+	settings.outChannels = outChannels;
+	settings.sampleRate = sampleRate;
+	settings.bufferSize = bufferSize;
+	settings.numBuffers = 4;
+	return settings;
+}
+
+//--------------------------------------------------------------
+void ofApp::onAudioIn(const float* in, int numFrames, int numChannels)
 {
 #ifdef USEPYO
 	if (pyoSet && !exiting) {
 		// send audio samples to pyo
-		sharedData.pyo.fillin(&buffer[0]);
+		sharedData.pyo.fillin(const_cast<float*>(in));
 	}
 #endif
 }
 
 //--------------------------------------------------------------
-void ofApp::audioOut(ofSoundBuffer & buffer)
+void ofApp::onAudioOut(float* out, int numFrames, int numChannels, int sampleRate)
 {
 	bool pyoProcessed = false;
 #ifdef USEPYO
 	if (pyoSet && !exiting) {
 		// process and get new audio samples from pyo
-		sharedData.pyo.process(&buffer[0]);
-		if (showScope) scopeBuffer = buffer;
+		sharedData.pyo.process(out);
+		if (showScope) {
+			std::lock_guard<std::mutex> lock(scopeMutex);
+			scopeSamples.assign(out, out + (size_t)numFrames * numChannels);
+			scopeChannels = numChannels;
+		}
 		pyoProcessed = true;
 	}
 #endif
 	// without pyo, the stream plays the click track only
-	if (!pyoProcessed) buffer.set(0);
+	if (!pyoProcessed) std::fill(out, out + (size_t)numFrames * numChannels, 0.0f);
 	// the click track is added to the output (see \clicktrack)
-	if (!exiting) sharedData.clickTrack.process(buffer);
+	if (!exiting) sharedData.clickTrack.process(out, numFrames, numChannels, sampleRate);
 }
 
 //--------------------------------------------------------------
@@ -7880,15 +7901,5 @@ void ofApp::startSoundStream()
 	// the click track plays through the sound stream of pyo, and if pyo hasn't started, through a stream of its own
 	// which pyo replaces when it starts (see initPyo())
 	if (soundStreamSet) return;
-	ofSoundStreamSettings settings;
-	if (outSoundDeviceSet) {
-		settings.setOutDevice(outSoundDevice);
-	}
-	settings.numInputChannels = 0;
-	settings.numOutputChannels = outChannels;
-	settings.sampleRate = sampleRate;
-	settings.bufferSize = bufferSize;
-	settings.numBuffers = 4;
-	settings.setOutListener(this);
-	soundStreamSet = soundStream.setup(settings);
+	soundStreamSet = audioStream->setup(audioSettings(), this);
 }

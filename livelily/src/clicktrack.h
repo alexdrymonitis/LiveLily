@@ -1,7 +1,7 @@
 #ifndef CLICKTRACK_H
 #define CLICKTRACK_H
 
-#include "ofMain.h"
+#include <cstdint>
 #include "clock.h"
 #include <atomic>
 #include <cmath>
@@ -68,12 +68,9 @@ class ClickTrack
 			pending.push_back({(int64_t)timeUs, accent});
 		}
 
-		// called by the audio thread, adds the clicks to all the channels of the buffer
-		void process(ofSoundBuffer& buffer)
+		// called by the audio thread, adds the clicks to all the channels of the buffer (interleaved, see audio.h)
+		void process(float* buffer, int numFrames, int numChannels, double sampleRate)
 		{
-			double sampleRate = buffer.getSampleRate();
-			int numChannels = (int)buffer.getNumChannels();
-			int numFrames = (int)buffer.getNumFrames();
 			if (sampleRate <= 0 || numFrames <= 0) return;
 			// the time of the first sample of the output, from the time this buffer is processed and the samples processed before it
 			// the callbacks come a bit early or late, so the time is smoothed

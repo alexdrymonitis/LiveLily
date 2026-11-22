@@ -4,6 +4,7 @@
 #include "ofMain.h"
 #include "osc.h"
 #include "serial.h"
+#include "audio.h"
 #include "of_midi.h"
 #include <map>
 #include <vector>
@@ -97,7 +98,7 @@ struct variable
 	int varType;
 };
 
-class ofApp : public ofBaseApp
+class ofApp : public ofBaseApp, public AudioCallback
 {
 	public:
 		// basic OF program structure
@@ -559,8 +560,9 @@ class ofApp : public ofBaseApp
 		void dragEvent(ofDragInfo dragInfo);
 		//---------------------------------
 		// audio functions
-		void audioIn(ofSoundBuffer & input);
-		void audioOut(ofSoundBuffer & buffer);
+		// called by the audio stream (see audio.h) from the audio thread
+		void onAudioIn(const float* in, int numFrames, int numChannels) override;
+		void onAudioOut(float* out, int numFrames, int numChannels, int sampleRate) override;
 
 		// a mutex to avoid accessing the same data by different threads at the same time
 		ofMutex mutex;
@@ -594,7 +596,10 @@ class ofApp : public ofBaseApp
 		MidiOutput* midi = &ofMidiOutput;
 
 		// Pyo stuff
-		ofSoundStream soundStream;
+		// the audio stream for pyo and the click track (see audio.h), with openFrameworks for now
+		std::unique_ptr<AudioStream> audioStream = makeAudioStream();
+		// the settings of the stream, from \samplerate, \buffersize, the channels, and the devices
+		AudioSettings audioSettings();
 		// whether the sound stream has been set up, by pyo or by the click track (see startSoundStream())
 		bool soundStreamSet = false;
 		// sets up the sound stream for the click track, if pyo hasn't set it up already
@@ -604,12 +609,15 @@ class ofApp : public ofBaseApp
 		int bufferSize;
 		int inChannels;
 		int outChannels;
-		ofSoundDevice inSoundDevice;
-		ofSoundDevice outSoundDevice;
+		AudioDevice inSoundDevice;
+		AudioDevice outSoundDevice;
 		bool inSoundDeviceSet;
 		bool outSoundDeviceSet;
 		// oscilloscope drawing stuff
-		ofSoundBuffer scopeBuffer;
+		// the last output buffer, copied by the audio thread for the oscilloscope, and its number of channels
+		std::vector<float> scopeSamples;
+		int scopeChannels = 0;
+		std::mutex scopeMutex;
 		std::vector<ofPolyline> scopeWaveforms;
 		float scopeRms;
 

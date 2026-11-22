@@ -3787,7 +3787,7 @@ CmdOutput ofApp::cmdListaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\listaudiodev takes no arguments");
 	}
-	std::vector<ofSoundDevice> v = soundStream.getDeviceList();
+	std::vector<AudioDevice> v = audioStream->devices();
 	std::string audioDevs = "";
 	for (size_t i = 0; i < v.size(); i++) {
 		if (i > 0) audioDevs += "\n";
@@ -3806,7 +3806,7 @@ CmdOutput ofApp::cmdSetaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("argument to \\setaudiodev must be an integer");
 	}
 	int devID = stoi(cmdInput.inputVec[1]);
-	std::vector<ofSoundDevice> v = soundStream.getDeviceList();
+	std::vector<AudioDevice> v = audioStream->devices();
 	if (devID < 0) {
 		return genError("audio device ID can't be negative");
 	}
@@ -3830,7 +3830,7 @@ CmdOutput ofApp::cmdSetinaudiodev(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("argument to \\setinaudiodev must be an integer");
 	}
 	int devID = stoi(cmdInput.inputVec[1]);
-	std::vector<ofSoundDevice> v = soundStream.getDeviceList();
+	std::vector<AudioDevice> v = audioStream->devices();
 	if (devID < 0) {
 		return genError("audio device ID can't be negative");
 	}
@@ -3852,7 +3852,7 @@ CmdOutput ofApp::cmdSetoutaudiodev(CmdInput& cmdInput, int lineNum, int numLines
 		return genError("argument to \\setoutaudiodev must be an integer");
 	}
 	int devID = stoi(cmdInput.inputVec[1]);
-	std::vector<ofSoundDevice> v = soundStream.getDeviceList();
+	std::vector<AudioDevice> v = audioStream->devices();
 	if (devID < 0) {
 		return genError("audio device ID can't be negative");
 	}
