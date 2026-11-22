@@ -7726,6 +7726,9 @@ void ofApp::exit()
 {
 	// should print a warning message first
 	sequencer.stopNow();
+	// the sequencer's thread calls the app (e.g. to highlight the notes that play), and it is held by Session
+	// which is destroyed after the members of the app, so the thread ends here
+	sequencer.waitForThread(false);
 	OscMessage m;
 	m.setAddress("/exit");
 	m.addIntArg(1);

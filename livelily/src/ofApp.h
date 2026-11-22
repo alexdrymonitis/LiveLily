@@ -594,8 +594,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		float oneCharacterWidth;
 		int halfCharacterWidth;
 
-		SharedData sharedData;
-		Sequencer sequencer;
 
 		// the settings of the audio stream, from \samplerate, \buffersize, the channels, and the devices
 		AudioSettings audioSettings();
@@ -636,7 +634,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 
 
 
-		bool startSequencer;
 
 		// the colors of the names of the code in the editor, by language and first character, and the colors that can be set by name
 		std::map<int, std::map<char, std::map<std::string, Color>>> commandsMap;

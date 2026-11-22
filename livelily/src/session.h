@@ -12,6 +12,8 @@
 #include "osc.h"
 #include "serial.h"
 #include "audio.h"
+#include "utils.h"
+#include "sequencer.h"
 #include <string>
 
 // a variable of a session (x = 5), with its value as a string and its type
@@ -29,6 +31,12 @@ class Session
 {
 	public:
 		virtual ~Session() = default;
+
+		// the data the sequencer plays (instruments, bars, loops, tempi, functions), which it shares with the parser (see utils.h)
+		SharedData sharedData;
+		Sequencer sequencer;
+		// set by \score.play, and the sequencer starts at the next update of the app
+		bool startSequencer;
 
 		// variables (e.g. x = 5), by their names
 		std::map<std::string, variable> variables;
