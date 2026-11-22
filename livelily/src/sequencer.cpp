@@ -10,9 +10,9 @@
 #include <iomanip>
 #include <climits>
 #include "utils.h" // SharedData
-// the sequencer calls back into the app (e.g. parseCommand(), storeActiveEditorElement())
-// and uses some of its #defines (e.g. GLISSGRAIN, HOST, OFSENDPORT), so it needs ofApp.h too
-#include "ofApp.h"
+// the sequencer calls the session that holds it (e.g. callBoundFunction(), sendToParts())
+// and uses its #defines (e.g. GLISSGRAIN, HOST, OFSENDPORT)
+#include "session.h"
 
 /**************************************************************/
 /******************* Sequencer class **************************/
@@ -292,11 +292,11 @@ void Sequencer::sendBeatVizInfo(int bar)
 	m.setAddress("/beatinfo");
 	m.addFloatArg(sharedData->beatVizStepsPerMs);
 	m.addIntArg((int)sharedData->beatVizRampStart);
-	((ofApp*)ofGetAppPtr())->sendToParts(m, false);
+	session->sendToParts(m, false);
 	m.clear();
 	m.setAddress("/beat");
 	m.addIntArg(sharedData->beatCounter);
-	((ofApp*)ofGetAppPtr())->sendToParts(m, false);
+	session->sendToParts(m, false);
 	m.clear();
 }
 
@@ -1061,7 +1061,6 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 					}
 				}
 				for (const std::string& funcName : funcsToCall) {
-					//((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(funcName), 1, 1); // dummy 2nd and 3rd arguments
 					visualBoundFunction(instMapIt, funcName);
 				}
 			}
@@ -1266,7 +1265,7 @@ void Sequencer::threadedFunction()
 bool Sequencer::step()
 {
 	{
-		// instruments are not added or removed while the sequencer goes through them in this step (see ofApp::removeInstrument())
+		// instruments are not added or removed while the sequencer goes through them in this step (see Session::removeInstrument())
 		std::lock_guard<std::recursive_mutex> instrumentsLock(sharedData->instrumentsMutex);
 		if (runSequencer && !sequencerRunning) {
 			int bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisBarIndex];
@@ -1416,7 +1415,6 @@ bool Sequencer::step()
 						}
 					}
 					for (const std::string& funcName : funcsToCall) {
-						//((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(funcName), 1, 1);
 						callBoundFunction(funcName);
 					}
 					finished = false;
@@ -1521,7 +1519,6 @@ bool Sequencer::step()
 						}
 					}
 					for (const std::string& funcName : funcsToCall) {
-						//((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(funcName), 1, 1);
 						callBoundFunction(funcName);
 					}
 					if (!(sharedData->beatCounter == 0 && mustStop)) sendBeatVizInfo(bar);
@@ -1584,7 +1581,6 @@ bool Sequencer::step()
 						}
 					}
 					for (const std::string& funcName : funcsToCall) {
-						//((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(funcName), 1, 1);
 						callBoundFunction(funcName);
 					}
 				}
@@ -1775,7 +1771,7 @@ void Sequencer::callBoundFunction(const std::string& funcName)
 {
 	// in a dry run the function is called too, as what it does (e.g. changing the loop) is part of the playback
 	logged("function " + funcName);
-	((ofApp*)ofGetAppPtr())->callBoundFunction(funcName);
+	session->callBoundFunction(funcName);
 }
 
 //--------------------------------------------------------------

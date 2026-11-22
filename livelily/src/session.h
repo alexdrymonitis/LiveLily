@@ -88,6 +88,7 @@ struct CmdOutput
 class Session
 {
 	public:
+		Session() { sequencer.setSession(this); }
 		virtual ~Session() = default;
 
 		// the user interface, as the engine sees it (see frontend.h), which the front end sets when it starts

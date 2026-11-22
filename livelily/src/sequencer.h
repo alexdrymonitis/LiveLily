@@ -18,6 +18,8 @@
 // the sequencer only holds a pointer to it, so a declaration is enough here
 // and sequencer.cpp includes utils.h for the full definition
 struct SharedData;
+// the session that holds the sequencer (see session.h), which it calls (e.g. for the functions bound to instruments)
+class Session;
 
 class Sequencer : public ofThread
 {
@@ -39,6 +41,7 @@ class Sequencer : public ofThread
 		void setMidiOutput(MidiOutput* output) { midi = output; }
 		// the user interface (see frontend.h), which the app sets before the sequencer plays
 		void setFrontend(FrontendHost* host) { frontend = host; }
+		void setSession(Session* s) { session = s; }
 		// the MIDI out ports of the system, as \listmidiports listed them last, which \openmidiport and \instname.midiport check
 		std::vector<std::string> midiOutPorts;
 		// the ports opened with \openmidiport, which get the MIDI messages that don't belong to an instrument (the MIDI clock)
@@ -58,6 +61,7 @@ class Sequencer : public ofThread
 	private:
 		MidiOutput* midi = nullptr;
 		FrontendHost* frontend = nullptr;
+		Session* session = nullptr;
 		// the ports opened with \openmidiport (see addGenericMidiPort()), set by the parser and read by the sequencer thread
 		std::set<int> genericMidiPorts;
 		std::mutex genericMidiPortsMutex;
