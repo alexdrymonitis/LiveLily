@@ -3,6 +3,7 @@
 
 #include "ofMain.h"
 #include "osc.h"
+#include "serial.h"
 #include "of_midi.h"
 #include <map>
 #include <vector>
@@ -641,8 +642,9 @@ class ofApp : public ofBaseApp
 		std::map<std::string, std::shared_ptr<OscSender>> oscClients;
 		std::map<std::string, std::shared_ptr<OscReceiver>> oscServers;
 		std::map<std::string, std::vector<std::pair<std::string, std::string>>> oscServerFuncs;
-		ofSerial serial;
-		std::vector<ofSerialDeviceInfo> serialDeviceList;
+		std::unique_ptr<SerialPort> serial = makeSerialPort();
+		// the serial devices, as \listserialports listed them last, which \openserialport opens by their number
+		std::vector<SerialDevice> serialDeviceList;
 		bool serialPortOpen;
 
 		// map of instrument index and pair of IP and port

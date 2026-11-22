@@ -3438,19 +3438,18 @@ CmdOutput ofApp::cmdListserialports(CmdInput& cmdInput, int lineNum, int numLine
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("\\listserialports command takes no arguments");
 	}
-	serial.listDevices();
-	serialDeviceList = serial.getDeviceList();
+	serialDeviceList = serial->devices();
 	if (serialDeviceList.empty()) {
 		return genNote("no serial ports available");
 	}
 	std::string outPortsOneStr = "";
 	for (unsigned i = 0; i < serialDeviceList.size()-1; i++) {
-		outPortsOneStr += "Serial port " + std::to_string(serialDeviceList[i].getDeviceID()) + \
-						  ": " + serialDeviceList[i].getDevicePath() + "\n";
+		outPortsOneStr += "Serial port " + std::to_string(serialDeviceList[i].id) + \
+						  ": " + serialDeviceList[i].path + "\n";
 	}
 	// append last port separately to not include the newline
-	outPortsOneStr += "Serial port " + std::to_string(serialDeviceList.back().getDeviceID()) + \
-					  ": " + serialDeviceList.back().getDevicePath();
+	outPortsOneStr += "Serial port " + std::to_string(serialDeviceList.back().id) + \
+					  ": " + serialDeviceList.back().path;
 	return genNote(outPortsOneStr);
 }
 
@@ -3476,18 +3475,18 @@ CmdOutput ofApp::cmdOpenserialport(CmdInput& cmdInput, int lineNum, int numLines
 		return genError("second argument must be baud rate");
 	}
 	if (serialPortNumSet) {
-		serial.setup(serialDeviceList[serialPort].getDevicePath(), stoi(cmdInput.inputVec[2]));
+		serial->open(serialDeviceList[serialPort].path, stoi(cmdInput.inputVec[2]));
 	}
 	else {
 		bool serialPortPathFound = false;
 		for (unsigned i = 0; i < serialDeviceList.size(); i++) {
-			if (serialDeviceList[i].getDevicePath().compare(cmdInput.inputVec[1]) == 0) {
+			if (serialDeviceList[i].path.compare(cmdInput.inputVec[1]) == 0) {
 				serialPortPathFound = true;
 				break;
 			}
 		}
 		if (serialPortPathFound) {
-			serial.setup(cmdInput.inputVec[1], stoi(cmdInput.inputVec[2]));
+			serial->open(cmdInput.inputVec[1], stoi(cmdInput.inputVec[2]));
 		}
 		else {
 			return genError("serial port path \"" + cmdInput.inputVec[1] + "\" doesn't exist");
@@ -3503,7 +3502,7 @@ CmdOutput ofApp::cmdSerialwrite(CmdInput& cmdInput, int lineNum, int numLines)
 	if (cmdInput.inputVec.size() == 1) {
 		return genError("\\serialwrite takes at least one argument, a byte to send over serial");
 	}
-	if (!serial.isInitialized()) {
+	if (!serial->isOpen()) {
 		return genError("serial port is not open");
 	}
 	for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
@@ -3514,7 +3513,7 @@ CmdOutput ofApp::cmdSerialwrite(CmdInput& cmdInput, int lineNum, int numLines)
 		if (value < 0 || value > 255) {
 			return genError("\\serialwrite takes numbers from 0 to 255");
 		}
-		serial.writeByte((char)value);
+		serial->writeByte((unsigned char)value);
 	}
 	return CmdOutput();
 }
@@ -3525,27 +3524,16 @@ CmdOutput ofApp::cmdSerialprint(CmdInput& cmdInput, int lineNum, int numLines)
 	if (cmdInput.inputVec.size() == 1) {
 		return genError("\\serialprint takes at least one argument, a character to send over serial");
 	}
-	if (!serial.isInitialized()) {
+	if (!serial->isOpen()) {
 		return genError("serial port is not open");
 	}
-	size_t charSize = 0;
+	// the arguments, separated by single spaces
+	std::string bytes;
 	for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-		for (unsigned j = 0; j < cmdInput.inputVec[i].size(); j++) {
-			charSize++;
-		}
-		charSize++;
+		if (i > 1) bytes += ' ';
+		bytes += cmdInput.inputVec[i];
 	}
-	// the last addition happens one time two many, so we subtract one here
-	charSize--;
-	unsigned char buf[charSize];
-	int index = 0;
-	for (unsigned i = 1; i < cmdInput.inputVec.size(); i++) {
-		for (unsigned j = 0; j < cmdInput.inputVec[i].size(); j++) {
-			buf[index++] = cmdInput.inputVec[i][j];
-		}
-		if (i < cmdInput.inputVec.size() - 1) buf[index++] = ' ';
-	}
-	serial.writeBytes(&buf[0], charSize);
+	serial->writeBytes(bytes);
 	return CmdOutput();
 }
 
@@ -3579,8 +3567,8 @@ CmdOutput ofApp::cmdMouse(CmdInput& cmdInput, int lineNum, int numLines)
 //--------------------------------------------------------------
 CmdOutput ofApp::cmdCloseserialport(CmdInput& cmdInput, int lineNum, int numLines)
 {
-	if (serial.isInitialized()) {
-		serial.close();
+	if (serial->isOpen()) {
+		serial->close();
 	}
 	return CmdOutput();
 }

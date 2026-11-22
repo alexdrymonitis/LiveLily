@@ -7742,7 +7742,7 @@ void ofApp::exit()
 	m.clear();
 	midi->closeAll();
 	if (serialPortOpen) {
-		serial.close();
+		serial->close();
 	}
 	exiting = true;
 	ofExit();
