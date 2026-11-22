@@ -1102,21 +1102,21 @@ void Sequencer::visual(Instrument& inst, std::function<void()> fn)
 void Sequencer::visualEditorElement(std::map<int, Instrument>::iterator instMapIt, int bar, int ndx, bool active)
 {
 	int instNdx = instMapIt->first;
-	visual(instMapIt->second, [instNdx, bar, ndx, active]() { ((ofApp*)ofGetAppPtr())->storeActiveEditorElement(instNdx, bar, ndx, active); });
+	visual(instMapIt->second, [this, instNdx, bar, ndx, active]() { frontend->notePlaying(instNdx, bar, ndx, active); });
 }
 
 //--------------------------------------------------------------
 void Sequencer::visualEditorRest(std::map<int, Instrument>::iterator instMapIt, int bar, int ndx)
 {
 	int instNdx = instMapIt->first;
-	visual(instMapIt->second, [instNdx, bar, ndx]() { ((ofApp*)ofGetAppPtr())->storeActiveEditorRest(instNdx, bar, ndx); });
+	visual(instMapIt->second, [this, instNdx, bar, ndx]() { frontend->restPlaying(instNdx, bar, ndx); });
 }
 
 //--------------------------------------------------------------
 void Sequencer::visualEditorClear(std::map<int, Instrument>::iterator instMapIt)
 {
 	int instNdx = instMapIt->first;
-	visual(instMapIt->second, [instNdx]() { ((ofApp*)ofGetAppPtr())->clearActiveEditorElement(instNdx); });
+	visual(instMapIt->second, [this, instNdx]() { frontend->nothingPlaying(instNdx); });
 }
 
 //--------------------------------------------------------------

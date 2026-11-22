@@ -4,6 +4,7 @@
 #include "ofMain.h"
 #include "osc.h"
 #include "midi.h"
+#include "frontend.h"
 #include "ofTimer.h"
 #include <map>
 #include <vector>
@@ -36,6 +37,8 @@ class Sequencer : public ofThread
 
 		// the MIDI output (see midi.h), which the app sets before the sequencer plays
 		void setMidiOutput(MidiOutput* output) { midi = output; }
+		// the user interface (see frontend.h), which the app sets before the sequencer plays
+		void setFrontend(FrontendHost* host) { frontend = host; }
 		// the MIDI out ports of the system, as \listmidiports listed them last, which \openmidiport and \instname.midiport check
 		std::vector<std::string> midiOutPorts;
 		// the ports opened with \openmidiport, which get the MIDI messages that don't belong to an instrument (the MIDI clock)
@@ -54,6 +57,7 @@ class Sequencer : public ofThread
 		std::vector<std::string> dryRun();
 	private:
 		MidiOutput* midi = nullptr;
+		FrontendHost* frontend = nullptr;
 		// the ports opened with \openmidiport (see addGenericMidiPort()), set by the parser and read by the sequencer thread
 		std::set<int> genericMidiPorts;
 		std::mutex genericMidiPortsMutex;

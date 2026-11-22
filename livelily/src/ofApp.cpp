@@ -49,6 +49,7 @@ void ofApp::setup()
 
 	sequencer.setup(&sharedData);
 	sequencer.setMidiOutput(midi);
+	sequencer.setFrontend(this);
 
 	// define audio properties
 	sampleRate = 48000;

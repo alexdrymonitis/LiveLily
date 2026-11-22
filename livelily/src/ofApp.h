@@ -5,6 +5,7 @@
 #include "osc.h"
 #include "serial.h"
 #include "audio.h"
+#include "frontend.h"
 #include "of_midi.h"
 #include <map>
 #include <vector>
@@ -98,7 +99,7 @@ struct variable
 	int varType;
 };
 
-class ofApp : public ofBaseApp, public AudioCallback
+class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 {
 	public:
 		// basic OF program structure
@@ -212,6 +213,10 @@ class ofApp : public ofBaseApp, public AudioCallback
 		void moveToPane(int direction);
 		// moves the score away from the active pane, if it covers it (with Alt+number and Ctrl+w)
 		void revealActivePane();
+		// what the engine asks of the user interface (see frontend.h)
+		void notePlaying(int instNdx, int bar, int noteNdx, bool playing) override { storeActiveEditorElement(instNdx, bar, noteNdx, playing); }
+		void restPlaying(int instNdx, int bar, int noteNdx) override { storeActiveEditorRest(instNdx, bar, noteNdx); }
+		void nothingPlaying(int instNdx) override { clearActiveEditorElement(instNdx); }
 		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);
 		// the same for a rest, which stays highlighted until the next note or rest replaces it
 		void storeActiveEditorRest(int instNdx, int barNdx, int dataCounter);
