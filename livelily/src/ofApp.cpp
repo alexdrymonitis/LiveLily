@@ -1,4 +1,5 @@
 #include "ofApp.h"
+#include "system_command.h"
 #include <set>
 #include "pyo_classes.h" // the Python code of the Pyo synths (pyoClasses), defined in pyo_classes.cpp
 #include <string>
@@ -4368,8 +4369,8 @@ void ofApp::executeShellCommand()
 				arg = shellStrLocal;
 			}
 			else {
-				std::string pwdStr = ofSystem("pwd");
-				// there's a newline character at the end of ofSystem("pwd"), so we remove it below
+				std::string pwdStr = systemCommandOutput("pwd");
+				// there's a newline character at the end of systemCommandOutput("pwd"), so we remove it below
 				arg = pwdStr.substr(0, pwdStr.size()-1) + "/";
 				if (startsWith(shellStrLocal, "./")) {
 					arg += shellStrLocal.substr(2);
@@ -4647,13 +4648,13 @@ void ofApp::executeShellCommand()
 		// with options (e.g. :ls -a), the arguments are passed to ls as they are typed
 		std::string rawArgs = (whiteSpace == std::string::npos ? std::string() : shellStr.substr(whiteSpace+1));
 		rawArgs.erase(std::remove(rawArgs.begin(), rawArgs.end(), '\n'), rawArgs.end());
-		std::string lsOutput = ofSystem("ls -p " + (startsWith(rawArgs, "-") ? rawArgs : arg));
+		std::string lsOutput = systemCommandOutput("ls -p " + (startsWith(rawArgs, "-") ? rawArgs : arg));
 		shellStr.clear();
 		numShellLines = 0;
 		formatShellLsOutput(tokenizeString(lsOutput, "\n"));
 	}
 	else if (shellStr.compare(":pwd") == 0) {
-		shellStr = ofSystem("pwd");
+		shellStr = systemCommandOutput("pwd");
 		numShellLines = 1;
 	}
 	// :cd changes the working directory of LiveLily, as in Vim, which :pwd, :ls, :load, :save, other shell commands, and Tab completion use

@@ -10,7 +10,7 @@
 #include <cmath> // to add abs()
 #include <utility> // to add pair and make_pair
 #include <sstream> // to create a string from vector<string>
-#include <cstdio> // popen() for \system
+#include "system_command.h"
 #include <filesystem>
 #include "clock.h"
 #include <fstream>
@@ -3574,28 +3574,6 @@ CmdOutput ofApp::cmdCloseserialport(CmdInput& cmdInput, int lineNum, int numLine
 		serial->close();
 	}
 	return CmdOutput();
-}
-
-//--------------------------------------------------------------
-// the output of a system command (what it prints to the standard output), for \system
-static std::string systemCommandOutput(const std::string& command)
-{
-	std::string output;
-#ifdef _WIN32
-	FILE* pipe = _popen(command.c_str(), "r");
-#else
-	FILE* pipe = popen(command.c_str(), "r");
-#endif
-	if (!pipe) return output;
-	char buffer[256];
-	size_t numRead;
-	while ((numRead = fread(buffer, 1, sizeof(buffer), pipe)) > 0) output.append(buffer, numRead);
-#ifdef _WIN32
-	_pclose(pipe);
-#else
-	pclose(pipe);
-#endif
-	return output;
 }
 
 //--------------------------------------------------------------
