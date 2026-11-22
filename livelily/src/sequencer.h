@@ -9,6 +9,8 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <set>
+#include <mutex>
 #include "instrument.h"
 
 // SharedData is defined in utils.h
@@ -36,6 +38,11 @@ class Sequencer : public ofThread
 		void setMidiOutput(MidiOutput* output) { midi = output; }
 		// the MIDI out ports of the system, as \listmidiports listed them last, which \openmidiport and \instname.midiport check
 		std::vector<std::string> midiOutPorts;
+		// the ports opened with \openmidiport, which get the MIDI messages that don't belong to an instrument (the MIDI clock)
+		// unlike the ports opened only by an instrument (with \instname.midiport), which get only the messages of their instruments
+		void addGenericMidiPort(int port);
+		bool isGenericMidiPort(int port);
+		bool hasGenericMidiPorts();
 
 		// stops the sound of an instrument, before it is removed (see ofApp::removeInstrument())
 		void silenceInstrument(Instrument& inst);
@@ -47,9 +54,9 @@ class Sequencer : public ofThread
 		std::vector<std::string> dryRun();
 	private:
 		MidiOutput* midi = nullptr;
-		// the port the MIDI clock is sent to, -1 for none
-		// nothing sets it yet, so the MIDI clock is not sent, as before this interface, when it went to a port that was never opened
-		int midiClockPort = -1;
+		// the ports opened with \openmidiport (see addGenericMidiPort()), set by the parser and read by the sequencer thread
+		std::set<int> genericMidiPorts;
+		std::mutex genericMidiPortsMutex;
 		// the messages of a dry run (see dryRun()), null when the sequencer plays for real
 		std::vector<std::string>* dryRunLog = nullptr;
 		uint64_t dryRunStart = 0;

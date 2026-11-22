@@ -2222,6 +2222,10 @@ CmdOutput ofApp::cmdMidiclock(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("\\midiclock takes one argument");
 	}
 	if (cmdInput.inputVec[1].compare("on") == 0) {
+		// the MIDI clock goes to the ports opened with \openmidiport, not to the ports of instruments
+		if (!sequencer.hasGenericMidiPorts()) {
+			return genError("no MIDI port is open for the MIDI clock, open one with \\openmidiport first");
+		}
 		sequencer.setSendMidiClock(true);
 		sharedData.PPQNTimeStamp = Clock::micros();
 	}
@@ -3318,8 +3322,11 @@ CmdOutput ofApp::cmdOpenmidiport(CmdInput& cmdInput, int lineNum, int numLines)
 	if (midiPort >= (int)sequencer.midiOutPorts.size()) {
 		return genError("MIDI port doesn't exist");
 	}
-	if (!midi->isOpen(midiPort)) {
-		midi->open(midiPort);
+	// a port that an instrument has opened (with \instname.midiport) can also be opened with this command
+	// so that it gets the messages that don't belong to an instrument (the MIDI clock)
+	if (!sequencer.isGenericMidiPort(midiPort)) {
+		if (!midi->isOpen(midiPort)) midi->open(midiPort);
+		sequencer.addGenericMidiPort(midiPort);
 		return genNote("opened MIDI port " + cmdInput.inputVec[1]);
 	}
 	else {

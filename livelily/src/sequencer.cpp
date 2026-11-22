@@ -1745,7 +1745,29 @@ void Sequencer::sendMidiByte(int byte)
 	std::ostringstream hex;
 	hex << "midi byte 0x" << std::uppercase << std::hex << byte;
 	if (logged(hex.str())) return;
-	if (midiClockPort >= 0) midi->sendByte(midiClockPort, (unsigned char)byte);
+	std::lock_guard<std::mutex> lock(genericMidiPortsMutex);
+	for (int port : genericMidiPorts) midi->sendByte(port, (unsigned char)byte);
+}
+
+//--------------------------------------------------------------
+void Sequencer::addGenericMidiPort(int port)
+{
+	std::lock_guard<std::mutex> lock(genericMidiPortsMutex);
+	genericMidiPorts.insert(port);
+}
+
+//--------------------------------------------------------------
+bool Sequencer::isGenericMidiPort(int port)
+{
+	std::lock_guard<std::mutex> lock(genericMidiPortsMutex);
+	return genericMidiPorts.count(port) > 0;
+}
+
+//--------------------------------------------------------------
+bool Sequencer::hasGenericMidiPorts()
+{
+	std::lock_guard<std::mutex> lock(genericMidiPortsMutex);
+	return !genericMidiPorts.empty();
 }
 
 //--------------------------------------------------------------

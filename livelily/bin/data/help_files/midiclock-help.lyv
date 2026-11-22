@@ -5,3 +5,15 @@ Its syntax is the following:
 \midiclock on
 
 Its arguments are either on or off.
+
+The MIDI clock is sent to the ports opened with
+\openmidiport, so open one first, otherwise \midiclock on
+gives an error and the clock stays off:
+
+\listmidiports
+\openmidiport 1
+\midiclock on
+
+With more ports opened with \openmidiport, the clock is
+sent to all of them. The ports that only instruments have
+opened (with their midiport method) don't get it.

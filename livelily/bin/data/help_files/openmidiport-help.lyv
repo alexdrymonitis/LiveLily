@@ -8,11 +8,15 @@ by \listmidiports:
 \listmidiports must be called first, otherwise you will
 get a "MIDI port doesn't exist" error, as the list of
 ports is read by that command.
-A port can be opened only once. Opening it again gives
-an error.
+A port can be opened only once with this command. Opening
+it again gives an error.
 
 Once open, the port can be used by \ctlchange and
-\pgmchange. Instruments open their port with their
-midiport method, so you don't need this command for them:
+\pgmchange, and it gets the MIDI clock (see \midiclock).
+Instruments open their port with their midiport method, so
+you don't need this command for them:
 
 \inst1.midiport 1
+
+A port that an instrument has opened can also be opened
+with this command, so that it gets the MIDI clock too.
