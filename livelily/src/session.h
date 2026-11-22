@@ -81,10 +81,10 @@ struct CmdOutput
 	std::vector<std::string> outputVec;
 };
 
-// the engine of LiveLily: the state of a session (and later the parser and the sequencer), without anything of the user interface
+// the engine of LiveLily: the state of a session, the parser (parser.cpp, session.cpp) and the sequencer, without the user interface
 // (see doc/stage1_inventory.md, step 5)
-// while the state moves here group by group, ofApp derives from Session, so the code that uses a moved member doesn't change
-// when the parser has moved here too, ofApp will hold a Session instead of deriving from it
+// it reaches the user interface only through FrontendHost (frontend.h), and the system only through the interfaces of the platform
+// the front end (ofApp for now) holds a Session, and sets its frontend (and audioCallback) when it starts
 class Session
 {
 	public:

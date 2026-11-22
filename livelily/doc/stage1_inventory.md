@@ -10,7 +10,7 @@ Each step is one commit, checked with the snapshot tests, which include the dry 
 - [x] Step 2: a color type of LiveLily's own (`color.h`, converted in `of_color.h`)
 - [x] Step 3: interfaces for MIDI (`midi.h`), OSC (`osc.h`), serial (`serial.h`), audio (`audio.h`) and system commands (`system_command.h`), implemented with openFrameworks in the `of_*` files
 - [x] Step 4: `FrontendHost` (`frontend.h`): note highlighting, line messages, the window, pane language and help, editor options, and the display methods of `\score`. Left for later, where that code moves anyway: the editor's file dialogs (stage 2), the display updates inside engine functions such as `addedInstruments()`, and `parseStrings()`, which reads the editor (step 5)
-- [ ] Step 5: `Session`
+- [x] Step 5: `Session` (`session.h`, `session.cpp`, `parser.cpp`): the state of a session, the parser and the sequencer, which `ofApp` holds. The engine reaches the user interface only through `FrontendHost`, and is free of `ofGetAppPtr()`. Follow-up: `ofApp::storeEditorNoteSpans()` still reads parse state from the session; the engine could compute the positions of the notes in the line it parses, and the front end map them to its lines
 - [ ] Step 6: split `Instrument`
 - [ ] Step 7: split `SharedData`
 - [ ] Step 8: headless tests
