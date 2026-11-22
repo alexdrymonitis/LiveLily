@@ -230,6 +230,7 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		void sendLinesTo(int pane, const std::string& host, int targetPane) override { editors[pane].oscKeys->setup(host, OSCPORT); editors[pane].setSendLines(targetPane); }
 		int tabSize(int pane) override { return editors[pane].getTabSize(); }
 		void connectLineToBar(int pane, int line, int instNdx, int bar) override { editors[pane].connectLineToBar(line, instNdx, bar); }
+		std::string scoreViewCommand(const std::vector<std::string>& methodAndArgs) override;
 		// the user interface, as the engine (the parser and the sequencer) sees it, which is this app for now
 		FrontendHost* frontend = this;
 		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);

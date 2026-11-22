@@ -6252,6 +6252,23 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 		}
 	}
 
+	// the methods that concern only what is shown go to the front end (see scoreViewCommand())
+	// a command given as their argument (e.g. \score.movex \rand 1 10) is evaluated first, and the method gets its value
+	static const std::vector<std::string> viewMethods = {"colors", "show", "hide", "beattype", "movex", "movey", "recenter", "numbars", "update"};
+	if (std::find(viewMethods.begin(), viewMethods.end(), commands[0]) != viewMethods.end()) {
+		const std::string& method = commands[0];
+		if ((method == "movex" || method == "movey" || method == "numbars") && commands.size() >= 2 && !isNumber(commands[1])) {
+			std::vector<std::string> v = {commands.begin()+1, commands.end()};
+			cmdOutput = parseCommand(genCmdInput(v), lineNum, numLines);
+			if (cmdOutput.errorCode > 0) return cmdOutput;
+			if (!isNumber(cmdOutput.outputVec[0])) return genError("\"" + method + "\" takes a number as an argument");
+			commands = {commands[0], cmdOutput.outputVec[0]};
+		}
+		std::string error = frontend->scoreViewCommand(commands);
+		if (!error.empty()) return genError(error);
+		return cmdOutput;
+	}
+
 	if (commands[0].compare("play") == 0) {
 		if (commands.size() > 1) {
 			return genError("\"play\" subcommand takes no arguments");
@@ -6277,7 +6294,128 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 		sequencer.stop();
 	}
 
-	else if (commands[0].compare("colors") == 0) {
+	else if (commands[0].compare("stopnow") == 0) {
+		if (commands.size() > 1) {
+			return genError("\"stopnow\" subcommand takes no arguments");
+		}
+		sequencer.stopNow();
+		if (sharedData.animate) {
+			for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+				it->second.setAnimation(false);
+			}
+			sharedData.animate = false;
+			sharedData.setAnimation = true;
+		}
+		OscMessage m;
+		m.setAddress("/play");
+		m.addIntArg(0);
+		sendToParts(m, true);
+		m.clear();
+	}
+
+	else if (commands[0].compare("reset") == 0) {
+		if (commands.size() > 1) {
+			return genError("\"reset\" subcommand takes no arguments");
+		}
+		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+			it->second.resetBarDataCounter();
+		}
+		sequencer.setSequencerRunning(false);
+	}
+
+	else if (commands[0].compare("finish") == 0) {
+		if (commands.size() > 1) {
+			return genError("\"finish\" subcommand takes no arguments");
+		}
+		sequencer.setFinish(true);
+	}
+
+	else if (commands[0].compare("beatsin") == 0) {
+		if (commands.size() < 2) {
+			return genError("\"beatsin\" takes a number for beat countdown");
+		}
+		else if (commands.size() > 2) {
+			return genError("\"beatsin\" takes one argument only");
+		}
+		if (!isNumber(commands[1])) {
+			return genError("\"beatsin\" takes a number as an argument");
+		}
+		int countdown = stoi(commands[1]);
+		if (countdown < 0) {
+			return genError("can't set a negative countdown");
+		}
+		sequencer.setCountdown(countdown);
+	}
+
+	else if (commands[0].compare("animation") == 0) {
+		if (commands.size() != 2 || (commands[1] != "on" && commands[1] != "off")) {
+			return genError("\\score.animation takes one argument, \"on\" or \"off\"");
+		}
+		bool animationState = (commands[1] == "on");
+		if (animationState) {
+			if (sequencer.isThreadRunning()) {
+				for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+					it->second.setAnimation(animationState);
+				}
+				sharedData.animate = animationState;
+			}
+			else {
+				sharedData.setAnimation = animationState;
+			}
+		}
+		else {
+			for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+				it->second.setAnimation(animationState);
+			}
+			sharedData.animate = animationState;
+			sharedData.setAnimation = animationState;
+		}
+	}
+
+	else if (commands[0].compare("seqres") == 0) {
+		if (commands.size() != 2) {
+			return genError("\"seqres\" takes one argument, the sequencer resolution");
+		}
+		if (!isNumber(commands[1])) {
+			return genError("\"seqres\" takes a number as argument, the sequencer resolution");
+		}
+		int res = std::stoi(commands[1]);
+		if (res <= 0) {
+			return genError("sequencer resolution must be greater than zero");
+		}
+		// an array to test against durations
+		std::vector<int> dursArr{1, 2, 4, 8, 16, 32, 64};
+		if (find(dursArr.begin(), dursArr.end(), res) == dursArr.end()) {
+			return genError(std::to_string(res) + " is not a valid resolutions");
+		}
+		seqResolution = res;
+	}
+
+	else if (commands[0].compare("correct") == 0) {
+		if (commands.size() != 2) {
+			return genError("\"correct\" takes one argument, \"onoctave\" or \"all\"");
+		}
+		if (commands[1].compare("onoctave") == 0) {
+			correctOnSameOctaveOnly = true;
+		}
+		else if (commands[1].compare("all") == 0) {
+			correctOnSameOctaveOnly = false;
+		}
+		else {
+			return genError( commands[1] + (std::string)": unknown argument to \"correct\"");
+		}
+	}
+
+	else {
+		return genError("unknown method to \\score");
+	}
+	return cmdOutput;
+}
+//--------------------------------------------------------------
+// the methods of \score that concern only what is shown (see FrontendHost::scoreViewCommand()), with their arguments evaluated by the parser
+std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
+{
+	if (commands[0].compare("colors") == 0) {
 		int rgbVal = 0;
 		int itemCounter = 0;
 		int colorCounter = 0;
@@ -6285,7 +6423,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 			if (isNumber(commands[i])) {
 				rgbVal = stoi(commands[i]);
 				if (rgbVal < 0 || rgbVal > 255) {
-					return genError("RGB values must be between 0 and 255");
+					return "RGB values must be between 0 and 255";
 				}
 				switch (itemCounter) {
 					case 0:
@@ -6387,64 +6525,11 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 						itemCounter++;
 					}
 					else {
-						return genError(commands[i] + ": unknown color");
+						return commands[i] + ": unknown color";
 					}
 				}
 			}
 		}
-	}
-
-	else if (commands[0].compare("stopnow") == 0) {
-		if (commands.size() > 1) {
-			return genError("\"stopnow\" subcommand takes no arguments");
-		}
-		sequencer.stopNow();
-		if (sharedData.animate) {
-			for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				it->second.setAnimation(false);
-			}
-			sharedData.animate = false;
-			sharedData.setAnimation = true;
-		}
-		OscMessage m;
-		m.setAddress("/play");
-		m.addIntArg(0);
-		sendToParts(m, true);
-		m.clear();
-	}
-
-	else if (commands[0].compare("reset") == 0) {
-		if (commands.size() > 1) {
-			return genError("\"reset\" subcommand takes no arguments");
-		}
-		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-			it->second.resetBarDataCounter();
-		}
-		sequencer.setSequencerRunning(false);
-	}
-
-	else if (commands[0].compare("finish") == 0) {
-		if (commands.size() > 1) {
-			return genError("\"finish\" subcommand takes no arguments");
-		}
-		sequencer.setFinish(true);
-	}
-
-	else if (commands[0].compare("beatsin") == 0) {
-		if (commands.size() < 2) {
-			return genError("\"beatsin\" takes a number for beat countdown");
-		}
-		else if (commands.size() > 2) {
-			return genError("\"beatsin\" takes one argument only");
-		}
-		if (!isNumber(commands[1])) {
-			return genError("\"beatsin\" takes a number as an argument");
-		}
-		int countdown = stoi(commands[1]);
-		if (countdown < 0) {
-			return genError("can't set a negative countdown");
-		}
-		sequencer.setCountdown(countdown);
 	}
 
 	else if (commands[0].compare("show") == 0) {
@@ -6453,18 +6538,18 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 			bool pianoRollRange = (commands[1].compare("pianoroll") == 0 && commands.size() == 4);
 			if (commands.size() > 2 && !pianoRollRange) {
 				if (commands[1].compare("pianoroll") == 0) {
-					return genError("\"pianoroll\" takes no arguments, or the lowest and the highest keys (e.g. c1 a5)");
+					return "\"pianoroll\" takes no arguments, or the lowest and the highest keys (e.g. c1 a5)";
 				}
-				return genError("method \"show\" takes up to one argument, not more");
+				return "method \"show\" takes up to one argument, not more";
 			}
 			if (commands[1].compare("pianoroll") == 0) {
 				int lowest = 21, highest = 108;
 				if (pianoRollRange) {
 					lowest = noteNameToMidi(commands[2]);
 					highest = noteNameToMidi(commands[3]);
-					if (lowest < 0) return genError(commands[2] + ": not a note name with an octave (e.g. c1 or a5)");
-					if (highest < 0) return genError(commands[3] + ": not a note name with an octave (e.g. c1 or a5)");
-					if (highest <= lowest) return genError("the highest key of the piano roll must be higher than its lowest key");
+					if (lowest < 0) return commands[2] + ": not a note name with an octave (e.g. c1 or a5)";
+					if (highest < 0) return commands[3] + ": not a note name with an octave (e.g. c1 or a5)";
+					if (highest <= lowest) return "the highest key of the piano roll must be higher than its lowest key";
 				}
 				setPianoRollRange(lowest, highest);
 			}
@@ -6495,7 +6580,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 				setShowScore(3);
 			}
 			else {
-				return genError("unknown argument to method \"show\"");
+				return "unknown argument to method \"show\"";
 			}
 		}
 		else {
@@ -6506,7 +6591,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 	else if (commands[0].compare("hide") == 0) {
 		if (commands.size() > 1) {
 			if (commands.size() > 2) {
-				return genError("method \"hide\" takes up to one argument, not more");
+				return "method \"hide\" takes up to one argument, not more";
 			}
 			if (commands[1].compare("barcount") == 0) {
 				showBarCount = false;
@@ -6519,7 +6604,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 				sharedData.setBeatAnimation = false;
 			}
 			else {
-				return genError("unknown argument");
+				return "unknown argument";
 			}
 		}
 		else {
@@ -6527,90 +6612,26 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 		}
 	}
 
-	else if (commands[0].compare("animation") == 0) {
-		if (commands.size() != 2 || (commands[1] != "on" && commands[1] != "off")) {
-			return genError("\\score.animation takes one argument, \"on\" or \"off\"");
-		}
-		bool animationState = (commands[1] == "on");
-		if (animationState) {
-			if (sequencer.isThreadRunning()) {
-				for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-					it->second.setAnimation(animationState);
-				}
-				sharedData.animate = animationState;
-			}
-			else {
-				sharedData.setAnimation = animationState;
-			}
-		}
-		else {
-			for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
-				it->second.setAnimation(animationState);
-			}
-			sharedData.animate = animationState;
-			sharedData.setAnimation = animationState;
-		}
-	}
-
 	else if (commands[0].compare("beattype") == 0) {
 		if (commands.size() < 2) {
-			return genError("\"beattype\" takes a 1 or a 2 as an argument");
+			return "\"beattype\" takes a 1 or a 2 as an argument";
 		}
 		if (!isNumber(commands[1])) {
-			return genError("\"beattype\" takes a 1 or a 2 as an argument");
+			return "\"beattype\" takes a 1 or a 2 as an argument";
 		}
-		int beattype;
-		if (!isNumber(commands[1])) {
-			std::vector<std::string> v = {commands.begin()+1, commands.end()};
-			CmdInput cmdInput = genCmdInput(v);
-			cmdOutput = parseCommand(cmdInput, lineNum, numLines);
-			if (cmdOutput.errorCode > 0) return cmdOutput;
-			if (!isNumber(cmdOutput.outputVec[0])) return genError("\"beattype\" takes a number as an argument");
-			beattype = stoi(cmdOutput.outputVec[0]);
-		}
-		else {
-			beattype = stoi(commands[1]);
-		}
+		int beattype = stoi(commands[1]);
 		if (beattype < 1 || beattype > 2) {
-			return genError("unknown beat vizualization type");
+			return "unknown beat vizualization type";
 		}
 		sharedData.beatVizType = beattype;
 	}
 
-	else if (commands[0].compare("seqres") == 0) {
-		if (commands.size() != 2) {
-			return genError("\"seqres\" takes one argument, the sequencer resolution");
-		}
-		if (!isNumber(commands[1])) {
-			return genError("\"seqres\" takes a number as argument, the sequencer resolution");
-		}
-		int res = std::stoi(commands[1]);
-		if (res <= 0) {
-			return genError("sequencer resolution must be greater than zero");
-		}
-		// an array to test against durations
-		std::vector<int> dursArr{1, 2, 4, 8, 16, 32, 64};
-		if (find(dursArr.begin(), dursArr.end(), res) == dursArr.end()) {
-			return genError(std::to_string(res) + " is not a valid resolutions");
-		}
-		seqResolution = res;
-	}
-
 	else if (commands[0].compare("movex") == 0) {
 		if (commands.size() < 2) {
-			return genError("\"movex\" takes a number as an argument");
+			return "\"movex\" takes a number as an argument";
 		}
-		int numPixels;
-		if (!isNumber(commands[1])) {
-			std::vector<std::string> v = {commands.begin()+1, commands.end()};
-			cmdOutput = parseCommand(genCmdInput(v), lineNum, numLines);
-			if (cmdOutput.errorCode > 0) return cmdOutput;
-			if (!isNumber(cmdOutput.outputVec[0])) return genError("\"movex\" takes a number as an argument");
-			numPixels = stoi(cmdOutput.outputVec[0]);
-		}
-		else {
-			numPixels = stoi(commands[1]);
-		}
+		if (!isNumber(commands[1])) return "\"movex\" takes a number as an argument";
+		int numPixels = stoi(commands[1]);
 		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 			it->second.moveScoreX(numPixels);
 		}
@@ -6618,19 +6639,10 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 
 	else if (commands[0].compare("movey") == 0) {
 		if (commands.size() < 2) {
-			return genError("\"movey\" takes a number as an argument");
+			return "\"movey\" takes a number as an argument";
 		}
-		int numPixels;
-		if (!isNumber(commands[1])) {
-			std::vector<std::string> v = {commands.begin()+1, commands.end()};
-			cmdOutput = parseCommand(genCmdInput(v), lineNum, numLines);
-			if (cmdOutput.errorCode > 0) return cmdOutput;
-			if (!isNumber(cmdOutput.outputVec[0])) return genError("\"movey\" takes a number as an argument");
-			numPixels = stoi(cmdOutput.outputVec[0]);
-		}
-		else {
-			numPixels = stoi(commands[1]);
-		}
+		if (!isNumber(commands[1])) return "\"movey\" takes a number as an argument";
+		int numPixels = stoi(commands[1]);
 		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 			it->second.moveScoreY(numPixels);
 		}
@@ -6638,7 +6650,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 
 	else if (commands[0].compare("recenter") == 0) {
 		if (commands.size() > 1) {
-			return genError("\"recenter\" takes no arguments");
+			return "\"recenter\" takes no arguments";
 		}
 		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 			it->second.recenterScore();
@@ -6647,21 +6659,12 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 
 	else if (commands[0].compare("numbars") == 0) {
 		if (commands.size() < 2) {
-			return genError("\"numbars\" takes a number as an argument");
+			return "\"numbars\" takes a number as an argument";
 		}
-		int numBarsLocal;
-		if (!isNumber(commands[1])) {
-			std::vector<std::string> v = {commands.begin()+1, commands.end()};
-			cmdOutput = parseCommand(genCmdInput(v), lineNum, numLines);
-			if (cmdOutput.errorCode > 0) return cmdOutput;
-			if (!isNumber(cmdOutput.outputVec[0])) return genError("\"numbars\" takes a number as an argument");
-			numBarsLocal = stoi(cmdOutput.outputVec[0]);
-		}
-		else {
-			numBarsLocal = stoi(commands[1]);
-		}
+		if (!isNumber(commands[1])) return "\"numbars\" takes a number as an argument";
+		int numBarsLocal = stoi(commands[1]);
 		if (numBarsLocal < 1) {
-			return genError("number of bars to display must be 1 or greater");
+			return "number of bars to display must be 1 or greater";
 		}
 		numBarsToDisplay = numBarsLocal;
 		for (auto it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
@@ -6673,7 +6676,7 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 
 	else if (commands[0].compare("update") == 0) {
 		if (commands.size() != 2) {
-			return genError("\"update\" takes one argument, \"onlast\" or \"immediately\"");
+			return "\"update\" takes one argument, \"onlast\" or \"immediately\"";
 		}
 		if (commands[1].compare("onlast") == 0) {
 			scoreChangeOnLastBar = true;
@@ -6682,30 +6685,13 @@ CmdOutput ofApp::scoreCommands(std::vector<std::string>& originalCommands, int l
 			scoreChangeOnLastBar = false;
 		}
 		else {
-			return genError(commands[1] + (std::string)"unknown argument to \"update\", must be onlast or immediately");
+			return commands[1] + (std::string)"unknown argument to \"update\", must be onlast or immediately";
 		}
 	}
 
-	else if (commands[0].compare("correct") == 0) {
-		if (commands.size() != 2) {
-			return genError("\"correct\" takes one argument, \"onoctave\" or \"all\"");
-		}
-		if (commands[1].compare("onoctave") == 0) {
-			correctOnSameOctaveOnly = true;
-		}
-		else if (commands[1].compare("all") == 0) {
-			correctOnSameOctaveOnly = false;
-		}
-		else {
-			return genError( commands[1] + (std::string)": unknown argument to \"correct\"");
-		}
-	}
-
-	else {
-		return genError("unknown method to \\score");
-	}
-	return cmdOutput;
+	return "";
 }
+
 
 //--------------------------------------------------------------
 void ofApp::setShowScore(int ndx)

@@ -2,6 +2,7 @@
 #define FRONTEND_H
 
 #include <string>
+#include <vector>
 
 // what the engine (the parser and the sequencer) asks of the user interface, which the front end implements (ofApp for now)
 // so that the engine doesn't depend on the front end (see doc/stage1_inventory.md)
@@ -43,6 +44,9 @@ class FrontendHost
 		virtual int tabSize(int pane) = 0;
 		// a line of a pane is the melodic line of an instrument in a bar, for the animation of the editor
 		virtual void connectLineToBar(int pane, int line, int instNdx, int bar) = 0;
+		// a method of \score that concerns only what is shown (colors, show, hide, beattype, movex, movey, recenter, numbars, update)
+		// with its arguments, which the parser has evaluated, and returns an error message, or an empty string
+		virtual std::string scoreViewCommand(const std::vector<std::string>& methodAndArgs) = 0;
 };
 
 #endif
