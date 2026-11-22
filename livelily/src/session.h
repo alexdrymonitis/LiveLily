@@ -3,6 +3,7 @@
 
 #include <list>
 #include <map>
+#include <set>
 #include <utility>
 #include <vector>
 #include <string>
@@ -73,6 +74,37 @@ class Session
 		std::string barsCmdName;
 		int firstInstForBarsIndex;
 		bool firstInstForBarsSet;
+
+		// instruments (the Instrument objects are in SharedData)
+		// groups of instruments (\group), by their names
+		std::map<std::string, std::vector<std::string>> instGroups;
+		// instruments merged to one staff with \merge, the first of each is the instrument whose staff they are drawn on (the host)
+		// and the others are its voices, which are drawn on it (see applyMergeLayout())
+		std::vector<std::vector<int>> mergeGroups;
+		// the settings of \notedur and \accoffset, so that instruments created after these commands get them too
+		// (each key of noteDurSettings is a \notedur method, e.g. staccato, and its value the duration as a fraction)
+		std::map<std::string, float> noteDurSettings;
+		bool accOffsetSet = false;
+		float accOffsetCoef = 0;
+		// the instrument whose line is parsed last, and the number of instruments
+		std::string lastInstrument;
+		int lastInstrumentIndex;
+		int tempNumInstruments;
+		// a warning of a command in a melodic line, which parseMelodicLine() returns if the line has no errors
+		std::string melodicLineWarning;
+		// the names of the notes, for parsing melodic lines
+		char noteChars[8];
+		// adding a natural after the same note with an accidental only in the same octave (\score.correct onoctave), or in any
+		bool correctOnSameOctaveOnly;
+		// the duration of a step of the step sequencer and of the x - notation of rhythm staffs (\score.seqres)
+		int seqResolution;
+		// dynamics from LilyPond notation (ppp to fff) as indexes, and as MIDI velocities, with a default 0 key mapped to 72
+		std::vector<int> scoreDynamics = {-9, -6, -3, -1, 1, 3, 6, 9};
+		std::map<int, int> mappedScoreDynamics = {{-9, 16}, {-6, 32}, {-3, 48}, {-1, 64}, {0, 72}, {1, 80}, {3, 96}, {6, 112}, {9, 127}};
+
+		// the names of the commands of LiveLily (e.g. \merge), which can't be used as names of bars, loops, functions, lists
+		// variables, instruments, groups, or OSC clients and servers, as these are called by their name with a backslash
+		std::set<std::string> reservedNames;
 };
 
 #endif

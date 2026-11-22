@@ -257,8 +257,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// definitions with curly brackets can be written in one or more lines, and this brings them to the form the parser expects
 		// \loop and \list in more lines are joined into one line, and \bar and \bars in one line are split into one line per statement
 		std::vector<std::pair<int, std::string>> normalizeDefinitionLines(const std::vector<std::pair<int, std::string>>& lines);
-		// a warning of a command in a melodic line, which parseMelodicLine() returns if the line has no errors
-		std::string melodicLineWarning;
 		// keeps only the values of \time, \tempo, or \beatat in cmdInput, and returns the rest of the line
 		std::vector<std::string> splitBarCommandArgs(CmdInput& cmdInput);
 		std::pair<int, std::string> parseString(std::string str, int lineNum, int numLines);
@@ -536,11 +534,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		uint64_t testDoneFrame = 0;
 		void runTest();
 		void dumpState(std::ostream& out);
-		// the settings of \notedur and \accoffset, so that instruments created after these commands get them too
-		// (each key of noteDurSettings is a \notedur method, e.g. staccato, and its value the duration as a fraction)
-		std::map<std::string, float> noteDurSettings;
-		bool accOffsetSet = false;
-		float accOffsetCoef = 0;
 		// gives the instruments added after the first numInstsBefore ones (with \insts.add) an empty bar for every bar defined before them
 		// in the sequencer and the score, and moves the bindings of functions to the beat, bars, etc., which follow the instruments
 		void addedInstruments(int numInstsBefore);
@@ -682,10 +675,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// useful in case some instruments (servers) haven't received the data of a bar correctly
 		std::map<int, int> partsReceivedOKCounters;
 
-		// logic to convert dynamics values set from Lilypond notation to indexes and MIDI velocities
-		std::vector<int> scoreDynamics = {-9, -6, -3, -1, 1, 3, 6, 9};
-		// below we also set a default 0 key std::mapped to 72 MIDI velocity
-		std::map<int, int> mappedScoreDynamics = {{-9, 16}, {-6, 32}, {-3, 48}, {-1, 64}, {0, 72}, {1, 80}, {3, 96}, {6, 112}, {9, 127}};
 
 		bool startSequencer;
 		bool midiPortOpen;
@@ -778,14 +767,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// evaluates the arguments of a command with names: instrument names are taken as written, and other commands are evaluated
 		CmdOutput evalNames(const std::vector<std::string>& args, int lineNum, int numLines);
 
-		// instrument groups
-		std::map<std::string, std::vector<std::string>> instGroups;
-		// instruments merged to one staff with \merge, the first of each is the instrument whose staff they are drawn on (the host)
-		// and the others are its voices, which are drawn on it (see applyMergeLayout())
-		std::vector<std::vector<int>> mergeGroups;
-		// the names of the commands of LiveLily (e.g. \merge), which can't be used as names of bars, loops, functions, lists
-		// variables, instruments, groups, or OSC clients and servers, as these are called by their name with a backslash
-		std::set<std::string> reservedNames;
 		bool isReservedName(const std::string& name); // the name with its backslash
 		// the instrument whose staff an instrument is drawn on, which is the instrument itself if it is not merged into another one
 		int mergeHostOf(int instNdx);
@@ -871,7 +852,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		bool mustUpdateScore;
 		bool scoreUpdated;
 		bool scoreChangeOnLastBar;
-		int seqResolution;
 		// a vector of colors to appear in order of instrument creation for the piano roll
 		std::vector<std::string> instrumentColors = {"magenta", "green", "yellow", "cyan", "violet", "orchid", "orange"};
 		// map that stores which editors can receive data from OSC
@@ -891,12 +871,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		int numScorePartSenders;
 		bool checkIfAllPartsReceivedBarData;
 		uint64_t sendBarDataToPartsTimeStamp;
-		char noteChars[8];
-		std::string lastInstrument;
-		int lastInstrumentIndex;
-		int tempNumInstruments;
-		// about adding a natural after the same note has been inserted with an accidental
-		bool correctOnSameOctaveOnly;
 		bool showBarCount;
 		bool showTempo;
 
