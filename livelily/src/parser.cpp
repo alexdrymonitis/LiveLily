@@ -2684,10 +2684,10 @@ CmdOutput ofApp::cmdCursor(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("\\cursor takes one argument");
 	}
 	if (cmdInput.inputVec[1].compare("hide") == 0) {
-		ofHideCursor();
+		frontend->showMouseCursor(false);
 	}
 	else if (cmdInput.inputVec[1].compare("show") == 0) {
-		ofShowCursor();
+		frontend->showMouseCursor(true);
 	}
 	else {
 		return genError("unknown argument for \\cursor");
@@ -3756,7 +3756,7 @@ CmdOutput ofApp::cmdFramerate(CmdInput& cmdInput, int lineNum, int numLines)
 	if (cmdInput.inputVec.size() == 1) {
 		// the frame rate as a number with its default formatting (e.g. 60 or 59.9401)
 		std::ostringstream frameRate;
-		frameRate << ofGetFrameRate();
+		frameRate << frontend->frameRate();
 		return genOutput(frameRate.str());
 	}
 	if (cmdInput.inputVec.size() != 2) {
@@ -3769,7 +3769,7 @@ CmdOutput ofApp::cmdFramerate(CmdInput& cmdInput, int lineNum, int numLines)
 	if (framerate <= 0) {
 		return genError("framerate must be positive and higher than 0");
 	}
-	ofSetFrameRate(framerate);
+	frontend->setFrameRate(framerate);
 	return CmdOutput();
 }
 
@@ -3927,7 +3927,7 @@ CmdOutput ofApp::cmdLivelily(CmdInput& cmdInput, int lineNum, int numLines)
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("language command takes no arguments");
 	}
-	editors[whichPane].setLanguage(livelily);
+	frontend->setPaneLanguage(whichPane, livelily);
 	return CmdOutput();
 }
 
@@ -3959,7 +3959,7 @@ CmdOutput ofApp::cmdPython(CmdInput& cmdInput, int lineNum, int numLines)
 		}
 		// if we switch to Python, we initialize the audio settings
 		initPyo();
-		editors[whichPane].setLanguage(python);
+		frontend->setPaneLanguage(whichPane, python);
 	}
 	return CmdOutput();
 }
@@ -3970,7 +3970,7 @@ CmdOutput ofApp::cmdLua(CmdInput& cmdInput, int lineNum, int numLines)
 	if (cmdInput.inputVec.size() > 1) {
 		return genError("language command takes no arguments");
 	}
-	editors[whichPane].setLanguage(lua);
+	frontend->setPaneLanguage(whichPane, lua);
 	return CmdOutput();
 }
 
@@ -4016,24 +4016,22 @@ CmdOutput ofApp::cmdHelp(CmdInput& cmdInput, int lineNum, int numLines)
 	std::string helpName = cmdInput.inputVec[1];
 	if (startsWith(helpName, "\\")) helpName = helpName.substr(1);
 	filePath += "/" + helpName + "-help.lyv";
-	switch (newPane) {
-		case 1:
-			addPane(86);
-			break;
-		case 2:
-			addPane(72);
-			break;
-		default:
-			break;
-	}
-	bool fileOpened = editors[whichPane].loadHelpFile(filePath, newPane);
-	if (!fileOpened) {
-		if (newPane > 0) {
-			removePane();
-		}
+	if (!frontend->openHelp(whichPane, filePath, newPane)) {
 		return genError("couldn't find help file for " + cmdInput.inputVec[1]);
 	}
 	return CmdOutput();
+}
+
+//--------------------------------------------------------------
+bool ofApp::openHelp(int pane, const std::string& filePath, int newPane)
+{
+	// a new pane beside or below the active one (as Ctrl+v and Ctrl+h do), which becomes the active one
+	if (pane != whichPane) setActivePane(pane);
+	if (newPane == 1) addPane(86);
+	else if (newPane == 2) addPane(72);
+	bool fileOpened = editors[whichPane].loadHelpFile(filePath, newPane);
+	if (!fileOpened && newPane > 0) removePane();
+	return fileOpened;
 }
 
 //--------------------------------------------------------------

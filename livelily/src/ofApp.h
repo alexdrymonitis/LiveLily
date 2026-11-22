@@ -219,6 +219,11 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		void nothingPlaying(int instNdx) override { clearActiveEditorElement(instNdx); }
 		void setLineMessage(int pane, int line, int errorCode, const std::string& text, const std::string& boundFunction) override;
 		void clearLineMessage(int pane, int line, const std::string& boundFunction) override;
+		void showMouseCursor(bool show) override { if (show) ofShowCursor(); else ofHideCursor(); }
+		float frameRate() override { return ofGetFrameRate(); }
+		void setFrameRate(int framesPerSecond) override { ofSetFrameRate(framesPerSecond); }
+		void setPaneLanguage(int pane, int language) override { editors[pane].setLanguage(language); }
+		bool openHelp(int pane, const std::string& filePath, int newPane) override;
 		// the user interface, as the engine (the parser and the sequencer) sees it, which is this app for now
 		FrontendHost* frontend = this;
 		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);
