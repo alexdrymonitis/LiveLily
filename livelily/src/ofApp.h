@@ -6,6 +6,7 @@
 #include "serial.h"
 #include "audio.h"
 #include "frontend.h"
+#include "session.h"
 #include "of_midi.h"
 #include <map>
 #include <vector>
@@ -93,13 +94,7 @@ struct CmdOutput
 	std::vector<std::string> outputVec;
 };
 
-struct variable
-{
-	std::string varStr;
-	int varType;
-};
-
-class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
+class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, public Session
 {
 	public:
 		// basic OF program structure
@@ -802,9 +797,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		// moves note heads of the voices of a staff that sound together so they don't collide, as LilyPond does by default
 		void applyMergeLayout(int bar);
 
-		// variables
-		std::map<std::string, variable> variables;
-		std::map<std::string, int> structTypes = {{"bar", 1}, {"bars", 2}, {"loop", 3}, {"function", 4}, {"list", 5}};
 
 		// various lists
 		std::map<int, std::list<std::string>> listMap;
