@@ -5,6 +5,9 @@
 #include <utility> // to add pair and make_pair
 #include <algorithm>
 #include "sequencer.h"
+#include "clock.h"
+#include <sstream>
+#include <iomanip>
 #include <climits>
 #include "utils.h" // SharedData
 // the sequencer calls back into the app (e.g. parseCommand(), storeActiveEditorElement())
@@ -80,6 +83,7 @@ void Sequencer::midiNoteOn(Instrument& inst, int note, int velocity, int voice)
 	inst.midiNoteVoices[note] = voice;
 	inst.numMidiVoices = std::max(inst.numMidiVoices, voice + 1);
 	int channel = midiVoiceChannel(inst, voice);
+	if (logged(midiText(inst, "note on", channel, note, velocity))) return;
 	if (inst.getSoundFontChannel() >= 0) sharedData->soundFonts.noteOn(channel, note, velocity);
 	else midiOuts[midiPortsMap[inst.getMidiPort()]].sendNoteOn(channel, note, velocity);
 }
@@ -95,6 +99,7 @@ void Sequencer::midiNoteOff(Instrument& inst, int note)
 		inst.midiNoteVoices.erase(it);
 	}
 	int channel = midiVoiceChannel(inst, voice);
+	if (logged(midiText(inst, "note off", channel, note))) return;
 	if (inst.getSoundFontChannel() >= 0) sharedData->soundFonts.noteOff(channel, note);
 	else midiOuts[midiPortsMap[inst.getMidiPort()]].sendNoteOff(channel, note, 0);
 }
@@ -103,6 +108,7 @@ void Sequencer::midiNoteOff(Instrument& inst, int note)
 void Sequencer::midiPitchBend(Instrument& inst, int value, int voice)
 {
 	int channel = midiVoiceChannel(inst, voice);
+	if (logged(midiText(inst, "pitch bend", channel, value))) return;
 	if (inst.getSoundFontChannel() >= 0) sharedData->soundFonts.pitchBend(channel, value);
 	else midiOuts[midiPortsMap[inst.getMidiPort()]].sendPitchBend(channel, value);
 }
@@ -112,6 +118,7 @@ void Sequencer::midiProgramChange(Instrument& inst, int program)
 {
 	// articulations are sent as program changes, which on a SoundFont would select another instrument, so they are not sent there
 	if (inst.getSoundFontChannel() >= 0) return;
+	if (logged(midiText(inst, "program change", inst.getMidiChan(), program))) return;
 	midiOuts[midiPortsMap[inst.getMidiPort()]].sendProgramChange(inst.getMidiChan(), program);
 }
 
@@ -121,7 +128,8 @@ void Sequencer::midiAllSoundOff(Instrument& inst)
 	// the sound stops on the channels of all voices of the instrument, which bend back to no bend
 	for (int voice = 0; voice < inst.numMidiVoices; voice++) {
 		int channel = midiVoiceChannel(inst, voice);
-		if (inst.getSoundFontChannel() >= 0) {
+		if (logged(midiText(inst, "all sound off", channel, 0))) {}
+		else if (inst.getSoundFontChannel() >= 0) {
 			sharedData->soundFonts.allSoundOff(channel);
 		}
 		else {
@@ -142,6 +150,7 @@ void Sequencer::silenceInstrument(Instrument& inst)
 	if (inst.isMidi()) {
 		for (auto& note : inst.midiNoteVoices) {
 			int channel = midiVoiceChannel(inst, note.second);
+			if (logged(midiText(inst, "note off", channel, note.first))) continue;
 			if (inst.getSoundFontChannel() >= 0) sharedData->soundFonts.noteOff(channel, note.first);
 			else midiOuts[midiPortsMap[inst.getMidiPort()]].sendNoteOff(channel, note.first, 0);
 		}
@@ -151,7 +160,7 @@ void Sequencer::silenceInstrument(Instrument& inst)
 		ofxOscMessage m;
 		m.setAddress("/" + inst.getName() + "/dynamics");
 		m.addIntArg(0);
-		oscSender.sendMessage(m, false);
+		sendOsc(m);
 	}
 }
 
@@ -186,7 +195,7 @@ void Sequencer::sendAllNotesOff()
 			ofxOscMessage m;
 			m.setAddress("/" + it->second.getName() + "/dynamics");
 			m.addIntArg(0);
-			oscSender.sendMessage(m, false);
+			sendOsc(m);
 			m.clear();
 		}
 	}
@@ -212,7 +221,7 @@ void Sequencer::stopNow()
 	sendAllNotesOff();
 	delayedVisuals.clear();
 	stopThread();
-	if (sendMidiClock) midiOut.sendMidiByte(0xFC); // Stop MIDI byte
+	if (sendMidiClock) sendMidiByte(0xFC); // Stop MIDI byte
 	if (!mustStopCalled) onNextStartMidiByte = 0xFB; // Continue MIDI byte
 	else mustStopCalled = false;
 	runSequencer = sequencerRunning = false;
@@ -264,10 +273,11 @@ void Sequencer::sendBeatVizInfo(int bar)
 {
 	// calculate the time stamp regardless of whether we're showing the beat
 	// or not in the editor, in case we have connected score parts
-	sharedData->beatVizTimeStamp = ofGetElapsedTimeMillis();
+	sharedData->beatVizTimeStamp = Clock::millis();
 	// the click track clicks on the same beats, an octave higher on the first beat of a bar (the beats of a countdown are not accented)
 	// with the time of the beat (tickCounter, the start of the beat without the delay of this thread), so the click is sample-accurate
-	sharedData->clickTrack.trigger(sharedData->beatCounter == 0, tickCounter);
+	if (sharedData->clickTrack.isOn() && logged(sharedData->beatCounter == 0 ? "click first beat" : "click")) {}
+	else sharedData->clickTrack.trigger(sharedData->beatCounter == 0, tickCounter);
 	sharedData->beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs[bar] / 4.0);
 	sharedData->beatVizRampStart = sharedData->tempoMs[bar] / 4;
 	if (sharedData->beatAnimate) {
@@ -427,6 +437,7 @@ void Sequencer::midiExpression(Instrument& inst, int value)
 	value = std::clamp(value, 0, 127);
 	for (int voice = 0; voice < inst.numMidiVoices; voice++) {
 		int channel = midiVoiceChannel(inst, voice);
+		if (logged(midiText(inst, "control change 11", channel, value))) continue;
 		if (inst.getSoundFontChannel() >= 0) sharedData->soundFonts.controlChange(channel, 11, value);
 		else midiOuts[midiPortsMap[inst.getMidiPort()]].sendControlChange(channel, 11, value);
 	}
@@ -443,7 +454,7 @@ void Sequencer::sendDynamic(Instrument& inst, std::pair<float, int> dynamic)
 	else if (inst.sendToPython()) {
 #ifdef USEPYO
 		std::string pyoStr = inst.getName() + ".setAmp(" + std::to_string(dynamic.first) + ")";
-		sharedData->pyo.exec(pyoStr.c_str());
+		execPyo(pyoStr);
 #endif
 	}
 	else {
@@ -451,7 +462,7 @@ void Sequencer::sendDynamic(Instrument& inst, std::pair<float, int> dynamic)
 		m.setAddress(setSeqOscAddress(inst.getName(), "/dynamics", false));
 		if (inst.sendMIDI()) m.addIntArg(dynamic.second);
 		else m.addFloatArg(dynamic.first);
-		oscSender.sendMessage(m, false);
+		sendOsc(m);
 	}
 }
 
@@ -463,7 +474,7 @@ int Sequencer::startDynamicsRamp(Instrument& inst, int bar, std::pair<float, int
 	inst.dynamicsRampTo = to;
 	// the ramp lasts the whole duration of the note
 	inst.dynamicsRampDurMs = std::max((int64_t)1, (int64_t)((double)inst.durs[bar][inst.getBarDataCounter()] * sharedData->tempo[bar]));
-	inst.dynamicsRampStartMs = inst.dynamicsRampLastMs = ofGetElapsedTimeMillis();
+	inst.dynamicsRampStartMs = inst.dynamicsRampLastMs = Clock::millis();
 	if (inst.isMidi()) {
 		// the note starts with the velocity of the louder end of the ramp, and the expression controller sets the level of its start
 		inst.dynamicsRampVel = std::max(1, std::max(from.second, to.second));
@@ -478,7 +489,7 @@ void Sequencer::runDynamicsRamp(int instNdx)
 {
 	Instrument& inst = sharedData->instruments.at(instNdx);
 	if (!inst.dynamicsRampActive) return;
-	int64_t timeStamp = ofGetElapsedTimeMillis();
+	int64_t timeStamp = Clock::millis();
 	if (timeStamp - inst.dynamicsRampLastMs < GLISSGRAIN) return;
 	inst.dynamicsRampLastMs = timeStamp;
 	float progress = std::clamp((float)(timeStamp - inst.dynamicsRampStartMs) / (float)inst.dynamicsRampDurMs, 0.0f, 1.0f);
@@ -527,7 +538,7 @@ void Sequencer::startGlissando(int instNdx, int bar, int barDataCounter)
 	inst.glissDurMs = std::max((int64_t)1, (int64_t)inst.glissDursMs.at(bar).at(barDataCounter));
 	inst.glissTimeDiff = GLISSGRAIN;
 	inst.glissCounter = 0;
-	inst.glissStartTimeStamp = inst.glissTimeStamp = ofGetElapsedTimeMillis();
+	inst.glissStartTimeStamp = inst.glissTimeStamp = Clock::millis();
 	inst.setGlissandoStart(true);
 	if (inst.isMidi()) {
 		// the bends of the start, before the notes start
@@ -571,11 +582,11 @@ void Sequencer::sendGlissando(int instNdx, float progress)
 #ifdef USEPYO
 		if (s[0] == '[') s += "]";
 		std::string pyoStr = inst.getName() + ".setFreq(" + s + ")";
-		sharedData->pyo.exec(pyoStr.c_str());
+		execPyo(pyoStr);
 #endif
 	}
 	else {
-		oscSender.sendMessage(m, false);
+		sendOsc(m);
 	}
 }
 
@@ -586,7 +597,7 @@ void Sequencer::runGlissando(int instNdx, int bar)
 	// its pitches depend on the time since it started, so they reach the end notes at the end of its duration
 	Instrument& inst = sharedData->instruments.at(instNdx);
 	if (!inst.getGlissandoStart()) return;
-	int64_t timeStamp = ofGetElapsedTimeMillis();
+	int64_t timeStamp = Clock::millis();
 	if (inst.glissCounter > 0 && timeStamp - inst.glissTimeStamp < inst.glissTimeDiff) return;
 	float progress = std::clamp((float)(timeStamp - inst.glissStartTimeStamp) / (float)inst.glissDurMs, 0.0f, 1.0f);
 	sendGlissando(instNdx, progress);
@@ -613,8 +624,9 @@ void Sequencer::setCheckLoop(std::string barLoopName, int numIter)
 void Sequencer::sendToParts(ofxOscMessage m, bool delay)
 {
 	for (auto it = sharedData->grouppedOSCClients.begin(); it != sharedData->grouppedOSCClients.end(); ++it) {
+		if (logged("osc part " + sharedData->instruments[*it].getName() + " " + oscText(m))) continue;
 		if (sharedData->instruments[*it].hasDelay() && delay) {
-			std::pair<ofxOscMessage, unsigned long> p = std::make_pair(m, ofGetElapsedTimeMillis());
+			std::pair<ofxOscMessage, unsigned long> p = std::make_pair(m, Clock::millis());
 			sharedData->instruments[*it].oscFifo.push_back(p);
 		}
 		else {
@@ -750,7 +762,7 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 								std::string pyoStr = instMapIt->second.getName();
 								if (!instMapIt->second.isRhythm()) {
 									pyoStr += ".setAmp(0)";
-									sharedData->pyo.exec(pyoStr.c_str());
+									execPyo(pyoStr);
 								}
 #endif
 							}
@@ -758,7 +770,7 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 								ofxOscMessage m;
 								m.setAddress(setSeqOscAddress(instMapIt->second.getName(), "/dynamics", checking));
 								m.addIntArg(0);
-								oscSender.sendMessage(m, false);
+								sendOsc(m);
 								m.clear();
 							}
 							visualEditorElement(instMapIt, bar, instMapIt->second.getBarDataCounter(), false);
@@ -791,12 +803,12 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 							for (auto it = instMapIt->second.articulations[bar][instMapIt->second.getBarDataCounter()].begin(); it != instMapIt->second.articulations[bar][instMapIt->second.getBarDataCounter()].end(); ++it) {
 								m.addStringArg(sharedData->articulSyms[*it]);
 							}
-							oscSender.sendMessage(m, false);
+							sendOsc(m);
 							m.clear();
 							if (instMapIt->second.hasText(bar)) {
 								m.setAddress(setSeqOscAddress(instMapIt->second.getName(), "/text", checking));
 								m.addStringArg(instMapIt->second.getText(bar));
-								oscSender.sendMessage(m, false);
+								sendOsc(m);
 								m.clear();
 							}
 							if (!instMapIt->second.sendToPython()) {
@@ -823,23 +835,23 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 								if (i > 1) s += "]";
 								if (!instMapIt->second.isRhythm()) {
 									std::string pyoStr = instMapIt->second.getName() + ".setFreq(" + s + ")";
-									sharedData->pyo.exec(pyoStr.c_str());
+									execPyo(pyoStr);
 								}
 #endif
 							}
 							else {
-								oscSender.sendMessage(m, false);
+								sendOsc(m);
 								m.clear();
 							}
 							if (instMapIt->second.sendToPython()) {
 #ifdef USEPYO
 								std::string pyoStr = instMapIt->second.getName();
 								pyoStr += (".setAmp(" + std::to_string(dynamics.first) + ")");
-								sharedData->pyo.exec(pyoStr.c_str());
+								execPyo(pyoStr);
 								if (instMapIt->second.isRhythm()) {
 									pyoStr.clear();
 									pyoStr = instMapIt->second.getName() + ".play()";
-									sharedData->pyo.exec(pyoStr.c_str());
+									execPyo(pyoStr);
 								}
 #endif
 							}
@@ -847,7 +859,7 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 								m.setAddress(setSeqOscAddress(instMapIt->second.getName(), "/dynamics", checking));
 								if (instMapIt->second.sendMIDI()) m.addIntArg(dynamics.second);
 								else m.addFloatArg(dynamics.first);
-								oscSender.sendMessage(m, false);
+								sendOsc(m);
 								m.clear();
 							}
 							// a note in a crescendo or diminuendo changes its dynamic during its duration
@@ -1011,7 +1023,7 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 					ofxOscMessage m;
 					m.setAddress(setSeqOscAddress(instMapIt->second.getName(), "/dynamics", checking));
 					m.addIntArg(0);
-					oscSender.sendMessage(m, false);
+					sendOsc(m);
 					m.clear();
 				}
 				else {
@@ -1078,7 +1090,7 @@ void Sequencer::runDelayedVisuals(int64_t now)
 //--------------------------------------------------------------
 void Sequencer::visual(Instrument& inst, std::function<void()> fn)
 {
-	if (aheadPass && inst.getDelayTime() > 0) delayedVisuals.emplace((int64_t)ofGetElapsedTimeMicros() + inst.getDelayTime(), fn);
+	if (aheadPass && inst.getDelayTime() > 0) delayedVisuals.emplace((int64_t)Clock::micros() + inst.getDelayTime(), fn);
 	else fn();
 }
 
@@ -1118,7 +1130,7 @@ void Sequencer::visualActiveNote(std::map<int, Instrument>::iterator instMapIt)
 //--------------------------------------------------------------
 void Sequencer::visualBoundFunction(std::map<int, Instrument>::iterator instMapIt, std::string funcName)
 {
-	visual(instMapIt->second, [funcName]() { ((ofApp*)ofGetAppPtr())->callBoundFunction(funcName); });
+	visual(instMapIt->second, [this, funcName]() { callBoundFunction(funcName); });
 }
 
 //--------------------------------------------------------------
@@ -1242,6 +1254,14 @@ void Sequencer::threadedFunction()
 {
 	while (isThreadRunning()) {
 		timer.waitNext();
+		if (!step()) return;
+	}
+}
+
+//--------------------------------------------------------------
+bool Sequencer::step()
+{
+	{
 		// instruments are not added or removed while the sequencer goes through them in this step (see ofApp::removeInstrument())
 		std::lock_guard<std::recursive_mutex> instrumentsLock(sharedData->instrumentsMutex);
 		if (runSequencer && !sequencerRunning) {
@@ -1276,7 +1296,7 @@ void Sequencer::threadedFunction()
 			sequencerRunning = true;
 			sequencerStart = true;
 			runSequencer = false;
-			if (sendMidiClock) midiOut.sendMidiByte(onNextStartMidiByte);
+			if (sendMidiClock) sendMidiByte(onNextStartMidiByte);
 			firstIter = true;
 			endOfBar = false;
 			sendBeatVizInfoCounter = 0;
@@ -1288,7 +1308,7 @@ void Sequencer::threadedFunction()
 			sendSequencerStateToParts(true);
 			// the score starts after the longest delay of the instruments, and each instrument with a delay starts its delay before the score
 			// so the instrument with the longest delay starts now
-			int64_t now = (int64_t)ofGetElapsedTimeMicros();
+			int64_t now = (int64_t)Clock::micros();
 			int64_t maxDelay = 0;
 			for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
 				maxDelay = std::max(maxDelay, instMapIt->second.getDelayTime());
@@ -1307,7 +1327,7 @@ void Sequencer::threadedFunction()
 		}
 
 		if (sequencerRunning) {
-			uint64_t timeStamp = ofGetElapsedTimeMicros();
+			uint64_t timeStamp = Clock::micros();
 			// the highlights of instruments with a delay are shown after their delay, when their notes sound
 			runDelayedVisuals((int64_t)timeStamp);
 			// before the score starts, only the instruments with a delay play (see the start of the sequencer above)
@@ -1315,7 +1335,7 @@ void Sequencer::threadedFunction()
 				for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
 					if (instMapIt->second.getDelayTime() > 0) playDelayedInstrument(instMapIt, (int64_t)timeStamp);
 				}
-				continue;
+				return true;
 			}
 			int bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisBarIndex];
 			// check if we're at the beginning of the loop
@@ -1393,11 +1413,11 @@ void Sequencer::threadedFunction()
 					}
 					for (const std::string& funcName : funcsToCall) {
 						//((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(funcName), 1, 1);
-						((ofApp*)ofGetAppPtr())->callBoundFunction(funcName);
+						callBoundFunction(funcName);
 					}
 					finished = false;
 					stopNow();
-					return;
+					return false;
 				}
 				if (firstIter) tickCounter = timeStamp;
 				else tickCounter = timeStamp - (uint64_t)(diff - compareVal);
@@ -1498,7 +1518,7 @@ void Sequencer::threadedFunction()
 					}
 					for (const std::string& funcName : funcsToCall) {
 						//((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(funcName), 1, 1);
-						((ofApp*)ofGetAppPtr())->callBoundFunction(funcName);
+						callBoundFunction(funcName);
 					}
 					if (!(sharedData->beatCounter == 0 && mustStop)) sendBeatVizInfo(bar);
 					endOfBar = true;
@@ -1561,7 +1581,7 @@ void Sequencer::threadedFunction()
 					}
 					for (const std::string& funcName : funcsToCall) {
 						//((ofApp*)ofGetAppPtr())->parseCommand(((ofApp*)ofGetAppPtr())->genCmdInput(funcName), 1, 1);
-						((ofApp*)ofGetAppPtr())->callBoundFunction(funcName);
+						callBoundFunction(funcName);
 					}
 				}
 				sharedData->PPQNCounter = 0;
@@ -1575,7 +1595,7 @@ void Sequencer::threadedFunction()
 						if (!it->second.timeSynced) it->second.setTimeStamp(timeStamp);
 					}
 					// we must also reset the time stamp of the piano roll
-					sharedData->pianoRollTimeStamp = ofGetElapsedTimeMillis();
+					sharedData->pianoRollTimeStamp = Clock::millis();
 					if (mustStop) {
 						if (sharedData->animate) {
 							for (auto it = sharedData->instruments.begin(); it != sharedData->instruments.end(); ++it) {
@@ -1588,18 +1608,18 @@ void Sequencer::threadedFunction()
 						mustStop = false;
 						mustStopCalled = true;
 						stopNow();
-						return;
+						return false;
 					}
 				}
 			}
 			if (!countdown) {
 				// send MIDI clock, if set
 				// need to calculate the number of steps
-				uint64_t midiClockTimeStamp = ofGetElapsedTimeMicros();
+				uint64_t midiClockTimeStamp = Clock::micros();
 				if (sendMidiClock && \
 						(midiClockTimeStamp - sharedData->PPQNTimeStamp) >= sharedData->PPQNPerUs[bar] && \
 						sharedData->PPQNCounter < sharedData->PPQN) {
-					midiOut.sendMidiByte(0xF8);
+					sendMidiByte(0xF8);
 					sharedData->PPQNCounter++;
 					sharedData->PPQNTimeStamp = midiClockTimeStamp;
 				}
@@ -1647,8 +1667,113 @@ void Sequencer::threadedFunction()
 			tempBar = bar;
 			// the instruments with a delay, ahead of the score
 			for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
-				if (instMapIt->second.getDelayTime() > 0) playDelayedInstrument(instMapIt, (int64_t)ofGetElapsedTimeMicros());
+				if (instMapIt->second.getDelayTime() > 0) playDelayedInstrument(instMapIt, (int64_t)Clock::micros());
 			}
 		}
 	}
+	return true;
+}
+
+//--------------------------------------------------------------
+std::vector<std::string> Sequencer::dryRun()
+{
+	std::vector<std::string> log;
+	if (isThreadRunning() || sharedData->instruments.empty()) return log;
+	auto loopIt = sharedData->loopData.find(sharedData->loopIndex);
+	if (loopIt == sharedData->loopData.end() || loopIt->second.empty()) return log;
+	// how long it plays: the loop that plays twice, after the longest delay and the countdown, and at most one minute
+	int64_t duration = 0;
+	for (int bar : loopIt->second) duration += barDurUs(bar);
+	duration *= 2;
+	int64_t maxDelay = 0;
+	for (auto& inst : sharedData->instruments) maxDelay = std::max(maxDelay, inst.second.getDelayTime());
+	duration += maxDelay;
+	if (countdown) duration += (int64_t)countdownCounter * sharedData->tempoMs[loopIt->second.front()] * 1000;
+	duration = std::min(duration, (int64_t)60000000);
+	Clock::simulate(true);
+	dryRunLog = &log;
+	dryRunStart = Clock::micros();
+	runSequencer = true;
+	sequencerRunning = false;
+	// the steps of the thread, every 100 microseconds of the simulated clock (see setup())
+	while ((int64_t)(Clock::micros() - dryRunStart) < duration) {
+		if (!step()) break;
+		Clock::advance(100);
+	}
+	// the sequencer stops, with its notes off, as when it is stopped
+	if (sequencerRunning) stopNow();
+	dryRunLog = nullptr;
+	Clock::simulate(false);
+	return log;
+}
+
+//--------------------------------------------------------------
+bool Sequencer::logged(const std::string& message)
+{
+	if (!dryRunLog) return false;
+	std::ostringstream line;
+	line << std::fixed << std::setprecision(1) << std::setw(9) << (double)(Clock::micros() - dryRunStart) / 1000.0 << " ms  " << message;
+	dryRunLog->push_back(line.str());
+	return true;
+}
+
+//--------------------------------------------------------------
+void Sequencer::sendOsc(ofxOscMessage& m)
+{
+	if (logged("osc " + oscText(m))) return;
+	oscSender.sendMessage(m, false);
+}
+
+//--------------------------------------------------------------
+void Sequencer::execPyo(const std::string& code)
+{
+	if (logged("pyo " + code)) return;
+#ifdef USEPYO
+	sharedData->pyo.exec(code.c_str());
+#endif
+}
+
+//--------------------------------------------------------------
+void Sequencer::sendMidiByte(int byte)
+{
+	std::ostringstream hex;
+	hex << "midi byte 0x" << std::uppercase << std::hex << byte;
+	if (logged(hex.str())) return;
+	midiOut.sendMidiByte(byte);
+}
+
+//--------------------------------------------------------------
+void Sequencer::callBoundFunction(const std::string& funcName)
+{
+	// in a dry run the function is called too, as what it does (e.g. changing the loop) is part of the playback
+	logged("function " + funcName);
+	((ofApp*)ofGetAppPtr())->callBoundFunction(funcName);
+}
+
+//--------------------------------------------------------------
+std::string Sequencer::oscText(ofxOscMessage& m)
+{
+	std::ostringstream text;
+	text << m.getAddress() << std::fixed << std::setprecision(4);
+	for (size_t i = 0; i < m.getNumArgs(); i++) {
+		switch (m.getArgType(i)) {
+			case OFXOSC_TYPE_INT32: text << " " << m.getArgAsInt32(i); break;
+			case OFXOSC_TYPE_INT64: text << " " << m.getArgAsInt64(i); break;
+			case OFXOSC_TYPE_FLOAT: text << " " << m.getArgAsFloat(i); break;
+			case OFXOSC_TYPE_DOUBLE: text << " " << m.getArgAsDouble(i); break;
+			case OFXOSC_TYPE_STRING: text << " \"" << m.getArgAsString(i) << "\""; break;
+			case OFXOSC_TYPE_TRUE: text << " true"; break;
+			case OFXOSC_TYPE_FALSE: text << " false"; break;
+			default: text << " ?"; break;
+		}
+	}
+	return text.str();
+}
+
+//--------------------------------------------------------------
+std::string Sequencer::midiText(Instrument& inst, const std::string& kind, int channel, int a, int b)
+{
+	std::string text = "midi " + inst.getName() + (inst.getSoundFontChannel() >= 0 ? " soundfont " : " ") + kind + " ch " + std::to_string(channel) + " " + std::to_string(a);
+	if (b >= 0) text += " " + std::to_string(b);
+	return text;
 }

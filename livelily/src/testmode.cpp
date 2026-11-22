@@ -1,7 +1,9 @@
 // test mode, for checking that changes to the parser don't change what LiveLily code does
 // livelily --test file.lyv [--out dump.txt] (see main.cpp) runs the file with a hidden window, chunk by chunk
-// as if every definition and every line were executed in turn in the editor, without starting the sequencer
+// as if every definition and every line were executed in turn in the editor
 // and writes the errors, warnings, and notes of the lines, and the parsed state, to a text file
+// if the file starts the sequencer (e.g. with \score.play), the sequencer plays a dry run at the end, on a simulated clock
+// and what it would have sent (MIDI, OSC, pyo code, clicks, bound functions) is written with its time (see Sequencer::dryRun())
 // the dumps of the example files are compared before and after a change to the parser (see tests/snapshots.sh)
 
 #include "ofApp.h"
@@ -90,6 +92,13 @@ void ofApp::runTest()
 				out << "line " << lineNdx + 1 << " " << (color >= 0 && color <= 2 ? kinds[color] : "?") << ": " << message << "\n";
 			}
 		}
+	}
+	// playback: what the sequencer sends, if the file started it, from the state at the end of the file
+	if (startSequencer) {
+		startSequencer = false;
+		std::vector<std::string> playback = sequencer.dryRun();
+		out << "=== playback\n";
+		for (const std::string& line : playback) out << line << "\n";
 	}
 	dumpState(out);
 }

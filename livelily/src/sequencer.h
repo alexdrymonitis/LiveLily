@@ -41,7 +41,25 @@ class Sequencer : public ofThread
 		void silenceInstrument(Instrument& inst);
 		// drops the highlights of instruments with a delay that haven't been shown yet (e.g. before an instrument is removed)
 		void clearDelayedVisuals();
+		// test mode: plays from the current state on a simulated clock (see clock.h), without sending anything, and returns what it would
+		// have sent (MIDI, OSC, pyo code, clicks, bound functions), one line per message with its time in milliseconds from the start
+		// it plays the loop that plays twice, after the longest delay of the instruments and the countdown, and at most one minute
+		std::vector<std::string> dryRun();
 	private:
+		// the messages of a dry run (see dryRun()), null when the sequencer plays for real
+		std::vector<std::string>* dryRunLog = nullptr;
+		uint64_t dryRunStart = 0;
+		// in a dry run, writes a message to the log, with its time, and returns true, so that the caller doesn't send it
+		bool logged(const std::string& message);
+		// every message the sequencer sends goes through these, which log it instead in a dry run
+		void sendOsc(ofxOscMessage& m);
+		void execPyo(const std::string& code);
+		void sendMidiByte(int byte);
+		void callBoundFunction(const std::string& funcName);
+		std::string oscText(ofxOscMessage& m);
+		std::string midiText(Instrument& inst, const std::string& kind, int channel, int a, int b = -1);
+		// one tick of the sequencer (every 100 microseconds, see threadedFunction()), which returns false when the sequencer has stopped itself
+		bool step();
 		/* instruments with a delay (\inst.delay), which play ahead of the score by their delay
 		   the score, and the instruments without a delay, start after the longest delay, when \score.play is called
 		   and the instrument with the longest delay starts first

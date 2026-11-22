@@ -1364,7 +1364,7 @@ void ofApp::update()
 	}
 	if (startSequencer) {
 		startSequencer = false;
-		// the sequencer doesn't play in test mode (see testmode.cpp)
+		// in test mode the sequencer plays a dry run instead, at the end of the test (see testmode.cpp)
 		if (!sequencer.isThreadRunning() && testFile.empty()) {
 			sequencer.start();
 		}

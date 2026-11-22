@@ -2,6 +2,7 @@
 #define CLICKTRACK_H
 
 #include "ofMain.h"
+#include "clock.h"
 #include <atomic>
 #include <cmath>
 #include <mutex>
@@ -58,7 +59,7 @@ class ClickTrack
 			return volume;
 		}
 
-		// called by the sequencer on every beat, with the time of the beat in microseconds (ofGetElapsedTimeMicros())
+		// called by the sequencer on every beat, with the time of the beat in microseconds (Clock::micros())
 		// accent is true for the first beat of a bar
 		void trigger(bool accent, uint64_t timeUs)
 		{
@@ -77,7 +78,7 @@ class ClickTrack
 			// the time of the first sample of the output, from the time this buffer is processed and the samples processed before it
 			// the callbacks come a bit early or late, so the time is smoothed
 			// and set again if it is far off, e.g. when the stream starts again with other settings
-			int64_t now = (int64_t)ofGetElapsedTimeMicros();
+			int64_t now = (int64_t)Clock::micros();
 			double streamStart = (double)now - ((double)framesDone * 1000000.0 / sampleRate);
 			if (!streamStartSet || std::fabs(streamStart - streamStartUs) > RESYNC_US || sampleRate != lastSampleRate) {
 				streamStartUs = streamStart;
