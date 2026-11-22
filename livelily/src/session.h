@@ -1,7 +1,10 @@
 #ifndef SESSION_H
 #define SESSION_H
 
+#include <list>
 #include <map>
+#include <utility>
+#include <vector>
 #include <string>
 
 // a variable of a session (x = 5), with its value as a string and its type
@@ -24,6 +27,17 @@ class Session
 		std::map<std::string, variable> variables;
 		// the kinds of definitions, for checking that a name is free (see checkNameAvailability())
 		std::map<std::string, int> structTypes = {{"bar", 1}, {"bars", 2}, {"loop", 3}, {"function", 4}, {"list", 5}};
+
+		// lists (\list): their items by their indexes, and their indexes by their names
+		std::map<int, std::list<std::string>> listMap;
+		std::map<std::string, int> listIndexes;
+		bool storingList;
+		int lastListIndex;
+		int listIndexCounter;
+		bool traversingList;
+		// the lines of \list.traverse, with their line numbers, and how many curly brackets are still open while they are collected
+		std::vector<std::pair<int, std::string>> traverseLines;
+		int traverseDepth = 0;
 };
 
 #endif

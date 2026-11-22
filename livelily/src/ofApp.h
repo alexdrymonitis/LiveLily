@@ -469,9 +469,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		std::pair<std::string, std::vector<std::string>> applyToLine(const std::vector<std::string>& args);
 		// the output of a list item, which is evaluated if it is a command (see the items of \list in CommandSpec)
 		CmdOutput listItemOutput(std::pair<int, std::string> item, int lineNum, int numLines);
-		// the lines of \list.traverse, with their line numbers, and how many curly brackets are still open while they are collected
-		std::vector<std::pair<int, std::string>> traverseLines;
-		int traverseDepth = 0;
 		void createEmptyMelody(int index);
 		void resizePatternVectors();
 		void sendPushPopPattern();
@@ -798,13 +795,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		void applyMergeLayout(int bar);
 
 
-		// various lists
-		std::map<int, std::list<std::string>> listMap;
-		std::map<std::string, int> listIndexes;
-		bool storingList;
-		int lastListIndex;
-		int listIndexCounter;
-		bool traversingList;
 
 		// variables for controlling LiveLily with an accelerometer
 		std::string maestroAddress;
