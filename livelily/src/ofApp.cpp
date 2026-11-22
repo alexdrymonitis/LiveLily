@@ -6685,7 +6685,7 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 			scoreChangeOnLastBar = false;
 		}
 		else {
-			return commands[1] + (std::string)"unknown argument to \"update\", must be onlast or immediately";
+			return commands[1] + ": unknown argument to \"update\", must be onlast or immediately";
 		}
 	}
 
