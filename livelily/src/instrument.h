@@ -2,6 +2,7 @@
 #define INSTRUMENT_H
 
 #include "ofMain.h"
+#include "color.h"
 #include "ofxOsc.h"
 #include "score.h"
 #include <vector>
@@ -16,9 +17,9 @@ class Instrument
 		std::string getName();
 		void setID(int id);
 		int getID();
-		void setColor(ofColor color);
+		void setColor(Color color);
 		void setGroup(int groupID);
-		ofColor getColor();
+		Color getColor();
 		int getGroup();
 		void setRhythm(bool isRhythm);
 		bool isRhythm();
@@ -65,18 +66,18 @@ class Instrument
 		void setNotePositions(int bar);
 		void setNotePositions(int bar, int numBars);
 		void setScoreOrientation(int orientation);
-		void setStaffColor(ofColor color);
+		void setStaffColor(Color color);
 		void setStaffColor(int color, int rgbVal);
 		void setStaffColor(int r, int g, int b);
-		ofColor getStaffColor();
-		void setNotesColor(ofColor color);
+		Color getStaffColor();
+		void setNotesColor(Color color);
 		void setNotesColor(int color, int rgbVal);
 		void setNotesColor(int r, int g, int b);
-		ofColor getNotesColor();
-		void setActiveNotesColor(ofColor color);
+		Color getNotesColor();
+		void setActiveNotesColor(Color color);
 		void setActiveNotesColor(int color, int rgbVal);
 		void setActiveNotesColor(int r, int g, int b);
-		ofColor getActiveNotesColor();
+		Color getActiveNotesColor();
 		void setGlissandoStart(bool startGliss);
 		bool getGlissandoStart();
 		void invertColor();
@@ -330,7 +331,8 @@ class Instrument
 		bool sendMIDIBool;
 		bool sendToPythonBool;
 		int transposition;
-		ofColor color;
+		// the color of the instrument in the piano roll and the step sequencer
+		Color color;
 
 		std::map<int, bool> copyStates;
 		std::map<int, int> copyNdxs;

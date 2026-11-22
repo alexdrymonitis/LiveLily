@@ -1,4 +1,6 @@
 #include "instrument.h"
+// the score objects (Staff and Notes) draw with openFrameworks, so the colors of the instrument are converted for them
+#include "of_color.h"
 
 //--------------------------------------------------------------
 Instrument::Instrument()
@@ -59,9 +61,9 @@ Instrument::Instrument()
 	groupID = -1;
 	midiPort = -1;
 
-	setStaffColor(ofColor::black);
-	setNotesColor(ofColor::black);
-	setActiveNotesColor(ofColor::red);
+	setStaffColor(Colors::black);
+	setNotesColor(Colors::black);
+	setActiveNotesColor(Colors::red);
 }
 
 //--------------------------------------------------------------
@@ -91,13 +93,13 @@ int Instrument::getID()
 }
 
 //--------------------------------------------------------------
-void Instrument::setColor(ofColor color)
+void Instrument::setColor(Color color)
 {
 	Instrument::color = color;
 }
 
 //--------------------------------------------------------------
-ofColor Instrument::getColor()
+Color Instrument::getColor()
 {
 	return color;
 }
@@ -538,9 +540,9 @@ void Instrument::setScoreOrientation(int orientation)
 }
 
 //--------------------------------------------------------------
-void Instrument::setStaffColor(ofColor color)
+void Instrument::setStaffColor(Color color)
 {
-	staff.staffColor = color;
+	staff.staffColor = toOf(color);
 }
 
 //--------------------------------------------------------------
@@ -570,15 +572,15 @@ void Instrument::setStaffColor(int r, int g, int b)
 }
 
 //--------------------------------------------------------------
-ofColor Instrument::getStaffColor()
+Color Instrument::getStaffColor()
 {
-	return staff.staffColor;
+	return toColor(staff.staffColor);
 }
 
 //--------------------------------------------------------------
-void Instrument::setNotesColor(ofColor color)
+void Instrument::setNotesColor(Color color)
 {
-	notesObj.notesColor = color;
+	notesObj.notesColor = toOf(color);
 }
 
 //--------------------------------------------------------------
@@ -608,15 +610,15 @@ void Instrument::setNotesColor(int color, int val)
 }
 
 //--------------------------------------------------------------
-ofColor Instrument::getNotesColor()
+Color Instrument::getNotesColor()
 {
-	return notesObj.notesColor;
+	return toColor(notesObj.notesColor);
 }
 
 //--------------------------------------------------------------
-void Instrument::setActiveNotesColor(ofColor color)
+void Instrument::setActiveNotesColor(Color color)
 {
-	notesObj.activeNotesColor = color;
+	notesObj.activeNotesColor = toOf(color);
 }
 
 //--------------------------------------------------------------
@@ -646,9 +648,9 @@ void Instrument::setActiveNotesColor(int r, int g, int b)
 }
 
 //--------------------------------------------------------------
-ofColor Instrument::getActiveNotesColor()
+Color Instrument::getActiveNotesColor()
 {
-	return notesObj.activeNotesColor;
+	return toColor(notesObj.activeNotesColor);
 }
 
 //--------------------------------------------------------------

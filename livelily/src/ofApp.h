@@ -14,6 +14,8 @@
 #include "sequencer.h"
 #include "utils.h"
 #include "instrument.h"
+#include "color.h"
+#include "of_color.h"
 #include "ofTimer.h"
 #ifdef USEPYO
 #include "PyoClass.h"
@@ -662,8 +664,9 @@ class ofApp : public ofBaseApp
 		bool startSequencer;
 		bool midiPortOpen;
 
-		std::map<int, std::map<char, std::map<std::string, ofColor>>> commandsMap;
-		std::map<std::string, ofColor> colorNameMap;
+		// the colors of the names of the code in the editor, by language and first character, and the colors that can be set by name
+		std::map<int, std::map<char, std::map<std::string, Color>>> commandsMap;
+		std::map<std::string, Color> colorNameMap;
 		// the two vectors below are used to determine if we must tokenize words based on digits
 		std::vector<std::string> commandsToNotTokenize;
 		std::vector<std::string> keywords;

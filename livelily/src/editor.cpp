@@ -1062,7 +1062,7 @@ void Editor::drawText()
 							ofColor color;
 							if (startsWith(*subit, "\\") && (*subit).size() > 1) firstCharNdx = 1;
 							if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang][(*subit)[firstCharNdx]].find(*subit) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang][(*subit)[firstCharNdx]].end()) {
-								color = ((ofApp*)ofGetAppPtr())->commandsMap[thisLang][(*subit)[firstCharNdx]][*subit];
+								color = toOf(((ofApp*)ofGetAppPtr())->commandsMap[thisLang][(*subit)[firstCharNdx]][*subit]);
 								if (isCursorInsideKeyword && !cursorDrawn) {
 									cursorColor = color;
 									drawCursor(cursorX, cursorColor);

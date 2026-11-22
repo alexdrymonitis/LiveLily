@@ -2276,7 +2276,7 @@ CmdOutput ofApp::cmdOsc(CmdInput& cmdInput, int lineNum, int numLines)
 	std::string taken = nameTakenError(oscClientName, NameKind::oscClient);
 	if (!taken.empty()) return genError(taken);
 	oscClients[oscClientName] = ofxOscSender();
-	commandsMap[livelily][oscClientName.substr(1)[0]][oscClientName] = ofColor::lightSeaGreen;
+	commandsMap[livelily][oscClientName.substr(1)[0]][oscClientName] = Colors::lightSeaGreen;
 	return CmdOutput();
 }
 
@@ -2297,7 +2297,7 @@ CmdOutput ofApp::cmdOscserver(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("OSC server already exists");
 	}
 	oscServers[oscServerName] = ofxOscReceiver();
-	commandsMap[livelily][oscServerName.substr(1)[0]][oscServerName] = ofColor::lightSeaGreen;
+	commandsMap[livelily][oscServerName.substr(1)[0]][oscServerName] = Colors::lightSeaGreen;
 	return CmdOutput();
 }
 
@@ -2453,7 +2453,7 @@ CmdOutput ofApp::cmdInsts(CmdInput& cmdInput, int lineNum, int numLines)
 			}
 			if (!instrumentExists) {
 				initializeInstrument("\\" + commands[i]);
-				commandsMap[livelily][commands[i][0]]["\\" + commands[i]] = ofColor::greenYellow;
+				commandsMap[livelily][commands[i][0]]["\\" + commands[i]] = Colors::greenYellow;
 			}
 			lastInstrument = commands[i];
 		}
@@ -2582,7 +2582,7 @@ CmdOutput ofApp::cmdGroup(CmdInput& cmdInput, int lineNum, int numLines)
 	sendToParts(m, false);
 	if (!groupName.empty()) {
 		instGroups[groupName] = {cmdInput.inputVec.begin()+1, cmdInput.inputVec.end()-1};
-		commandsMap[livelily][groupName.substr(1)[0]][groupName] = ofColor::lightSteelBlue;
+		commandsMap[livelily][groupName.substr(1)[0]][groupName] = Colors::lightSteelBlue;
 	}
 	return CmdOutput();
 }
@@ -2715,7 +2715,7 @@ CmdOutput ofApp::cmdBar(CmdInput& cmdInput, int lineNum, int numLines)
 		// if this is not the first bar, set a default clef similar to the last one
 		if (barIndex > 0) it->second.setClef(barIndex, it->second.getClef(getPrevBarIndex()));
 	}
-	commandsMap[livelily][barName.substr(1)[0]][barName] = ofColor::orchid;
+	commandsMap[livelily][barName.substr(1)[0]][barName] = Colors::orchid;
 	// since bars include simple melodic lines in their definition
 	// we need to know this when we parse these lines
 	if (cmdInput.inputVec.size() > 2) {
@@ -2758,7 +2758,7 @@ CmdOutput ofApp::cmdLoop(CmdInput& cmdInput, int lineNum, int numLines)
 	}
 	parsingLoop = true;
 	storeNewLoop(loopName);
-	commandsMap[livelily][loopName.substr(1)[0]][loopName] = ofColor::lightSeaGreen;
+	commandsMap[livelily][loopName.substr(1)[0]][loopName] = Colors::lightSeaGreen;
 	// loops are most likely defined in one-liners, so we parse the rest of the line here
 	if (cmdInput.inputVec.size() > 2) {
 		std::string restOfCommand = genStrFromVec({cmdInput.inputVec.begin()+2, cmdInput.inputVec.end()});
@@ -2890,7 +2890,7 @@ CmdOutput ofApp::cmdList(CmdInput& cmdInput, int lineNum, int numLines)
 	lastListIndex = 0;
 	for (const auto& list : listIndexes) lastListIndex = std::max(lastListIndex, list.second + 1);
 	listIndexes[listName] = lastListIndex;
-	commandsMap[livelily][listName.substr(1)[0]][listName] = ofColor::lightSeaGreen;
+	commandsMap[livelily][listName.substr(1)[0]][listName] = Colors::lightSeaGreen;
 	std::string restOfCommand = genStrFromVec({cmdInput.inputVec.begin()+2, cmdInput.inputVec.end()});
 	std::pair<int, std::string> error = parseString(restOfCommand, lineNum, numLines);
 	if (error.first == 3) {
@@ -3242,7 +3242,7 @@ CmdOutput ofApp::cmdFunction(CmdInput& cmdInput, int lineNum, int numLines)
 				functionIndexes.erase(functionName);
 				return genError("function name too long");
 			}
-			commandsMap[livelily][functionName.substr(1)[0]][functionName] = ofColor::turquoise;
+			commandsMap[livelily][functionName.substr(1)[0]][functionName] = Colors::turquoise;
 			// the lines of a function name are not expanded, as they store their data (e.g. \funcname.bind, \funcname.onrelease etc.)
 			// see methodSpecs
 			storingFunction = true;
@@ -4110,7 +4110,7 @@ CmdOutput ofApp::defineVariable(CmdInput& cmdInput, int lineNum, int numLines)
 		variable var = {cmdInput.inputVec[2], 0};
 		variables[varName] = var;
 	}
-	commandsMap[livelily][plainVarName[0]][varName] = ofColor::darkTurquoise;
+	commandsMap[livelily][plainVarName[0]][varName] = Colors::darkTurquoise;
 	return CmdOutput();
 }
 
