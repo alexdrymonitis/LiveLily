@@ -3474,8 +3474,9 @@ CmdOutput ofApp::cmdOpenserialport(CmdInput& cmdInput, int lineNum, int numLines
 	if (!isNumber(cmdInput.inputVec[2])) {
 		return genError("second argument must be baud rate");
 	}
+	std::string path;
 	if (serialPortNumSet) {
-		serial->open(serialDeviceList[serialPort].path, stoi(cmdInput.inputVec[2]));
+		path = serialDeviceList[serialPort].path;
 	}
 	else {
 		bool serialPortPathFound = false;
@@ -3485,12 +3486,14 @@ CmdOutput ofApp::cmdOpenserialport(CmdInput& cmdInput, int lineNum, int numLines
 				break;
 			}
 		}
-		if (serialPortPathFound) {
-			serial->open(cmdInput.inputVec[1], stoi(cmdInput.inputVec[2]));
-		}
-		else {
+		if (!serialPortPathFound) {
 			return genError("serial port path \"" + cmdInput.inputVec[1] + "\" doesn't exist");
 		}
+		path = cmdInput.inputVec[1];
+	}
+	// the device can exist but not open (e.g. without permission, or used by another program)
+	if (!serial->open(path, stoi(cmdInput.inputVec[2]))) {
+		return genError("could not open serial port " + path);
 	}
 	serialPortOpen = true;
 	return genNote("opened " + cmdInput.inputVec[1] + " at baud " + cmdInput.inputVec[2]);
