@@ -1268,7 +1268,17 @@ bool Sequencer::step()
 		// instruments are not added or removed while the sequencer goes through them in this step (see Session::removeInstrument())
 		std::lock_guard<std::recursive_mutex> instrumentsLock(sharedData->instrumentsMutex);
 		if (runSequencer && !sequencerRunning) {
-			int bar = sharedData->loopData[sharedData->loopIndex][sharedData->thisBarIndex];
+			// playback starts where it stopped, in the loop that plays, unless that loop has changed since (e.g. cleared with \insts.clear
+			// or defined again with fewer bars), in which case it starts from the first bar of the loop, or doesn't start without a loop
+			auto loopIt = sharedData->loopData.find(sharedData->loopIndex);
+			if (loopIt == sharedData->loopData.end() || loopIt->second.empty()) {
+				// the thread ends, so that the next \score.play starts it again (see ofApp::update())
+				runSequencer = false;
+				stopThread();
+				return false;
+			}
+			if (sharedData->thisBarIndex >= loopIt->second.size()) sharedData->thisBarIndex = 0;
+			int bar = loopIt->second[sharedData->thisBarIndex];
 			// in here we calculate the number of beats on a microsecond basis
 			numBeats = sharedData->numBeats[bar] * sharedData->tempo[bar];
 			if (sharedData->showNotes) {

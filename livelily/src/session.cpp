@@ -161,6 +161,9 @@ void Session::clearLoops()
 	sharedData.loopsIndexes.clear();
 	sharedData.loopsOrdered.clear();
 	sharedData.loopsVariants.clear();
+	// the place where playback stopped belongs to the loops that are cleared, so the loops defined after them play from their start
+	sharedData.loopIndex = sharedData.tempLoopIndex = 0;
+	sharedData.thisBarIndex = 0;
 }
 
 //--------------------------------------------------------------
