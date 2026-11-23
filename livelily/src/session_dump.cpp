@@ -1,0 +1,155 @@
+// the text of the test dumps (see session_dump.h)
+
+#include "session_dump.h"
+#include "session.h"
+#include <algorithm>
+#include <iomanip>
+#include <sstream>
+#include <vector>
+
+namespace {
+
+std::string escaped(const std::string& str)
+{
+	std::string result;
+	for (char c : str) {
+		if (c == '\n') result += "\\n";
+		else if (c == '\t') result += "\\t";
+		else result += c;
+	}
+	return result;
+}
+
+template <typename T>
+std::string join(const std::vector<T>& vec)
+{
+	std::ostringstream oss;
+	oss << std::fixed << std::setprecision(4);
+	for (size_t i = 0; i < vec.size(); i++) oss << (i > 0 ? " " : "") << vec[i];
+	return oss.str();
+}
+
+std::string join(const std::vector<bool>& vec)
+{
+	std::string result;
+	for (size_t i = 0; i < vec.size(); i++) result += (i > 0 ? " " : "") + std::string(vec[i] ? "1" : "0");
+	return result;
+}
+
+template <typename T>
+std::string join(const std::vector<std::vector<T>>& vec)
+{
+	std::string result;
+	for (size_t i = 0; i < vec.size(); i++) result += (i > 0 ? " | " : "") + join(vec[i]);
+	return result;
+}
+
+// one line per bar of a map of bar data, e.g. "    durs 1: 64 64 128"
+template <typename M>
+void dumpBarMap(std::ostream& out, const std::string& label, const M& barMap)
+{
+	for (const auto& bar : barMap) out << "    " << label << " " << bar.first << ": " << join(bar.second) << "\n";
+}
+
+}
+
+//--------------------------------------------------------------
+std::string escapedForDump(const std::string& str)
+{
+	return escaped(str);
+}
+
+//--------------------------------------------------------------
+void writeLineMessage(std::ostream& out, int lineNdx, const std::string& lineStr, int color, const std::string& text)
+{
+	static const char* kinds[] = {"note", "warning", "error"};
+	// the ports and devices listed depend on the machine (e.g. the process number in the name of a FluidSynth port)
+	// so the notes of the commands that list them are not written, only that they listed something
+	static const std::vector<std::string> listingCommands = {"\\listmidiports", "\\listserialports", "\\listaudiodev"};
+	std::string firstToken = lineStr.substr(0, lineStr.find(' '));
+	size_t firstChar = firstToken.find_first_not_of(" \t");
+	if (firstChar != std::string::npos) firstToken = firstToken.substr(firstChar);
+	bool listing = std::find(listingCommands.begin(), listingCommands.end(), firstToken) != listingCommands.end();
+	std::string message = (listing && color == 0 ? std::string("(the list of this machine)") : escaped(text));
+	out << "line " << lineNdx + 1 << " " << (color >= 0 && color <= 2 ? kinds[color] : "?") << ": " << message << "\n";
+}
+
+//--------------------------------------------------------------
+void dumpSession(std::ostream& out, Session& session, float targetFrameRate, bool sessionActive)
+{
+	out << std::fixed << std::setprecision(4);
+	out << "=== bars\n";
+	for (const auto& bar : session.sharedData.barsOrdered) {
+		int ndx = bar.first;
+		out << "bar " << ndx << " " << bar.second;
+		if (session.sharedData.numerator.count(ndx)) out << " time " << session.sharedData.numerator[ndx] << "/" << session.sharedData.denominator[ndx];
+		if (session.sharedData.tempoMs.count(ndx)) out << " tempoMs " << session.sharedData.tempoMs[ndx];
+		if (session.sharedData.tempo.count(ndx)) out << " tempo " << session.sharedData.tempo[ndx];
+		if (session.sharedData.beatAtValues.count(ndx)) out << " beatat " << join(session.sharedData.beatAtValues[ndx]);
+		out << "\n";
+		auto lines = session.sharedData.barLines.find(bar.second);
+		if (lines != session.sharedData.barLines.end()) out << "  text " << escaped(lines->second) << "\n";
+	}
+	out << "=== loops\n";
+	for (const auto& loop : session.sharedData.loopsOrdered) {
+		out << "loop " << loop.first << " " << loop.second << ":";
+		auto data = session.sharedData.loopData.find(loop.first);
+		if (data != session.sharedData.loopData.end()) {
+			for (int bar : data->second) {
+				auto name = session.sharedData.loopsOrdered.find(bar);
+				out << " " << (name != session.sharedData.loopsOrdered.end() ? name->second : std::to_string(bar));
+			}
+		}
+		out << "\n";
+	}
+	out << "=== instruments\n";
+	for (auto& instIt : session.sharedData.instruments) {
+		Instrument& inst = instIt.second;
+		out << "inst " << instIt.first << " " << inst.getName() << (inst.isRhythm() ? " rhythm" : "") << (inst.isMuted() ? " muted" : "")
+			<< (inst.isToBeMuted() ? " tomute" : "") << (inst.isToBeUnmuted() ? " tounmute" : "");
+		if (inst.getDelayTime() > 0) out << " delay " << inst.getDelayTime();
+		out << "\n";
+		dumpBarMap(out, "notes", inst.notes);
+		dumpBarMap(out, "durs", inst.durs);
+		dumpBarMap(out, "dynamics", inst.dynamics);
+		dumpBarMap(out, "articulations", inst.articulations);
+		dumpBarMap(out, "ties", inst.tieIndexes);
+		dumpBarMap(out, "slurred", inst.isSlurred);
+		// the start and stop notes of every slur of a bar (-1 for a slur that comes from the previous bar or goes on to the next one)
+		for (const auto& bar : inst.slurIndexes) {
+			out << "    slurs " << bar.first << ":";
+			for (const auto& slur : bar.second) out << " (" << slur.first << "," << slur.second << ")";
+			out << "\n";
+		}
+		dumpBarMap(out, "glissandi", inst.glissandi);
+		dumpBarMap(out, "scoreNotes", inst.scoreNotes);
+		dumpBarMap(out, "scoreOctaves", inst.scoreOctaves);
+		dumpBarMap(out, "scoreAccidentals", inst.scoreAccidentals);
+		dumpBarMap(out, "scoreDurs", inst.scoreDurs);
+		dumpBarMap(out, "scoreDynamics", inst.scoreDynamics);
+	}
+	out << "=== settings\n";
+	out << "ppqn " << session.sharedData.PPQN << "\n";
+	out << "framerate " << targetFrameRate << "\n";
+	out << "audio samplerate " << session.sampleRate << " buffersize " << session.bufferSize << " inchannels " << session.inChannels << " outchannels " << session.outChannels << "\n";
+	out << "clicktrack " << (session.sharedData.clickTrack.isOn() ? "on" : "off") << " tune " << session.sharedData.clickTrack.getTune() << " volume " << session.sharedData.clickTrack.getVolume() << "\n";
+	out << "accoffset " << (session.accOffsetSet ? std::to_string(session.accOffsetCoef) : std::string("default")) << "\n";
+	out << "session " << (sessionActive ? "active" : "inactive") << "\n";
+	out << "instorder";
+	for (const auto& ordered : session.sharedData.instrumentIndexesOrdered) out << " " << ordered.second;
+	out << "\n";
+	out << "notedur";
+	for (const auto& noteDur : session.noteDurSettings) out << " " << noteDur.first << " " << noteDur.second;
+	out << "\n";
+	out << "=== lists\n";
+	for (const auto& list : session.listIndexes) {
+		out << "list " << list.first << ":";
+		auto items = session.listMap.find(list.second);
+		if (items != session.listMap.end()) {
+			for (const std::string& item : items->second) out << " " << item;
+		}
+		out << "\n";
+	}
+	out << "=== functions\n";
+	for (const auto& func : session.functionIndexes) out << "function " << func.first << "\n";
+}
