@@ -5,7 +5,7 @@ Each step is one commit, checked with the snapshot tests of the app and the head
 
 ## Progress
 
-- [ ] Step 1: portable paths in the core
+- [x] Step 1: portable paths in the core (`homeDirectory()` in `system_command.h`, absolute paths with `std::filesystem`, and the headless runner finds itself on Linux, macOS and Windows, or takes `--data`)
 - [ ] Step 2: MIDI ports of their own in test mode
 - [ ] Step 3: CMake for the core and the headless runner
 - [ ] Step 4: the tests in CTest

@@ -3844,7 +3844,7 @@ CmdOutput Session::cmdHelp(CmdInput& cmdInput, int lineNum, int numLines)
 	}
 	std::string filePath = HELPFILEPATH;
 	if (startsWith(filePath, "~")) {
-		filePath = getenv("HOME") + filePath.substr(1);
+		filePath = homeDirectory() + filePath.substr(1);
 	}
 	// the command can be given with or without its backslash
 	std::string helpName = cmdInput.inputVec[1];
@@ -6023,8 +6023,8 @@ std::pair<bool, CmdOutput> Session::isInstrument(std::vector<std::string>& origi
 					// the path can be quoted, start with ~ for the home directory, or be relative to the data directory of LiveLily (bin/data)
 					std::string path = commands[2];
 					if (path.size() > 1 && path.front() == '"' && path.back() == '"') path = path.substr(1, path.size()-2);
-					if (startsWith(path, "~")) path = getenv("HOME") + path.substr(1);
-					else if (!startsWith(path, "/")) path = (std::filesystem::path(dataDirectory) / path).string();
+					if (startsWith(path, "~")) path = homeDirectory() + path.substr(1);
+					else if (!std::filesystem::path(path).is_absolute()) path = (std::filesystem::path(dataDirectory) / path).string();
 					// the preset (e.g. an instrument of a General MIDI SoundFont) and its bank, 0 by default
 					int preset = 0, bank = 0;
 					if (commands.size() > 3) {

@@ -1,5 +1,5 @@
 // the headless test runner of LiveLily: the engine (Session) with no window and no openFrameworks
-// livelily_headless --test file.lyv [--out dump.txt]
+// livelily_headless --test file.lyv [--out dump.txt] [--data directory]
 //     runs the file chunk by chunk, as the test mode of the app does (see src/testmode.cpp), and writes the same dump
 //     except the sections of the editor (its highlights and its text), which need the editor of the app
 // livelily_headless --play seconds file.lyv
@@ -17,6 +17,11 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#if defined(_WIN32)
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 namespace {
 
@@ -135,9 +140,28 @@ void parseStrings(Session& session, HeadlessFrontend& frontend, const std::vecto
 	session.parseLines(toParse, numLines, false);
 }
 
+// the path of this program, to find the data directory of LiveLily next to it (bin/data, as the program is in bin)
+std::filesystem::path executablePath(const char* argv0)
+{
+#if defined(_WIN32)
+	wchar_t buffer[MAX_PATH];
+	DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+	if (length > 0 && length < MAX_PATH) return std::filesystem::path(std::wstring(buffer, length));
+#elif defined(__APPLE__)
+	char buffer[4096];
+	uint32_t size = sizeof(buffer);
+	if (_NSGetExecutablePath(buffer, &size) == 0) return std::filesystem::weakly_canonical(buffer);
+#else
+	std::error_code error;
+	std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", error);
+	if (!error) return self;
+#endif
+	return std::filesystem::absolute(argv0);
+}
+
 int usage()
 {
-	std::cerr << "usage: livelily_headless --test file.lyv [--out dump.txt]\n       livelily_headless --play seconds file.lyv" << std::endl;
+	std::cerr << "usage: livelily_headless --test file.lyv [--out dump.txt] [--data directory]\n       livelily_headless --play seconds file.lyv [--data directory]" << std::endl;
 	return 2;
 }
 
@@ -145,12 +169,13 @@ int usage()
 
 int main(int argc, char* argv[])
 {
-	std::string testFile, outFile;
+	std::string testFile, outFile, dataDirectory;
 	double playSeconds = 0;
 	for (int i = 1; i < argc; i++) {
 		std::string arg = argv[i];
 		if (arg == "--test" && i + 1 < argc) testFile = argv[++i];
 		else if (arg == "--out" && i + 1 < argc) outFile = argv[++i];
+		else if (arg == "--data" && i + 1 < argc) dataDirectory = argv[++i];
 		else if (arg == "--play" && i + 2 < argc) { playSeconds = std::atof(argv[++i]); testFile = argv[++i]; }
 		else return usage();
 	}
@@ -162,8 +187,9 @@ int main(int argc, char* argv[])
 	HeadlessFrontend frontend;
 	session.frontend = &frontend;
 	session.audioCallback = &frontend;
-	// the data directory of the app (bin/data), next to this program, which is in bin
-	session.dataDirectory = (std::filesystem::canonical("/proc/self/exe").parent_path() / "data").string() + "/";
+	// the data directory of the app (bin/data), next to this program (which is in bin), unless --data gives another one
+	if (dataDirectory.empty()) dataDirectory = (executablePath(argv[0]).parent_path() / "data").string();
+	session.dataDirectory = (std::filesystem::path(dataDirectory) / "").string();
 	// a fixed seed, so that \rand gives the same values every time, as in the test mode of the app
 	srand(1);
 	session.setup(Color{255, 255, 255});

@@ -1,5 +1,6 @@
 #include "system_command.h"
 #include <cstdio>
+#include <cstdlib>
 
 std::string systemCommandOutput(const std::string& command)
 {
@@ -19,4 +20,13 @@ std::string systemCommandOutput(const std::string& command)
 	pclose(pipe);
 #endif
 	return output;
+}
+
+std::string homeDirectory()
+{
+	const char* home = std::getenv("HOME");
+#ifdef _WIN32
+	if (!home) home = std::getenv("USERPROFILE");
+#endif
+	return (home ? std::string(home) : std::string());
 }
