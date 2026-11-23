@@ -1,9 +1,9 @@
 #!/bin/bash
 # runs every .lyv file of bin/data and tests/lyv with the headless runner (see headless/main.cpp), which has no window and no openFrameworks
 # and compares its dumps with the snapshots of the app's test mode (see snapshots.sh), up to the sections of the editor, which need the app
-#   tests/headless.sh            builds the runner (see headless/build.sh) and checks every file that has a snapshot
+#   tests/headless.sh            builds the runner with CMake (in build/, see CMakeLists.txt) and checks every file that has a snapshot
 cd "$(dirname "$0")/.."
-headless/build.sh > /dev/null || exit 1
+{ [ -f build/CMakeCache.txt ] || cmake -B build > /dev/null; } && cmake --build build -j2 > /dev/null || exit 1
 mkdir -p tests/current/headless
 failed=0
 for f in bin/data/*.lyv tests/lyv/*.lyv; do
