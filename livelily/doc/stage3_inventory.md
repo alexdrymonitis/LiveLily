@@ -8,7 +8,7 @@ Each step is one commit, checked with the snapshot tests of the app and the head
 - [x] Step 1: portable paths in the core (`homeDirectory()` in `system_command.h`, absolute paths with `std::filesystem`, and the headless runner finds itself on Linux, macOS and Windows, or takes `--data`)
 - [x] Step 2: MIDI ports of their own in test mode (`test_midi.cpp`: two made-up ports, in the app and in the headless runner)
 - [x] Step 3: CMake for the core and the headless runner (`CMakeLists.txt`: `livelily_core`, `livelily_headless` into `bin/`, FluidSynth with pkg-config or a CMake package, RtMidi 6.0.0 fetched or from `LIVELILY_RTMIDI_DIR`, and `LIVELILY_PYO`); `headless/build.sh` is gone, and `tests/headless.sh` builds with CMake
-- [ ] Step 4: the tests in CTest
+- [x] Step 4: the tests in CTest (`tests/compare.cmake`; a test that needs pyo in a build without it, or a SoundFont the machine doesn't have, is skipped; `tests/headless.sh` builds and runs CTest)
 - [ ] Step 5: CI on Linux, macOS and Windows
 
 ## What is built today

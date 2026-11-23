@@ -88,3 +88,21 @@ foreach(config ${CMAKE_CONFIGURATION_TYPES})
 	string(TOUPPER ${config} CONFIG)
 	set_target_properties(livelily_headless PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${CONFIG} "${PROJECT_SOURCE_DIR}/bin")
 endforeach()
+
+# the tests: every test file (bin/data/*.lyv, tests/lyv/*.lyv) with a snapshot in tests/snapshots runs in the headless runner
+# and its dump is compared with the snapshot up to the sections of the editor (see tests/compare.cmake)
+# the snapshots are made by the app's test mode (tests/snapshots.sh save), which also checks the editor's sections and the screen
+enable_testing()
+file(GLOB LIVELILY_TEST_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/bin/data/*.lyv" "${PROJECT_SOURCE_DIR}/tests/lyv/*.lyv")
+foreach(test_file ${LIVELILY_TEST_FILES})
+	get_filename_component(test_name "${test_file}" NAME_WE)
+	set(snapshot "${PROJECT_SOURCE_DIR}/tests/snapshots/${test_name}.dump")
+	if(NOT EXISTS "${snapshot}")
+		continue()
+	endif()
+	add_test(NAME ${test_name} COMMAND ${CMAKE_COMMAND}
+		-DRUNNER=$<TARGET_FILE:livelily_headless> -DLYV=${test_file} -DSNAPSHOT=${snapshot} -DDATA=${PROJECT_SOURCE_DIR}/bin/data
+		-DOUT=${CMAKE_BINARY_DIR}/dumps/${test_name}.dump -DPYO=${LIVELILY_PYO} -P ${PROJECT_SOURCE_DIR}/tests/compare.cmake)
+	set_tests_properties(${test_name} PROPERTIES SKIP_RETURN_CODE 77)
+endforeach()
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/dumps")
