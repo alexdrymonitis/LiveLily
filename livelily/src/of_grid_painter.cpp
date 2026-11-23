@@ -26,7 +26,7 @@ void paintRect(const GridRect& rect, const GridGeometry& g, float brightness)
 {
 	setColor(rect.color, brightness, rect.alpha);
 	if (rect.outline) ofNoFill();
-	int width = (rect.toEnd ? g.toEndWidth - (rect.col * g.cellWidth) : rect.numCols * g.cellWidth);
+	float width = (rect.toEnd ? g.toEndWidth - (rect.col * g.cellWidth) : rect.numCols * g.cellWidth);
 	ofDrawRectangle(g.x + (rect.col * g.cellWidth), rowTop(g, rect.row, rect.snap), width, rect.numRows * g.cellHeight);
 	if (rect.outline) ofFill();
 }
@@ -49,14 +49,14 @@ void paintText(const CellGrid& grid, const GridGeometry& g, ofTrueTypeFont& font
 			col++;
 		}
 		setColor(first.color, brightness);
-		font.drawString(run, g.x + (start * g.cellWidth), baseline);
+		font.drawString(run, g.x + g.textInset + (start * g.cellWidth), baseline);
 	}
 }
 
 void paintCursor(const GridCursor& cursor, const GridGeometry& g, float brightness)
 {
 	if (cursor.shape == GridCursor::Shape::none) return;
-	int x = g.x + (cursor.col * g.cellWidth);
+	float x = g.x + (cursor.col * g.cellWidth);
 	int y = (int)rowTop(g, cursor.row, false);
 	setColor(cursor.color, brightness);
 	switch (cursor.shape) {
@@ -99,17 +99,17 @@ void paintGrid(const CellGrid& grid, const GridGeometry& g, ofTrueTypeFont& font
 			setColor(span.background, brightness);
 			ofDrawRectangle(g.x + (span.col * g.cellWidth), rowTop(g, row, span.snap), (int)span.text.size() * g.cellWidth, g.cellHeight);
 			setColor(span.textColor, brightness);
-			font.drawString(span.text, g.x + (span.col * g.cellWidth), baselineOf(g, row));
+			font.drawString(span.text, g.x + g.textInset + (span.col * g.cellWidth), baselineOf(g, row));
 		}
 	}
 	for (const GridRect& rect : grid.outlines) paintRect(rect, g, brightness);
 	if (!grid.cursor.inRow) paintCursor(grid.cursor, g, brightness);
 	for (const GridMark& mark : grid.marks) {
 		setColor(mark.cell.color, brightness);
-		font.drawString(mark.cell.ch, g.x + (mark.col * g.cellWidth), baselineOf(g, mark.row));
+		font.drawString(mark.cell.ch, g.x + g.textInset + (mark.col * g.cellWidth), baselineOf(g, mark.row));
 	}
 	if (!grid.cursor.charOnTop.empty() && grid.cursor.shape != GridCursor::Shape::none) {
 		setColor(grid.cursor.charColor, brightness);
-		font.drawString(grid.cursor.charOnTop, g.x + (grid.cursor.col * g.cellWidth), baselineOf(g, grid.cursor.row));
+		font.drawString(grid.cursor.charOnTop, g.x + g.textInset + (grid.cursor.col * g.cellWidth), baselineOf(g, grid.cursor.row));
 	}
 }

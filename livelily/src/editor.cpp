@@ -4798,24 +4798,39 @@ void Editor::drawCompletions()
 	if (y < 0) y = 0;
 	if (x + width > windowWidth) x = windowWidth - width;
 	if (x < 0) x = 0;
-	ofFill();
-	ofSetColor(ofColor(40) * brightness);
-	ofDrawRectangle(x, y, width, height);
+	// the pop-up is a grid of its own (see cellgrid.h), placed by pixels: a dark background, the selected suggestion on cyan
+	// the suggestions, and an outline, with the text half a character from the edges
+	completionGrid.resize(numRows, (int)longest);
+	GridRect backgroundRect;
+	backgroundRect.numRows = numRows;
+	backgroundRect.toEnd = true;
+	backgroundRect.color = Color(40, 40, 40);
+	completionGrid.backgrounds.push_back(backgroundRect);
+	Color foreground = toColor(app->foregroundColor);
 	for (int row = 0; row < numRows; row++) {
 		int ndx = firstRow + row;
-		float rowY = y + (row * cursorHeight);
+		Color textColor = foreground;
 		if (ndx == completionNdx) {
-			ofSetColor(ofColor::cyan * brightness);
-			ofDrawRectangle(x, rowY, width, cursorHeight);
-			ofSetColor(ofColor::black);
+			GridRect selectedRect;
+			selectedRect.row = row;
+			selectedRect.toEnd = true;
+			selectedRect.color = Colors::cyan;
+			completionGrid.backgrounds.push_back(selectedRect);
+			textColor = Color(0, 0, 0);
 		}
-		else {
-			ofSetColor(app->foregroundColor * brightness);
-		}
-		font.drawString(completions[ndx], x + padding, rowY + cursorHeight - characterOffset);
+		completionGrid.write(row, 0, completions[ndx], textColor);
 	}
-	ofNoFill();
-	ofSetColor(app->foregroundColor * brightness);
-	ofDrawRectangle(x, y, width, height);
-	ofFill();
+	GridRect outlineRect = backgroundRect;
+	outlineRect.color = foreground;
+	outlineRect.outline = true;
+	completionGrid.outlines.push_back(outlineRect);
+	GridGeometry geometry;
+	geometry.x = x;
+	geometry.y = y;
+	geometry.cellWidth = oneCharacterWidth;
+	geometry.cellHeight = cursorHeight;
+	geometry.descent = characterOffset;
+	geometry.toEndWidth = width;
+	geometry.textInset = padding;
+	paintGrid(completionGrid, geometry, font, brightness);
 }

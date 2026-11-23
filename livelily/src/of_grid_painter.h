@@ -12,14 +12,16 @@
 struct GridGeometry
 {
 	// the left edge of the first column, and the top of the first row
-	int x = 0;
+	float x = 0;
 	float y = 0;
 	int cellWidth = 1;
 	float cellHeight = 1;
 	// from the baseline of the text to the bottom of its row
 	float descent = 0;
 	// the width of a rectangle that reaches the end of the region (see GridRect::toEnd)
-	int toEndWidth = 0;
+	float toEndWidth = 0;
+	// how far the text is from the left edge of its columns (the padding of the completion pop-up)
+	float textInset = 0;
 };
 
 // brightness is the coefficient every color is multiplied with (ofApp::brightnessCoeff)

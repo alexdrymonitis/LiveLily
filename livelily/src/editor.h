@@ -371,6 +371,8 @@ class Editor
 		// the text area and the line numbers of the pane, filled by drawText() and painted at its end (see cellgrid.h)
 		CellGrid textGrid;
 		CellGrid gutterGrid;
+		// the completion pop-up, filled and painted by drawCompletions()
+		CellGrid completionGrid;
 		int fontSize;
 		bool fontLoaded;
 		std::map<int, line> allLines;
