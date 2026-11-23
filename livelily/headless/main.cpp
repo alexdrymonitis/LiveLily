@@ -192,6 +192,8 @@ int main(int argc, char* argv[])
 	session.dataDirectory = (std::filesystem::path(dataDirectory) / "").string();
 	// a fixed seed, so that \rand gives the same values every time, as in the test mode of the app
 	srand(1);
+	// the made-up MIDI ports of test mode, as in the app (see test_midi.cpp), and the real ones to play with --play
+	if (playSeconds <= 0) session.midi = makeTestMidiOutput();
 	session.setup(Color{255, 255, 255});
 
 	std::vector<std::string> lines;

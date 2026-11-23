@@ -53,6 +53,9 @@ void ofApp::setup()
 
 	unsigned int framerate = 60;
 
+	// in test mode, the MIDI ports are made-up ones, so that the dumps don't depend on the machine (see test_midi.cpp)
+	// set before the session is set up, as the sequencer takes the MIDI output then
+	if (!testFile.empty()) session.midi = makeTestMidiOutput();
 	// the defaults of the session and the tables of the names of its languages (see session_setup.cpp)
 	session.setup(toColor(foregroundColor));
 

@@ -30,4 +30,8 @@ class MidiOutput
 // the platform makes it (of_midi.cpp for now)
 std::unique_ptr<MidiOutput> makeMidiOutput();
 
+// the MIDI output of test mode (see test_midi.cpp): two made-up ports, which open but get nothing
+// so that what a test file does with MIDI ports is the same on every machine, whatever ports it has
+std::unique_ptr<MidiOutput> makeTestMidiOutput();
+
 #endif

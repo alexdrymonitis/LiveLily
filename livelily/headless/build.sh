@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")/.."
 RTMIDI=../../../addons/ofxMidi/libs/rtmidi
-ENGINE="clock codetext function instrument osc parser PyoClass pyo_classes sequencer session session_dump session_setup soundfont system_command"
+ENGINE="clock codetext function instrument osc parser PyoClass pyo_classes sequencer session session_dump session_setup soundfont system_command test_midi"
 mkdir -p obj/headless
 objs=()
 for name in $ENGINE; do objs+=("src/$name.cpp"); done
