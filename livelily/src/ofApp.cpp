@@ -5094,6 +5094,8 @@ void ofApp::setShowScore(int ndx)
 		showScore = false;
 		session.sharedData.showNotes = false;
 	}
+	// the oscilloscope gets the output of the audio thread only while it is shown (see onAudioOut() and update())
+	showScope = (ndx == 2);
 
 	//switch (ndx) {
 	//	case 0:

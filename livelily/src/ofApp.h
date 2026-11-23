@@ -11,6 +11,7 @@
 #include <vector>
 #include <utility> // to add pair
 #include <mutex>
+#include <atomic>
 #include <thread>
 #include "editor.h"
 #include "function.h"
@@ -408,8 +409,8 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		// variables for the score
 		bool showScore;
 		int scoreType;
-		bool showPianoRoll;
-		bool showScope;
+		// whether the oscilloscope is the view shown (see setShowScore()), which the audio thread reads to copy the output for it
+		std::atomic<bool> showScope{false};
 		// showNotes is in SharedData because it is used by the sequencer
 		float scoreXOffset;
 		float scoreYOffset;
