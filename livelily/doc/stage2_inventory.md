@@ -6,9 +6,9 @@ Each step is one commit, checked with the snapshot tests, the headless tests, an
 
 ## Progress
 
-- [ ] Step 1: the cell grid and its openFrameworks painter
-- [ ] Step 2: the text of a pane in the grid
-- [ ] Step 3: the cursor, the note highlights and the completion pop-up in the grid
+- [x] Step 1: the cell grid (`cellgrid.h`) and its openFrameworks painter (`of_grid_painter.h/.cpp`)
+- [x] Step 2: the text of a pane in the grid, with the line numbers, the cursor and the note highlights: `Editor::drawText()` fills `textGrid` and `gutterGrid` and paints them, and the screenshots of every test file are the same
+- [ ] Step 3: the completion pop-up in the grid
 - [ ] Step 4: the status line of a pane in the grid
 - [ ] Step 5: the area below the panes in the grid
 - [ ] Step 6: the screen in the test dump
@@ -76,7 +76,7 @@ It also uses openFrameworks for time (`ofGetElapsedTimeMillis()`, 14), the file 
 
 1. **The cell grid and its openFrameworks painter.** `cellgrid.h` (no openFrameworks) and `of_grid_painter.h/.cpp`, which paints a grid with the editor's font. Nothing uses them yet.
 2. **The text of a pane in the grid.** `drawText()` fills the grid with the text, the row backgrounds, the flash, the bracket cell, the selection, the argument hint and the line numbers, and the app paints it. The screenshots of every test file stay identical.
-3. **The cursor, the note highlights and the completion pop-up in the grid.**
+3. **The completion pop-up in the grid.** (The cursor and the note highlights went with step 2, as the cursor is drawn in the middle of the text.)
 4. **The status line of a pane in the grid.**
 5. **The area below the panes in the grid:** the messages of the lines and the shell, with its input line and cursor.
 6. **The screen in the test dump.** Test mode writes the grids of the panes and of the area below them as text (a `=== screen` section, with the colors as letters on a second layer), so that the snapshots test what the editor shows.

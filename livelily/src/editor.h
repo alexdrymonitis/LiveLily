@@ -3,6 +3,7 @@
 
 #include "ofMain.h"
 #include "codetext.h"
+#include "cellgrid.h"
 #include "osc.h"
 #include <vector>
 #include <string>
@@ -144,7 +145,8 @@ class Editor
 		// get the number of digits of line count, used in the text drawing function
 		int getNumDigitsOfLineCount();
 		void drawText();
-		void drawCursor(int cursorX, ofColor cursorColor);
+		// sets the cursor of the text grid (see GridCursor), drawn in a token (inRow, before the token from splitCol) or after the text
+		void markCursor(int cursorX, Color color, bool inRow, int splitCol);
 		void drawPaneSeparator();
 		void setDPressed(bool dPressedState);
 		void setStringsStartPos();
@@ -366,6 +368,9 @@ class Editor
 		bool showShell;
 
 		ofTrueTypeFont font;
+		// the text area and the line numbers of the pane, filled by drawText() and painted at its end (see cellgrid.h)
+		CellGrid textGrid;
+		CellGrid gutterGrid;
 		int fontSize;
 		bool fontLoaded;
 		std::map<int, line> allLines;

@@ -6,6 +6,8 @@
 #include <utility> // to add pair and make_pair
 #include <filesystem>
 #include "editor.h"
+#include "of_grid_painter.h"
+#include "of_color.h"
 #include <set>
 #include "musicxml.h"
 #include "midifile.h"
@@ -685,7 +687,6 @@ void Editor::drawText()
 		top = std::max(0, first);
 		numRows = std::max(0, last - top);
 	};
-	auto baselineOfRow = [&](int row) { return ((row + 1) * cursorHeight) + frameYOffset - characterOffset; };
 
 	/*******************************************************************/
 	// get the number of digits of the line count
@@ -693,20 +694,27 @@ void Editor::drawText()
 	lineNumberWidth = numDigits * oneCharacterWidth;
 
 	/*******************************************************************/
+	// the text area of the pane and its line numbers are filled into grids of cells (see cellgrid.h), in the layers they are painted in
+	// and painted at the end (see of_grid_painter.h), which gives the same picture as drawing them directly
+	// a line that isn't wrapped shows one more character than maxCharactersPerString
+	textGrid.resize(std::max(0, maxNumLines), std::max(0, wrapLines ? wrapWidth : maxCharactersPerString + 1));
+	gutterGrid.resize(std::max(0, maxNumLines), numDigits);
+	ofApp* app = (ofApp*)ofGetAppPtr();
+	Color foreground = toColor(app->foregroundColor);
+	Color background = toColor(app->backgroundColor);
+	// the color the next text is drawn in, as the editor set it with ofSetColor() before drawing a token
+	Color currentColor = foreground;
+
+	/*******************************************************************/
 	// then draw the red/orange traceback rectangles
 	int count = 0; // separate counter to start from 0 because i starts from lineCountOffset
 	for (int i = lineCountOffset; i < loopIter; i++) {
 		if (allLines[i].tracebackStr.size() > 0 && allLines[i].tracebackColor > 0) {
-			if (allLines[i].tracebackColor == 1) {
-				ofSetColor(ofColor::orange*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-			}
-			else if (allLines[i].tracebackColor == 2) {
-				ofSetColor(ofColor::red*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-			}
-			int xOffset = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset;
-			int top, numRows;
-			visibleRows(i, top, numRows);
-			ofDrawRectangle(xOffset, top * cursorHeight + frameYOffset, rectWidth, numRows * cursorHeight);
+			GridRect rect;
+			rect.color = (allLines[i].tracebackColor == 1 ? Colors::orange : Colors::red);
+			visibleRows(i, rect.row, rect.numRows);
+			rect.toEnd = true;
+			textGrid.backgrounds.push_back(rect);
 		}
 		count++;
 	}
@@ -716,15 +724,13 @@ void Editor::drawText()
 	// needs to be first otherwise the alpha blending won't work as expected
 	for (int i = lineCountOffset; i < loopIter; i++) {
 		if (allLines[i].isBeingExecuted) {
-			ofSetColor(ofColor::cyan.r*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-					ofColor::cyan.g*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-					ofColor::cyan.b*((ofApp*)ofGetAppPtr())->brightnessCoeff,
-					allLines[i].executionDegrade);
-			int xOffset = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset;
-			int top, numRows;
-			visibleRows(i, top, numRows);
-			// rectWidth has been calculated above, before the loop that draw traceback rectangles
-			ofDrawRectangle(xOffset, top * cursorHeight + frameYOffset, rectWidth, numRows * cursorHeight);
+			GridRect rect;
+			rect.color = Colors::cyan;
+			rect.alpha = allLines[i].executionDegrade;
+			visibleRows(i, rect.row, rect.numRows);
+			// it reaches the edge of the pane (rectWidth, see the geometry of the grid below)
+			rect.toEnd = true;
+			textGrid.backgrounds.push_back(rect);
 			if ((ofGetElapsedTimeMillis() - allLines[i].executionTimeStamp) >= EXECUTIONRAMPSTART) {
 				// calculate how many steps the brightness has to dim, depending on the elapsed time
 				// and the step per millisecond
@@ -775,11 +781,14 @@ void Editor::drawText()
 					}
 				}
 				if (row >= 0 && row < maxNumLines && col >= 0) {
-					ofSetColor(ofColor::magenta*((ofApp*)ofGetAppPtr())->brightnessCoeff);
 					bracketHighlightRectX = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset + (col * oneCharacterWidth);
 					bracketHighlightRectY = (row * cursorHeight) + frameYOffset;
-					ofDrawRectangle(bracketHighlightRectX, bracketHighlightRectY, oneCharacterWidth, cursorHeight);
-					ofSetColor(255*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+					GridRect rect;
+					rect.row = row;
+					rect.col = col;
+					rect.color = Colors::magenta;
+					rect.snap = true;
+					textGrid.backgrounds.push_back(rect);
 				}
 			}
 		}
@@ -788,14 +797,13 @@ void Editor::drawText()
 	/*******************************************************************/
 	// then the actual text
 	std::string strOnCursorLine;
-	int strOnCursorLineYOffset = frameYOffset;
 	int strXOffset = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset;
 	// the extra counter below starts from 0, whereas i starts from lineCountOffset
 	count = 0;
 	// we'll get the color of the text where the cursor is
 	// for this reason, we need to calculate the X position of the cursor here, and not below
 	// where we draw the cursor
-	ofColor cursorColor = ((ofApp*)ofGetAppPtr())->brightnessCoeff;
+	Color cursorColor = foreground;
 	// the visible part of the line before the cursor, from how far the line has scrolled
 	std::string beforeCursorStr = allLines[cursorLineIndex].str.substr(std::min((size_t)allLines[cursorLineIndex].startPos, allLines[cursorLineIndex].str.size()), std::max(0, cursorPos));
 	int cursorX = lineNumberWidth + font.stringWidth(beforeCursorStr) + oneAndHalfCharacterWidth + frameXOffset;
@@ -813,14 +821,21 @@ void Editor::drawText()
 		cursorScreenRow = firstRowOf(cursorLineIndex) + rowCol.first;
 	}
 	bool cursorDrawn = false;
+	// the selected text, drawn in black on goldenrod after the text of its row
+	auto addSelection = [&](int row, int col, const std::string& text, bool snap) {
+		GridSpan span;
+		span.row = row;
+		span.col = col;
+		span.text = text;
+		// the background is as wide as font.stringWidth() of the text, which counts a space at its end twice
+		span.backgroundCols = (int)text.size() + (!text.empty() && text.back() == ' ' ? 1 : 0);
+		span.background = Colors::goldenRod;
+		span.textColor = Color(0, 0, 0);
+		span.snap = snap;
+		textGrid.selections.push_back(span);
+	};
 	for (int i = lineCountOffset; i < loopIter; i++) {
-		// the baseline of the first row of the line
-		int strYOffset = baselineOfRow(firstRowOf(i));
-		if (i == cursorLineIndex) {
-			strOnCursorLine = allLines[i].str;
-			// the baseline of the row of the cursor, which is not the first row of a wrapped line if the cursor is further in it
-			strOnCursorLineYOffset = baselineOfRow(cursorScreenRow);
-		}
+		if (i == cursorLineIndex) strOnCursorLine = allLines[i].str;
 		// draw all strings that are not empty
 		if (allLines[i].str.size() > 0) {
 			// iterate through each word to check for keywords
@@ -833,6 +848,19 @@ void Editor::drawText()
 			bool isCursorInsideKeyword = false;
 			int charAccum = 0;
 			int quotesCounter = 0;
+			// the cursor drawn in the color of the token it is on, before the token, which is drawn over it (see GridCursor::splitCol)
+			auto cursorInRow = [&](Color color) {
+				int splitCol;
+				if (wrapLines) {
+					int tokenRow = firstRowOf(i) + charAccum / wrapWidth;
+					splitCol = (tokenRow == cursorScreenRow ? charAccum % wrapWidth : 0);
+				}
+				else {
+					splitCol = charAccum - allLines[i].startPos;
+				}
+				markCursor(cursorX, color, true, splitCol);
+				currentColor = color;
+			};
 			size_t subtokensSizeAccum = 0;
 			if (tokens.size() == 0) {
 				isComment = false;
@@ -877,29 +905,29 @@ void Editor::drawText()
 					}
 					subtokensSizeAccum += (*subit).size();
 					if (allLines[i].tracebackStr.size() > 0 && allLines[i].tracebackColor > 0) {
-						ofSetColor(((ofApp*)ofGetAppPtr())->backgroundColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						currentColor = background;
 					}
 					else if ((thisLang == 0 && startsWith(*subit, "%")) || (thisLang == 1 && startsWith(*subit, "#"))) {
-						ofSetColor(ofColor::gray*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						currentColor = Colors::gray;
 						isComment = true;
 						if (isCursorInsideKeyword && !cursorDrawn) {
-							cursorColor = ofColor::gray;
-							drawCursor(cursorX, cursorColor);
+							cursorColor = Colors::gray;
+							cursorInRow(cursorColor);
 							cursorDrawn = true;
 						}
 					}
 					// Python decorators (an @ inside a comment is part of the comment)
 					else if (thisLang == 1 && startsWith(*subit, "@") && !isComment) {
-						ofSetColor(ofColor::coral*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						currentColor = Colors::coral;
 						if (isCursorInsideKeyword && !cursorDrawn) {
-							cursorColor = ofColor::coral;
-							drawCursor(cursorX, cursorColor);
+							cursorColor = Colors::coral;
+							cursorInRow(cursorColor);
 							cursorDrawn = true;
 						}
 					}
 					// quotes inside a comment are part of the comment, and don't start a string
 					else if ((*subit == "\"" || (thisLang == 1 && *subit == "'")) && !isComment) {
-						ofSetColor(ofColor::aqua*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						currentColor = Colors::aqua;
 						if (quotesCounter == 0) {
 							isString = true;
 							quotesCounter++;
@@ -912,28 +940,28 @@ void Editor::drawText()
 							}
 						}
 						if (isCursorInsideKeyword && !cursorDrawn) {
-							cursorColor = ofColor::aqua;
-							drawCursor(cursorX, cursorColor);
+							cursorColor = Colors::aqua;
+							cursorInRow(cursorColor);
 							cursorDrawn = true;
 						}
 					}
 					else {
 						if ((*subit).size() > 0 && (isalpha((*subit)[0]) || (thisLang == 0 && startsWith(*subit, "\\"))) && !isComment && !isString) {
 							int firstCharNdx = 0;
-							ofColor color;
+							Color color;
 							if (startsWith(*subit, "\\") && (*subit).size() > 1) firstCharNdx = 1;
 							if (((ofApp*)ofGetAppPtr())->session.commandsMap[thisLang][(*subit)[firstCharNdx]].find(*subit) != ((ofApp*)ofGetAppPtr())->session.commandsMap[thisLang][(*subit)[firstCharNdx]].end()) {
-								color = toOf(((ofApp*)ofGetAppPtr())->session.commandsMap[thisLang][(*subit)[firstCharNdx]][*subit]);
+								color = ((ofApp*)ofGetAppPtr())->session.commandsMap[thisLang][(*subit)[firstCharNdx]][*subit];
 								if (isCursorInsideKeyword && !cursorDrawn) {
 									cursorColor = color;
-									drawCursor(cursorX, cursorColor);
+									cursorInRow(cursorColor);
 									cursorDrawn = true;
 								}
 							}
 							else {
-								color = ((ofApp*)ofGetAppPtr())->foregroundColor;
+								color = foreground;
 							}
-							ofSetColor(color*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+							currentColor = color;
 						}
 						//if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang].find(*subit) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang].end()
 						//		&& !isComment && !isString) {
@@ -941,32 +969,32 @@ void Editor::drawText()
 						//	ofSetColor(color*((ofApp*)ofGetAppPtr())->brightnessCoeff);
 						//	if (isCursorInsideKeyword && !cursorDrawn) {
 						//		cursorColor = color;
-						//		drawCursor(cursorX, cursorColor);
+						//		cursorInRow(cursorColor);
 						//		cursorDrawn = true;
 						//	}
 						//}
 						else if ((*subit).size() == 0 && !isComment && !isString) {
-							ofSetColor(((ofApp*)ofGetAppPtr())->foregroundColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+							currentColor = foreground;
 						}
 						else if (isNumber(*subit) && !isComment && !isString) {
-							ofSetColor(ofColor::gold*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+							currentColor = Colors::gold;
 							if (isCursorInsideKeyword && !cursorDrawn) {
-								cursorColor = ofColor::gold;
-								drawCursor(cursorX, cursorColor);
+								cursorColor = Colors::gold;
+								cursorInRow(cursorColor);
 								cursorDrawn = true;
 							}
 						}
 						else if (!isComment && !isString) {
-							ofSetColor(((ofApp*)ofGetAppPtr())->foregroundColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+							currentColor = foreground;
 						}
 						else if (isComment && (isCursorInsideKeyword && !cursorDrawn)) {
-							cursorColor = ofColor::gray;
-							drawCursor(cursorX, cursorColor);
+							cursorColor = Colors::gray;
+							cursorInRow(cursorColor);
 							cursorDrawn = true;
 						}
 						else if (isString && (isCursorInsideKeyword && !cursorDrawn)) {
-							cursorColor = ofColor::aqua;
-							drawCursor(cursorX, cursorColor);
+							cursorColor = Colors::aqua;
+							cursorInRow(cursorColor);
 							cursorDrawn = true;
 						}
 					}
@@ -979,27 +1007,16 @@ void Editor::drawText()
 							int col = pos % wrapWidth;
 							size_t numChars = std::min((*subit).size() - k, (size_t)(wrapWidth - col));
 							if (row >= 0 && row < maxNumLines) {
-								font.drawString((*subit).substr(k, numChars), strXOffset + (col * oneCharacterWidth), baselineOfRow(row));
+								textGrid.write(row, col, (*subit).substr(k, numChars), currentColor);
 							}
 							k += numChars;
 						}
 					}
 					else {
-						size_t numCharsToRemove = 0;
-						size_t firstCharToDisplay = 0;
-						int xOffsetModified = xOffset;
-						int startPos = 0;
-						if (i == cursorLineIndex) startPos = allLines[i].startPos;
-						if (charAccum < startPos) {
-							firstCharToDisplay = (size_t)(startPos - charAccum);
-							xOffsetModified += (firstCharToDisplay * oneCharacterWidth);
-						}
-						if ((charAccum + (int)(*subit).size() - startPos) > maxCharactersPerString) {
-							numCharsToRemove = ((size_t)charAccum + (*subit).size()) - (size_t)startPos - (size_t)maxCharactersPerString - 1;
-						}
-						if (firstCharToDisplay < (*subit).size() && numCharsToRemove < (*subit).size()) {
-							font.drawString((*subit).substr(firstCharToDisplay, (*subit).size()-numCharsToRemove), xOffsetModified, strYOffset);
-						}
+						// the characters of the token in the columns they fall in, as the line of the cursor can be scrolled horizontally
+						// (the grid has one column more than maxCharactersPerString, and leaves out what falls outside it)
+						int startPos = (i == cursorLineIndex ? allLines[i].startPos : 0);
+						textGrid.write(firstRowOf(i), charAccum - startPos, *subit, currentColor);
 					}
 					xOffset += ((*subit).size() * oneCharacterWidth);
 					charAccum += (int)(*subit).size();
@@ -1019,33 +1036,16 @@ void Editor::drawText()
 					int col = pos % wrapWidth;
 					int numChars = std::min(end - pos, wrapWidth - col);
 					if (row >= 0 && row < maxNumLines) {
-						std::string strInBlack = allLines[i].str.substr(pos, numChars);
-						int boxXOffset = strXOffset + (col * oneCharacterWidth);
-						ofSetColor(ofColor::goldenRod*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-						ofDrawRectangle(boxXOffset, (row * cursorHeight) + frameYOffset, font.stringWidth(strInBlack), cursorHeight);
-						ofSetColor(0);
-						font.drawString(strInBlack, boxXOffset, baselineOfRow(row));
+						addSelection(row, col, allLines[i].str.substr(pos, numChars), false);
 					}
 					pos += numChars;
 				}
 				count++;
 				continue;
 			}
-			int boxXOffset = lineNumberWidth + oneAndHalfCharacterWidth + \
-							 (posAndSize[0]*oneCharacterWidth) + frameXOffset;
-			int boxYOffset = (count * cursorHeight) + frameYOffset;
-			// the bounding box coordinates of the highlighted string don't need the offset
-			// which is greater than 0 if the string is too long
-			// but the substring that is drawn on top of this box does need it
-			posAndSize[0] += allLines[i].startPos;
-			std::string strInBlack = allLines[i].str.substr(posAndSize[0], posAndSize[1]);
-			int widthLocal = font.stringWidth(strInBlack);
-			// draw the selecting rectangle
-			ofSetColor(ofColor::goldenRod*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-			ofDrawRectangle(boxXOffset, boxYOffset, widthLocal, cursorHeight);
-			ofSetColor(0);
-			// and then the selected string in black
-			font.drawString(strInBlack, boxXOffset, strYOffset);
+			// the column of the selection doesn't need the offset of a line scrolled horizontally
+			// but the selected text does need it
+			addSelection(count, posAndSize[0], allLines[i].str.substr(posAndSize[0] + allLines[i].startPos, posAndSize[1]), true);
 		}
 		count++;
 	}
@@ -1060,8 +1060,15 @@ void Editor::drawText()
 			for (int i = lineCountOffset; i < loopIter; i++) {
 				if (allLines[i].id >= 0) visibleLines[allLines[i].id] = i;
 			}
-			ofSetColor(((ofApp*)ofGetAppPtr())->foregroundColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-			ofNoFill();
+			auto addOutline = [&](int row, int col, int numCols) {
+				GridRect rect;
+				rect.row = row;
+				rect.col = col;
+				rect.numCols = numCols;
+				rect.color = foreground;
+				rect.outline = true;
+				textGrid.outlines.push_back(rect);
+			};
 			for (const EditorNoteSpan& span : spans) {
 				auto it = visibleLines.find(span.lineId);
 				if (it == visibleLines.end()) continue;
@@ -1077,7 +1084,7 @@ void Editor::drawText()
 						int col = pos % wrapWidth;
 						int numChars = std::min(end - pos, wrapWidth - col);
 						if (row >= 0 && row < maxNumLines) {
-							ofDrawRectangle(strXOffset + (col * oneCharacterWidth), (row * cursorHeight) + frameYOffset, numChars * oneCharacterWidth, cursorHeight);
+							addOutline(row, col, numChars);
 						}
 						pos += numChars;
 					}
@@ -1088,24 +1095,21 @@ void Editor::drawText()
 					int firstCol = std::max(0, span.start - startPos);
 					int lastCol = std::min(maxCharactersPerString + 1, span.start + span.length - startPos);
 					if (lastCol > firstCol) {
-						ofDrawRectangle(strXOffset + (firstCol * oneCharacterWidth), (firstRowOf(i) * cursorHeight) + frameYOffset,
-								(lastCol - firstCol) * oneCharacterWidth, cursorHeight);
+						addOutline(firstRowOf(i), firstCol, lastCol - firstCol);
 					}
 				}
 			}
-			ofFill();
 		}
 	}
 
 	/*******************************************************************/
 	// then draw the cursor
-	if (!cursorDrawn) drawCursor(cursorX, ((ofApp*)ofGetAppPtr())->foregroundColor);
+	if (!cursorDrawn) markCursor(cursorX, foreground, false, 0);
 
 	/*******************************************************************/
 	// then the hint of arguments, in the spaces that make room for it (see above), in a color between the foreground and the background
 	if (!argHint.empty()) {
-		ofApp* app = (ofApp*)ofGetAppPtr();
-		ofSetColor(app->foregroundColor.getLerped(app->backgroundColor, 0.55f) * app->brightnessCoeff);
+		Color hintColor = toColor(app->foregroundColor.getLerped(app->backgroundColor, 0.55f));
 		for (size_t c = 0; c < argHint.size(); c++) {
 			int row, col;
 			if (wrapLines) {
@@ -1119,7 +1123,7 @@ void Editor::drawText()
 				if (col >= maxCharactersPerString) break;
 			}
 			if (row < 0 || row >= maxNumLines || col < 0) continue;
-			font.drawString(std::string(1, argHint[c]), strXOffset + (col * oneCharacterWidth), baselineOfRow(row));
+			textGrid.marks.push_back({row, col, {std::string(1, argHint[c]), hintColor}});
 		}
 	}
 
@@ -1128,15 +1132,16 @@ void Editor::drawText()
 	if (activity && !inserting && !typingShell && !dPressed) {
 		if (cursorPos < (int)strOnCursorLine.size() && cursorPos <= maxCursorPos()) {
 			std::string onTopOfCursorStr = strOnCursorLine.substr(cursorPos+allLines[cursorLineIndex].startPos, 1);
-			ofSetColor(0);
-			font.drawString(onTopOfCursorStr, cursorX, strOnCursorLineYOffset);
+			textGrid.cursor.charOnTop = onTopOfCursorStr;
+			textGrid.cursor.charColor = Color(0, 0, 0);
 		}
 	}
 
 	/*******************************************************************/
 	// then draw the line numbers
 	count = 0;
-	ofSetColor(((ofApp*)ofGetAppPtr())->foregroundColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+	// the line numbers are right-aligned in their own grid, which starts half a character from the edge of the pane
+	int gutterX = halfCharacterWidth + frameXOffset;
 	for (int i = lineCountOffset; i < loopIter; i++) {
 		int xOffset = halfCharacterWidth;
 		int timesTen = 1;
@@ -1156,38 +1161,49 @@ void Editor::drawText()
 		xOffset += frameXOffset;
 		// a wrapped line has its number on its first row only, which might be above the top of the pane for a very long line
 		int row = firstRowOf(i);
-		if (row >= 0 && row < maxNumLines) font.drawString(std::to_string(i+1), xOffset, baselineOfRow(row));
+		if (row >= 0 && row < maxNumLines) gutterGrid.write(row, (xOffset - gutterX) / oneCharacterWidth, std::to_string(i+1), foreground);
 		count++;
 	}
+	/*******************************************************************/
+	// paint the grids: the text area from the end of the line numbers, with its row backgrounds reaching the edge of the pane, and the line numbers
+	GridGeometry geometry;
+	geometry.x = strXOffset;
+	geometry.y = frameYOffset;
+	geometry.cellWidth = oneCharacterWidth;
+	geometry.cellHeight = cursorHeight;
+	geometry.descent = characterOffset;
+	geometry.toEndWidth = rectWidth;
+	paintGrid(textGrid, geometry, font, app->brightnessCoeff);
+	GridGeometry gutterGeometry = geometry;
+	gutterGeometry.x = gutterX;
+	paintGrid(gutterGrid, gutterGeometry, font, app->brightnessCoeff);
 	if (prevCursorPos != cursorPos) prevCursorPos = cursorPos;
 }
 
 //--------------------------------------------------------------
-void Editor::drawCursor(int cursorX, ofColor cursorColor)
+void Editor::markCursor(int cursorX, Color color, bool inRow, int splitCol)
 {
-	if (!activity) {
-		ofNoFill();
-	}
-	// we have calculated the X position of the cursor before we drew the text, and its row (see drawText())
-	int cursorY = (cursorScreenRow * cursorHeight) + frameYOffset; //+ characterOffset
-	// the pop-up of autocompletion is placed by the cursor (see drawCompletions())
+	// the cursor of the text grid (see drawText()): a block in normal mode, a bar in insert mode, a line under the character after d
+	// an outline in a pane that isn't active, and none while a shell command is typed
 	cursorScreenX = cursorX;
-	cursorScreenY = cursorY;
-	ofSetColor(cursorColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+	cursorScreenY = (cursorScreenRow * cursorHeight) + frameYOffset;
+	GridCursor& cursor = textGrid.cursor;
 	if ((activity && !inserting && !typingShell) || !activity) {
-		if (dPressed) {
-			ofDrawLine(cursorX, cursorY+cursorHeight, cursorX+oneCharacterWidth, cursorY+cursorHeight);
-		}
-		else {
-			ofDrawRectangle(cursorX, cursorY, oneCharacterWidth, cursorHeight);
-		}
+		if (dPressed) cursor.shape = GridCursor::Shape::underline;
+		else cursor.shape = (activity ? GridCursor::Shape::block : GridCursor::Shape::outline);
 	}
 	else if (activity && inserting && !typingShell) {
-		ofDrawLine(cursorX, cursorY, cursorX, cursorY+cursorHeight);
+		cursor.shape = GridCursor::Shape::bar;
 	}
-	if (!activity) {
-		ofFill();
+	else {
+		cursor.shape = GridCursor::Shape::none;
 	}
+	int textX = lineNumberWidth + oneAndHalfCharacterWidth + frameXOffset;
+	cursor.row = cursorScreenRow;
+	cursor.col = (cursorX - textX) / oneCharacterWidth;
+	cursor.color = color;
+	cursor.inRow = inRow;
+	cursor.splitCol = splitCol;
 }
 
 //--------------------------------------------------------------
