@@ -12,7 +12,7 @@ Each step is one commit, checked with the snapshot tests, which include the dry 
 - [x] Step 4: `FrontendHost` (`frontend.h`): note highlighting, line messages, the window, pane language and help, editor options, and the display methods of `\score`. Left for later, where that code moves anyway: the editor's file dialogs (stage 2), the display updates inside engine functions such as `addedInstruments()`, and `parseStrings()`, which reads the editor (step 5)
 - [x] Step 5: `Session` (`session.h`, `session.cpp`, `parser.cpp`): the state of a session, the parser and the sequencer, which `ofApp` holds. The engine reaches the user interface only through `FrontendHost`, and is free of `ofGetAppPtr()`. Follow-up: `ofApp::storeEditorNoteSpans()` still reads parse state from the session; the engine could compute the positions of the notes in the line it parses, and the front end map them to its lines
 - [x] Step 6: split `Instrument`: `Instrument` keeps the musical data and the state the score shows, and forwards changes to an `InstrumentDisplay`; `OfInstrumentDisplay` (`of_instrument_display.h/.cpp`) holds `Staff`, `Notes` and the drawing. The engine asks for the layout of a bar through `FrontendHost::layoutInstrumentBar()`
-- [ ] Step 7: split `SharedData`
+- [x] Step 7: split `SharedData`: the view state (the window, staff positions, piano roll, beat visualization, the area below the panes, and the text typed from Python into a pane) is `ViewState` (`view_state.h`), held by `ofApp`. The sequencer and the parser reach it through `FrontendHost` events (`scoreShown()`, `sequencerStarted()`, `beat()`, `barStarted()`, `loopChanged()`, `setPythonTyping()`). Fields nothing read were removed
 - [ ] Step 8: headless tests
 
 ## Where the coupling is
