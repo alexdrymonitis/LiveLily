@@ -419,7 +419,7 @@ class Session
 		SharedData sharedData;
 		Sequencer sequencer;
 		// set by \score.play, and the sequencer starts at the next update of the app
-		bool startSequencer;
+		bool startSequencer{};
 
 		// the data directory of LiveLily (bin/data), where relative paths start, e.g. of a SoundFont, set by the app at its start
 		std::string dataDirectory;
@@ -444,48 +444,48 @@ class Session
 		// lists (\list): their items by their indexes, and their indexes by their names
 		std::map<int, std::list<std::string>> listMap;
 		std::map<std::string, int> listIndexes;
-		bool storingList;
-		int lastListIndex;
-		int listIndexCounter;
-		bool traversingList;
+		bool storingList{};
+		int lastListIndex{};
+		int listIndexCounter{};
+		bool traversingList{};
 		// the lines of \list.traverse, with their line numbers, and how many curly brackets are still open while they are collected
 		std::vector<std::pair<int, std::string>> traverseLines;
 		int traverseDepth = 0;
 
 		// functions (\function): their indexes by their names (the Function objects are in SharedData)
 		std::map<std::string, int> functionIndexes;
-		bool storingFunction;
+		bool storingFunction{};
 		// index of the function whose body is being stored, used only by the main thread
 		// kept separate from lastFunctionIndex, which is also set when a function is called from the sequencer thread
-		int storingFunctionIndex;
+		int storingFunctionIndex{};
 		// the curly bracket depth while storing a function body, the function's own brackets included
-		int functionBodyDepth;
-		int lastFunctionIndex;
+		int functionBodyDepth{};
+		int lastFunctionIndex{};
 
 		// the state of parsing bars (\bar), loops (\loop), and bars defined together (\bars)
 		// whether there was an error in a bar, so that its melodic lines are not stored
-		bool barError;
-		bool parsingBar;
-		bool parsingBars;
-		bool parsingLoop;
+		bool barError{};
+		bool parsingBar{};
+		bool parsingBars{};
+		bool parsingLoop{};
 		// the name of a \bars definition, until it is stored as a loop
 		std::string barsName;
 		// a counter of the instruments parsed, for first bars that are not complete
-		int numInstsParsed;
+		int numInstsParsed{};
 		// the loop command sent to connected score parts
 		std::string lastLoopCommand;
 		// the name of the bars of \bars, and the counter of its passes, one for every bar
 		std::string multiBarsName;
-		int barsIterCounter;
+		int barsIterCounter{};
 		// whether all the instruments of \bars have the same number of bars, and that number
-		bool numBarsToParseSet;
-		int numBarsToParse;
+		bool numBarsToParseSet{};
+		int numBarsToParse{};
 		// the number of bars defined by a \time, \tempo or \beatat with more than one value separated by |, inside \bars
 		// 0 if there is none, and the command that defined it, for error messages
-		int barsCmdNumBars;
+		int barsCmdNumBars{};
 		std::string barsCmdName;
-		int firstInstForBarsIndex;
-		bool firstInstForBarsSet;
+		int firstInstForBarsIndex{};
+		bool firstInstForBarsSet{};
 
 		// instruments (the Instrument objects are in SharedData)
 		// groups of instruments (\group), by their names
@@ -500,16 +500,16 @@ class Session
 		float accOffsetCoef = 0;
 		// the instrument whose line is parsed last, and the number of instruments
 		std::string lastInstrument;
-		int lastInstrumentIndex;
-		int tempNumInstruments;
+		int lastInstrumentIndex{};
+		int tempNumInstruments{};
 		// a warning of a command in a melodic line, which parseMelodicLine() returns if the line has no errors
 		std::string melodicLineWarning;
 		// the names of the notes, for parsing melodic lines
-		char noteChars[8];
+		char noteChars[8]{};
 		// adding a natural after the same note with an accidental only in the same octave (\score.correct onoctave), or in any
-		bool correctOnSameOctaveOnly;
+		bool correctOnSameOctaveOnly{};
 		// the duration of a step of the step sequencer and of the x - notation of rhythm staffs (\score.seqres)
-		int seqResolution;
+		int seqResolution{};
 		// dynamics from LilyPond notation (ppp to fff) as indexes, and as MIDI velocities, with a default 0 key mapped to 72
 		std::vector<int> scoreDynamics = {-9, -6, -3, -1, 1, 3, 6, 9};
 		std::map<int, int> mappedScoreDynamics = {{-9, 16}, {-6, 32}, {-3, 48}, {-1, 64}, {0, 72}, {1, 80}, {3, 96}, {6, 112}, {9, 127}};
@@ -527,59 +527,59 @@ class Session
 		std::map<std::string, std::vector<std::pair<std::string, std::string>>> oscServerFuncs;
 		// the receiver of OSC messages to LiveLily itself (e.g. of the maestro, or keys typed in another LiveLily)
 		std::shared_ptr<OscReceiver> oscReceiver = makeOscReceiver();
-		bool oscReceiverIsSet;
+		bool oscReceiverIsSet{};
 		// the serial port, and the serial devices as \listserialports listed them last, which \openserialport opens by their number
 		std::unique_ptr<SerialPort> serial = makeSerialPort();
 		std::vector<SerialDevice> serialDeviceList;
-		bool serialPortOpen;
+		bool serialPortOpen{};
 
 		// score parts on other computers (\instname.sendto)
 		// the IP and port of every instrument, so that instruments that send to the same server get the generic messages once
 		std::map<int, std::pair<std::string, int>> instrumentOSCHostPorts;
 		// time to wait for a positive/negative response from a server
-		uint64_t scorePartResponseTime;
+		uint64_t scorePartResponseTime{};
 		// pairs of instrument and bar where a score part client had an error receiving the data of the bar
 		std::vector<std::pair<int, int>> scorePartErrors;
 		// how many times a loop is called, by its index, in case some score parts haven't received the data of a bar correctly
 		std::map<int, int> partsReceivedOKCounters;
 		// sending the data of the bars of \bars to score parts, one at each frame
-		bool waitToSendBarDataToParts;
-		bool sendBarDataToPartsBool;
-		int sendBarDataToPartsCounter;
-		int barDataOKFromPartsCounter;
-		int numScorePartSenders;
-		bool checkIfAllPartsReceivedBarData;
-		uint64_t sendBarDataToPartsTimeStamp;
+		bool waitToSendBarDataToParts{};
+		bool sendBarDataToPartsBool{};
+		int sendBarDataToPartsCounter{};
+		int barDataOKFromPartsCounter{};
+		int numScorePartSenders{};
+		bool checkIfAllPartsReceivedBarData{};
+		uint64_t sendBarDataToPartsTimeStamp{};
 
 		// controlling LiveLily with an accelerometer (\maestro)
 		std::string maestroAddress;
 		std::string maestroToggleAddress;
 		std::string maestroLevareAddress;
-		int maestroValNdx;
-		bool maestroToggleSet;
-		bool receivingMaestro;
-		bool maestroInitialized;
-		int maestroBeatsIn;
-		unsigned long maestroTimeStamp;
-		float maestroValThresh;
+		int maestroValNdx{};
+		bool maestroToggleSet{};
+		bool receivingMaestro{};
+		bool maestroInitialized{};
+		int maestroBeatsIn{};
+		unsigned long maestroTimeStamp{};
+		float maestroValThresh{};
 		std::vector<float> maestroVec;
 
 		// Python (pyo) and audio
-		bool pyoSet;
+		bool pyoSet{};
 		// the audio stream for pyo and the click track (see audio.h), and whether it has been set up (see startSoundStream())
 		// with the callback of its samples, which the front end sets (it copies the output for the oscilloscope)
 		AudioCallback* audioCallback = nullptr;
 		std::unique_ptr<AudioStream> audioStream = makeAudioStream();
 		bool soundStreamSet = false;
 		// \samplerate, \buffersize, \inchannels, \outchannels, and the devices of \setaudiodev, \setinaudiodev and \setoutaudiodev
-		int sampleRate;
-		int bufferSize;
-		int inChannels;
-		int outChannels;
+		int sampleRate{};
+		int bufferSize{};
+		int inChannels{};
+		int outChannels{};
 		AudioDevice inSoundDevice;
 		AudioDevice outSoundDevice;
-		bool inSoundDeviceSet;
-		bool outSoundDeviceSet;
+		bool inSoundDeviceSet{};
+		bool outSoundDeviceSet{};
 };
 
 #endif

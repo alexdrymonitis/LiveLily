@@ -155,20 +155,20 @@ struct SharedData
 	Pyo pyo;
 #endif
 
-	int numInstruments;
+	int numInstruments{};
 
 	// articulation strings so each program can treat them differently
 	std::string articulSyms[8];
 	// beat counter used in case we need to send it over OSC or for possible other reasons
-	int beatCounter;
+	int beatCounter{};
 	// animation variables
-	bool animate;
-	bool setAnimation;
+	bool animate{};
+	bool setAnimation{};
 	// the variable below is used by the serquencer to iterate over one loop
-	unsigned thisBarIndex;
-	int loopIndex;
-	int tempLoopIndex;
-	int barCounter; // used for visualization on the score
+	unsigned thisBarIndex{};
+	int loopIndex{};
+	int tempLoopIndex{};
+	int barCounter{}; // used for visualization on the score
 	// two different tempo placeholders
 	// one for the running sequencer (tempo)
 	// and one to hold the tempo in ms without the conversion to the global minimum duration
@@ -178,7 +178,7 @@ struct SharedData
 	std::map<int, int> BPMMultiplier;
 	std::map<int, bool> beatAtDifferentThanDivisor;
 	std::map<int, std::vector<int>> beatAtValues;
-	unsigned beatAtValCounter;
+	unsigned beatAtValCounter{};
 	std::map<int, int> tempoBaseForScore;
 	std::map<int, bool> BPMDisplayHasDot;
 
@@ -197,10 +197,10 @@ struct SharedData
 	std::map<int, int> denominator;
 
 	// MIDI clock
-	unsigned long PPQN;
+	unsigned long PPQN{};
 	std::map<int, uint64_t> PPQNPerUs;
-	unsigned long PPQNCounter;
-	uint64_t PPQNTimeStamp;
+	unsigned long PPQNCounter{};
+	uint64_t PPQNTimeStamp{};
 };
 
 #endif
