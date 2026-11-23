@@ -8,6 +8,7 @@
 #include "frontend.h"
 #include "session.h"
 #include "of_instrument_display.h"
+#include "of_grid_painter.h"
 #include "view_state.h"
 
 // what is drawn of an instrument (its staff and its notes), which the front end attaches to every instrument
@@ -339,6 +340,11 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		int shellStrCursorPos;
 		size_t maxShellChars;
 		ofColor shellStrColor;
+		// the area below the panes (the messages of the lines, or the shell), as a grid of cells (see cellgrid.h), filled and painted by drawTraceback() and drawShell()
+		CellGrid belowGrid;
+		// paints belowGrid, whose rows start at the top of the area below the panes, with the text at the bottom of every row
+		void paintBelowGrid();
+		void writeBelowRows(const std::string& lines, int firstRow, Color color);
 		bool executingBind;
 		int editorBindingKey;
 		int editorBindingArg;

@@ -25,6 +25,9 @@ struct GridGeometry
 	// the row of the region the first row of the grid is in (the status line of a pane is below its text), so that
 	// the tops and baselines of the rows are computed from y as the editor computed them
 	int rowOffset = 0;
+	// the editor rounds the top of the cursor down to a whole pixel, and the shell draws its cursor lower than its row, by cursorShift
+	bool snapCursor = true;
+	float cursorShift = 0;
 };
 
 // brightness is the coefficient every color is multiplied with (ofApp::brightnessCoeff)

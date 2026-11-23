@@ -57,7 +57,7 @@ void paintCursor(const GridCursor& cursor, const GridGeometry& g, float brightne
 {
 	if (cursor.shape == GridCursor::Shape::none) return;
 	float x = g.x + (cursor.col * g.cellWidth);
-	int y = (int)rowTop(g, cursor.row, false);
+	float y = (g.snapCursor ? (float)(int)rowTop(g, cursor.row, false) : rowTop(g, cursor.row, false) + g.cursorShift);
 	setColor(cursor.color, brightness);
 	switch (cursor.shape) {
 		case GridCursor::Shape::block:

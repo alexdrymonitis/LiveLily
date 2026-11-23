@@ -784,24 +784,55 @@ void ofApp::drawTraceback()
 			resetScoreYOffset();
 		}
 	}
+	// the messages, one under the other, in the color of their kind (a note, a warning, or an error)
+	belowGrid.resize(numTracebackLines, (int)maxShellChars);
 	for (int j = 0; j < i; j++) {
+		Color color;
 		switch (editors[session.whichPane].getTracebackColor(ndxs[j])) {
-			case 0:
-				ofSetColor(ofColor::white*brightnessCoeff);
-				break;
 			case 1:
-				ofSetColor(ofColor::orange*brightnessCoeff);
+				color = Colors::orange;
 				break;
 			case 2:
-				ofSetColor(ofColor::red*brightnessCoeff);
+				color = Colors::red;
 				break;
 			default:
-				ofSetColor(ofColor::white*brightnessCoeff);
+				color = Colors::white;
 				break;
 		}
-		drawLines(tracebackStrs[j], halfCharacterWidth, view.tracebackYCoord+(cursorHeight*(tracebackCounter+1)));
+		writeBelowRows(tracebackStrs[j], tracebackCounter, color);
 		tracebackCounter += tracebackRows[j];
 	}
+	paintBelowGrid();
+}
+
+//--------------------------------------------------------------
+void ofApp::writeBelowRows(const std::string& lines, int firstRow, Color color)
+{
+	// the lines of a string (folded to the width of the window), from a row of the area below the panes on
+	size_t start = 0;
+	int row = firstRow;
+	while (start <= lines.size()) {
+		size_t end = lines.find('\n', start);
+		if (end == std::string::npos) end = lines.size();
+		belowGrid.write(row, 0, lines.substr(start, end - start), color);
+		row++;
+		start = end + 1;
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::paintBelowGrid()
+{
+	// the text sits at the bottom of every row (see drawLines()), and the cursor of the shell is lower than its row
+	GridGeometry geometry;
+	geometry.x = halfCharacterWidth;
+	geometry.y = view.tracebackYCoord;
+	geometry.cellWidth = (int)oneCharacterWidth;
+	geometry.cellHeight = cursorHeight;
+	geometry.descent = 0;
+	geometry.snapCursor = false;
+	geometry.cursorShift = cursorHeight - (cursorHeight * 0.85);
+	paintGrid(belowGrid, geometry, font, brightnessCoeff);
 }
 
 //--------------------------------------------------------------
@@ -877,18 +908,23 @@ void ofApp::drawShell()
 		shownRows += rows[i];
 	}
 	// the area below the panes has already moved up to fit all the lines, so the first line is right below its top
-	float y = view.tracebackYCoord + cursorHeight;
-	ofSetColor(shellStrColor*brightnessCoeff);
-	drawLines(shownRows, halfCharacterWidth, y);
+	int numRows = std::max(shellVisibleLines, 1);
+	int cursorRow = (int)(shellStrCursorPos / maxShellChars);
+	if (editors[session.whichPane].isTypingShell()) numRows = std::max(numRows, cursorRow + 1);
+	belowGrid.resize(numRows, (int)maxShellChars);
+	writeBelowRows(shownRows, 0, toColor(shellStrColor));
 	if (editors[session.whichPane].isTypingShell()) {
-		float cursorX = halfCharacterWidth + ((shellStrCursorPos % maxShellChars) * oneCharacterWidth);
-		float cursorY = y + ((shellStrCursorPos / maxShellChars) * cursorHeight);
-		ofDrawRectangle(cursorX, cursorY - (cursorHeight * 0.85), oneCharacterWidth, cursorHeight);
+		// a block in the color of the text, with the character under it in the color of the background
+		belowGrid.cursor.shape = GridCursor::Shape::block;
+		belowGrid.cursor.row = cursorRow;
+		belowGrid.cursor.col = (int)(shellStrCursorPos % maxShellChars);
+		belowGrid.cursor.color = toColor(shellStrColor);
 		if (shellStrCursorPos < (int)shellStr.size()) {
-			ofSetColor(backgroundColor*brightnessCoeff);
-			font.drawString(shellStr.substr(shellStrCursorPos, 1), cursorX, cursorY);
+			belowGrid.cursor.charOnTop = shellStr.substr(shellStrCursorPos, 1);
+			belowGrid.cursor.charColor = toColor(backgroundColor);
 		}
 	}
+	paintBelowGrid();
 }
 
 //--------------------------------------------------------------
