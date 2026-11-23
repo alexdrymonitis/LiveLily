@@ -1811,6 +1811,8 @@ void Editor::setCursorPos(int pos)
 	else if ((int)allLines[cursorLineIndex].str.size() > maxCharactersPerString) {
 		allLines[cursorLineIndex].startPos = (int)allLines[cursorLineIndex].str.size() - maxCharactersPerString;
 	}
+	// in visual mode, the selection follows the cursor (e.g. $ selects to the end of the line)
+	updateModeSelection();
 }
 
 //----------------------------------------------------------------
@@ -2913,7 +2915,36 @@ int Editor::getSelectionMode()
 //--------------------------------------------------------------
 void Editor::updateModeSelection()
 {
-	if (!visualMode || selectionMode == 0) return;
+	if (!visualMode) return;
+	if (selectionMode == 0) {
+		// a selection of characters (v) is also set from its anchor to the cursor, in the form the arrows set it in (see rightArrow())
+		// so that every motion selects (e.g. $ and 0), and the character under the cursor is included, as in Vim
+		// columns are relative to how far the line of the cursor has scrolled (startPos), as the cursor position is
+		int cursorCol = cursorPos + allLines[cursorLineIndex].startPos;
+		if (selAnchorLine == cursorLineIndex && selAnchorCol == cursorCol) {
+			// right after v, before the cursor moves, d deletes the character under the cursor (see ofApp::keyPressed())
+			highlightManyChars = false;
+			return;
+		}
+		highlightManyChars = true;
+		highlightManyCharsLineIndex = selAnchorLine;
+		topLine = std::min(selAnchorLine, cursorLineIndex);
+		bottomLine = std::max(selAnchorLine, cursorLineIndex);
+		if (selAnchorLine == cursorLineIndex) {
+			int startPos = allLines[cursorLineIndex].startPos;
+			firstChar = std::min(selAnchorCol, cursorCol) - startPos;
+			lastChar = std::max(selAnchorCol, cursorCol) + 1 - startPos;
+		}
+		else if (selAnchorLine < cursorLineIndex) {
+			// the selection starts at the anchor, on the top line
+			highlightManyCharsStart = selAnchorCol;
+		}
+		else {
+			// the selection ends after the anchor, on the bottom line
+			highlightManyCharsStart = selAnchorCol + 1;
+		}
+		return;
+	}
 	// the cursor moves with the functions that select characters (e.g. downArrow()), and the selection of lines or of a block
 	// is set from them here, from its anchor to the cursor, so it is always shown, also when the cursor returns to the anchor
 	highlightManyChars = true;
