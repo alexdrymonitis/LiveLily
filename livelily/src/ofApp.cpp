@@ -1495,10 +1495,11 @@ void ofApp::update()
 	}
 
 	if (showScope && session.pyoSet) {
+		// one waveform for every output channel, sized here as pyo starts in the engine (see Session::initPyo())
+		if ((int)scopeWaveforms.size() != session.outChannels) scopeWaveforms.resize(session.outChannels);
 		for (int i = 0; i < session.outChannels; i++) {
 			scopeWaveforms[i].clear();
 		}
-		if ((int)scopeWaveforms.size() != session.outChannels) scopeWaveforms.resize(session.outChannels);
 		// the last output buffer, copied from the audio thread
 		std::vector<float> samples;
 		int channels;
@@ -2673,7 +2674,8 @@ void ofApp::drawScope()
 			font.drawString(chanStr + std::to_string(i+1), x, y+(strHeight/2));
 		}
 		ofSetLineWidth(lineWidth*2);
-		for (int i = 0; i < session.outChannels; i++) {
+		// the waveforms, which update() makes, so there might be none yet (e.g. right after \score.show scope)
+		for (int i = 0; i < session.outChannels && i < (int)scopeWaveforms.size(); i++) {
 			// draw the actual waveforms
 			ofSetColor(toOf(session.colorNameMap[session.instrumentColors[i%(int)session.instrumentColors.size()]]));
 			scopeWaveforms[i].draw();
