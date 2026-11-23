@@ -1658,29 +1658,26 @@ void ofApp::drawTraceback()
 	}
 	// sort indexes based on time stamps (the smaller the time stamp, the higher it should be in the traceback)
 	quickSort(stamps, ndxs, 0, i-1);
-	int numTracebackLines = 0;
-	bool numTracebackLinesChanged = false;
-	for (int j = 0; j < i; j++) {
-		numTracebackLines += editors[session.whichPane].getTracebackNumLines(ndxs[j]);
-	}
-	if (numTracebackLines > 0) {
-		numTracebackLinesChanged = true;
-	}
 	// once we check the traceback messages of lines other than that where the cursor is
-	// we check the line of the cursor too
+	// we check the line of the cursor too, which is shown last
 	if (editors[session.whichPane].getTracebackStr(editors[session.whichPane].getCursorLineIndex()).size() > 0) {
-		// if there was something in the traceback, accumulate
-		if (numTracebackLinesChanged) {
-			numTracebackLines += editors[session.whichPane].getTracebackNumLines(editors[session.whichPane].getCursorLineIndex());
-		}
-		// otherwise just set this number of lines
-		else {
-			numTracebackLines = editors[session.whichPane].getTracebackNumLines(editors[session.whichPane].getCursorLineIndex());
-		}
-		// add the line index of the cursor to ndxs
 		ndxs[i] = editors[session.whichPane].getCursorLineIndex();
-		// increment i so the loop below includes the line of the cursor as well
 		i++;
+	}
+	// the messages, folded at the width of the window like the output of the shell (see drawShell()), and the number of their rows
+	maxShellChars = std::max((size_t)1, (size_t)(view.screenWidth / oneCharacterWidth));
+	std::vector<std::string> tracebackStrs(i);
+	std::vector<int> tracebackRows(i, 0);
+	int numTracebackLines = 0;
+	for (int j = 0; j < i; j++) {
+		std::string tracebackStr = "";
+		// if the stderr message is a warning or error in LiveLily (not Python), prepend the line number
+		if (editors[session.whichPane].getTracebackColor(ndxs[j]) > 0 && editors[session.whichPane].getLanguage() != 1) {
+			tracebackStr += "line " + ofToString(ndxs[j]+1) + ": ";
+		}
+		tracebackStr += editors[session.whichPane].getTracebackStr(ndxs[j]);
+		tracebackStrs[j] = wrapShellLines(tracebackStr, tracebackRows[j]);
+		numTracebackLines += tracebackRows[j];
 	}
 	// minimum number of lines is 2
 	// so the line that separates the panes from the traceback can fit one line of text
@@ -1736,14 +1733,8 @@ void ofApp::drawTraceback()
 				ofSetColor(ofColor::white*brightnessCoeff);
 				break;
 		}
-		std::string tracebackStr = "";
-		// if the stderr message is a warning or error in LiveLily (not Python), prepend the line number
-		if (editors[session.whichPane].getTracebackColor(ndxs[j]) > 0 && editors[session.whichPane].getLanguage() != 1) {
-			tracebackStr += "line " + ofToString(ndxs[j]+1) + ": ";
-		}
-		tracebackStr += editors[session.whichPane].getTracebackStr(ndxs[j]);
-		drawLines(tracebackStr, halfCharacterWidth, view.tracebackYCoord+(cursorHeight*(tracebackCounter+1)));
-		tracebackCounter += editors[session.whichPane].getTracebackNumLines(ndxs[j]);
+		drawLines(tracebackStrs[j], halfCharacterWidth, view.tracebackYCoord+(cursorHeight*(tracebackCounter+1)));
+		tracebackCounter += tracebackRows[j];
 	}
 }
 
