@@ -3268,7 +3268,7 @@ CmdOutput Session::cmdNotedur(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("percentage to \\notedur." + subcommand + " can't be 0");
 	}
 	if (percentage > 100) {
-		return genError("percentage to \\notedur." + subcommand + " can't be over 100\%");
+		return genError("percentage to \\notedur." + subcommand + " can't be over 100%");
 	}
 	if (subcommand != "normal" && subcommand != "staccato" && subcommand != "staccatissimo" && subcommand != "tenuto") {
 		return genError(subcommand + ": unknown \\notedur method");

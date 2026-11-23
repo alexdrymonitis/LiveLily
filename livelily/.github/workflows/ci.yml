@@ -1,0 +1,74 @@
+# builds LiveLily's core and its headless runner with CMake on Linux, macOS and Windows, and runs the tests with CTest
+# (see CMakeLists.txt and doc/stage3_inventory.md); the app itself still needs openFrameworks and is built locally (make wpyo)
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # with Python and pyo on Linux; macOS and Windows without them for now (see the plan's question of bundling Python)
+          - os: ubuntu-24.04
+            pyo: "ON"
+          - os: macos-14
+            pyo: "OFF"
+          - os: windows-2022
+            pyo: "OFF"
+    runs-on: ${{ matrix.os }}
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libfluidsynth-dev libasound2-dev portaudio19-dev libportmidi-dev liblo-dev libsndfile1-dev
+
+      - name: Set up Python
+        if: matrix.pyo == 'ON'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pyo
+        if: matrix.pyo == 'ON'
+        run: python -m pip install pyo
+
+      - name: Install the dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install pkg-config fluid-synth
+
+      - name: Cache the packages of vcpkg (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-cache
+          key: vcpkg-${{ runner.os }}-fluidsynth
+
+      - name: Install the dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/vcpkg-cache" | Out-Null
+          vcpkg install fluidsynth:x64-windows
+
+      - name: Configure
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            toolchain="-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          fi
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLIVELILY_PYO=${{ matrix.pyo }} $toolchain
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
