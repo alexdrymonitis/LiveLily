@@ -4,6 +4,7 @@
 #include "ofMain.h"
 #include "codetext.h"
 #include "cellgrid.h"
+#include "editor_host.h"
 #include "osc.h"
 #include <vector>
 #include <string>
@@ -85,6 +86,8 @@ struct binding
 class Editor
 {
 	public:
+		// the app that holds the editors (see editor_host.h), one for all of them, as panes are copied by value
+		static EditorHost* host;
 		Editor();
 		// set the ID of each editor
 		void setID(int id);

@@ -8,10 +8,14 @@
 #include "editor.h"
 #include "of_grid_painter.h"
 #include "of_color.h"
+
+// the app that holds the editors (see editor_host.h), which it sets when it starts
+EditorHost* Editor::host = nullptr;
 #include <set>
 #include "musicxml.h"
 #include "midifile.h"
-#include "ofApp.h"
+#include "session.h"
+#include "clock.h"
 
 //--------------------------------------------------------------
 Editor::Editor()
@@ -699,9 +703,8 @@ void Editor::drawText()
 	// a line that isn't wrapped shows one more character than maxCharactersPerString
 	textGrid.resize(std::max(0, maxNumLines), std::max(0, wrapLines ? wrapWidth : maxCharactersPerString + 1));
 	gutterGrid.resize(std::max(0, maxNumLines), numDigits);
-	ofApp* app = (ofApp*)ofGetAppPtr();
-	Color foreground = toColor(app->foregroundColor);
-	Color background = toColor(app->backgroundColor);
+	Color foreground = host->editorForeground();
+	Color background = host->editorBackground();
 	// the color the next text is drawn in, as the editor set it with ofSetColor() before drawing a token
 	Color currentColor = foreground;
 
@@ -731,10 +734,10 @@ void Editor::drawText()
 			// it reaches the edge of the pane (rectWidth, see the geometry of the grid below)
 			rect.toEnd = true;
 			textGrid.backgrounds.push_back(rect);
-			if ((ofGetElapsedTimeMillis() - allLines[i].executionTimeStamp) >= EXECUTIONRAMPSTART) {
+			if ((Clock::millis() - allLines[i].executionTimeStamp) >= EXECUTIONRAMPSTART) {
 				// calculate how many steps the brightness has to dim, depending on the elapsed time
 				// and the step per millisecond
-				int brightnessDegrade = (int)((ofGetElapsedTimeMillis() - (allLines[i].executionTimeStamp+EXECUTIONRAMPSTART)) * executionStepPerMs);
+				int brightnessDegrade = (int)((Clock::millis() - (allLines[i].executionTimeStamp+EXECUTIONRAMPSTART)) * executionStepPerMs);
 				allLines[i].executionDegrade = EXECUTIONBRIGHTNESS - brightnessDegrade;
 				if (allLines[i].executionDegrade < 0) {
 					allLines[i].executionDegrade = 0;
@@ -868,7 +871,7 @@ void Editor::drawText()
 				// the main ofApp stores the following LiveLily commands: \insts, \bar, \bars, \loop, \function, \list and \group
 				// we use this to determine if we should further tokenize each token of our string
 				// if a line starts with one of these commands, then we won't tokenize the token further
-				tokenizeDigits1 = find(((ofApp*)ofGetAppPtr())->session.commandsToNotTokenize.begin(), ((ofApp*)ofGetAppPtr())->session.commandsToNotTokenize.end(), tokens[0]) == ((ofApp*)ofGetAppPtr())->session.commandsToNotTokenize.end();
+				tokenizeDigits1 = find(host->editorSession().commandsToNotTokenize.begin(), host->editorSession().commandsToNotTokenize.end(), tokens[0]) == host->editorSession().commandsToNotTokenize.end();
 			}
 			for (auto it = tokens.begin(); it != tokens.end(); ++it) {
 				// tokenizing has already been done, but to separate digits properly
@@ -877,7 +880,7 @@ void Editor::drawText()
 				bool tokenizeDigits2 = false;
 				if (thisLang == 0) {
 					// the main ofApp also stores all the bar, loop, function and list names to the keywords vector
-					tokenizeDigits2 = find(((ofApp*)ofGetAppPtr())->session.keywords.begin(), ((ofApp*)ofGetAppPtr())->session.keywords.end(), *it) == ((ofApp*)ofGetAppPtr())->session.keywords.end();
+					tokenizeDigits2 = find(host->editorSession().keywords.begin(), host->editorSession().keywords.end(), *it) == host->editorSession().keywords.end();
 				}
 				// if the token starts with a backslash, then we don't tokenize based on digits
 				if (thisLang == 0 && startsWith(*it, "\\")) tokenizeDigits2 = false;
@@ -948,8 +951,8 @@ void Editor::drawText()
 							int firstCharNdx = 0;
 							Color color;
 							if (startsWith(*subit, "\\") && (*subit).size() > 1) firstCharNdx = 1;
-							if (((ofApp*)ofGetAppPtr())->session.commandsMap[thisLang][(*subit)[firstCharNdx]].find(*subit) != ((ofApp*)ofGetAppPtr())->session.commandsMap[thisLang][(*subit)[firstCharNdx]].end()) {
-								color = ((ofApp*)ofGetAppPtr())->session.commandsMap[thisLang][(*subit)[firstCharNdx]][*subit];
+							if (host->editorSession().commandsMap[thisLang][(*subit)[firstCharNdx]].find(*subit) != host->editorSession().commandsMap[thisLang][(*subit)[firstCharNdx]].end()) {
+								color = host->editorSession().commandsMap[thisLang][(*subit)[firstCharNdx]][*subit];
 								if (isCursorInsideKeyword && !cursorDrawn) {
 									cursorColor = color;
 									cursorInRow(cursorColor);
@@ -961,10 +964,10 @@ void Editor::drawText()
 							}
 							currentColor = color;
 						}
-						//if (((ofApp*)ofGetAppPtr())->commandsMap[thisLang].find(*subit) != ((ofApp*)ofGetAppPtr())->commandsMap[thisLang].end()
+						//if (host->commandsMap[thisLang].find(*subit) != host->commandsMap[thisLang].end()
 						//		&& !isComment && !isString) {
-						//	ofColor color = ((ofApp*)ofGetAppPtr())->commandsMap[thisLang][*subit];
-						//	ofSetColor(color*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+						//	ofColor color = host->commandsMap[thisLang][*subit];
+						//	ofSetColor(color*host->brightnessCoeff);
 						//	if (isCursorInsideKeyword && !cursorDrawn) {
 						//		cursorColor = color;
 						//		cursorInRow(cursorColor);
@@ -1052,7 +1055,7 @@ void Editor::drawText()
 	// then highlight the tokens of the notes that play, with a rectangle around each of them, as in Strudel (see \editor.animate)
 	// the tokens are found by the id of their line, among the visible lines, and only if the line still has the same text there
 	if (animationState && thisLang == 0) {
-		std::vector<EditorNoteSpan> spans = ((ofApp*)ofGetAppPtr())->getActiveEditorNoteSpans(objID);
+		std::vector<EditorNoteSpan> spans = host->getActiveEditorNoteSpans(objID);
 		if (!spans.empty()) {
 			std::map<int, int> visibleLines; // line index by line id
 			for (int i = lineCountOffset; i < loopIter; i++) {
@@ -1107,7 +1110,7 @@ void Editor::drawText()
 	/*******************************************************************/
 	// then the hint of arguments, in the spaces that make room for it (see above), in a color between the foreground and the background
 	if (!argHint.empty()) {
-		Color hintColor = toColor(app->foregroundColor.getLerped(app->backgroundColor, 0.55f));
+		Color hintColor = toColor(toOf(foreground).getLerped(toOf(background), 0.55f));
 		for (size_t c = 0; c < argHint.size(); c++) {
 			int row, col;
 			if (wrapLines) {
@@ -1171,10 +1174,10 @@ void Editor::drawText()
 	geometry.cellHeight = cursorHeight;
 	geometry.descent = characterOffset;
 	geometry.toEndWidth = rectWidth;
-	paintGrid(textGrid, geometry, font, app->brightnessCoeff);
+	paintGrid(textGrid, geometry, font, host->editorBrightness());
 	GridGeometry gutterGeometry = geometry;
 	gutterGeometry.x = gutterX;
-	paintGrid(gutterGrid, gutterGeometry, font, app->brightnessCoeff);
+	paintGrid(gutterGrid, gutterGeometry, font, host->editorBrightness());
 	if (prevCursorPos != cursorPos) prevCursorPos = cursorPos;
 }
 
@@ -1213,12 +1216,11 @@ void Editor::drawPaneSeparator()
 	are drawn after the score, so that when the traceback printing area grows bigger than its default size
 	it overrides the score
 	*/
-	ofApp* app = (ofApp*)ofGetAppPtr();
 	int fileNameXOffset = oneCharacterWidth + oneAndHalfCharacterWidth + frameXOffset;
 	std::string fileName;
 	// test if any error occured during loading a file
 	if (couldNotLoadFile || couldNotSaveFile) {
-		if ((ofGetElapsedTimeMillis() - fileLoadErrorTimeStamp) > FILE_LOAD_ERROR_DUR) {
+		if ((Clock::millis() - fileLoadErrorTimeStamp) > FILE_LOAD_ERROR_DUR) {
 			couldNotLoadFile = couldNotSaveFile = false;
 		}
 	}
@@ -1233,7 +1235,7 @@ void Editor::drawPaneSeparator()
 		textColor = Colors::red;
 	}
 	else {
-		textColor = toColor(app->backgroundColor);
+		textColor = host->editorBackground();
 		if (fileEdited) fileName += "*";
 	}
 	std::string mode;
@@ -1262,7 +1264,7 @@ void Editor::drawPaneSeparator()
 	geometry.cellHeight = cursorHeight;
 	geometry.descent = characterOffset;
 	geometry.toEndWidth = frameWidth;
-	float brightness = app->brightnessCoeff;
+	float brightness = host->editorBrightness();
 	paintGridBackgrounds(statusGrid, geometry, brightness);
 	geometry.x = halfCharacterWidth + frameXOffset;
 	paintGridText(statusGrid, geometry, font, brightness, 0, fileNameCol);
@@ -1335,11 +1337,9 @@ void Editor::setMaxCharactersPerString()
 {
 	lineNumberWidth = getNumDigitsOfLineCount() * oneCharacterWidth;
 	int width = frameWidth;
-	if (((ofApp*)ofGetAppPtr())->isScoreVisible()) {
-		if (frameWidth > ((ofApp*)ofGetAppPtr())->view.middleOfScreenX && ((ofApp*)ofGetAppPtr())->scoreOrientation == 0) {
-			width = ((ofApp*)ofGetAppPtr())->view.middleOfScreenX;
-		}
-	}
+	// with the score beside the panes, a pane wider than its half of the window fits its text in that half
+	int besideWidth = host->scoreBesidePanesWidth();
+	if (besideWidth >= 0 && frameWidth > besideWidth) width = besideWidth;
 	maxCharactersPerString = (width-lineNumberWidth-oneAndHalfCharacterWidth) / oneCharacterWidth;
 	maxCharactersPerString -= 1;
 	// when lines wrap, the rows have the width of the pane, and lines never scroll horizontally
@@ -1934,7 +1934,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 #endif
 			switch (thisLang) {
 				case 0:
-					((ofApp*)ofGetAppPtr())->parseStrings(executingLineLocal, numExecutingLines);
+					host->parseStrings(executingLineLocal, numExecutingLines);
 					break;
 				case 1:
 #ifdef USEPYO
@@ -1946,16 +1946,16 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 					// execute the Python line in verbose mode with the last argument set to 1
 					// check if we want to execute this line in the main thread
 					// a help that help(name) stored in code executed elsewhere (e.g. sent from LiveLily) is not for this pane
-					((ofApp*)ofGetAppPtr())->session.sharedData.pyo.takeHelp();
+					host->editorSession().sharedData.pyo.takeHelp();
 					if (startsWith(pyStr, "main ")) {
-						err = ((ofApp*)ofGetAppPtr())->session.sharedData.pyo.exec_main(pyStr.substr(5).c_str());
+						err = host->editorSession().sharedData.pyo.exec_main(pyStr.substr(5).c_str());
 					}
 					else {
-						err = ((ofApp*)ofGetAppPtr())->session.sharedData.pyo.exec(pyStr.c_str());
+						err = host->editorSession().sharedData.pyo.exec(pyStr.c_str());
 					}
 					if (err) {
 						// get the error message
-						std::string errStr = ((ofApp*)ofGetAppPtr())->session.sharedData.pyo.getErrorMsg();
+						std::string errStr = host->editorSession().sharedData.pyo.getErrorMsg();
 						// get the position of the end of the word "line"
 						size_t lineNdx = errStr.find("line")+ 5;
 						// insert the line number of the editor and not the Python interpreter
@@ -1964,7 +1964,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 						setTraceback(3, errStr, executingLineLocal, lineNdx);
 					}
 					else {
-						std::vector<std::string> pyStdout = ((ofApp*)ofGetAppPtr())->session.sharedData.pyo.getStdout();
+						std::vector<std::string> pyStdout = host->editorSession().sharedData.pyo.getStdout();
 						if (pyStdout.size() > 1) {
 							bool sendToLily = false;
 							int whichPane = objID;
@@ -1987,7 +1987,7 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 									}
 								}
 								else {
-									whichPane = ((ofApp*)ofGetAppPtr())->session.whichPane;
+									whichPane = host->editorSession().whichPane;
 									startChar = pyStdout[0].find(" ") + 1;
 									if (startChar >= pyStdout[0].size()) {
 										sendToLily = false;
@@ -1999,22 +1999,21 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 								if (i < pyStdout.size()-2 && !endsWith(pyStdout[i], "\n")) s += "\n";
 								if (sendToLily) {
 									startChar = (i == 0 ? startChar : 0);
-									((ofApp*)ofGetAppPtr())->view.pyStdoutStr += s.substr(startChar);
+									host->typeFromPython(s.substr(startChar));
 								}
 								else {
 									setTraceback(1, s, executingLineLocal);
 								}
 							}
 							if (sendToLily) {
-								((ofApp*)ofGetAppPtr())->view.whichPyPane = whichPane;
-								((ofApp*)ofGetAppPtr())->view.typePyStr = true;
+								host->startTypingFromPython(whichPane);
 							}
 						}
 						else {
 							releaseTraceback(executingLineLocal);
 						}
 						// help(name) in the executed code opens its help in this pane, as \help does in LiveLily
-						std::string help = ((ofApp*)ofGetAppPtr())->session.sharedData.pyo.takeHelp();
+						std::string help = host->editorSession().sharedData.pyo.takeHelp();
 						size_t nameEnd = help.find('\n');
 						if (nameEnd != std::string::npos) loadHelpText(help.substr(0, nameEnd), help.substr(nameEnd + 1));
 					}
@@ -2334,17 +2333,17 @@ void Editor::setString(std::string s)
 	if (s == "\n" || s == "\b") {
 		int ascii = int(s[0]);
 		if (ascii == 10) ascii = 13;
-		int tempPaneNdx = ((ofApp*)ofGetAppPtr())->session.whichPane;
+		int tempPaneNdx = host->editorSession().whichPane;
 		// if we're executing code from another pane that runs Python
 		// we must change the current active pane of the editor to the one receiving the string from Python
 		// because parseStrings() in ofApp.cpp executes lines from the currently active pane
 		if (ascii == 13 && (ctrlPressed || shiftPressed)) {
-			((ofApp*)ofGetAppPtr())->session.whichPane = ((ofApp*)ofGetAppPtr())->view.whichPyPane;
+			host->editorSession().whichPane = host->pythonTypingPane();
 		}
 		allOtherKeys(ascii);
 		// if we have executed code, we must reset the active pane
 		if (ascii == 13 && (ctrlPressed || shiftPressed)) {
-			((ofApp*)ofGetAppPtr())->session.whichPane = tempPaneNdx;
+			host->editorSession().whichPane = tempPaneNdx;
 		}
 	}
 	else {
@@ -3170,13 +3169,13 @@ void Editor::detectExecutingChunk()
 	if (highlightManyChars) {
 		for (int i = topLine; i <= bottomLine; i++) {
 			allLines[i].isBeingExecuted = true;
-			allLines[i].executionTimeStamp = ofGetElapsedTimeMillis();
+			allLines[i].executionTimeStamp = Clock::millis();
 			allLines[i].executionDegrade = EXECUTIONBRIGHTNESS;
 		}
 	}
 	else {
 		allLines[cursorLineIndex].isBeingExecuted = true;
-		allLines[cursorLineIndex].executionTimeStamp = ofGetElapsedTimeMillis();
+		allLines[cursorLineIndex].executionTimeStamp = Clock::millis();
 		allLines[cursorLineIndex].executionDegrade = EXECUTIONBRIGHTNESS;
 	}
 }
@@ -3274,7 +3273,7 @@ void Editor::allOtherKeys(int key)
 	// typing a character, or deleting one with backspace or delete, but not new lines or Ctrl+key combinations
 	bool editsText = (key == 8 || key == 127 || (key >= 32 && key < 127));
 	if (callAssemble && editsText && !ctrlPressed && alignment && inserting && thisLang == 0) {
-		((ofApp*)ofGetAppPtr())->alignAfterEdit(objID, key == 32);
+		host->alignAfterEdit(objID, key == 32);
 	}
 	afterChange(pastingOrCutting || key == 13);
 	// the suggestions follow what is typed, but not Ctrl+key combinations (e.g. saving)
@@ -3378,7 +3377,7 @@ void Editor::copyString(int copyTo, bool dehighlight)
 		strToCopy = replaceCharInStr(strToCopy, tabStr, "\t");
 		switch (copyTo) {
 			case 0:
-				ofGetWindowPtr()->setClipboardString(strToCopy);
+				host->setClipboard(strToCopy);
 				break;
 			case 1:
 				yankedStr = strToCopy;
@@ -3390,7 +3389,7 @@ void Editor::copyString(int copyTo, bool dehighlight)
 	else {
 		switch (copyTo) {
 			case 0:
-				ofGetWindowPtr()->setClipboardString("");
+				host->setClipboard("");
 				break;
 			case 1:
 				{
@@ -3419,7 +3418,7 @@ void Editor::pasteString(int pasteFrom)
 	beforeChange(true);
 	pasteStringUnrecorded(pasteFrom);
 	// with alignment on, the bar definitions the pasted text went to are aligned again, in the same undo step (see \editor.alignment)
-	if (alignment && thisLang == 0) ((ofApp*)ofGetAppPtr())->alignAfterPaste(objID);
+	if (alignment && thisLang == 0) host->alignAfterPaste(objID);
 	afterChange(true);
 }
 
@@ -3483,7 +3482,7 @@ void Editor::pasteStringUnrecorded(int pasteFrom)
 	// first check if we do have a std::string to paste
 	switch (pasteFrom) {
 		case 0:
-			fromClipboard = ofGetWindowPtr()->getClipboardString();
+			fromClipboard = host->clipboard();
 			if (fromClipboard.empty()) return;
 			break;
 		case 1:
@@ -3737,7 +3736,7 @@ void Editor::beforeChange(bool newUndoStep)
 	if (changeDepth++ > 0) return;
 	// typing continues the current step, if the cursor is where the previous change left it, and there was no long pause
 	bool continueStep = (!newUndoStep && undoGroupOpen && cursorLineIndex == undoGroupCursorLine && cursorPos == undoGroupCursorPos &&
-			ofGetElapsedTimeMillis() - undoGroupTimeStamp < 1500);
+			Clock::millis() - undoGroupTimeStamp < 1500);
 	if (continueStep) {
 		hasPendingSnapshot = false;
 	}
@@ -3756,7 +3755,7 @@ void Editor::afterChange(bool endUndoStep)
 	// with alignment on, a change of the text in normal mode (e.g. x, dd, dw, or deleting a selection) aligns the bar definitions again
 	// in the same undo step, as typing and pasting do in insert mode (see allOtherKeys() and pasteString())
 	if (alignment && !inserting && thisLang == 0 && hasPendingSnapshot && textDiffers(pendingSnapshot)) {
-		((ofApp*)ofGetAppPtr())->alignAfterPaste(objID);
+		host->alignAfterPaste(objID);
 	}
 	// the text as it was before the change is stored only if the text changed
 	// so that moving the cursor or executing code doesn't create steps that undo nothing
@@ -3774,7 +3773,7 @@ void Editor::afterChange(bool endUndoStep)
 	if (undoGroupOpen) {
 		undoGroupCursorLine = cursorLineIndex;
 		undoGroupCursorPos = cursorPos;
-		undoGroupTimeStamp = ofGetElapsedTimeMillis();
+		undoGroupTimeStamp = Clock::millis();
 	}
 	if (endUndoStep) undoGroupOpen = false;
 }
@@ -3953,7 +3952,7 @@ void Editor::setTraceback(int errorCode, std::string errorStr, int lineNum, size
 	// find number of newlines in traceback std::string
 	int numLines = count(begin(errorStr), end(errorStr), '\n') + 1;
 	allLines[lineNum].tracebackStr = errorStr;
-	allLines[lineNum].tracebackTimeStamp = ofGetElapsedTimeMillis();
+	allLines[lineNum].tracebackTimeStamp = Clock::millis();
 	allLines[lineNum].tracebackNumLines = numLines;
 	allLines[lineNum].tracebackStrBreakPnt = strBreakPnt;
 	// a new message replaces the output of a shell command (e.g. :pwd) that might still be shown in its place
@@ -4027,10 +4026,10 @@ void Editor::fromOscPress(int ascii)
 {
 	if (!activity) {
 		// call overloaded keyPressed function to set a temporary whichEditor in ofApp.cpp
-		((ofApp*)ofGetAppPtr())->keyPressedOsc(ascii, objID);
+		host->keyPressedOsc(ascii, objID);
 	}
 	else {
-		((ofApp*)ofGetAppPtr())->keyPressed(ascii);
+		host->keyPressed(ascii);
 	}
 }
 
@@ -4039,21 +4038,18 @@ void Editor::fromOscRelease(int ascii)
 {
 	if (!activity) {
 		// the same applies to releasing a key
-		((ofApp*)ofGetAppPtr())->keyReleasedOsc(ascii, objID);
+		host->keyReleasedOsc(ascii, objID);
 	}
 	else {
-		((ofApp*)ofGetAppPtr())->keyReleased(ascii);
+		host->keyReleased(ascii);
 	}
 }
 
 //--------------------------------------------------------------
 void Editor::saveDialog()
 {
-	ofFileDialogResult saveFileResult = ofSystemSaveDialog("LiveLily_session.lyv", "Save file");
-	if (saveFileResult.bSuccess) {
-		std::string fileName = saveFileResult.filePath;
-		saveFile(fileName);
-	}
+	std::string fileName = host->chooseFileToSave("LiveLily_session.lyv", "Save file");
+	if (!fileName.empty()) saveFile(fileName);
 }
 
 //--------------------------------------------------------------
@@ -4070,7 +4066,7 @@ void Editor::saveFile(std::string fileName)
 		// will be displayed for 2 seconds and then it will return to untitled.lyv
 		couldNotSaveFile = true;
 		fileErrorStr = "could not save file";
-		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+		fileLoadErrorTimeStamp = Clock::millis();
 		return;
 	}
 	for (unsigned i = 0; i < allLines.size(); i++) {
@@ -4098,7 +4094,7 @@ void Editor::saveExistingFile()
 		// will be displayed for 2 seconds and then it will return to untitled.lyv
 		couldNotSaveFile = true;
 		fileErrorStr = "can't overwrite non-existing file, use :save";
-		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+		fileLoadErrorTimeStamp = Clock::millis();
 		return;
 	}
 	// a file converted from MusicXML has not been saved yet, and its .lyv name might belong to another file
@@ -4106,7 +4102,7 @@ void Editor::saveExistingFile()
 	if (convertedFile && std::filesystem::exists(loadedFileFullPath)) {
 		couldNotSaveFile = true;
 		fileErrorStr = loadedFileFullPath.substr(loadedFileFullPath.find_last_of("/")+1) + " already exists, use :save";
-		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+		fileLoadErrorTimeStamp = Clock::millis();
 		return;
 	}
 	std::ofstream file(loadedFileFullPath.c_str());
@@ -4116,7 +4112,7 @@ void Editor::saveExistingFile()
 		// will be displayed for 2 seconds and then it will return to untitled.lyv
 		couldNotSaveFile = true;
 		fileErrorStr = "could not open file";
-		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+		fileLoadErrorTimeStamp = Clock::millis();
 		return;
 	}
 	for (unsigned i = 0; i < allLines.size(); i++) {
@@ -4160,12 +4156,8 @@ void Editor::loadTextFile(std::string filePath)
 //--------------------------------------------------------------
 void Editor::loadDialog()
 {
-	// Open the Open File Dialog
-	ofFileDialogResult openFileResult = ofSystemLoadDialog("Select a .lyv, .xml, .musicxml, .mxl, .mid, .py or .lua file");
-	// Check if the user opened a file
-	if (openFileResult.bSuccess){
-		loadFile(openFileResult.filePath);
-	}
+	std::string fileName = host->chooseFileToOpen("Select a .lyv, .xml, .musicxml, .mxl, .mid, .py or .lua file");
+	if (!fileName.empty()) loadFile(fileName);
 }
 
 /////////////////// main load file function ////////////////////
@@ -4186,7 +4178,7 @@ bool Editor::loadFile(std::string fileName)
 		// will be displayed for 2 seconds and then it will return to untitled.lyv
 		couldNotLoadFile = true;
 		fileErrorStr = "could not load file";
-		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+		fileLoadErrorTimeStamp = Clock::millis();
 		return false;
 	}
 	file.close();
@@ -4209,7 +4201,7 @@ bool Editor::loadFile(std::string fileName)
 	if (!conversionError.empty()) {
 		couldNotLoadFile = true;
 		fileErrorStr = conversionError;
-		fileLoadErrorTimeStamp = ofGetElapsedTimeMillis();
+		fileLoadErrorTimeStamp = Clock::millis();
 		return false;
 	}
 	bool converting = (openingXML || openingMIDI);
@@ -4235,7 +4227,7 @@ bool Editor::loadFile(std::string fileName)
 		thisLang = 0;
 	}
 	else if (endsWith(loadedFileStr, ".py")) {
-		((ofApp*)ofGetAppPtr())->session.initPyo();
+		host->editorSession().initPyo();
 		thisLang = 1;
 	}
 	else if (endsWith(loadedFileStr, ".lua")) {
@@ -4466,7 +4458,7 @@ void Editor::updateCompletions()
 	if (thisLang == 0) {
 		if (start > 0 && str[start-1] == '\\') {
 			typed = "\\" + word;
-			candidates = ((ofApp*)ofGetAppPtr())->getCommandCompletions();
+			candidates = host->getCommandCompletions();
 		}
 		else if (start > 0 && str[start-1] == '.') {
 			// the name before the dot, which must start with a backslash
@@ -4475,7 +4467,7 @@ void Editor::updateCompletions()
 			while (nameStart > 0 && isWordChar(str[nameStart-1])) nameStart--;
 			if (nameStart == nameEnd || nameStart == 0 || str[nameStart-1] != '\\') return;
 			typed = word;
-			candidates = ((ofApp*)ofGetAppPtr())->getMethodCompletions("\\" + str.substr(nameStart, nameEnd - nameStart));
+			candidates = host->getMethodCompletions("\\" + str.substr(nameStart, nameEnd - nameStart));
 		}
 		// the arguments of commands and methods (e.g. pianoroll in \score.show pianoroll), after a white space, in a line that starts with a command
 		// but not in a melodic line (a line that starts with an instrument or a group), where words are notes
@@ -4484,9 +4476,9 @@ void Editor::updateCompletions()
 			if (lineStart == std::string::npos || str[lineStart] != '\\') return;
 			size_t firstEnd = str.find_first_of(" \t.", lineStart);
 			std::string firstWord = str.substr(lineStart, (firstEnd == std::string::npos ? std::string::npos : firstEnd - lineStart));
-			if (((ofApp*)ofGetAppPtr())->startsMelodicLine(firstWord)) return;
+			if (host->startsMelodicLine(firstWord)) return;
 			typed = word;
-			candidates = ((ofApp*)ofGetAppPtr())->getArgumentCompletions();
+			candidates = host->getArgumentCompletions();
 		}
 		else {
 			return;
@@ -4504,7 +4496,7 @@ void Editor::updateCompletions()
 			// without the names that start with an underscore, which are suggested once an underscore is typed
 			std::string dotted = pythonDottedName(str, pos - 1);
 			if (dotted.empty()) return;
-			for (const std::string& name : ((ofApp*)ofGetAppPtr())->pythonNames(dotted)) {
+			for (const std::string& name : host->pythonNames(dotted)) {
 				if (name[0] != '_') candidates.push_back(name);
 			}
 		}
@@ -4541,20 +4533,19 @@ std::vector<std::string> Editor::pythonCompletions(bool afterDot, int wordLine, 
 		"staticmethod", "str", "sum", "super", "tuple", "type", "vars", "zip"
 	};
 	std::set<std::string> names;
-	ofApp* app = (ofApp*)ofGetAppPtr();
 	if (afterDot) {
 		// the attributes of the object before the dot (e.g. random of np.ra), if the interpreter knows it (its code has been executed)
 		// otherwise (e.g. an expression like f().), the names of the pane, as before
 		std::string dotted = pythonDottedName(allLines[wordLine].str, wordStart - 1);
 		if (!dotted.empty()) {
-			std::vector<std::string> attributes = app->pythonNames(dotted);
+			std::vector<std::string> attributes = host->pythonNames(dotted);
 			if (!attributes.empty()) return attributes;
 		}
 	}
 	else {
 		names.insert(keywords.begin(), keywords.end());
 		// the names that executed code imported or defined (e.g. with import numpy as np, or from pyo import *), and the builtins
-		std::vector<std::string> globals = app->pythonNames("");
+		std::vector<std::string> globals = host->pythonNames("");
 		names.insert(globals.begin(), globals.end());
 	}
 	for (const auto& lineIt : allLines) {
@@ -4636,7 +4627,7 @@ void Editor::updateArgHints(int key)
 	if (key == '(' && pos > 0 && pos <= (int)str.size() && str[pos-1] == '(' && pos - 1 < commentStartOf(str)) {
 		std::string name = pythonDottedName(str, pos - 1);
 		if (!name.empty()) {
-			std::vector<std::string> params = ((ofApp*)ofGetAppPtr())->pythonSignature(name);
+			std::vector<std::string> params = host->pythonSignature(name);
 			if (!params.empty()) argHints.push_back({cursorLineIndex, pos - 1, params});
 		}
 	}
@@ -4790,10 +4781,9 @@ void Editor::drawCompletions()
 		clearCompletions();
 		return;
 	}
-	ofApp* app = (ofApp*)ofGetAppPtr();
-	float brightness = app->brightnessCoeff;
-	float windowWidth = ofGetWidth();
-	float windowHeight = ofGetHeight();
+	float brightness = host->editorBrightness();
+	float windowWidth = host->windowWidth();
+	float windowHeight = host->windowHeight();
 	const int maxRows = 10;
 	int numRows = std::min((int)completions.size(), std::max(1, std::min(maxRows, (int)(windowHeight / cursorHeight))));
 	// with more suggestions than rows, the rows scroll with the selected suggestion
@@ -4819,7 +4809,7 @@ void Editor::drawCompletions()
 	backgroundRect.toEnd = true;
 	backgroundRect.color = Color(40, 40, 40);
 	completionGrid.backgrounds.push_back(backgroundRect);
-	Color foreground = toColor(app->foregroundColor);
+	Color foreground = host->editorForeground();
 	for (int row = 0; row < numRows; row++) {
 		int ndx = firstRow + row;
 		Color textColor = foreground;

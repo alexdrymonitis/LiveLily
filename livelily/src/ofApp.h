@@ -45,7 +45,7 @@ struct PendingTraceback
 	std::string boundFunction;
 };
 
-class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
+class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, public EditorHost
 {
 	public:
 		// the engine of LiveLily (see session.h): the state of the session, the parser, and the sequencer
@@ -117,18 +117,18 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		void setNormalModeShift();
 		// suggestions for the autocompletion of LiveLily panes (see Editor::updateCompletions())
 		// all commands, with their backslash, and the methods of a command or of an object (an instrument, a function, etc.), by its name with a backslash
-		std::vector<std::string> getCommandCompletions();
+		std::vector<std::string> getCommandCompletions() override;
 		// the arguments of commands and methods, and the methods (the names of commandsMap without a backslash, e.g. pianoroll)
-		std::vector<std::string> getArgumentCompletions();
+		std::vector<std::string> getArgumentCompletions() override;
 		// whether a line that starts with this word is a melodic line (it is an instrument or a group of instruments)
-		bool startsMelodicLine(const std::string& word);
-		std::vector<std::string> getMethodCompletions(const std::string& name);
+		bool startsMelodicLine(const std::string& word) override;
+		std::vector<std::string> getMethodCompletions(const std::string& name) override;
 		// suggestions for the autocompletion of Python panes, from the Python interpreter, so they are what executed code imported or defined
 		// the names of __main__ and the builtins for an empty dotted name, or the attributes of the object of a dotted name (e.g. a or np.random)
 		// empty if the interpreter is not running, or the first name is not known to it (its code hasn't been executed)
-		std::vector<std::string> pythonNames(const std::string& dotted);
+		std::vector<std::string> pythonNames(const std::string& dotted) override;
 		// the parameters of a callable (e.g. Sine), as name=default or name, for the hint of its arguments (see Editor::argHintText())
-		std::vector<std::string> pythonSignature(const std::string& dotted);
+		std::vector<std::string> pythonSignature(const std::string& dotted) override;
 		// what autocompletion knows of the interpreter: all its names, and the attributes and parameters that have been asked for
 		// it is made again, when it is used, after any execution of Python code (from a pane, the sequencer, or LiveLily, see Pyo::getExecutions())
 		// so that it follows the objects that are created, changed, or deleted, and the interpreter is asked only about names it has
@@ -143,11 +143,11 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		bool refreshPythonTable();
 		// overloaded keyPressed and keyReleased functions
 		// so out-of-focus editors can receive input from OSC
-		void keyPressedOsc(int key, int thisEditor);
-		void keyReleasedOsc(int key, int thisEditor);
+		void keyPressedOsc(int key, int thisEditor) override;
+		void keyReleasedOsc(int key, int thisEditor) override;
 		// OF keyboard input functions
-		void keyPressed(int key);
-		void keyReleased(int key);
+		void keyPressed(int key) override;
+		void keyReleased(int key) override;
 		// the following two functions are used to check for key modifiers received from a Python pane
 		pyStdoutStrKeyModifier checkPyStdoutKeyModifier(int ndx);
 		void handleKeyModifier(pyStdoutStrKeyModifier modifierStruct);
@@ -190,6 +190,21 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		void barStarted(uint64_t timeStamp) override;
 		void loopChanged() override;
 		void setPythonTyping(bool charByChar) override;
+		// what the editor asks of the app (see editor_host.h); the other methods of EditorHost are the app's own methods of the same names
+		Session& editorSession() override { return session; }
+		Color editorForeground() override { return toColor(foregroundColor); }
+		Color editorBackground() override { return toColor(backgroundColor); }
+		float editorBrightness() override { return brightnessCoeff; }
+		int scoreBesidePanesWidth() override;
+		void typeFromPython(const std::string& text) override { view.pyStdoutStr += text; }
+		void startTypingFromPython(int pane) override { view.whichPyPane = pane; view.typePyStr = true; }
+		int pythonTypingPane() override { return view.whichPyPane; }
+		std::string clipboard() override { return ofGetWindowPtr()->getClipboardString(); }
+		void setClipboard(const std::string& text) override { ofGetWindowPtr()->setClipboardString(text); }
+		std::string chooseFileToSave(const std::string& defaultName, const std::string& message) override;
+		std::string chooseFileToOpen(const std::string& message) override;
+		int windowWidth() override { return ofGetWidth(); }
+		int windowHeight() override { return ofGetHeight(); }
 		std::pair<int, int> mousePosition() override { return {mouseX, mouseY}; }
 		void setPaneFromOsc(int pane, const std::string& address) override { fromOscAddr[pane] = address; fromOsc[pane] = true; }
 		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);
@@ -201,7 +216,7 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		// when a bar is parsed, the place of the token of every note of every instrument is stored (more than one token for a note
 		// of a bar that copies another bar, e.g. both \1 and the note in bar 1), and the sequencer sets which note plays
 		void storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNotes) override;
-		std::vector<EditorNoteSpan> getActiveEditorNoteSpans(int paneNdx);
+		std::vector<EditorNoteSpan> getActiveEditorNoteSpans(int paneNdx) override;
 		// the tokens of every note, by instrument and bar
 		std::map<std::pair<int, int>, std::vector<std::vector<EditorNoteSpan>>> editorNoteSpans;
 		// the note that plays for every instrument, as its bar and its index, set by the sequencer thread, so guarded by a mutex
@@ -211,7 +226,7 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		std::mutex activeEditorNotesMutex;
 		//---------------------------------
 		// parsing functions
-		void parseStrings(int index, int numLines);
+		void parseStrings(int index, int numLines) override;
 		//---------------------------------
 		// command typing/executing funcitons
 		void typeShellCommand(int key);
@@ -369,9 +384,9 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		// aligning the melodic lines of bar definitions in a pane to a grid of durations (see \editor.alignment and alignment.cpp)
 		// all of them, the one with the cursor after its text is edited (space is true for a space), and back to single spaces
 		void alignBars(int pane);
-		void alignAfterEdit(int pane, bool space);
+		void alignAfterEdit(int pane, bool space) override;
 		// after pasting, which can add lines to more than one bar definition (e.g. a whole bar), all of them, with the cursor staying where it is
-		void alignAfterPaste(int pane);
+		void alignAfterPaste(int pane) override;
 		void unalignBars(int pane);
 		// aligns the lines of a bar definition (from firstLine to lastLine), and gives the new column of the cursor if it is in one of them
 		// the cursor goes to the token after it (after a space), or with keepInToken, stays in the token it is in (after any other edit)

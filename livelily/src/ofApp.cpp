@@ -37,6 +37,8 @@ void ofApp::setup()
 	// the engine reaches the user interface through this app (see frontend.h), and its audio stream calls this app (see audio.h)
 	session.frontend = this;
 	session.audioCallback = this;
+	// the editors reach the app through EditorHost (see editor_host.h)
+	Editor::host = this;
 	session.dataDirectory = ofToDataPath("", true);
 	brightnessCoeff = 0.85;
 	backgroundColor = ofColor::black;
@@ -712,7 +714,7 @@ void ofApp::drawTraceback()
 	//}
 	// we must first determine which traceback string was initiated first, so we can print this on top
 	for (auto it = editors[session.whichPane].getAllLinesBegin(); it != editors[session.whichPane].getAllLinesEnd(); ++it) {
-		if ((ofGetElapsedTimeMillis() - editors[session.whichPane].getTracebackTimeStamp(it->first)) < editors[session.whichPane].getTracebackDur() && editors[session.whichPane].getTracebackStr(it->first).size() > 0) {
+		if ((Clock::millis() - editors[session.whichPane].getTracebackTimeStamp(it->first)) < editors[session.whichPane].getTracebackDur() && editors[session.whichPane].getTracebackStr(it->first).size() > 0) {
 			// exclude the line of the cursor as this is check below
 			if (it->first != editors[session.whichPane].getCursorLineIndex()) {
 				ndxs[i] = it->first;
@@ -5452,4 +5454,26 @@ void ofApp::loopChanged()
 void ofApp::setPythonTyping(bool charByChar)
 {
 	view.typePyStrCharByChar = charByChar;
+}
+
+//--------------------------------------------------------------
+int ofApp::scoreBesidePanesWidth()
+{
+	// with the score shown beside the panes (vertical view), the panes have the half of the window it doesn't take
+	if (isScoreVisible() && scoreOrientation == 0) return view.middleOfScreenX;
+	return -1;
+}
+
+//--------------------------------------------------------------
+std::string ofApp::chooseFileToSave(const std::string& defaultName, const std::string& message)
+{
+	ofFileDialogResult result = ofSystemSaveDialog(defaultName, message);
+	return (result.bSuccess ? result.filePath : std::string());
+}
+
+//--------------------------------------------------------------
+std::string ofApp::chooseFileToOpen(const std::string& message)
+{
+	ofFileDialogResult result = ofSystemLoadDialog(message);
+	return (result.bSuccess ? result.filePath : std::string());
 }

@@ -12,7 +12,7 @@ Each step is one commit, checked with the snapshot tests, the headless tests, an
 - [x] Step 4: the status line of a pane in the grid (`statusGrid`: the text in cells, its three parts painted where they were)
 - [x] Step 5: the area below the panes in the grid (`ofApp::belowGrid`: the messages of the lines, or the shell with its cursor)
 - [x] Step 6: the screen in the test dump (`=== screen`, written by `dumpGrid()` in `cellgrid.cpp` a few frames after the file has run); the messages below the panes are now in the same order on every run, so the screen and the screenshots are the same every time
-- [ ] Step 7: `EditorHost`
+- [x] Step 7: `EditorHost` (`editor_host.h`, implemented by `ofApp`): the editor no longer uses `ofGetAppPtr()`; its time is `Clock`, and the clipboard, file dialogs and window size come from the host. What is left of openFrameworks in the editor is its font and the painting (step 9)
 - [ ] Step 8: key events
 - [ ] Step 9: the editor without openFrameworks
 
