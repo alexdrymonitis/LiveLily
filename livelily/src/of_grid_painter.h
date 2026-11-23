@@ -22,9 +22,15 @@ struct GridGeometry
 	float toEndWidth = 0;
 	// how far the text is from the left edge of its columns (the padding of the completion pop-up)
 	float textInset = 0;
+	// the row of the region the first row of the grid is in (the status line of a pane is below its text), so that
+	// the tops and baselines of the rows are computed from y as the editor computed them
+	int rowOffset = 0;
 };
 
 // brightness is the coefficient every color is multiplied with (ofApp::brightnessCoeff)
 void paintGrid(const CellGrid& grid, const GridGeometry& geometry, ofTrueTypeFont& font, float brightness);
+// parts of a grid, for a grid whose parts are placed differently (the status line of a pane, see Editor::drawPaneSeparator())
+void paintGridBackgrounds(const CellGrid& grid, const GridGeometry& geometry, float brightness);
+void paintGridText(const CellGrid& grid, const GridGeometry& geometry, ofTrueTypeFont& font, float brightness, int fromCol, int toCol);
 
 #endif

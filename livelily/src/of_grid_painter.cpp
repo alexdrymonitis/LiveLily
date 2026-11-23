@@ -13,12 +13,12 @@ void setColor(Color color, float brightness, int alpha = 255)
 // the baseline of the text of a row, computed in the order the editor computed it, so that it is the same float
 float baselineOf(const GridGeometry& g, int row)
 {
-	return ((row + 1) * g.cellHeight) + g.y - g.descent;
+	return ((row + g.rowOffset + 1) * g.cellHeight) + g.y - g.descent;
 }
 
 float rowTop(const GridGeometry& g, int row, bool snap)
 {
-	float top = (row * g.cellHeight) + g.y;
+	float top = ((row + g.rowOffset) * g.cellHeight) + g.y;
 	return snap ? (float)(int)top : top;
 }
 
@@ -112,4 +112,14 @@ void paintGrid(const CellGrid& grid, const GridGeometry& g, ofTrueTypeFont& font
 		setColor(grid.cursor.charColor, brightness);
 		font.drawString(grid.cursor.charOnTop, g.x + g.textInset + (grid.cursor.col * g.cellWidth), baselineOf(g, grid.cursor.row));
 	}
+}
+
+void paintGridBackgrounds(const CellGrid& grid, const GridGeometry& g, float brightness)
+{
+	for (const GridRect& rect : grid.backgrounds) paintRect(rect, g, brightness);
+}
+
+void paintGridText(const CellGrid& grid, const GridGeometry& g, ofTrueTypeFont& font, float brightness, int fromCol, int toCol)
+{
+	for (int row = 0; row < grid.rows; row++) paintText(grid, g, font, brightness, row, std::max(0, fromCol), std::min(grid.cols, toCol));
 }

@@ -9,7 +9,7 @@ Each step is one commit, checked with the snapshot tests, the headless tests, an
 - [x] Step 1: the cell grid (`cellgrid.h`) and its openFrameworks painter (`of_grid_painter.h/.cpp`)
 - [x] Step 2: the text of a pane in the grid, with the line numbers, the cursor and the note highlights: `Editor::drawText()` fills `textGrid` and `gutterGrid` and paints them, and the screenshots of every test file are the same
 - [x] Step 3: the completion pop-up in the grid (`completionGrid`, placed by pixels, with the text inset by half a character)
-- [ ] Step 4: the status line of a pane in the grid
+- [x] Step 4: the status line of a pane in the grid (`statusGrid`: the text in cells, its three parts painted where they were)
 - [ ] Step 5: the area below the panes in the grid
 - [ ] Step 6: the screen in the test dump
 - [ ] Step 7: `EditorHost`

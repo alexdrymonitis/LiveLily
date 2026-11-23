@@ -1213,9 +1213,7 @@ void Editor::drawPaneSeparator()
 	are drawn after the score, so that when the traceback printing area grows bigger than its default size
 	it overrides the score
 	*/
-	ofSetColor(255*((ofApp*)ofGetAppPtr())->brightnessCoeff);
-	float yCoord = maxNumLines * cursorHeight + frameYOffset;
-	float strYCoord = ((maxNumLines+1)*cursorHeight) + frameYOffset - characterOffset;
+	ofApp* app = (ofApp*)ofGetAppPtr();
 	int fileNameXOffset = oneCharacterWidth + oneAndHalfCharacterWidth + frameXOffset;
 	std::string fileName;
 	// test if any error occured during loading a file
@@ -1228,36 +1226,51 @@ void Editor::drawPaneSeparator()
 		if (fileLoaded) fileName = loadedFileStr;
 		else fileName = defaultFileNames[thisLang];
 	}
-	ofDrawRectangle(frameXOffset, yCoord, frameWidth, cursorHeight);
+	// the status line is a grid of one row (see cellgrid.h): a light bar with the number of the pane at the first column
+	// the file name (or the error of loading or saving it) from the third column, and the mode at the end
+	Color textColor;
 	if (couldNotLoadFile || couldNotSaveFile) {
-		ofSetColor(ofColor::red*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+		textColor = Colors::red;
 	}
 	else {
-		ofSetColor(((ofApp*)ofGetAppPtr())->backgroundColor*((ofApp*)ofGetAppPtr())->brightnessCoeff);
+		textColor = toColor(app->backgroundColor);
 		if (fileEdited) fileName += "*";
 	}
-	font.drawString(ofToString(objID+1), halfCharacterWidth+frameXOffset, strYCoord);
-	if (couldNotLoadFile || couldNotSaveFile) {
-		font.drawString(fileErrorStr, fileNameXOffset, strYCoord);
-	}
-	else {
-		font.drawString(fileName, fileNameXOffset, strYCoord);
-	}
-	float widthOffset = 0;
-	if (inserting || visualMode) {
-		// if we show the score vertically and we have one pane only, show the INSERT string at the middle
-		//if (((ofApp*)ofGetAppPtr())->isScoreVisible() &&
-		//		((ofApp*)ofGetAppPtr())->scoreOrientation == 0) {
-		//	if (frameWidth > ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX) {
-		//		widthOffset = ((ofApp*)ofGetAppPtr())->sharedData.middleOfScreenX;
-		//	}
-		//}
-		std::string s;
-		if (inserting) s = "INSERT";
-		else if (selectionMode == 1) s = "VISUAL LINE";
-		else if (selectionMode == 2) s = "VISUAL BLOCK";
-		else s = "VISUAL";
-		font.drawString(s, frameXOffset+frameWidth-widthOffset-font.stringWidth(s)-10, strYCoord);
+	std::string mode;
+	if (inserting) mode = "INSERT";
+	else if (visualMode && selectionMode == 1) mode = "VISUAL LINE";
+	else if (visualMode && selectionMode == 2) mode = "VISUAL BLOCK";
+	else if (visualMode) mode = "VISUAL";
+	int cols = std::max(1, (int)(frameWidth / oneCharacterWidth));
+	const int fileNameCol = 2;
+	int modeCol = (mode.empty() ? cols : std::max(fileNameCol, cols - (int)mode.size() - 1));
+	statusGrid.resize(1, cols);
+	GridRect bar;
+	bar.toEnd = true;
+	bar.color = Colors::white;
+	statusGrid.backgrounds.push_back(bar);
+	statusGrid.write(0, 0, std::to_string(objID+1), textColor);
+	statusGrid.write(0, fileNameCol, (couldNotLoadFile || couldNotSaveFile) ? fileErrorStr : fileName, textColor);
+	statusGrid.write(0, modeCol, mode, textColor);
+	// in the desktop app its parts are where the editor drew them: the bar across the pane, the number half a character in
+	// the file name at fileNameXOffset, and the mode ending 10 pixels before the edge of the pane
+	GridGeometry geometry;
+	geometry.x = frameXOffset;
+	geometry.y = frameYOffset;
+	geometry.rowOffset = maxNumLines;
+	geometry.cellWidth = oneCharacterWidth;
+	geometry.cellHeight = cursorHeight;
+	geometry.descent = characterOffset;
+	geometry.toEndWidth = frameWidth;
+	float brightness = app->brightnessCoeff;
+	paintGridBackgrounds(statusGrid, geometry, brightness);
+	geometry.x = halfCharacterWidth + frameXOffset;
+	paintGridText(statusGrid, geometry, font, brightness, 0, fileNameCol);
+	geometry.x = fileNameXOffset - (fileNameCol * oneCharacterWidth);
+	paintGridText(statusGrid, geometry, font, brightness, fileNameCol, modeCol);
+	if (!mode.empty()) {
+		geometry.x = frameXOffset + frameWidth - font.stringWidth(mode) - 10 - (modeCol * oneCharacterWidth);
+		paintGridText(statusGrid, geometry, font, brightness, modeCol, cols);
 	}
 }
 

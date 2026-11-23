@@ -373,6 +373,8 @@ class Editor
 		CellGrid gutterGrid;
 		// the completion pop-up, filled and painted by drawCompletions()
 		CellGrid completionGrid;
+		// the status line of the pane, filled and painted by drawPaneSeparator()
+		CellGrid statusGrid;
 		int fontSize;
 		bool fontLoaded;
 		std::map<int, line> allLines;
