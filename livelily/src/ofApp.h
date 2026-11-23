@@ -8,6 +8,7 @@
 #include "frontend.h"
 #include "session.h"
 #include "of_instrument_display.h"
+#include "view_state.h"
 
 // what is drawn of an instrument (its staff and its notes), which the front end attaches to every instrument
 using ScoreView = OfInstrumentDisplay;
@@ -49,6 +50,8 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		// the engine of LiveLily (see session.h): the state of the session, the parser, and the sequencer
 		// declared first, so that it is destroyed after everything else of the app (e.g. the sequencer's thread calls the app)
 		Session session;
+		// the state of the view: the window, the positions of the staffs, the piano roll, the beat visualization and the area below the panes
+		ViewState view;
 		// basic OF program structure
 		//---------------------------------
 		void setup();
@@ -180,6 +183,12 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		void instrumentRemoved(int instNdx) override;
 		void instrumentsCleared() override;
 		void layoutInstrumentBar(int instNdx, int bar) override;
+		bool scoreShown() override;
+		void sequencerStarted(float beatStepsPerMs, uint64_t beatRampStart) override;
+		void beat(uint64_t timeStamp, float stepsPerMs, uint64_t rampStart) override;
+		void barStarted(uint64_t timeStamp) override;
+		void loopChanged() override;
+		void setPythonTyping(bool charByChar) override;
 		std::pair<int, int> mousePosition() override { return {mouseX, mouseY}; }
 		void setPaneFromOsc(int pane, const std::string& address) override { fromOscAddr[pane] = address; fromOsc[pane] = true; }
 		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);
@@ -416,7 +425,7 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		int scoreType;
 		// whether the oscilloscope is the view shown (see setShowScore()), which the audio thread reads to copy the output for it
 		std::atomic<bool> showScope{false};
-		// showNotes is in SharedData because it is used by the sequencer
+		// showNotes is in ViewState (view_state.h), and the sequencer asks for it with scoreShown()
 		float scoreXOffset;
 		float scoreYOffset;
 		float scoreBackgroundWidth;

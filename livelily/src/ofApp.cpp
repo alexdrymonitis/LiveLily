@@ -97,12 +97,12 @@ void ofApp::setup()
 	// waiting time to receive a response from a score part server is one frame at 60 FPS
 	session.scorePartResponseTime = (uint64_t)((1000.0 / 60.0) + 0.5);
 
-	session.sharedData.screenWidth = ofGetWindowWidth();
-	session.sharedData.screenHeight = ofGetWindowHeight();
-	session.sharedData.middleOfScreenX = session.sharedData.screenWidth / 2;
-	session.sharedData.middleOfScreenY = session.sharedData.screenHeight / 2;
-	session.sharedData.staffXOffset = session.sharedData.middleOfScreenX;
-	session.sharedData.staffWidth = session.sharedData.screenWidth;
+	view.screenWidth = ofGetWindowWidth();
+	view.screenHeight = ofGetWindowHeight();
+	view.middleOfScreenX = view.screenWidth / 2;
+	view.middleOfScreenY = view.screenHeight / 2;
+	view.staffXOffset = view.middleOfScreenX;
+	view.staffWidth = view.screenWidth;
 	numBarsToDisplay = 2;
 
 	session.sharedData.numInstruments = 0;
@@ -135,7 +135,7 @@ void ofApp::setup()
 	// the function below calls setFontSize() which in turn sets various values
 	// including the tracebackBase variable that is used to determine the coordinates and offsets of the panes
 	setFontSize(true);
-	screenSplitHorizontal = session.sharedData.screenWidth;
+	screenSplitHorizontal = view.screenWidth;
 
 	session.sharedData.tempoMs[0] = 500;
 	session.sharedData.BPMMultiplier[0] = 1;
@@ -152,8 +152,8 @@ void ofApp::setup()
 	session.sharedData.thisBarIndex = 0;
 	session.sharedData.beatCounter = 0; // this is controlled by the sequencer
 	session.sharedData.barCounter = 0; // also controlled by the sequencer
-	session.sharedData.numBars = session.sharedData.prevNumBars = 1;
-	session.sharedData.thisPosition = session.sharedData.prevPosition = 0;
+	view.numBars = view.prevNumBars = 1;
+	view.thisPosition = view.prevPosition = 0;
 	showBarCount = false;
 	showTempo = false;
 
@@ -163,47 +163,47 @@ void ofApp::setup()
 	showScore = false;
 	scoreType = 0;
 	session.seqResolution = 16;
-	session.sharedData.longestInstNameWidth = 0;
-	session.sharedData.staffLinesDist = 10.0;
-	session.sharedData.scoreFontSize = 35;
-	instFontSize = session.sharedData.scoreFontSize/3.5;
+	view.longestInstNameWidth = 0;
+	view.staffLinesDist = 10.0;
+	view.scoreFontSize = 35;
+	instFontSize = view.scoreFontSize/3.5;
 	instFont.load("Monaco.ttf", instFontSize);
-	session.sharedData.notesXStartPnt = 0;
-	session.sharedData.blankSpace = 10;
+	view.notesXStartPnt = 0;
+	view.blankSpace = 10;
 	session.sharedData.animate = false;
 	session.sharedData.setAnimation = false;
-	session.sharedData.beatAnimate = false;
-	session.sharedData.setBeatAnimation = false;
-	session.sharedData.beatViz = false;
-	session.sharedData.beatTypeCommand = false;
-	session.sharedData.beatVizType = 1;
-	session.sharedData.beatVizDegrade = BEATVIZBRIGHTNESS;
-	session.sharedData.beatVizTimeStamp = 0;
-	session.sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)session.sharedData.tempoMs[0] / 4.0);
-	session.sharedData.beatVizRampStart = session.sharedData.tempoMs[0] / 4;
-	session.sharedData.beatUpdated = false;
-	session.sharedData.noteWidth = 0;
-	session.sharedData.noteHeight = 0;
-	session.sharedData.allStaffDiffs = 0;
-	session.sharedData.yStartPnts[0] = session.sharedData.yStartPnts[1] = session.sharedData.yStartPnts[2] = 0;
-	session.sharedData.maxBarFirstStaffAnchor = 0;
+	view.beatAnimate = false;
+	view.setBeatAnimation = false;
+	view.beatViz = false;
+	view.beatTypeCommand = false;
+	view.beatVizType = 1;
+	view.beatVizDegrade = BEATVIZBRIGHTNESS;
+	view.beatVizTimeStamp = 0;
+	view.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)session.sharedData.tempoMs[0] / 4.0);
+	view.beatVizRampStart = session.sharedData.tempoMs[0] / 4;
+	view.beatUpdated = false;
+	view.noteWidth = 0;
+	view.noteHeight = 0;
+	view.allStaffDiffs = 0;
+	view.yStartPnts[0] = view.yStartPnts[1] = view.yStartPnts[2] = 0;
+	view.maxBarFirstStaffAnchor = 0;
 
 	// various score variables
 	scoreOrientation = 0;
-	scoreXOffset = session.sharedData.screenWidth / 2;
+	scoreXOffset = view.screenWidth / 2;
 	scoreYOffset = 0;
 	scoreXStartPnt = 0;
-	scoreBackgroundWidth = session.sharedData.screenWidth/2;
-	scoreBackgroundHeight = session.sharedData.tracebackBase; // - cursorHeight;
+	scoreBackgroundWidth = view.screenWidth/2;
+	scoreBackgroundHeight = view.tracebackBase; // - cursorHeight;
 	scoreMoveXCommand = false;
 	scoreMoveYCommand = false;
 	mustUpdateScore = false;
 	scoreUpdated = false;
 	scoreChangeOnLastBar = false;
 	// piano roll variables, with the keys of a piano, from A0 to C8 (see setPianoRollRange())
-	session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+	view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
 	setPianoRollRange(21, 108);
-	session.sharedData.pianoRollMinDur = (scoreBackgroundWidth - session.sharedData.pianoRollKeysWidth) / (float)MINDUR;
+	view.pianoRollMinDur = (scoreBackgroundWidth - view.pianoRollKeysWidth) / (float)MINDUR;
 
 	session.maestroToggleSet = false;
 	session.receivingMaestro = false;
@@ -216,14 +216,14 @@ void ofApp::setup()
 	session.maestroToggleAddress = "/toggle";
 	session.maestroLevareAddress = "/levare";
 
-	session.sharedData.pyStdoutStr = "";
-	session.sharedData.pyStdoutStrNdx = 0;
-	session.sharedData.typePyStrCharByChar = true;
-	session.sharedData.typePyStrLineByLine = false;
-	session.sharedData.typePyStr = false;
-	session.sharedData.whichPyPane = 0;
-	session.sharedData.pyStdoutKeyModNdx = 0;
-	session.sharedData.pyStdoutStrVecNdx = 0;
+	view.pyStdoutStr = "";
+	view.pyStdoutStrNdx = 0;
+	view.typePyStrCharByChar = true;
+	view.typePyStrLineByLine = false;
+	view.typePyStr = false;
+	view.whichPyPane = 0;
+	view.pyStdoutKeyModNdx = 0;
+	view.pyStdoutStrVecNdx = 0;
 
 	session.correctOnSameOctaveOnly = true;
 
@@ -254,7 +254,7 @@ void ofApp::setup()
 
 	// create the beat rectangle transparency cosine table
 	for (int i = 0; i <= BEATVIZBRIGHTNESS; i++) {
-		session.sharedData.beatVizCosTab[i] = (int)(((cos(((float)i/(float)(BEATVIZBRIGHTNESS+1))*M_PI) * -0.5) + 0.5) * 255);
+		view.beatVizCosTab[i] = (int)(((cos(((float)i/(float)(BEATVIZBRIGHTNESS+1))*M_PI) * -0.5) + 0.5) * 255);
 	}
 
 	/* Colors used for syntax highlighting for LiveLily
@@ -1143,14 +1143,14 @@ void ofApp::update()
 		session.oscReceiver->getNextMessage(m);
 		std::string address = m.getAddress();
 		if (address == session.maestroAddress) {
-			if (!session.sequencer.isThreadRunning() && session.sharedData.setBeatAnimation) {
-				session.sharedData.beatAnimate = true;
-				session.sharedData.setBeatAnimation = false;
+			if (!session.sequencer.isThreadRunning() && view.setBeatAnimation) {
+				view.beatAnimate = true;
+				view.setBeatAnimation = false;
 			}
 			float val = m.getArgAsFloat(session.maestroValNdx);
 			if (session.receivingMaestro) {
 				if (val > session.maestroValThresh) {
-					if (!session.sharedData.beatUpdated && ofGetElapsedTimeMillis() - session.maestroTimeStamp > MAESTROTHRESH) {
+					if (!view.beatUpdated && ofGetElapsedTimeMillis() - session.maestroTimeStamp > MAESTROTHRESH) {
 						if (session.maestroInitialized) {
 							int bar = session.getPlayingBarIndex();
 							session.sharedData.beatCounter++;
@@ -1168,7 +1168,7 @@ void ofApp::update()
 						else {
 							session.maestroInitialized = true;
 						}
-						session.sharedData.beatUpdated = true;
+						view.beatUpdated = true;
 						session.maestroTimeStamp = ofGetElapsedTimeMillis();
 						//cout << sharedData.beatCounter << endl;
 						//printVector(maestroVec);
@@ -1182,7 +1182,7 @@ void ofApp::update()
 					}
 				}
 				else {
-					session.sharedData.beatUpdated = false;
+					view.beatUpdated = false;
 					if (prevVal != 0) {
 						session.maestroVec.push_back(abs(val - prevVal));
 					}
@@ -1376,62 +1376,62 @@ void ofApp::update()
 		}
 	}
 
-	if (session.sharedData.typePyStr && ((session.sharedData.pyStdoutStrNdx == 0 && !ctrlPressed && !shiftPressed) || session.sharedData.pyStdoutStrNdx > 0)) {
-		if (session.sharedData.typePyStrCharByChar) {
-			pyStdoutStrKeyModifier keyMod = checkPyStdoutKeyModifier(session.sharedData.pyStdoutStrNdx);
-			session.sharedData.pyStdoutStrNdx += keyMod.ndxInc;
+	if (view.typePyStr && ((view.pyStdoutStrNdx == 0 && !ctrlPressed && !shiftPressed) || view.pyStdoutStrNdx > 0)) {
+		if (view.typePyStrCharByChar) {
+			pyStdoutStrKeyModifier keyMod = checkPyStdoutKeyModifier(view.pyStdoutStrNdx);
+			view.pyStdoutStrNdx += keyMod.ndxInc;
 			if (keyMod.isModifier) {
 				handleKeyModifier(keyMod);
 			}
 			else {
-				int charToType = (int)session.sharedData.pyStdoutStr[session.sharedData.pyStdoutStrNdx];
-				if (session.sharedData.pyStdoutStr[session.sharedData.pyStdoutStrNdx] == '\n') {
+				int charToType = (int)view.pyStdoutStr[view.pyStdoutStrNdx];
+				if (view.pyStdoutStr[view.pyStdoutStrNdx] == '\n') {
 					charToType = 13;
 				}
-				if (session.sharedData.whichPyPane == session.whichPane) {
+				if (view.whichPyPane == session.whichPane) {
 					keyPressed(charToType);
 				}
 				else {
-					keyPressedOsc(charToType, session.sharedData.whichPyPane);
+					keyPressedOsc(charToType, view.whichPyPane);
 				}
-				session.sharedData.pyStdoutStrNdx++;
+				view.pyStdoutStrNdx++;
 			}
-			if (session.sharedData.pyStdoutStrNdx >= session.sharedData.pyStdoutStr.size()) {
-				session.sharedData.pyStdoutStr.clear();
-				session.sharedData.pyStdoutStrNdx = 0;
-				session.sharedData.typePyStr = false;
+			if (view.pyStdoutStrNdx >= view.pyStdoutStr.size()) {
+				view.pyStdoutStr.clear();
+				view.pyStdoutStrNdx = 0;
+				view.typePyStr = false;
 			}
 		}
-		else if (session.sharedData.typePyStrLineByLine) {
+		else if (view.typePyStrLineByLine) {
 			// check if we have a key modifier at the very beginning
-			if (session.sharedData.pyStdoutStrVecNdx == 0 && session.sharedData.pyStdoutKeyModNdxs.size() > 0 && session.sharedData.pyStdoutStrVecNdx == session.sharedData.pyStdoutKeyModNdxs[session.sharedData.pyStdoutKeyModNdx]) {
-				handleKeyModifier(session.sharedData.pyStdoutKeyModifiers[session.sharedData.pyStdoutKeyModNdx]);
-				session.sharedData.pyStdoutKeyModNdx++;
+			if (view.pyStdoutStrVecNdx == 0 && view.pyStdoutKeyModNdxs.size() > 0 && view.pyStdoutStrVecNdx == view.pyStdoutKeyModNdxs[view.pyStdoutKeyModNdx]) {
+				handleKeyModifier(view.pyStdoutKeyModifiers[view.pyStdoutKeyModNdx]);
+				view.pyStdoutKeyModNdx++;
 				// if we have a key modifier, we increment the char by char index so that the test in which typing Python strings is included is true
-				session.sharedData.pyStdoutStrNdx++;
+				view.pyStdoutStrNdx++;
 			}
-			editors[session.sharedData.whichPyPane].setString(session.sharedData.pyStdoutStrVec[session.sharedData.pyStdoutStrVecNdx]);
-			session.sharedData.pyStdoutStrVecNdx++;
+			editors[view.whichPyPane].setString(view.pyStdoutStrVec[view.pyStdoutStrVecNdx]);
+			view.pyStdoutStrVecNdx++;
 			// then check if we have a key modifier after the current string chunk
-			if (session.sharedData.pyStdoutKeyModNdxs.size() > 0 && session.sharedData.pyStdoutStrVecNdx == session.sharedData.pyStdoutKeyModNdxs[session.sharedData.pyStdoutKeyModNdx]) {
-				handleKeyModifier(session.sharedData.pyStdoutKeyModifiers[session.sharedData.pyStdoutKeyModNdx]);
-				session.sharedData.pyStdoutKeyModNdx++;
+			if (view.pyStdoutKeyModNdxs.size() > 0 && view.pyStdoutStrVecNdx == view.pyStdoutKeyModNdxs[view.pyStdoutKeyModNdx]) {
+				handleKeyModifier(view.pyStdoutKeyModifiers[view.pyStdoutKeyModNdx]);
+				view.pyStdoutKeyModNdx++;
 				// if we have a key modifier, we increment the char by char index so that the test in which typing Python strings is included is true
-				session.sharedData.pyStdoutStrNdx++;
+				view.pyStdoutStrNdx++;
 			}
-			if (session.sharedData.pyStdoutStrVecNdx >= (int)session.sharedData.pyStdoutStrVec.size()) {
-				session.sharedData.typePyStrLineByLine = false;
-				session.sharedData.pyStdoutStrVec.clear();
-				session.sharedData.pyStdoutKeyModifiers.clear();
-				session.sharedData.pyStdoutKeyModNdxs.clear();
-				session.sharedData.typePyStr = false;
-				session.sharedData.pyStdoutStrVecNdx = 0;
-				session.sharedData.pyStdoutKeyModNdx = 0;
-				session.sharedData.pyStdoutStrNdx = 0;
+			if (view.pyStdoutStrVecNdx >= (int)view.pyStdoutStrVec.size()) {
+				view.typePyStrLineByLine = false;
+				view.pyStdoutStrVec.clear();
+				view.pyStdoutKeyModifiers.clear();
+				view.pyStdoutKeyModNdxs.clear();
+				view.typePyStr = false;
+				view.pyStdoutStrVecNdx = 0;
+				view.pyStdoutKeyModNdx = 0;
+				view.pyStdoutStrNdx = 0;
 			}
 		}
 		else {
-			std::vector<int> angleBracketNdxs = session.findIndexesOfCharInStr(session.sharedData.pyStdoutStr, "<");
+			std::vector<int> angleBracketNdxs = session.findIndexesOfCharInStr(view.pyStdoutStr, "<");
 			bool hasModifiers = false;
 			std::vector<pyStdoutStrKeyModifier> keyModifiers;
 			// run through the indexes of the angle brackets and test each one separately for a key modifier
@@ -1442,10 +1442,10 @@ void ofApp::update()
 				}
 			}
 			if (!hasModifiers) {
-				std::vector<std::string> v = session.tokenizeString(session.sharedData.pyStdoutStr, "\n", true);
+				std::vector<std::string> v = session.tokenizeString(view.pyStdoutStr, "\n", true);
 				for (std::string s : v) {
 					std::vector<std::string> v2 = session.tokenizeString(s, "\b", true);
-					session.sharedData.pyStdoutStrVec.insert(session.sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
+					view.pyStdoutStrVec.insert(view.pyStdoutStrVec.end(), v2.begin(), v2.end());
 				}
 				//editors[whichPane].setString(sharedData.pyStdoutStr);
 			}
@@ -1457,39 +1457,39 @@ void ofApp::update()
 						int bracketStart = angleBracketNdxs[i];
 						int bracketEnd = bracketStart + keyModifiers[i].ndxInc;
 						if (bracketStart > prevEnd) {
-							std::vector<std::string> v = session.tokenizeString(session.sharedData.pyStdoutStr.substr(prevEnd, bracketStart-prevEnd), "\n", true);
+							std::vector<std::string> v = session.tokenizeString(view.pyStdoutStr.substr(prevEnd, bracketStart-prevEnd), "\n", true);
 							for (std::string s : v) {
 								std::vector<std::string> v2 = session.tokenizeString(s, "\b", true);
-								session.sharedData.pyStdoutStrVec.insert(session.sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
+								view.pyStdoutStrVec.insert(view.pyStdoutStrVec.end(), v2.begin(), v2.end());
 							}
 							int keyModNdx = 0;
-							if (session.sharedData.pyStdoutKeyModNdxs.size() > 0) keyModNdx = session.sharedData.pyStdoutKeyModNdxs.back();
-							session.sharedData.pyStdoutKeyModNdxs.push_back((int)v.size() + keyModNdx);
+							if (view.pyStdoutKeyModNdxs.size() > 0) keyModNdx = view.pyStdoutKeyModNdxs.back();
+							view.pyStdoutKeyModNdxs.push_back((int)v.size() + keyModNdx);
 							//editors[sharedData.whichPyPane].setString(sharedData.pyStdoutStr.substr(prevEnd, bracketStart-prevEnd));
 						}
 						// if we start with a key modifier, the modifiers indexes vector will be empty
 						// so we populate it with a 0
-						if (session.sharedData.pyStdoutKeyModNdxs.empty()) session.sharedData.pyStdoutKeyModNdxs.push_back(0);
-						session.sharedData.pyStdoutKeyModifiers.push_back(keyModifiers[i]);
+						if (view.pyStdoutKeyModNdxs.empty()) view.pyStdoutKeyModNdxs.push_back(0);
+						view.pyStdoutKeyModifiers.push_back(keyModifiers[i]);
 						//handleKeyModifier(keyModifiers[i]);
 						prevEnd = bracketEnd;
 						lastModifierNdx = i;
 					}
 				}
 				// check if there is anything remaining in the string after the last modifier key
-				if ((int)session.sharedData.pyStdoutStr.size() > angleBracketNdxs[lastModifierNdx] + keyModifiers[lastModifierNdx].ndxInc + 1) {
+				if ((int)view.pyStdoutStr.size() > angleBracketNdxs[lastModifierNdx] + keyModifiers[lastModifierNdx].ndxInc + 1) {
 					int substrStart = angleBracketNdxs[lastModifierNdx] + keyModifiers[lastModifierNdx].ndxInc;
-					std::vector<std::string> v = session.tokenizeString(session.sharedData.pyStdoutStr.substr(substrStart), "\n", true);
+					std::vector<std::string> v = session.tokenizeString(view.pyStdoutStr.substr(substrStart), "\n", true);
 					for (std::string s : v) {
 						std::vector<std::string> v2 = session.tokenizeString(s, "\b", true);
-						session.sharedData.pyStdoutStrVec.insert(session.sharedData.pyStdoutStrVec.end(), v2.begin(), v2.end());
+						view.pyStdoutStrVec.insert(view.pyStdoutStrVec.end(), v2.begin(), v2.end());
 					}
 					//editors[sharedData.whichPyPane].setString(sharedData.pyStdoutStr.substr(substrStart));
 				}
 			}
-			session.sharedData.typePyStrLineByLine = true;
-			session.sharedData.pyStdoutStr.clear();
-			session.sharedData.pyStdoutStrNdx = 0;
+			view.typePyStrLineByLine = true;
+			view.pyStdoutStr.clear();
+			view.pyStdoutStrNdx = 0;
 			//sharedData.typePyStr = false;
 		}
 	}
@@ -1544,14 +1544,14 @@ void ofApp::draw()
 	float paneWidth = 0, paneHeight = 0;
 	// depending on the orientation, we must first create either the height or the width of the editors
 	if (paneSplitOrientation == 0) {
-		paneHeight = session.sharedData.tracebackBase / (float)numPanes.size();
+		paneHeight = view.tracebackBase / (float)numPanes.size();
 	}
 	else {
-		paneWidth = (float)session.sharedData.screenWidth / (float)numPanes.size();
+		paneWidth = (float)view.screenWidth / (float)numPanes.size();
 	}
 	for (std::map<int, int>::iterator it = numPanes.begin(); it != numPanes.end(); ++it) {
 		if (paneSplitOrientation == 0) {
-			paneWidth = (float)session.sharedData.screenWidth / (float)it->second;
+			paneWidth = (float)view.screenWidth / (float)it->second;
 			// we start the following loop from 1 because if we have one column only
 			// we don't need to draw any separating lines
 			for (int col = 1; col < it->second; col++) {
@@ -1561,9 +1561,9 @@ void ofApp::draw()
 		else {
 			// if the orientation is switched, we treat rows as columns and vice versa
 			if (it->first > 0) {
-				ofDrawLine(paneWidth*(float)it->first, 0, paneWidth*(float)it->first, session.sharedData.tracebackYCoord);
+				ofDrawLine(paneWidth*(float)it->first, 0, paneWidth*(float)it->first, view.tracebackYCoord);
 			}
-			paneHeight = session.sharedData.tracebackBase / (float)it->second;
+			paneHeight = view.tracebackBase / (float)it->second;
 		}
 	}
 	//if (sharedData.showNotes) {
@@ -1600,7 +1600,7 @@ void ofApp::draw()
 	}
 	// draw a horizontal line to separate the panes and score from the traceback area
 	ofSetColor(foregroundColor*brightnessCoeff);
-	ofDrawLine(0, session.sharedData.tracebackYCoord, session.sharedData.screenWidth, session.sharedData.tracebackYCoord);
+	ofDrawLine(0, view.tracebackYCoord, view.screenWidth, view.tracebackYCoord);
 	// when the shell stops being shown (e.g. a new error message replaces the output of a command)
 	// the area below the panes goes back to its size for error messages, as it does when pressing Esc
 	bool shellShown = editors[session.whichPane].showingShell();
@@ -1608,7 +1608,7 @@ void ofApp::draw()
 		shellStr = "";
 		numShellLines = numShellLsOutputLines = 0;
 		shellScroll = 0;
-		session.sharedData.tracebackYCoord = session.sharedData.tracebackBase;
+		view.tracebackYCoord = view.tracebackBase;
 		restorePaneLayout();
 		editors[session.whichPane].resetMaxNumLines();
 		// the sizes of the areas below the panes are calculated again in drawTraceback() and drawShell()
@@ -1712,13 +1712,13 @@ void ofApp::drawTraceback()
 			}
 		}
 		if (numTracebackLines > MINTRACEBACKLINES) {
-			float prevTracebackYCoord = session.sharedData.tracebackYCoord;
-			session.sharedData.tracebackYCoord = session.sharedData.tracebackBase - (cursorHeight * (numTracebackLines - MINTRACEBACKLINES));
-			session.sharedData.tracebackYCoord = std::min(session.sharedData.tracebackYCoord, session.sharedData.tracebackBase);
+			float prevTracebackYCoord = view.tracebackYCoord;
+			view.tracebackYCoord = view.tracebackBase - (cursorHeight * (numTracebackLines - MINTRACEBACKLINES));
+			view.tracebackYCoord = std::min(view.tracebackYCoord, view.tracebackBase);
 			moveScoreWithTraceback(prevTracebackYCoord);
 		}
 		else {
-			session.sharedData.tracebackYCoord = session.sharedData.tracebackBase;
+			view.tracebackYCoord = view.tracebackBase;
 			resetScoreYOffset();
 		}
 	}
@@ -1743,7 +1743,7 @@ void ofApp::drawTraceback()
 			tracebackStr += "line " + ofToString(ndxs[j]+1) + ": ";
 		}
 		tracebackStr += editors[session.whichPane].getTracebackStr(ndxs[j]);
-		drawLines(tracebackStr, halfCharacterWidth, session.sharedData.tracebackYCoord+(cursorHeight*(tracebackCounter+1)));
+		drawLines(tracebackStr, halfCharacterWidth, view.tracebackYCoord+(cursorHeight*(tracebackCounter+1)));
 		tracebackCounter += editors[session.whichPane].getTracebackNumLines(ndxs[j]);
 	}
 }
@@ -1770,7 +1770,7 @@ void ofApp::drawShell()
 	// the strings of the shell are broken into lines to fit the width of the window as it is now, so that they fit it also after it is resized
 	// a command that is typed has no newlines, so its cursor is on the row of its position, and it can be on a row of its own
 	// right after the last character of a row
-	maxShellChars = std::max((size_t)1, (size_t)(session.sharedData.screenWidth / oneCharacterWidth));
+	maxShellChars = std::max((size_t)1, (size_t)(view.screenWidth / oneCharacterWidth));
 	std::string shellLines, shellLsOutputLines;
 	if (!shellStr.empty()) {
 		shellLines = wrapShellLines(shellStr, numShellLines);
@@ -1785,13 +1785,13 @@ void ofApp::drawShell()
 		shellLayoutPane = session.whichPane;
 		shellVisibleLines = layoutPanesForShell(numShellLinesWanted);
 		if (shellVisibleLines > MINTRACEBACKLINES) {
-			float prevTracebackYCoord = session.sharedData.tracebackYCoord;
-			session.sharedData.tracebackYCoord = session.sharedData.tracebackBase - (cursorHeight * (shellVisibleLines - MINTRACEBACKLINES));
-			session.sharedData.tracebackYCoord = std::min(session.sharedData.tracebackYCoord, session.sharedData.tracebackBase);
+			float prevTracebackYCoord = view.tracebackYCoord;
+			view.tracebackYCoord = view.tracebackBase - (cursorHeight * (shellVisibleLines - MINTRACEBACKLINES));
+			view.tracebackYCoord = std::min(view.tracebackYCoord, view.tracebackBase);
 			moveScoreWithTraceback(prevTracebackYCoord);
 		}
 		else {
-			session.sharedData.tracebackYCoord = session.sharedData.tracebackBase;
+			view.tracebackYCoord = view.tracebackBase;
 			resetScoreYOffset();
 		}
 	}
@@ -1821,7 +1821,7 @@ void ofApp::drawShell()
 		shownRows += rows[i];
 	}
 	// the area below the panes has already moved up to fit all the lines, so the first line is right below its top
-	float y = session.sharedData.tracebackYCoord + cursorHeight;
+	float y = view.tracebackYCoord + cursorHeight;
 	ofSetColor(shellStrColor*brightnessCoeff);
 	drawLines(shownRows, halfCharacterWidth, y);
 	if (editors[session.whichPane].isTypingShell()) {
@@ -1939,7 +1939,7 @@ void ofApp::moveScoreWithTraceback(float prevTracebackYCoord)
 	// a score shown at the top of the window in horizontal view is not reached by the traceback
 	// so it is not moved, as moving it would push its upper part out of the window
 	if (scoreOrientation == 1 && scoreYOffset <= 0) return;
-	scoreYOffset += (session.sharedData.tracebackYCoord - prevTracebackYCoord);
+	scoreYOffset += (view.tracebackYCoord - prevTracebackYCoord);
 }
 
 //--------------------------------------------------------------
@@ -1958,20 +1958,20 @@ void ofApp::drawScore()
 	if (scoreOrientation > 0) {
 		// numBars is part of the ofApp class and it's used to be compared to the previous number of bars displayed
 		// which is necessary to properly position single bars in horizontal view
-		session.sharedData.numBars = std::min(numBarsToDisplay, (int)session.sharedData.loopData[session.sharedData.loopIndex].size());
+		view.numBars = std::min(numBarsToDisplay, (int)session.sharedData.loopData[session.sharedData.loopIndex].size());
 		drawLoopStartEnd = false;
 		// the equation below yields the first bar to display
 		// the rest will be calculated by adding the loop variable i
 		// e.g. for an 8-bar loop with two bars being displayed
 		// the line below yields 0, 2, 4, 6, every other index (it actually ignores the odd indexes)
-		ndx = ((session.sharedData.thisBarIndex - (session.sharedData.thisBarIndex % session.sharedData.numBars)) / session.sharedData.numBars) * session.sharedData.numBars;
+		ndx = ((session.sharedData.thisBarIndex - (session.sharedData.thisBarIndex % view.numBars)) / view.numBars) * view.numBars;
 		// in the if test below we set the number of bars to be displayed to fit the remaining bars
 		// e.g. in a six-bar loop, when the first four bars have been played, we need to display two bars only
 		// not four bars which is the maximum number of bars to display (these numbers are hypothetical)
-		session.sharedData.numBars = std::min(session.sharedData.numBars, (int)session.sharedData.loopData[session.sharedData.loopIndex].size() - ndx);
+		view.numBars = std::min(view.numBars, (int)session.sharedData.loopData[session.sharedData.loopIndex].size() - ndx);
 	}
 	else {
-		session.sharedData.numBars = 1;
+		view.numBars = 1;
 	}
 	//--------------- end of horizontal score view variables --------------
 	//---------------- variables for the beat visualization ---------------
@@ -1983,50 +1983,50 @@ void ofApp::drawScore()
 	//------------ end of variables for the beat visualization ------------
 	// show the animated beat
 	if (session.sharedData.instruments.size() > 0) {
-		if (session.sharedData.beatAnimate) {
-			beatPulseMinPosY = session.sharedData.yStartPnts[scoreOrientation] - session.sharedData.noteHeight;
-			beatPulseMaxPosY = session.sharedData.yStartPnts[scoreOrientation] + (session.sharedData.staffLinesDist * 4);
+		if (view.beatAnimate) {
+			beatPulseMinPosY = view.yStartPnts[scoreOrientation] - view.noteHeight;
+			beatPulseMaxPosY = view.yStartPnts[scoreOrientation] + (view.staffLinesDist * 4);
 			// one staff for every instrument that is not merged into the staff of another one (see \merge)
 			bool firstStaff = true;
 			for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 				if (session.mergeHostOf(it->first) != it->first) continue;
-				if (!firstStaff) beatPulseMaxPosY += (session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2));
+				if (!firstStaff) beatPulseMaxPosY += (view.allStaffDiffs + (view.staffLinesDist * 2));
 				firstStaff = false;
 			}
-			beatPulseMaxPosY += session.sharedData.noteHeight;
+			beatPulseMaxPosY += view.noteHeight;
 			beatPulseSizeY = beatPulseMaxPosY - beatPulseMinPosY;
-			if (session.sharedData.beatViz) {
-				switch (session.sharedData.beatVizType) {
+			if (view.beatViz) {
+				switch (view.beatVizType) {
 					case 1:
 						beatPulseStartX = scoreXStartPnt + scoreXOffset;
 						beatPulseEndX = scoreXStartPnt + scoreXOffset + session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength();
 						if (scoreOrientation == 1) {
-							beatPulseEndX += (session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength() * (session.sharedData.numBars-1));
-							beatPulseEndX -= (session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getClefXOffset() * (session.sharedData.numBars-1));
-							beatPulseEndX -= (session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getMeterXOffset() * (session.sharedData.numBars-1));
+							beatPulseEndX += (session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength() * (view.numBars-1));
+							beatPulseEndX -= (session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getClefXOffset() * (view.numBars-1));
+							beatPulseEndX -= (session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getMeterXOffset() * (view.numBars-1));
 						}
-						beatPulsePosX = beatPulseStartX - session.sharedData.staffLinesDist;
+						beatPulsePosX = beatPulseStartX - view.staffLinesDist;
 						beatPulseSizeX = beatPulseEndX - beatPulseStartX;
-						beatPulseSizeX += session.sharedData.staffLinesDist;
+						beatPulseSizeX += view.staffLinesDist;
 						beatPulseMinPosY += scoreYOffset;
 						ofSetColor(beatColor.r*brightnessCoeff,
 								   beatColor.g*brightnessCoeff,
 								   beatColor.b*brightnessCoeff,
-								   session.sharedData.beatVizCosTab[session.sharedData.beatVizDegrade] * BEATVIZCOEFF);
+								   view.beatVizCosTab[view.beatVizDegrade] * BEATVIZCOEFF);
 						ofDrawRectangle(beatPulsePosX, beatPulseMinPosY, beatPulseSizeX, beatPulseSizeY);
 						break;
 					default:
 						break;
 				}
 				// regardless of the beattype, we calculate the alpha value here
-				if ((ofGetElapsedTimeMillis() - session.sharedData.beatVizTimeStamp) >= session.sharedData.beatVizRampStart) {
+				if ((ofGetElapsedTimeMillis() - view.beatVizTimeStamp) >= view.beatVizRampStart) {
 					// calculate how many steps the brightness has to dim, depending on the elapsed time and the steps per millisecond
-					int brightnessDegrade = (int)((ofGetElapsedTimeMillis()-(session.sharedData.beatVizTimeStamp+session.sharedData.beatVizRampStart))*session.sharedData.beatVizStepsPerMs);
-					session.sharedData.beatVizDegrade = BEATVIZBRIGHTNESS - brightnessDegrade;
-					if (session.sharedData.beatVizDegrade < 0) {
-						session.sharedData.beatVizDegrade = 0;
-						session.sharedData.beatViz = false;
-						session.sharedData.beatVizDegrade = BEATVIZBRIGHTNESS;
+					int brightnessDegrade = (int)((ofGetElapsedTimeMillis()-(view.beatVizTimeStamp+view.beatVizRampStart))*view.beatVizStepsPerMs);
+					view.beatVizDegrade = BEATVIZBRIGHTNESS - brightnessDegrade;
+					if (view.beatVizDegrade < 0) {
+						view.beatVizDegrade = 0;
+						view.beatViz = false;
+						view.beatVizDegrade = BEATVIZBRIGHTNESS;
 					}
 				}
 			}
@@ -2036,7 +2036,7 @@ void ofApp::drawScore()
 		float notesOffsetX = staffOffsetX;
 		//notesOffsetX += sharedData.instruments.begin()->second.getClefXOffset();
 		//notesOffsetX += sharedData.instruments.begin()->second.getMeterXOffset();
-		notesOffsetX += (session.sharedData.staffLinesDist * NOTESXOFFSETCOEF);
+		notesOffsetX += (view.staffLinesDist * NOTESXOFFSETCOEF);
 		//float prevNotesOffsetX = notesOffsetX;
 		//float notesXCoef = (sharedData.instruments.begin()->second.getStaffXLength() + staffOffsetX - notesOffsetX) / notesLength;
 		if (showBarCount && session.sharedData.instruments.size() > 0) {
@@ -2049,7 +2049,7 @@ void ofApp::drawScore()
 		std::pair prevTempo = std::make_pair(0, 0);
 		std::vector<int> prevClefs (session.sharedData.instruments.size(), 0);
 		bool prevDrawClef = false, prevDrawMeter = false;
-		for (int i = 0; i < session.sharedData.numBars; i++) {
+		for (int i = 0; i < view.numBars; i++) {
 			bool drawClef = false, drawMeter = false, animate = false;
 			bool drawTempo = false;
 			bool showBar = true;
@@ -2106,9 +2106,9 @@ void ofApp::drawScore()
 			// if we are calling a new loop, all bars but the last should display the first bars of the next loop
 			// unless we set scoreChangeOnLast to false, where on the last run (e.g. an eight-bar loop will run twice with four bars being display)
 			// every bar that finishes playing must display the respective bar of the upcoming loop
-			int threshold = (int)session.sharedData.loopData[session.sharedData.loopIndex].size() - session.sharedData.numBars + i;
+			int threshold = (int)session.sharedData.loopData[session.sharedData.loopIndex].size() - view.numBars + i;
 			if (scoreChangeOnLastBar) threshold = (int)session.sharedData.loopData[session.sharedData.loopIndex].size() - 2;
-			if (mustUpdateScore && (int)session.sharedData.thisBarIndex > threshold && i < session.sharedData.numBars - 1) {
+			if (mustUpdateScore && (int)session.sharedData.thisBarIndex > threshold && i < view.numBars - 1) {
 				if (i >= (int)session.sharedData.loopData[session.sharedData.tempLoopIndex].size()) {
 					showBar = false;
 				}
@@ -2123,17 +2123,17 @@ void ofApp::drawScore()
 			}
 			// if we're staying in the same loop, when the currently playing bar is displayed at the right-most staff
 			// all the other bars must display the next bars of the loop (if there are any)
-			else if ((int)session.sharedData.thisBarIndex - ndx == session.sharedData.numBars - 1 && i < session.sharedData.numBars - 1) {
-				bar = session.sharedData.loopData[session.sharedData.loopIndex][(barNdx+session.sharedData.numBars)%(int)session.sharedData.loopData[session.sharedData.loopIndex].size()];
-				// the calculations below determine whether the remaining bars are less than sharedData.numBars - 1
+			else if ((int)session.sharedData.thisBarIndex - ndx == view.numBars - 1 && i < view.numBars - 1) {
+				bar = session.sharedData.loopData[session.sharedData.loopIndex][(barNdx+view.numBars)%(int)session.sharedData.loopData[session.sharedData.loopIndex].size()];
+				// the calculations below determine whether the remaining bars are less than numBars - 1
 				// (we subtract one because in the last slot, we display the bar of the current loop chunk)
 				// in which case, we should leave the remaining slots empty
-				// for example, in a 6-bar loop with sharedData.numBars = 4, when we enter the second chunk of the loop
+				// for example, in a 6-bar loop with numBars = 4, when we enter the second chunk of the loop
 				// we need to display two bars
 				// when at the last bar of the first chunk, we display the 5th and 6th bar on the left side
 				// and the 4th bar on the right side, with the 3rd slot being blank
 				int loopSize = (int)session.sharedData.loopData[session.sharedData.loopIndex].size();
-				int ndxLocal = ndx + session.sharedData.numBars;
+				int ndxLocal = ndx + view.numBars;
 				if (ndxLocal >= loopSize) ndxLocal = 0;
 				int numBarsLocal = std::min(std::min(numBarsToDisplay, loopSize), loopSize - ndxLocal);
 				if (i >= numBarsLocal) showBar = false;
@@ -2155,20 +2155,20 @@ void ofApp::drawScore()
 				else notesOffsetX -= session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getMeterXOffset();
 			}
 			// set position of single bars based on the position of the bars of the previous loop
-			if (session.sharedData.numBars == 1 && scoreOrientation > 0) {
+			if (view.numBars == 1 && scoreOrientation > 0) {
 				// initially display the single bar at the second position, and alternate with the third one
 				// but only with positions that are inside the score, as there are numBarsToDisplay positions
 				// (with two bars, the third position would be outside of the window, and the score would disappear)
 				int firstSlot = (numBarsToDisplay > 1 ? 1 : 0);
 				int secondSlot = (numBarsToDisplay > 2 ? 2 : 0);
 				int slot = firstSlot;
-				if ((session.sharedData.prevNumBars > 1 || (session.sharedData.prevNumBars == 1 && session.sharedData.prevPosition == 0)) && session.sequencer.isThreadRunning()) {
+				if ((view.prevNumBars > 1 || (view.prevNumBars == 1 && view.prevPosition == 0)) && session.sequencer.isThreadRunning()) {
 					// but the previous loop was a single bar at the first of these positions, display the current single bar at the other one
 					slot = secondSlot;
-					session.sharedData.thisPosition = 1;
+					view.thisPosition = 1;
 				}
 				else {
-					session.sharedData.thisPosition = 0;
+					view.thisPosition = 0;
 				}
 				staffOffsetX += session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength() * (float)slot;
 				notesOffsetX += session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength() * (float)slot;
@@ -2180,7 +2180,7 @@ void ofApp::drawScore()
 			// if we're displaying the beat pulse on each beat instead of a rectangle that encloses the whole score
 			// we need to display it here, in case we display the score horizontally, where we need to give
 			// an offset to the pulse so it is displayed on top of the currently playing bar
-			if (session.sharedData.beatAnimate && session.sharedData.beatViz && session.sharedData.beatVizType == 2) {
+			if (view.beatAnimate && view.beatViz && view.beatVizType == 2) {
 				// draw only for the currenlty playing bar, whichever that is in the horizontal line
 				if (barNdx == (int)session.sharedData.thisBarIndex) {
 					beatPulseStartX = notesOffsetX + ((notesLength  / session.sharedData.numerator[session.getPlayingBarIndex()]) * session.sharedData.beatCounter) * notesXCoef;
@@ -2195,7 +2195,7 @@ void ofApp::drawScore()
 					ofSetColor(beatColor.r*brightnessCoeff,
 							   beatColor.g*brightnessCoeff,
 							   beatColor.b*brightnessCoeff,
-							   session.sharedData.beatVizCosTab[session.sharedData.beatVizDegrade] * BEATVIZCOEFF);
+							   view.beatVizCosTab[view.beatVizDegrade] * BEATVIZCOEFF);
 					ofDrawRectangle(beatPulsePosX, beatPulseMinPosY, beatPulseSizeX, beatPulseSizeY);
 				}
 			}
@@ -2216,7 +2216,7 @@ void ofApp::drawScore()
 					else nextBarOfScore = loop.front();
 				}
 			}
-			float yStartPnt = session.sharedData.yStartPnts[scoreOrientation];
+			float yStartPnt = view.yStartPnts[scoreOrientation];
 			// the Y coordinate of every staff, by the instrument it belongs to
 			// instruments merged into the staff of another one (see \merge) are drawn on that staff, below
 			std::map<int, float> staffYOf;
@@ -2225,7 +2225,7 @@ void ofApp::drawScore()
 				for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 					if (session.mergeHostOf(it->first) != it->first) continue;
 					staffYOf[it->first] = staffY;
-					staffY += (session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2));
+					staffY += (view.allStaffDiffs + (view.staffLinesDist * 2));
 				}
 			}
 			unsigned j = 0;
@@ -2249,10 +2249,10 @@ void ofApp::drawScore()
 						if (group.size() > 1 && group.front() == it->first) staffInsts = group;
 					}
 					float lineHeight = instFont.getLineHeight();
-					float firstYPos = yStartPnt + (session.sharedData.staffLinesDist*2.5) + scoreYOffset - (lineHeight * (float)(staffInsts.size() - 1) / 2.0f);
+					float firstYPos = yStartPnt + (view.staffLinesDist*2.5) + scoreYOffset - (lineHeight * (float)(staffInsts.size() - 1) / 2.0f);
 					for (size_t k = 0; k < staffInsts.size(); k++) {
 						Instrument& inst = session.sharedData.instruments[staffInsts[k]];
-						float xPos = scoreXOffset + (session.sharedData.blankSpace * 0.75) + (session.sharedData.longestInstNameWidth - instNameWidths[staffInsts[k]]);
+						float xPos = scoreXOffset + (view.blankSpace * 0.75) + (view.longestInstNameWidth - instNameWidths[staffInsts[k]]);
 						float yPos = firstYPos + (lineHeight * (float)k);
 						ofColor color = toOf(inst.displayAs<ScoreView>().getStaffColor());
 						ofSetColor(color.r*brightnessCoeff, color.g*brightnessCoeff, color.b*brightnessCoeff);
@@ -2268,7 +2268,7 @@ void ofApp::drawScore()
 				// the start of the staff can also be moved with \movex, so we include this too
 				float connectingLineX = staffOffsetX + it->second.displayAs<ScoreView>().getStaffXStartOffset();
 				float connectingLineY1 = yStartPnt + scoreYOffset;
-				float connectingLineY2 = connectingLineY1 - session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2);
+				float connectingLineY2 = connectingLineY1 - view.allStaffDiffs + (view.staffLinesDist * 2);
 				// each staff draws its own vertical lines at its sides (from its top to its bottom line) in Staff::drawStaff()
 				// here we draw the lines between the staves:
 				// on the left side of the score (the first bar), all staves are connected, from the top line of the top staff
@@ -2291,7 +2291,7 @@ void ofApp::drawScore()
 					it->second.displayAs<ScoreView>().drawStaff(bar, staffOffsetX, yStartPnt, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempoLocal);
 					it->second.displayAs<ScoreView>().drawNotes(bar, i, &session.sharedData.loopData[insertNaturalsNdx], notesOffsetX, yStartPnt, scoreYOffset, animate, notesXCoef, nextBarOfScore);
 				}
-				yStartPnt += (session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2));
+				yStartPnt += (view.allStaffDiffs + (view.staffLinesDist * 2));
 				j++;
 				prevInst = it;
 			}
@@ -2316,10 +2316,10 @@ void ofApp::drawScore()
 		if (color != backgroundColor) {
 			ofSetColor(color * brightnessCoeff);
 			if (scoreOrientation == 0) {
-				ofDrawLine(session.sharedData.middleOfScreenX, 0, session.sharedData.middleOfScreenX, session.sharedData.screenHeight);
+				ofDrawLine(view.middleOfScreenX, 0, view.middleOfScreenX, view.screenHeight);
 			}
 			else {
-				ofDrawLine(0, scoreBackgroundHeight, session.sharedData.screenWidth, scoreBackgroundHeight);
+				ofDrawLine(0, scoreBackgroundHeight, view.screenWidth, scoreBackgroundHeight);
 			}
 		}
 	}
@@ -2348,28 +2348,28 @@ int ofApp::noteNameToMidi(const std::string& name)
 void ofApp::setPianoRollRange(int lowestKey, int highestKey)
 {
 	auto isBlack = [](int note) { int pc = note % 12; return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10; };
-	session.sharedData.pianoRollLowestKey = std::max(0, lowestKey);
-	session.sharedData.pianoRollHighestKey = std::min(127, highestKey);
+	view.pianoRollLowestKey = std::max(0, lowestKey);
+	view.pianoRollHighestKey = std::min(127, highestKey);
 	int numWhiteKeys = 0;
-	for (int note = session.sharedData.pianoRollLowestKey; note <= session.sharedData.pianoRollHighestKey; note++) {
+	for (int note = view.pianoRollLowestKey; note <= view.pianoRollHighestKey; note++) {
 		if (!isBlack(note)) numWhiteKeys++;
 	}
-	session.sharedData.pianoRollNumWhiteKeys = std::max(1, numWhiteKeys);
+	view.pianoRollNumWhiteKeys = std::max(1, numWhiteKeys);
 	// the keyboard goes from the start of its lowest key to the end of its highest key
 	// a white key takes the whole width of a white key, and a black key the width of its lane (see pianoRollLane())
 	// so a keyboard can start or end with a black key (e.g. c1 cis4), without the white key next to it
-	session.sharedData.pianoRollOrigin = 0;
-	std::pair<float, float> lowest = pianoRollLane(session.sharedData.pianoRollLowestKey);
-	std::pair<float, float> highest = pianoRollLane(session.sharedData.pianoRollHighestKey);
+	view.pianoRollOrigin = 0;
+	std::pair<float, float> lowest = pianoRollLane(view.pianoRollLowestKey);
+	std::pair<float, float> highest = pianoRollLane(view.pianoRollHighestKey);
 	static const int whiteIndex[12] = {0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6};
 	auto whiteStart = [&](int note) { return (float)((note / 12) * 7 + whiteIndex[note % 12]); };
-	float start = (isBlack(session.sharedData.pianoRollLowestKey) ? lowest.first : whiteStart(session.sharedData.pianoRollLowestKey));
-	float end = (isBlack(session.sharedData.pianoRollHighestKey) ? highest.first + highest.second : whiteStart(session.sharedData.pianoRollHighestKey) + 1);
-	session.sharedData.pianoRollOrigin = start;
-	session.sharedData.pianoRollLength = std::max(1.0f, end - start);
+	float start = (isBlack(view.pianoRollLowestKey) ? lowest.first : whiteStart(view.pianoRollLowestKey));
+	float end = (isBlack(view.pianoRollHighestKey) ? highest.first + highest.second : whiteStart(view.pianoRollHighestKey) + 1);
+	view.pianoRollOrigin = start;
+	view.pianoRollLength = std::max(1.0f, end - start);
 	// the keys fill the length of the keyboard, which is the height of the score in vertical view, and its width in horizontal view
-	if (scoreOrientation == 0) session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / session.sharedData.pianoRollLength;
-	else session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / session.sharedData.pianoRollLength;
+	if (scoreOrientation == 0) view.pianoRollKeysHeight = scoreBackgroundHeight / view.pianoRollLength;
+	else view.pianoRollKeysWidth = scoreBackgroundWidth / view.pianoRollLength;
 }
 
 //--------------------------------------------------------------
@@ -2383,7 +2383,7 @@ std::pair<float, float> ofApp::pianoRollLane(int note)
 	};
 	// relative to the start of the keyboard (see setPianoRollRange())
 	std::pair<float, float> lane = laneInOctave(note % 12);
-	return std::make_pair((float)((note / 12) * 7) + lane.first - session.sharedData.pianoRollOrigin, lane.second);
+	return std::make_pair((float)((note / 12) * 7) + lane.first - view.pianoRollOrigin, lane.second);
 }
 
 //--------------------------------------------------------------
@@ -2395,8 +2395,8 @@ void ofApp::drawPianoRoll()
 	ofDrawRectangle(scoreXOffset, scoreYOffset, scoreBackgroundWidth, scoreBackgroundHeight);
 	bool vertical = (scoreOrientation == 0);
 	// the width of a white key along the keyboard, and the depth of the keys (from the side of the notes to the front of the keys)
-	float whiteKeyWidth = (vertical ? session.sharedData.pianoRollKeysHeight : session.sharedData.pianoRollKeysWidth);
-	float keysDepth = (vertical ? session.sharedData.pianoRollKeysWidth : session.sharedData.pianoRollKeysHeight);
+	float whiteKeyWidth = (vertical ? view.pianoRollKeysHeight : view.pianoRollKeysWidth);
+	float keysDepth = (vertical ? view.pianoRollKeysWidth : view.pianoRollKeysHeight);
 	// the keyboard is at the right side of the score in vertical view, with the lowest key at the bottom
 	// and at the bottom of the score in horizontal view, with the lowest key on the left
 	// the black keys are at the side of the keyboard that faces the notes, two thirds of its depth
@@ -2416,9 +2416,9 @@ void ofApp::drawPianoRoll()
 	auto isBlack = [](int note) { int pc = note % 12; return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10; };
 	static const int whiteIndex[12] = {0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6};
 	auto whiteKeyStart = [&](int note) {
-		return (float)((note / 12) * 7 + whiteIndex[note % 12]) - session.sharedData.pianoRollOrigin;
+		return (float)((note / 12) * 7 + whiteIndex[note % 12]) - view.pianoRollOrigin;
 	};
-	float keyboardLength = session.sharedData.pianoRollLength;
+	float keyboardLength = view.pianoRollLength;
 	// the notes that play, highlighted on the keyboard with the color of their instrument, as opaque as their velocity
 	// by key and by instrument, so that a key that more instruments play is highlighted with their colors mixed (see highlightKey below)
 	struct ActiveKey {
@@ -2443,7 +2443,7 @@ void ofApp::drawPianoRoll()
 		// the movement of the notes depends on the tempo of the currently playing bar
 		int thisBar = session.sharedData.loopData[session.sharedData.loopIndex][session.sharedData.thisBarIndex];
 		// the length of the area of the notes, from the edge of the score to the keyboard
-		float rollLength = (vertical ? scoreBackgroundWidth - session.sharedData.pianoRollKeysWidth : scoreBackgroundHeight - session.sharedData.pianoRollKeysHeight);
+		float rollLength = (vertical ? scoreBackgroundWidth - view.pianoRollKeysWidth : scoreBackgroundHeight - view.pianoRollKeysHeight);
 		float rollStart = (vertical ? scoreXOffset : scoreYOffset);
 		// with the piano roll we show one bar only
 		// but as the notes roll, we start showing the next bar too
@@ -2480,14 +2480,14 @@ void ofApp::drawPianoRoll()
 					continue;
 				}
 				for (size_t j = 0; j < instIt->second.notes.at(bar).size(); j++) {
-					float noteLength = (float)instIt->second.durs.at(bar).at(j) * session.sharedData.pianoRollMinDur;
+					float noteLength = (float)instIt->second.durs.at(bar).at(j) * view.pianoRollMinDur;
 					float durPercentage = instIt->second.durPercentages[instIt->second.articulations[bar][j][0]];
 					// the position of the note along the roll, towards the keyboard
 					// the ADSR release part is removed from the length of the note, so its start moves by as much
 					float pos = rollStart + rollLength - posAccum - noteLength + (noteLength * (1 - durPercentage));
 					if (session.sequencer.isThreadRunning()) {
 						// advance according to the elapsed time since the start of the bar
-						pos += ((rollLength * (timeStamp - session.sharedData.pianoRollTimeStamp)) / (session.sharedData.tempoMs[thisBar] * session.sharedData.numerator[thisBar]));
+						pos += ((rollLength * (timeStamp - view.pianoRollTimeStamp)) / (session.sharedData.tempoMs[thisBar] * session.sharedData.numerator[thisBar]));
 					}
 					float length = noteLength * durPercentage;
 					if (i == 0) {
@@ -2508,7 +2508,7 @@ void ofApp::drawPianoRoll()
 					int velocity = (j < velocities.size() ? velocities[j] : 127);
 					for (size_t k = 0; k < instIt->second.notes.at(bar).at(j).size(); k++) {
 						int note = (int)instIt->second.notes.at(bar).at(j).at(k);
-						if (note < session.sharedData.pianoRollLowestKey || note > session.sharedData.pianoRollHighestKey) continue; // -1 is a rest
+						if (note < view.pianoRollLowestKey || note > view.pianoRollHighestKey) continue; // -1 is a rest
 						if (length <= 0) continue;
 						rollNotes.push_back({instIt->first, note, pos, length, toOf(instIt->second.getColor()) * brightnessCoeff, velocity});
 						if (active) activeKeys[note][instIt->first] = {toOf(instIt->second.getColor()) * brightnessCoeff, velocity};
@@ -2586,11 +2586,11 @@ void ofApp::drawPianoRoll()
 		// within the keyboard, which might start or end with a black key
 		highlightKey(key.second, std::max(0.0f, start), std::min(keyboardLength, start + 1), blackKeysDepth, 1);
 		float backStart = std::max(0.0f, start), backEnd = std::min(keyboardLength, start + 1);
-		if (key.first - 1 >= session.sharedData.pianoRollLowestKey && isBlack(key.first - 1)) {
+		if (key.first - 1 >= view.pianoRollLowestKey && isBlack(key.first - 1)) {
 			std::pair<float, float> below = pianoRollLane(key.first - 1);
 			backStart = below.first + below.second;
 		}
-		if (key.first + 1 <= session.sharedData.pianoRollHighestKey && isBlack(key.first + 1)) {
+		if (key.first + 1 <= view.pianoRollHighestKey && isBlack(key.first + 1)) {
 			backEnd = pianoRollLane(key.first + 1).first;
 		}
 		highlightKey(key.second, backStart, backEnd, 0, blackKeysDepth);
@@ -2599,7 +2599,7 @@ void ofApp::drawPianoRoll()
 	ofSetColor((backgroundColor == ofColor::white ? ofColor(0) : backgroundColor) * brightnessCoeff);
 	// at the start of every white key of the range, except at the start of the keyboard
 	// and at the end of its last white key, if it ends with a black key (e.g. at the end of c4, when the keyboard ends with cis4)
-	for (int note = session.sharedData.pianoRollLowestKey; note <= session.sharedData.pianoRollHighestKey + 1; note++) {
+	for (int note = view.pianoRollLowestKey; note <= view.pianoRollHighestKey + 1; note++) {
 		if (isBlack(note)) continue;
 		float k = whiteKeyStart(note);
 		if (k <= 0.001f || k >= keyboardLength - 0.001f) continue;
@@ -2613,7 +2613,7 @@ void ofApp::drawPianoRoll()
 		}
 	}
 	// the black keys, each over its lane, with the notes that play highlighted
-	for (int note = session.sharedData.pianoRollLowestKey; note <= session.sharedData.pianoRollHighestKey; note++) {
+	for (int note = view.pianoRollLowestKey; note <= view.pianoRollHighestKey; note++) {
 		if (!isBlack(note)) continue;
 		std::pair<float, float> lane = pianoRollLane(note);
 		auto activeIt = activeKeys.find(note);
@@ -2717,7 +2717,7 @@ void ofApp::drawSequencer()
 	if (order.empty()) return;
 	// the squares are as large as they can be, after the names of the instruments, and they are centered vertically
 	float margin = 10;
-	float nameWidth = (float)session.sharedData.longestInstNameWidth + (margin * 2);
+	float nameWidth = (float)view.longestInstNameWidth + (margin * 2);
 	float square = std::min((scoreBackgroundWidth - nameWidth - margin) / (float)numSteps, (scoreBackgroundHeight - (margin * 2)) / (float)order.size());
 	if (square <= 0) return;
 	float gridX = scoreXOffset + nameWidth;
@@ -2784,7 +2784,7 @@ void ofApp::drawSequencer()
 	if (session.sequencer.isThreadRunning() && session.sharedData.tempoMs.count(bar) && session.sharedData.numerator.count(bar)) {
 		float barMs = (float)(session.sharedData.tempoMs[bar] * session.sharedData.numerator[bar]);
 		if (barMs > 0) {
-			float progress = std::clamp((float)(ofGetElapsedTimeMillis() - session.sharedData.pianoRollTimeStamp) / barMs, 0.0f, 1.0f);
+			float progress = std::clamp((float)(ofGetElapsedTimeMillis() - view.pianoRollTimeStamp) / barMs, 0.0f, 1.0f);
 			int step = std::min(numSteps - 1, (int)(progress * (float)barLength / (float)stepLength));
 			ofColor red = ofColor::red * brightnessCoeff;
 			ofSetColor(red.r, red.g, red.b, 191);
@@ -3065,7 +3065,7 @@ void ofApp::executeKeyPressed(int key)
 			if (editors[session.whichPane].highlightManyChars) editors[session.whichPane].highlightManyChars = false;
 			// if we have typed commands and their output is greater than two lines
 			// then sharedData.tracebackYCoord will have changed so we need to reset it
-			session.sharedData.tracebackYCoord = session.sharedData.tracebackBase;
+			view.tracebackYCoord = view.tracebackBase;
 			// the same applies to the number of lines for commands and their output
 			numShellLines = numShellLsOutputLines = 0;
 			// and the sizes of the areas are calculated again the next time they are shown
@@ -3118,17 +3118,17 @@ void ofApp::executeKeyPressed(int key)
 				setFontSize(true);
 			}
 			else if (key == 43 && editors[session.whichPane].isCtrlPressed()) { // + with shift pressed
-				session.sharedData.staffLinesDist += 2;
-				session.sharedData.scoreFontSize = (int)(35.0 * session.sharedData.staffLinesDist / 10.0);
-				instFontSize = session.sharedData.scoreFontSize / 3.5;
+				view.staffLinesDist += 2;
+				view.scoreFontSize = (int)(35.0 * view.staffLinesDist / 10.0);
+				instFontSize = view.scoreFontSize / 3.5;
 				instFont.load("Monaco.ttf", instFontSize);
 				setScoreSizes();
 			}
 			else if (key == 95 && editors[session.whichPane].isCtrlPressed()) { // - with shift pressed
-				session.sharedData.staffLinesDist -= 2;
-				if (session.sharedData.staffLinesDist < 4) session.sharedData.staffLinesDist = 4;
-				session.sharedData.scoreFontSize = (int)(35.0 * session.sharedData.staffLinesDist / 10.0);
-				instFontSize = session.sharedData.scoreFontSize / 3.5;
+				view.staffLinesDist -= 2;
+				if (view.staffLinesDist < 4) view.staffLinesDist = 4;
+				view.scoreFontSize = (int)(35.0 * view.staffLinesDist / 10.0);
+				instFontSize = view.scoreFontSize / 3.5;
 				instFont.load("Monaco.ttf", instFontSize);
 				setScoreSizes();
 			}
@@ -3488,11 +3488,11 @@ void ofApp::keyReleased(int key)
 pyStdoutStrKeyModifier ofApp::checkPyStdoutKeyModifier(int ndx)
 {
 	pyStdoutStrKeyModifier keyMod = {false, 0, 0, 0};
-	if (session.sharedData.pyStdoutStr[ndx] == '<' && ((ndx > 0 && session.sharedData.pyStdoutStr[ndx-1] != '\\') || ndx == 0)) {
-		if (session.sharedData.pyStdoutStr.substr(ndx).find(">") == std::string::npos) {
+	if (view.pyStdoutStr[ndx] == '<' && ((ndx > 0 && view.pyStdoutStr[ndx-1] != '\\') || ndx == 0)) {
+		if (view.pyStdoutStr.substr(ndx).find(">") == std::string::npos) {
 			return keyMod;
 		}
-		std::string s = session.sharedData.pyStdoutStr.substr(ndx+1, session.sharedData.pyStdoutStr.substr(ndx+1).find(">"));
+		std::string s = view.pyStdoutStr.substr(ndx+1, view.pyStdoutStr.substr(ndx+1).find(">"));
 		int modifierKey = 0;
 		int action = 0;
 		if (s.compare("SHIFT_DOWN") == 0) {
@@ -3534,19 +3534,19 @@ pyStdoutStrKeyModifier ofApp::checkPyStdoutKeyModifier(int ndx)
 void ofApp::handleKeyModifier(pyStdoutStrKeyModifier modifierStruct)
 {
 	if (modifierStruct.action == 1) {
-		if (session.sharedData.whichPyPane == session.whichPane) {
+		if (view.whichPyPane == session.whichPane) {
 			keyPressed(modifierStruct.modifier);
 		}
 		else {
-			keyPressedOsc(modifierStruct.modifier, session.sharedData.whichPyPane);
+			keyPressedOsc(modifierStruct.modifier, view.whichPyPane);
 		}
 	}
 	else {
-		if (session.sharedData.whichPyPane == session.whichPane) {
+		if (view.whichPyPane == session.whichPane) {
 			keyReleased(modifierStruct.modifier);
 		}
 		else {
-			keyReleasedOsc(modifierStruct.modifier, session.sharedData.whichPyPane);
+			keyReleasedOsc(modifierStruct.modifier, view.whichPyPane);
 		}
 	}
 }
@@ -4719,17 +4719,17 @@ void ofApp::sendBeatVizInfo(int bar)
 {
 	// calculate the time stamp regardless of whether we're showing the beat
 	// or not in the editor, in case we have connected score parts
-	session.sharedData.beatVizTimeStamp = ofGetElapsedTimeMillis();
-	session.sharedData.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)session.sharedData.tempoMs[bar] / 4.0);
-	session.sharedData.beatVizRampStart = session.sharedData.tempoMs[bar] / 4;
-	if (session.sharedData.beatAnimate) {
-		session.sharedData.beatViz = true;
+	view.beatVizTimeStamp = ofGetElapsedTimeMillis();
+	view.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)session.sharedData.tempoMs[bar] / 4.0);
+	view.beatVizRampStart = session.sharedData.tempoMs[bar] / 4;
+	if (view.beatAnimate) {
+		view.beatViz = true;
 	}
 	// notify all score parts of the time stamp and the beat visualization counter
 	OscMessage m;
 	m.setAddress("/beatinfo");
-	m.addFloatArg(session.sharedData.beatVizStepsPerMs);
-	m.addIntArg((int)session.sharedData.beatVizRampStart);
+	m.addFloatArg(view.beatVizStepsPerMs);
+	m.addIntArg((int)view.beatVizRampStart);
 	session.sendToParts(m, false);
 	m.clear();
 	m.setAddress("/beat");
@@ -4947,10 +4947,10 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 			}
 			else if (commands[1].compare("beat") == 0) {
 				if (session.sequencer.isThreadRunning()) {
-					session.sharedData.beatAnimate = true;
+					view.beatAnimate = true;
 				}
 				else {
-					session.sharedData.setBeatAnimation = true;
+					view.setBeatAnimation = true;
 				}
 			}
 			else if (commands[1].compare("notes") == 0) {
@@ -4986,8 +4986,8 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 				showTempo = false;
 			}
 			else if (commands[1].compare("beat") == 0) {
-				session.sharedData.beatAnimate = false;
-				session.sharedData.setBeatAnimation = false;
+				view.beatAnimate = false;
+				view.setBeatAnimation = false;
 			}
 			else {
 				return "unknown argument";
@@ -5009,7 +5009,7 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 		if (beattype < 1 || beattype > 2) {
 			return "unknown beat vizualization type";
 		}
-		session.sharedData.beatVizType = beattype;
+		view.beatVizType = beattype;
 	}
 
 	else if (commands[0].compare("movex") == 0) {
@@ -5085,12 +5085,12 @@ void ofApp::setShowScore(int ndx)
 	if (ndx >= 0) {
 		showScore = true;
 		scoreType = ndx;
-		if (ndx == 0) session.sharedData.showNotes = true;
-		else session.sharedData.showNotes = false;
+		if (ndx == 0) view.showNotes = true;
+		else view.showNotes = false;
 	}
 	else {
 		showScore = false;
-		session.sharedData.showNotes = false;
+		view.showNotes = false;
 	}
 	// the oscilloscope gets the output of the audio thread only while it is shown (see onAudioOut() and update())
 	showScope = (ndx == 2);
@@ -5149,7 +5149,7 @@ void ofApp::setFontSize(bool calculateCoords)
 		cursorHeight = font.stringHeight("q");
 		float heightDiff = font.stringHeight("l") - font.stringHeight("o");
 		cursorHeight += heightDiff;
-		maxShellChars = (size_t)(session.sharedData.screenWidth / oneCharacterWidth);
+		maxShellChars = (size_t)(view.screenWidth / oneCharacterWidth);
 	}
 	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 		it->second.setFontSize(fontSize, oneCharacterWidth, cursorHeight);
@@ -5164,14 +5164,14 @@ void ofApp::setPaneCoords()
 	// MINTRACEBACKLINES lines of the current font, with their baselines one and two lines below the panes (see drawTraceback() and drawShell())
 	// and the part of the last line below its baseline, as low as the cursor reaches (0.15 of a line, see drawShell())
 	// the panes get a whole number of lines in the rest of the window, so the area below them is at least this high
-	session.sharedData.tracebackBase = (float)session.sharedData.screenHeight - (cursorHeight * ((float)MINTRACEBACKLINES + 0.15f));
+	view.tracebackBase = (float)view.screenHeight - (cursorHeight * ((float)MINTRACEBACKLINES + 0.15f));
 	// we need the anchor so we can change the traceback height in case the traceback
 	// has more than two lines
 	// get the width and height for each pane
 	// initializing 0 to avoid warning messages during compilation
 	float paneWidth = 0, paneHeight = 0;
 	// we compute the maximum number of lines for a pane with the height of the window
-	int maxNumLines = session.sharedData.tracebackBase / cursorHeight;
+	int maxNumLines = view.tracebackBase / cursorHeight;
 	// we need an even number of lines so that more than one panes in a column can halve this number
 	if (maxNumLines % 2) {
 		if (maxNumLines > 1) maxNumLines--;
@@ -5182,7 +5182,7 @@ void ofApp::setPaneCoords()
 		paneHeight = ((float)maxNumLines * cursorHeight) / (float)numPanes.size();
 	}
 	else {
-		paneWidth = (float)session.sharedData.screenWidth / (float)numPanes.size();
+		paneWidth = (float)view.screenWidth / (float)numPanes.size();
 	}
 	int paneNdx = 0;
 	for (std::map<int, int>::iterator it = numPanes.begin(); it != numPanes.end(); ++it) {
@@ -5235,7 +5235,7 @@ void ofApp::setPaneCoords()
 			additionalLines = maxNumLines - (numLines * numLinesMultiplier);
 		}
 		if (paneSplitOrientation == 0) {
-			paneWidth = session.sharedData.screenWidth / widthDivisor;
+			paneWidth = view.screenWidth / widthDivisor;
 			for (int col = 0; col < it->second; col++) {
 				editors[paneNdx].setFrameWidth(paneWidth); // - (float)(lineWidth / 2));
 				editors[paneNdx].setFrameXOffset(paneWidth * (float)col);
@@ -5274,8 +5274,8 @@ void ofApp::setPaneCoords()
 	//for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 	//	maxNumLines = max(maxNumLines, it->second.getMaxNumLines());
 	//}
-	session.sharedData.tracebackBase = (float)maxNumLines * cursorHeight;
-	session.sharedData.tracebackYCoord = session.sharedData.tracebackBase;
+	view.tracebackBase = (float)maxNumLines * cursorHeight;
+	view.tracebackYCoord = view.tracebackBase;
 	// the panes have a new layout, which the shell makes shorter again if it needs to (see layoutPanesForShell())
 	paneBase.clear();
 	// the area below the panes is reset, so its size is calculated again in drawTraceback() and drawShell()
@@ -5286,19 +5286,19 @@ void ofApp::setPaneCoords()
 //--------------------------------------------------------------
 void ofApp::setScoreCoords()
 {
-	scoreXStartPnt = session.sharedData.longestInstNameWidth + (session.sharedData.blankSpace * 1.5);
-	float staffLength = scoreBackgroundWidth - session.sharedData.blankSpace - scoreXStartPnt;
+	scoreXStartPnt = view.longestInstNameWidth + (view.blankSpace * 1.5);
+	float staffLength = scoreBackgroundWidth - view.blankSpace - scoreXStartPnt;
 	if (scoreOrientation > 0) staffLength /= std::min(2, numBarsToDisplay);
-	session.sharedData.notesXStartPnt = 0;
-	notesLength = staffLength - (session.sharedData.staffLinesDist * NOTESXOFFSETCOEF);
+	view.notesXStartPnt = 0;
+	notesLength = staffLength - (view.staffLinesDist * NOTESXOFFSETCOEF);
 	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-		it->second.displayAs<ScoreView>().setStaffCoords(staffLength, session.sharedData.staffLinesDist);
-		it->second.displayAs<ScoreView>().setNoteCoords(notesLength, session.sharedData.staffLinesDist, session.sharedData.scoreFontSize);
+		it->second.displayAs<ScoreView>().setStaffCoords(staffLength, view.staffLinesDist);
+		it->second.displayAs<ScoreView>().setNoteCoords(notesLength, view.staffLinesDist, view.scoreFontSize);
 	}
 	// get the note width from the first instrument, as they all have the same size
 	if (session.sharedData.instruments.size() > 0) {
-		session.sharedData.noteWidth = session.sharedData.instruments[0].displayAs<ScoreView>().getNoteWidth();
-		session.sharedData.noteHeight = session.sharedData.instruments[0].displayAs<ScoreView>().getNoteHeight();
+		view.noteWidth = session.sharedData.instruments[0].displayAs<ScoreView>().getNoteWidth();
+		view.noteHeight = session.sharedData.instruments[0].displayAs<ScoreView>().getNoteHeight();
 	}
 }
 
@@ -5360,7 +5360,7 @@ void ofApp::applyMergeLayout(int bar)
 			dirs.push_back(it->second.displayAs<ScoreView>().getForcedStemDir());
 		}
 		float noteWidth = session.sharedData.instruments[group.front()].displayAs<ScoreView>().getScoreNoteWidth();
-		float halfStaffDist = session.sharedData.staffLinesDist / 2.0f;
+		float halfStaffDist = view.staffLinesDist / 2.0f;
 		// the column of a voice that starts at the X coordinate, or -1
 		auto columnAt = [&](size_t voice, float x) {
 			for (size_t k = 0; k < columns[voice].size(); k++) {
@@ -5425,7 +5425,7 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 	float requiredDiff = 0;
 	// how far the first staff reaches up, and how far the last one reaches down, in any bar
 	float firstMinPosition = 0;
-	float lastMaxPosition = session.sharedData.staffLinesDist * 4;
+	float lastMaxPosition = view.staffLinesDist * 4;
 	for (auto barIt = session.sharedData.barsIndexes.begin(); barIt != session.sharedData.barsIndexes.end(); ++barIt) {
 		int barNdx = barIt->second;
 		float prevMaxPosition = 0;
@@ -5455,14 +5455,14 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 	// the clefs reach about two staff spaces above the top line and below the bottom line of the staff
 	// so the first and last staves include them, and the gap between two staves must be large enough
 	// for the clefs of neighbouring staves not to touch, even when the bars are empty
-	firstMinPosition = std::min(firstMinPosition, -(session.sharedData.staffLinesDist * 2));
-	lastMaxPosition = std::max(lastMaxPosition, session.sharedData.staffLinesDist * 6);
+	firstMinPosition = std::min(firstMinPosition, -(view.staffLinesDist * 2));
+	lastMaxPosition = std::max(lastMaxPosition, view.staffLinesDist * 6);
 	// the staves must not overlap each other, even if the score doesn't fit
 	// the gap between two staves is (allStaffDiffs - staffLinesDist * 2), so this leaves four staff spaces between them
-	float minDiff = session.sharedData.staffLinesDist * 6;
+	float minDiff = view.staffLinesDist * 6;
 	requiredDiff = std::max(requiredDiff, minDiff);
 	// the score is displayed in the whole height (vertical view), or in the upper half (horizontal view)
-	float fullHeight = session.sharedData.tracebackBase - cursorHeight;
+	float fullHeight = view.tracebackBase - cursorHeight;
 	// in horizontal view, the height of the score background depends on the pane configuration
 	// (see swapScorePosition()), so we use that, if the score is currently displayed horizontally
 	float horizontalHeight = fullHeight / 2;
@@ -5473,24 +5473,24 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 	// so the most the distance between the staves can be for the score to fit is
 	float fittingDiff = requiredDiff;
 	if (numInsts > 1) {
-		fittingDiff = ((availableHeight - (lastMaxPosition - firstMinPosition)) / (float)(numInsts - 1)) - (session.sharedData.staffLinesDist * 2);
+		fittingDiff = ((availableHeight - (lastMaxPosition - firstMinPosition)) / (float)(numInsts - 1)) - (view.staffLinesDist * 2);
 	}
-	session.sharedData.allStaffDiffs = std::max(minDiff, std::min(requiredDiff, fittingDiff));
-	float staffDistance = session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2);
+	view.allStaffDiffs = std::max(minDiff, std::min(requiredDiff, fittingDiff));
+	float staffDistance = view.allStaffDiffs + (view.staffLinesDist * 2);
 	float totalHeight = (staffDistance * (float)(numInsts - 1)) + (lastMaxPosition - firstMinPosition);
 	// index 0 is for the vertical view, 1 for the horizontal view (upper half of the window), 2 is the same as 0
 	for (int i = 0; i < 2; i++) {
 		float height = (i == 0 ? fullHeight : horizontalHeight);
 		if (totalHeight < height) {
 			// center the score, with whatever sticks out above the first staff included
-			session.sharedData.yStartPnts[i] = ((height - totalHeight) / 2.0) - firstMinPosition;
+			view.yStartPnts[i] = ((height - totalHeight) / 2.0) - firstMinPosition;
 		}
 		else {
 			// if the full score exceeds the screen just place it 10 pixels below the top part of the window
-			session.sharedData.yStartPnts[i] = 10 - firstMinPosition;
+			view.yStartPnts[i] = 10 - firstMinPosition;
 		}
 	}
-	session.sharedData.yStartPnts[2] = session.sharedData.yStartPnts[0];
+	view.yStartPnts[2] = view.yStartPnts[0];
 }
 
 //--------------------------------------------------------------
@@ -5508,20 +5508,20 @@ void ofApp::swapScorePosition(int orientation)
 		case 0:
 			scoreYOffset = 0;
 			// if we have one pane only or two panes in horizontal split
-			scoreBackgroundWidth = session.sharedData.screenWidth / 2;
+			scoreBackgroundWidth = view.screenWidth / 2;
 			if ((numPanes.size() == 1 && numPanes[0] == 1) || (paneSplitOrientation == 0 && (numPanes.size() == 2 && (numPanes[0] == 1 && numPanes[1] == 1)))) {
 				// we set the space between the top of the window the beginning of the traceback as the height of the score
 				// in this pane configuration we don't mind which pane index we'll use, so the first is the safest
 				// we add one to the number of editor lines to include the pane separating line
-				scoreBackgroundHeight = session.sharedData.tracebackBase;
+				scoreBackgroundHeight = view.tracebackBase;
 			}
 			else {
-				scoreBackgroundHeight = session.sharedData.tracebackBase - cursorHeight;
+				scoreBackgroundHeight = view.tracebackBase - cursorHeight;
 			}
-			session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
-			session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / session.sharedData.pianoRollLength;
-			session.sharedData.pianoRollMinDur = (scoreBackgroundWidth - session.sharedData.pianoRollKeysWidth) / (float)MINDUR;
-			if (scoreXOffset == 0) scoreXOffset = session.sharedData.screenWidth / 2;
+			view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+			view.pianoRollKeysHeight = scoreBackgroundHeight / view.pianoRollLength;
+			view.pianoRollMinDur = (scoreBackgroundWidth - view.pianoRollKeysWidth) / (float)MINDUR;
+			if (scoreXOffset == 0) scoreXOffset = view.screenWidth / 2;
 			else scoreXOffset = 0;
 			// check if the editor is split in panes and change the active pane accordingly
 			if (paneSplitOrientation == 1 && numPanes.size() == 2) {
@@ -5536,8 +5536,8 @@ void ofApp::swapScorePosition(int orientation)
 			else if (paneSplitOrientation == 0 && numPanes.size() < 3 &&
 					(numPanes.size() == 1 || (numPanes[0] == 1 && numPanes[1] == 1))) {
 				if (scoreXOffset == 0) {
-					editors[0].setFrameXOffset(session.sharedData.screenWidth / 2);
-					if (numPanes.size() > 1) editors[1].setFrameXOffset(session.sharedData.screenWidth / 2);
+					editors[0].setFrameXOffset(view.screenWidth / 2);
+					if (numPanes.size() > 1) editors[1].setFrameXOffset(view.screenWidth / 2);
 				}
 				else {
 					editors[0].setFrameXOffset(0);
@@ -5549,7 +5549,7 @@ void ofApp::swapScorePosition(int orientation)
 			break;
 		case 1:
 			scoreXOffset = 0;
-			scoreBackgroundWidth = session.sharedData.screenWidth;
+			scoreBackgroundWidth = view.screenWidth;
 			// if we have one pane only or two panes in vertical split
 			if ((numPanes.size() == 1 && numPanes[0] == 1) || (paneSplitOrientation == 1 && (numPanes.size() == 2 && (numPanes[0] == 1 && numPanes[1] == 1)))) {
 				// we first calculate the panes coordinates because in case we have one pane only
@@ -5561,7 +5561,7 @@ void ofApp::swapScorePosition(int orientation)
 				// getMaxNumLines() returns the number of lines minus 1 for the pane separator
 				// but in this case we need this additional line for the score height so we add it
 				int numLines = editors[0].getMaxNumLines() + 1;
-				scoreBackgroundHeight = session.sharedData.tracebackBase - (numLines * cursorHeight);
+				scoreBackgroundHeight = view.tracebackBase - (numLines * cursorHeight);
 				if (scoreYOffset == 0) {
 					scoreYOffset = numLines * cursorHeight;
 				}
@@ -5589,7 +5589,7 @@ void ofApp::swapScorePosition(int orientation)
 				if (setCoords) setPaneCoords();
 			}
 			else {
-				scoreBackgroundHeight = (session.sharedData.tracebackBase / 2) - cursorHeight;
+				scoreBackgroundHeight = (view.tracebackBase / 2) - cursorHeight;
 				// in horizontal view of the score, the height of the score background is rounded half the editor lines
 				// this is because the number of lines of an editor is always odd, so that the line with the file name
 				// and pane index is also included, which makes the total number of lines even
@@ -5599,7 +5599,7 @@ void ofApp::swapScorePosition(int orientation)
 				// but when viewed on the lower side, it should touch the white line of the editor
 				// hence the scoreYOffset is not the same as the scoreBackgroundHeith
 				// as is the case with scoreXOffset and scoreBarckgroundWidth, in the case above
-				if (scoreYOffset == 0) scoreYOffset = (session.sharedData.tracebackBase / 2);
+				if (scoreYOffset == 0) scoreYOffset = (view.tracebackBase / 2);
 				else scoreYOffset = 0;
 				// check if the editor is split in panes and change the active pane accordingly
 				if (paneSplitOrientation == 0 && numPanes.size() == 2) {
@@ -5611,18 +5611,18 @@ void ofApp::swapScorePosition(int orientation)
 					}
 				}
 			}
-			session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / session.sharedData.pianoRollLength;
-			session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
-			session.sharedData.pianoRollMinDur = (scoreBackgroundHeight - session.sharedData.pianoRollKeysHeight) / (float)MINDUR;
+			view.pianoRollKeysWidth = scoreBackgroundWidth / view.pianoRollLength;
+			view.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
+			view.pianoRollMinDur = (scoreBackgroundHeight - view.pianoRollKeysHeight) / (float)MINDUR;
 			break;
 		case 2:
 			scoreXOffset = 0;
 			scoreYOffset = 0;
-			scoreBackgroundWidth = session.sharedData.screenWidth;
-			scoreBackgroundHeight = session.sharedData.tracebackBase - cursorHeight;
-			session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
-			session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / session.sharedData.pianoRollLength;
-			session.sharedData.pianoRollMinDur = (scoreBackgroundWidth - session.sharedData.pianoRollKeysWidth) / (float)MINDUR;
+			scoreBackgroundWidth = view.screenWidth;
+			scoreBackgroundHeight = view.tracebackBase - cursorHeight;
+			view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+			view.pianoRollKeysHeight = scoreBackgroundHeight / view.pianoRollLength;
+			view.pianoRollMinDur = (scoreBackgroundWidth - view.pianoRollKeysWidth) / (float)MINDUR;
 		default:
 			break;
 	}
@@ -5638,16 +5638,16 @@ void ofApp::swapScorePosition(int orientation)
 void ofApp::setScoreSizes()
 {
 	// for a 35 font size the staff lines distance is 10
-	session.sharedData.longestInstNameWidth = 0;
+	view.longestInstNameWidth = 0;
 	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-		it->second.displayAs<ScoreView>().setNotesFontSize(session.sharedData.scoreFontSize, session.sharedData.staffLinesDist);
+		it->second.displayAs<ScoreView>().setNotesFontSize(view.scoreFontSize, view.staffLinesDist);
 		size_t nameWidth = instFont.stringWidth(it->second.getName());
 		instNameWidths[it->first] = nameWidth;
-		if ((int)nameWidth > session.sharedData.longestInstNameWidth) {
-			session.sharedData.longestInstNameWidth = nameWidth;
+		if ((int)nameWidth > view.longestInstNameWidth) {
+			view.longestInstNameWidth = nameWidth;
 		}
 	}
-	scoreXStartPnt = session.sharedData.longestInstNameWidth + (session.sharedData.blankSpace * 1.5);
+	scoreXStartPnt = view.longestInstNameWidth + (view.blankSpace * 1.5);
 	setScoreCoords();
 	if (session.sharedData.barsIndexes.size() > 0) {
 		for (auto it = session.sharedData.barsIndexes.begin(); it != session.sharedData.barsIndexes.end(); ++it) {
@@ -5860,19 +5860,19 @@ void ofApp::resizeWindow()
 {
 	setPaneCoords();
 	if (scoreOrientation == 0) {
-		scoreBackgroundWidth = session.sharedData.screenWidth / 2;
-		scoreBackgroundHeight = session.sharedData.tracebackBase - cursorHeight;
-		session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
-		session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / session.sharedData.pianoRollLength;
-		session.sharedData.pianoRollMinDur = (scoreBackgroundWidth - session.sharedData.pianoRollKeysWidth) / (float)MINDUR;
-		if (scoreXOffset > 0) scoreXOffset = session.sharedData.screenWidth / 2;
+		scoreBackgroundWidth = view.screenWidth / 2;
+		scoreBackgroundHeight = view.tracebackBase - cursorHeight;
+		view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
+		view.pianoRollKeysHeight = scoreBackgroundHeight / view.pianoRollLength;
+		view.pianoRollMinDur = (scoreBackgroundWidth - view.pianoRollKeysWidth) / (float)MINDUR;
+		if (scoreXOffset > 0) scoreXOffset = view.screenWidth / 2;
 	}
 	else {
-		scoreBackgroundWidth = session.sharedData.screenWidth;
-		scoreBackgroundHeight = (session.sharedData.tracebackBase / 2) - cursorHeight;
-		session.sharedData.pianoRollKeysWidth = scoreBackgroundWidth / session.sharedData.pianoRollLength;
-		session.sharedData.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
-		session.sharedData.pianoRollMinDur = (scoreBackgroundHeight - session.sharedData.pianoRollKeysHeight) / (float)MINDUR;
+		scoreBackgroundWidth = view.screenWidth;
+		scoreBackgroundHeight = (view.tracebackBase / 2) - cursorHeight;
+		view.pianoRollKeysWidth = scoreBackgroundWidth / view.pianoRollLength;
+		view.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
+		view.pianoRollMinDur = (scoreBackgroundHeight - view.pianoRollKeysHeight) / (float)MINDUR;
 	}
 	resetScoreYOffset();
 	setScoreSizes();
@@ -5883,19 +5883,19 @@ void ofApp::resizeWindow()
 void ofApp::windowResized(int w, int h)
 {
 	// hold the previous middle of screen value so the score is also properly updated
-	int prevMiddleOfScreenX = session.sharedData.middleOfScreenX;
-	session.sharedData.screenWidth = w;
-	session.sharedData.screenHeight = h;
-	session.sharedData.middleOfScreenX = session.sharedData.screenWidth / 2;
-	session.sharedData.middleOfScreenY = session.sharedData.screenHeight / 2;
+	int prevMiddleOfScreenX = view.middleOfScreenX;
+	view.screenWidth = w;
+	view.screenHeight = h;
+	view.middleOfScreenX = view.screenWidth / 2;
+	view.middleOfScreenY = view.screenHeight / 2;
 	// once the screen coordinates have been updated, update the score coordinates too
-	if (session.sharedData.staffXOffset == prevMiddleOfScreenX) {
-		session.sharedData.staffXOffset = 0;
-		session.sharedData.staffWidth = session.sharedData.screenWidth / 2;
+	if (view.staffXOffset == prevMiddleOfScreenX) {
+		view.staffXOffset = 0;
+		view.staffWidth = view.screenWidth / 2;
 	}
 	else {
-		session.sharedData.staffXOffset = session.sharedData.middleOfScreenX;
-		session.sharedData.staffWidth = session.sharedData.screenWidth;
+		view.staffXOffset = view.middleOfScreenX;
+		view.staffWidth = view.screenWidth;
 	}
 	windowResizeTimeStamp = ofGetElapsedTimeMillis();
 	isWindowResized = true;
@@ -6333,10 +6333,10 @@ void ofApp::instrumentCreated(int instNdx)
 	// the width of its name, for the space of the names left of the score
 	int thisInstNameWidth = instFont.stringWidth(inst.getName());
 	instNameWidths[instNdx] = thisInstNameWidth;
-	if (thisInstNameWidth > session.sharedData.longestInstNameWidth) {
-		session.sharedData.longestInstNameWidth = thisInstNameWidth;
+	if (thisInstNameWidth > view.longestInstNameWidth) {
+		view.longestInstNameWidth = thisInstNameWidth;
 	}
-	inst.displayAs<ScoreView>().setNotesFontSize(session.sharedData.scoreFontSize, session.sharedData.staffLinesDist);
+	inst.displayAs<ScoreView>().setNotesFontSize(view.scoreFontSize, view.staffLinesDist);
 	// a new instrument must be displayed like the existing ones, in case the score is not in its default state
 	inst.displayAs<ScoreView>().setScoreOrientation(scoreOrientation);
 	inst.displayAs<ScoreView>().setNumBarsToDisplay(numBarsToDisplay);
@@ -6350,11 +6350,11 @@ void ofApp::instrumentRemoved(int instNdx)
 	auto newIndex = [instNdx](int ndx) { return (ndx > instNdx ? ndx - 1 : ndx); };
 	// the widths of the names, for the space of the names left of the score
 	instNameWidths.clear();
-	session.sharedData.longestInstNameWidth = 0;
+	view.longestInstNameWidth = 0;
 	for (auto& inst : session.sharedData.instruments) {
 		int width = instFont.stringWidth(inst.second.getName());
 		instNameWidths[inst.first] = width;
-		session.sharedData.longestInstNameWidth = std::max(session.sharedData.longestInstNameWidth, width);
+		view.longestInstNameWidth = std::max(view.longestInstNameWidth, width);
 	}
 	// the tokens of the editor that play the notes of the instruments (\editor.animate)
 	std::map<std::pair<int, int>, std::vector<std::vector<EditorNoteSpan>>> spans;
@@ -6398,4 +6398,52 @@ void ofApp::layoutInstrumentBar(int instNdx, int bar)
 	inst.displayAs<ScoreView>().setScoreNotes(inst, bar, data.numerator[bar], data.denominator[bar], data.numBeats[bar],
 			data.BPMTempi[bar], data.tempoBaseForScore[bar], data.BPMDisplayHasDot[bar], data.BPMMultiplier[bar]);
 	inst.displayAs<ScoreView>().setNotePositions(bar);
+}
+
+//--------------------------------------------------------------
+bool ofApp::scoreShown()
+{
+	return view.showNotes;
+}
+
+//--------------------------------------------------------------
+void ofApp::sequencerStarted(float beatStepsPerMs, uint64_t beatRampStart)
+{
+	// a beat visualization turned on while the sequencer was idle starts with it
+	if (view.showNotes && view.setBeatAnimation) {
+		view.beatViz = true;
+		view.beatAnimate = true;
+		view.setBeatAnimation = false;
+	}
+	view.beatVizStepsPerMs = beatStepsPerMs;
+	view.beatVizRampStart = beatRampStart;
+}
+
+//--------------------------------------------------------------
+void ofApp::beat(uint64_t timeStamp, float stepsPerMs, uint64_t rampStart)
+{
+	view.beatVizTimeStamp = timeStamp;
+	view.beatVizStepsPerMs = stepsPerMs;
+	view.beatVizRampStart = rampStart;
+	if (view.beatAnimate) view.beatViz = true;
+}
+
+//--------------------------------------------------------------
+void ofApp::barStarted(uint64_t timeStamp)
+{
+	view.pianoRollTimeStamp = timeStamp;
+}
+
+//--------------------------------------------------------------
+void ofApp::loopChanged()
+{
+	// the previous number of bars displayed and the previous position, to properly display single bars in horizontal view
+	view.prevNumBars = view.numBars;
+	view.prevPosition = view.thisPosition;
+}
+
+//--------------------------------------------------------------
+void ofApp::setPythonTyping(bool charByChar)
+{
+	view.typePyStrCharByChar = charByChar;
 }

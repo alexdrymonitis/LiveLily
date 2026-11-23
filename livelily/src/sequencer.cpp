@@ -277,21 +277,19 @@ void Sequencer::sendBeatVizInfo(int bar)
 {
 	// calculate the time stamp regardless of whether we're showing the beat
 	// or not in the editor, in case we have connected score parts
-	sharedData->beatVizTimeStamp = Clock::millis();
+	uint64_t timeStamp = Clock::millis();
 	// the click track clicks on the same beats, an octave higher on the first beat of a bar (the beats of a countdown are not accented)
 	// with the time of the beat (tickCounter, the start of the beat without the delay of this thread), so the click is sample-accurate
 	if (sharedData->clickTrack.isOn() && logged(sharedData->beatCounter == 0 ? "click first beat" : "click")) {}
 	else sharedData->clickTrack.trigger(sharedData->beatCounter == 0, tickCounter);
-	sharedData->beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs[bar] / 4.0);
-	sharedData->beatVizRampStart = sharedData->tempoMs[bar] / 4;
-	if (sharedData->beatAnimate) {
-		sharedData->beatViz = true;
-	}
+	float stepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs[bar] / 4.0);
+	uint64_t rampStart = sharedData->tempoMs[bar] / 4;
+	frontend->beat(timeStamp, stepsPerMs, rampStart);
 	// notify all score parts of the time stamp and the beat visualization counter
 	OscMessage m;
 	m.setAddress("/beatinfo");
-	m.addFloatArg(sharedData->beatVizStepsPerMs);
-	m.addIntArg((int)sharedData->beatVizRampStart);
+	m.addFloatArg(stepsPerMs);
+	m.addIntArg((int)rampStart);
 	session->sendToParts(m, false);
 	m.clear();
 	m.setAddress("/beat");
@@ -1281,7 +1279,7 @@ bool Sequencer::step()
 			int bar = loopIt->second[sharedData->thisBarIndex];
 			// in here we calculate the number of beats on a microsecond basis
 			numBeats = sharedData->numBeats[bar] * sharedData->tempo[bar];
-			if (sharedData->showNotes) {
+			if (frontend->scoreShown()) {
 				if (sharedData->setAnimation) {
 					for (auto instMapIt = sharedData->instruments.begin(); instMapIt != sharedData->instruments.end(); ++instMapIt) {
 						instMapIt->second.setAnimation(true);
@@ -1289,21 +1287,17 @@ bool Sequencer::step()
 					sharedData->animate = true;
 					sharedData->setAnimation = false;
 				}
-				if (sharedData->setBeatAnimation) {
-					sharedData->beatViz = true;
-					sharedData->beatAnimate = true;
-					sharedData->setBeatAnimation = false;
-				}
 			}
 			// calculate the following two in case we connect to a score part
-			sharedData->beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs[bar] / 4.0);
-			sharedData->beatVizRampStart = sharedData->tempoMs[bar] / 4;
+			float beatStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)sharedData->tempoMs[bar] / 4.0);
+			uint64_t beatRampStart = sharedData->tempoMs[bar] / 4;
+			frontend->sequencerStarted(beatStepsPerMs, beatRampStart);
 			sharedData->beatAtValCounter = 0;
 			sendFinishToParts(false);
 			OscMessage m;
 			m.setAddress("/beatinfo");
-			m.addFloatArg(sharedData->beatVizStepsPerMs);
-			m.addIntArg(sharedData->beatVizRampStart);
+			m.addFloatArg(beatStepsPerMs);
+			m.addIntArg(beatRampStart);
 			sendToParts(m, true);
 			m.clear();
 			sequencerRunning = true;
@@ -1470,11 +1464,8 @@ bool Sequencer::step()
 						//}
 						updateSequencer = false;
 						sequencerUpdated = true;
-						sharedData->drawLoopStartEnd = true;
 						sharedData->barCounter = 0;
-						// update the previous number of bars displayed and the previous position to properly display single bars in horizontal view
-						sharedData->prevNumBars = sharedData->numBars;
-						sharedData->prevPosition = sharedData->thisPosition;
+						frontend->loopChanged();
 						// reset the counter for the beat durations
 						sharedData->beatAtValCounter = 0;
 					}
@@ -1605,7 +1596,7 @@ bool Sequencer::step()
 						if (!it->second.timeSynced) it->second.setTimeStamp(timeStamp);
 					}
 					// we must also reset the time stamp of the piano roll
-					sharedData->pianoRollTimeStamp = Clock::millis();
+					frontend->barStarted(Clock::millis());
 					if (mustStop) {
 						if (sharedData->animate) {
 							for (auto it = sharedData->instruments.begin(); it != sharedData->instruments.end(); ++it) {

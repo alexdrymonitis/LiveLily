@@ -147,7 +147,6 @@ void Session::clearBars()
 	sharedData.barsIndexes.clear();
 	sharedData.barsOrdered.clear();
 	sharedData.barLines.clear();
-	sharedData.distBetweenBeats.clear();
 }
 
 //--------------------------------------------------------------

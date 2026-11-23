@@ -113,15 +113,8 @@ inline std::string replaceCharInStr(std::string str, const std::string& a, const
 // size of cosine table to control the transparency of the beat visualization rectangle
 #define BEATVIZBRIGHTNESS 255
 
-struct pyStdoutStrKeyModifier
-{
-	bool isModifier;
-	int ndxInc;
-	int modifier;
-	int action;
-};
-
 // vectors and variables that need to be shared between main and threaded classes
+// the state of the view is in ViewState (view_state.h), held by the front end
 struct SharedData
 {
 	// a map of Instruments()
@@ -152,9 +145,6 @@ struct SharedData
 	// the map below keeps track of how many variants of each loop we create so we can use this as a name extension
 	std::map<int, int> loopsVariants;
 
-	// the map below is used to animate the editor
-	std::map<int, int> barsConnectedToPanes;
-
 	// the vector below will store unique OSC clients, one for each server
 	// additional clients that send to the same server will be ignored
 	// as this is intended for generic messages, like storeNotes()
@@ -164,78 +154,21 @@ struct SharedData
 	// the Pyo object is created here so that the sequencer has access to it
 	Pyo pyo;
 #endif
-	// handle strings typed from a Python pane to a LiveLily pane
-	std::string pyStdoutStr;
-	size_t pyStdoutStrNdx;
-	bool typePyStrCharByChar;
-	bool typePyStrLineByLine;
-	int whichPyPane;
-	bool typePyStr;
-	std::vector<std::string> pyStdoutStrVec;
-	int pyStdoutStrVecNdx;
-	std::vector<pyStdoutStrKeyModifier> pyStdoutKeyModifiers;
-	int pyStdoutKeyModNdx;
-	std::vector<int> pyStdoutKeyModNdxs;
-
-	std::map<int, int> distBetweenBeats;
 
 	int numInstruments;
 
-	float notesXStartPnt;
-
-	int noteWidth;
-	int noteHeight;
-
 	// articulation strings so each program can treat them differently
 	std::string articulSyms[8];
-	bool showNotes;
-	// from the piano roll variables below, only pianoRollTimeStamp needs to be in SharedData
-	// but we define all of them here for consistency
-	int pianoRollNumWhiteKeys;
-	// the length of the keyboard of the piano roll in widths of white keys, from the start of its lowest key to the end of its highest key
-	// (a black key at either end ends at its side, see ofApp::setPianoRollRange()), and where it starts, from C0, in widths of white keys
-	float pianoRollLength = 52;
-	float pianoRollOrigin = 0;
-	// the lowest and highest keys of the piano roll, as MIDI notes, A0 to C8 like a piano by default (see \score.show pianoroll)
-	int pianoRollLowestKey = 21;
-	int pianoRollHighestKey = 108;
-	float pianoRollMinDur;
-	float pianoRollKeysWidth;
-	float pianoRollKeysHeight;
-	uint64_t pianoRollTimeStamp;
-	std::map<int, int> pianoRollAccidentals = {{0, -2}, {2, -1}, {6, 1}, {8, 2}};
-	std::vector<int> pianoRollAccidentalKeys = {1, 3, 6, 8, 10};
-	// a map to map MIDI notes to seven notes only (the white keys) including black keys mapped to the previous white key
-	// to use this with a clavier that starts from A instead of C, we start with A = 0
-	std::map<int, int> pianoRollTwelveToSevenMap = {{0, 0}, {1, 0}, {2, 1}, {3, 2}, {4, 2}, {5, 3}, {6, 3}, {7, 4}, {8, 5}, {9, 5}, {10, 6}, {11, 6}};
-	int pianoRollNaturalNotes[7] = {0, 2, 4, 5, 7, 9, 11};
 	// beat counter used in case we need to send it over OSC or for possible other reasons
 	int beatCounter;
 	// animation variables
 	bool animate;
 	bool setAnimation;
-	bool setBeatAnimation;
-	bool beatViz;
-	float beatVizStepsPerMs;
-	uint64_t beatVizRampStart;
-	uint64_t beatVizTimeStamp;
-	int beatVizDegrade;
-	int beatVizCosTab[BEATVIZBRIGHTNESS+1];
-	bool beatAnimate;
-	bool beatTypeCommand;
-	int beatVizType;
-	bool beatUpdated;
 	// the variable below is used by the serquencer to iterate over one loop
 	unsigned thisBarIndex;
 	int loopIndex;
 	int tempLoopIndex;
-	int numBars;
-	int thisPosition;
-	int prevNumBars;
-	int prevPosition;
 	int barCounter; // used for visualization on the score
-	// a boolean if we call a pattern while the sequencer is running
-	bool updateLoop;
 	// two different tempo placeholders
 	// one for the running sequencer (tempo)
 	// and one to hold the tempo in ms without the conversion to the global minimum duration
@@ -248,22 +181,6 @@ struct SharedData
 	unsigned beatAtValCounter;
 	std::map<int, int> tempoBaseForScore;
 	std::map<int, bool> BPMDisplayHasDot;
-	// variables for positioning staffs for every pattern
-	std::map<int, float> barFirstStaffAnchor;
-	float maxBarFirstStaffAnchor;
-	float allStaffDiffs;
-	float yStartPnts[3];
-
-	float staffLinesDist;
-	int longestInstNameWidth;
-	// variable to leave some space between edge of score and
-	// instrument name, instrument name and staff, etc.
-	int blankSpace;
-
-	// STDERR
-	float tracebackYCoordAnchor;
-	float tracebackYCoord;
-	float tracebackBase;
 
 	std::map<int, Function> functions;
 	// guards the functions map above and ofApp::functionIndexes and ofApp::lastFunctionIndex
@@ -276,19 +193,8 @@ struct SharedData
 
 	std::map<int, int> numBeats;
 
-	int scoreFontSize;
-
 	std::map<int, int> numerator;
 	std::map<int, int> denominator;
-
-	int screenWidth;
-	int screenHeight;
-	int middleOfScreenX;
-	int middleOfScreenY;
-	int staffXOffset;
-	int staffWidth;
-	bool drawLoopStartEnd;
-	int scoreHorizontalViewToggle;
 
 	// MIDI clock
 	unsigned long PPQN;

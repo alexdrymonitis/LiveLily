@@ -1309,8 +1309,8 @@ void Editor::setMaxCharactersPerString()
 	lineNumberWidth = getNumDigitsOfLineCount() * oneCharacterWidth;
 	int width = frameWidth;
 	if (((ofApp*)ofGetAppPtr())->isScoreVisible()) {
-		if (frameWidth > ((ofApp*)ofGetAppPtr())->session.sharedData.middleOfScreenX && ((ofApp*)ofGetAppPtr())->scoreOrientation == 0) {
-			width = ((ofApp*)ofGetAppPtr())->session.sharedData.middleOfScreenX;
+		if (frameWidth > ((ofApp*)ofGetAppPtr())->view.middleOfScreenX && ((ofApp*)ofGetAppPtr())->scoreOrientation == 0) {
+			width = ((ofApp*)ofGetAppPtr())->view.middleOfScreenX;
 		}
 	}
 	maxCharactersPerString = (width-lineNumberWidth-oneAndHalfCharacterWidth) / oneCharacterWidth;
@@ -1970,15 +1970,15 @@ void Editor::assembleString(int key, bool executing, bool lineBreaking)
 								if (i < pyStdout.size()-2 && !endsWith(pyStdout[i], "\n")) s += "\n";
 								if (sendToLily) {
 									startChar = (i == 0 ? startChar : 0);
-									((ofApp*)ofGetAppPtr())->session.sharedData.pyStdoutStr += s.substr(startChar);
+									((ofApp*)ofGetAppPtr())->view.pyStdoutStr += s.substr(startChar);
 								}
 								else {
 									setTraceback(1, s, executingLineLocal);
 								}
 							}
 							if (sendToLily) {
-								((ofApp*)ofGetAppPtr())->session.sharedData.whichPyPane = whichPane;
-								((ofApp*)ofGetAppPtr())->session.sharedData.typePyStr = true;
+								((ofApp*)ofGetAppPtr())->view.whichPyPane = whichPane;
+								((ofApp*)ofGetAppPtr())->view.typePyStr = true;
 							}
 						}
 						else {
@@ -2310,7 +2310,7 @@ void Editor::setString(std::string s)
 		// we must change the current active pane of the editor to the one receiving the string from Python
 		// because parseStrings() in ofApp.cpp executes lines from the currently active pane
 		if (ascii == 13 && (ctrlPressed || shiftPressed)) {
-			((ofApp*)ofGetAppPtr())->session.whichPane = ((ofApp*)ofGetAppPtr())->session.sharedData.whichPyPane;
+			((ofApp*)ofGetAppPtr())->session.whichPane = ((ofApp*)ofGetAppPtr())->view.whichPyPane;
 		}
 		allOtherKeys(ascii);
 		// if we have executed code, we must reset the active pane

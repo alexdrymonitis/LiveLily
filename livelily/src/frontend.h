@@ -1,6 +1,7 @@
 #ifndef FRONTEND_H
 #define FRONTEND_H
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -68,6 +69,20 @@ class FrontendHost
 		virtual void setPaneFromOsc(int pane, const std::string& address) = 0;
 		// the tokens of the line of a pane that play the notes of an instrument in a bar, for highlighting them (see ofApp)
 		virtual void storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNotes) = 0;
+		// playback, as the score and the piano roll show it
+		// these are called from the sequencer's thread, except loopChanged(), which a loop called while the sequencer is idle calls from the parser
+		// whether the score is shown, as the instruments are animated only then
+		virtual bool scoreShown() = 0;
+		// the sequencer starts, with the beat's ramp of the beat visualization (see beat())
+		virtual void sequencerStarted(float beatStepsPerMs, uint64_t beatRampStart) = 0;
+		// a beat, at a time stamp of Clock::millis(), after which the beat visualization fades in steps per millisecond from a ramp start in milliseconds
+		virtual void beat(uint64_t timeStamp, float stepsPerMs, uint64_t rampStart) = 0;
+		// a bar starts, at a time stamp of Clock::millis()
+		virtual void barStarted(uint64_t timeStamp) = 0;
+		// the loop that plays changes
+		virtual void loopChanged() = 0;
+		// text typed from Python into a pane is typed one character at a time, or one line at a time (\pystr)
+		virtual void setPythonTyping(bool charByChar) = 0;
 };
 
 #endif

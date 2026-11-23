@@ -3508,10 +3508,10 @@ CmdOutput Session::cmdPystr(CmdInput& cmdInput, int lineNum, int numLines)
 		return genError("\\pystr command takes one argument, the typing mode");
 	}
 	if (cmdInput.inputVec[1].compare("char") == 0) {
-		sharedData.typePyStrCharByChar = true;
+		frontend->setPythonTyping(true);
 	}
 	else if (cmdInput.inputVec[1].compare("line") == 0) {
-		sharedData.typePyStrCharByChar = false;
+		frontend->setPythonTyping(false);
 	}
 	else {
 		return genError(cmdInput.inputVec[1] + ": unknown argument to \\pystr");
@@ -5756,8 +5756,6 @@ std::pair<int, std::string> Session::parseMelodicLine(std::vector<std::string> t
 	frontend->connectLineToBar(whichPane, lineNum, thisInstIndex, barIndex);
 	// the tokens of the notes, for highlighting them in the editor while they play (see \editor.animate)
 	frontend->storeEditorNoteSpans(lineNum, thisInstIndex, barIndex, (int)numNotesVertical);
-	// the map below is used by the sequencer, to determine which pane will have its active element set
-	sharedData.barsConnectedToPanes[barIndex] = whichPane;
 	numInstsParsed++;
 	return std::make_pair(0, "");
 }
@@ -6545,9 +6543,7 @@ std::pair<bool, CmdOutput> Session::isBarLoop(std::vector<std::string>& original
 					else {
 						sharedData.loopIndex = sharedData.tempLoopIndex;
 						sendLoopIndexToParts();
-						// update the previous number of bars displayed and the previous position to properly display single bars in horizontal view
-						sharedData.prevNumBars = sharedData.numBars;
-						sharedData.prevPosition = sharedData.thisPosition;
+						frontend->loopChanged();
 					}
 				}
 				else {
