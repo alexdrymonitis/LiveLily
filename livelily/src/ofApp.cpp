@@ -176,7 +176,7 @@ void ofApp::setup()
 	noIndentCheck[Session::livelily].push_back("\\bars");
 	noIndentCheck[Session::livelily].push_back("\\loop");
 	noIndentCheck[Session::livelily].push_back("\\function");
-	noIndentCheck[Session::livelily].push_back("\\std::list");
+	noIndentCheck[Session::livelily].push_back("\\list");
 	noIndentCheck[Session::python].push_back("class");
 	noIndentCheck[Session::python].push_back("def");
 	noIndentCheck[Session::python].push_back("for");

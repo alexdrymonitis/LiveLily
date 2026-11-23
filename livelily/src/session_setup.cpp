@@ -801,7 +801,7 @@ void Session::setup(Color foreground)
 	commandsToNotTokenize.push_back("\\bars");
 	commandsToNotTokenize.push_back("\\loop");
 	commandsToNotTokenize.push_back("\\function");
-	commandsToNotTokenize.push_back("\\std::list");
+	commandsToNotTokenize.push_back("\\list");
 	commandsToNotTokenize.push_back("\\group");
 
 	// a map with the color names, copied from the colorsExtendedExample

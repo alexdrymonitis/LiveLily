@@ -2727,7 +2727,7 @@ CmdOutput Session::cmdRandom(CmdInput& cmdInput, int lineNum, int numLines)
 CmdOutput Session::cmdList(CmdInput& cmdInput, int lineNum, int numLines)
 {
 	if (cmdInput.inputVec.size() < 2) {
-		return genError("\\std::list takes a name as an argument");
+		return genError("\\list takes a name as an argument");
 	}
 	if (cmdInput.inputVec.size() < 3) {
 		return genError("\\list must be assigned at least one item, inside curly brackets");

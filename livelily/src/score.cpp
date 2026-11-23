@@ -615,7 +615,7 @@ void Notes::changeNotesBasedOnClef(int bar)
 void Notes::correctDynamics(int bar, std::vector<int> dyns)
 {
 	if (dynamics[bar].size() != dyns.size()) {
-		cout << "std::vectors don't have the same size\n";
+		cout << "vectors don't have the same size\n";
 		return;
 	}
 	for (unsigned i = 0; i < dynamics[bar].size(); i++) {
