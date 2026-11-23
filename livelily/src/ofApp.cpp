@@ -723,7 +723,16 @@ void ofApp::drawTraceback()
 		}
 	}
 	// sort indexes based on time stamps (the smaller the time stamp, the higher it should be in the traceback)
-	quickSort(stamps, ndxs, 0, i-1);
+	// and lines whose messages came in the same millisecond by their order in the pane, so that the order is the same every time
+	{
+		std::vector<std::pair<uint64_t, int>> byStamp;
+		for (int j = 0; j < i; j++) byStamp.push_back(std::make_pair(stamps[j], ndxs[j]));
+		std::sort(byStamp.begin(), byStamp.end());
+		for (int j = 0; j < i; j++) {
+			stamps[j] = byStamp[j].first;
+			ndxs[j] = byStamp[j].second;
+		}
+	}
 	// once we check the traceback messages of lines other than that where the cursor is
 	// we check the line of the cursor too, which is shown last
 	if (editors[session.whichPane].getTracebackStr(editors[session.whichPane].getCursorLineIndex()).size() > 0) {
@@ -3760,48 +3769,6 @@ void ofApp::formatShellLsOutput(std::vector<std::string> lsOutputTokens)
 }
 
 /****************** miscellaneous functions ********************/
-
-//--------------------------------------------------------------
-// the following two functions are used in drawTraceback to sort the indexes based on the
-// time stamps. it is copied from https://www.geeksforgeeks.org/quick-sort/
-int ofApp::partition(uint64_t arr[], int arr2[], int low,int high)
-{
-	//choose the pivot
-	uint64_t pivot = arr[high];
-	//Index of smaller element and Indicate
-	//the right position of pivot found so far
-	int i = low-1;
-
-	for(int j = low; j <= high; j++) {
-		//If current element is smaller than the pivot
-		if (arr[j] < pivot) {
-		//Increment index of smaller element
-		i++;
-		swap(arr[i], arr[j]);
-		swap(arr2[i], arr2[j]);
-		}
-	}
-	swap(arr[i+1], arr[high]);
-	swap(arr2[i+1], arr2[high]);
-	return (i+1);
-}
-
-//--------------------------------------------------------------
-// The Quicksort function Implementation
-void ofApp::quickSort(uint64_t arr[], int arr2[], int low, int high)
-{
-	// when low is less than high
-	if(low<high)
-	{
-		// pi is the partition return index of pivot
-		int pi = partition(arr, arr2, low, high);
-		//Recursion Call
-		//smaller element than pivot goes left and
-		//higher element goes right
-		quickSort(arr, arr2, low, pi-1);
-		quickSort(arr, arr2, pi+1, high);
-	}
-}
 
 /****************** OSC to parts functions ********************/
 

@@ -237,10 +237,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		int run_command(const std::string& cmd, std::string& output);
 		void executeShellCommand();
 		void formatShellLsOutput(std::vector<std::string> lsOutputTokens);
-		// the following two functions are used in drawTraceback to sort the indexes based on the
-		// time stamps. it is copied from https://www.geeksforgeeks.org/quick-sort/
-		int partition(uint64_t arr[], int arr2[], int low, int high);
-		void quickSort(uint64_t arr[], int arr2[], int low, int high);
 		void sendCountdownToParts(int countdown);
 		void sendStopCountdownToParts();
 		void sendNewBarToParts(std::string barName, int barIndex);
