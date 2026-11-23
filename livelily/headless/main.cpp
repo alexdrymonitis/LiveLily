@@ -10,6 +10,7 @@
 #include "session_dump.h"
 #include "codetext.h"
 #include "clock.h"
+#include "paths.h"
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -17,11 +18,6 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
-#if defined(_WIN32)
-#include <windows.h>
-#elif defined(__APPLE__)
-#include <mach-o/dyld.h>
-#endif
 
 namespace {
 
@@ -140,25 +136,6 @@ void parseStrings(Session& session, HeadlessFrontend& frontend, const std::vecto
 	session.parseLines(toParse, numLines, false);
 }
 
-// the path of this program, to find the data directory of LiveLily next to it (bin/data, as the program is in bin)
-std::filesystem::path executablePath(const char* argv0)
-{
-#if defined(_WIN32)
-	wchar_t buffer[MAX_PATH];
-	DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
-	if (length > 0 && length < MAX_PATH) return std::filesystem::path(std::wstring(buffer, length));
-#elif defined(__APPLE__)
-	char buffer[4096];
-	uint32_t size = sizeof(buffer);
-	if (_NSGetExecutablePath(buffer, &size) == 0) return std::filesystem::weakly_canonical(buffer);
-#else
-	std::error_code error;
-	std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", error);
-	if (!error) return self;
-#endif
-	return std::filesystem::absolute(argv0);
-}
-
 int usage()
 {
 	std::cerr << "usage: livelily_headless --test file.lyv [--out dump.txt] [--data directory]\n       livelily_headless --play seconds file.lyv [--data directory]" << std::endl;
@@ -187,9 +164,12 @@ int main(int argc, char* argv[])
 	HeadlessFrontend frontend;
 	session.frontend = &frontend;
 	session.audioCallback = &frontend;
-	// the data directory of the app (bin/data), next to this program (which is in bin), unless --data gives another one
-	if (dataDirectory.empty()) dataDirectory = (executablePath(argv[0]).parent_path() / "data").string();
+	// relative paths (e.g. of a SoundFont) start from the user's folder of LiveLily, unless --data gives another one, and \help looks
+	// in the search paths, which in test mode are only the resources of LiveLily, as in the app (see paths.h)
+	if (dataDirectory.empty()) dataDirectory = Paths::userFolder().string();
 	session.dataDirectory = (std::filesystem::path(dataDirectory) / "").string();
+	std::filesystem::path resourcesPath = Paths::resources(Paths::executable(argv[0]));
+	session.searchPaths = (playSeconds > 0 ? Paths::searchPaths(resourcesPath) : std::vector<std::filesystem::path>{resourcesPath});
 	// a fixed seed, so that \rand gives the same values every time, as in the test mode of the app
 	srand(1);
 	// the made-up MIDI ports of test mode, as in the app (see test_midi.cpp), and the real ones to play with --play

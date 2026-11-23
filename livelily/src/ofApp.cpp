@@ -1,6 +1,7 @@
 #include "ofApp.h"
 #include "system_command.h"
 #include "clock.h"
+#include "paths.h"
 #include <set>
 #include "pyo_classes.h" // the Python code of the Pyo synths (pyoClasses), defined in pyo_classes.cpp
 #include <string>
@@ -39,7 +40,11 @@ void ofApp::setup()
 	session.audioCallback = this;
 	// the editors reach the app through EditorHost (see editor_host.h)
 	Editor::host = this;
-	session.dataDirectory = ofToDataPath("", true);
+	// relative paths (e.g. of a SoundFont) start from the user's folder of LiveLily, and \help looks in the search paths (see paths.h)
+	// in test mode only in the resources of LiveLily, so that files of the user don't change the results of the tests
+	std::filesystem::path resourcesPath = ofToDataPath("", true);
+	session.dataDirectory = Paths::userFolder().string();
+	session.searchPaths = (testFile.empty() ? Paths::searchPaths(resourcesPath) : std::vector<std::filesystem::path>{resourcesPath});
 	brightnessCoeff = 0.85;
 	backgroundColor = ofColor::black;
 	foregroundColor = ofColor::white;
@@ -121,7 +126,7 @@ void ofApp::setup()
 	view.staffLinesDist = 10.0;
 	view.scoreFontSize = 35;
 	instFontSize = view.scoreFontSize/3.5;
-	instFont.load("Monaco.ttf", instFontSize);
+	instFont.load("fonts/LiberationSerif-Regular.ttf", instFontSize);
 	view.notesXStartPnt = 0;
 	view.blankSpace = 10;
 	view.beatAnimate = false;
@@ -2247,7 +2252,7 @@ void ofApp::executeKeyPressed(int key)
 				view.staffLinesDist += 2;
 				view.scoreFontSize = (int)(35.0 * view.staffLinesDist / 10.0);
 				instFontSize = view.scoreFontSize / 3.5;
-				instFont.load("Monaco.ttf", instFontSize);
+				instFont.load("fonts/LiberationSerif-Regular.ttf", instFontSize);
 				setScoreSizes();
 			}
 			else if (key == 95 && editors[session.whichPane].isCtrlPressed()) { // - with shift pressed
@@ -2255,7 +2260,7 @@ void ofApp::executeKeyPressed(int key)
 				if (view.staffLinesDist < 4) view.staffLinesDist = 4;
 				view.scoreFontSize = (int)(35.0 * view.staffLinesDist / 10.0);
 				instFontSize = view.scoreFontSize / 3.5;
-				instFont.load("Monaco.ttf", instFontSize);
+				instFont.load("fonts/LiberationSerif-Regular.ttf", instFontSize);
 				setScoreSizes();
 			}
 			else if (key == 61 && editors[session.whichPane].isCtrlPressed() && editors[session.whichPane].isAltPressed()) { // + (actually =)
@@ -4177,7 +4182,7 @@ bool ofApp::isScoreVisible()
 void ofApp::setFontSize(bool calculateCoords)
 {
 	if (!fontLoaded) {
-		font.load("DroidSansMono.ttf", fontSize);
+		font.load("fonts/DroidSansMono.ttf", fontSize);
 		fontLoaded = true;
 		oneCharacterWidth = font.stringWidth("a");
 		halfCharacterWidth = oneCharacterWidth / 2;

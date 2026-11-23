@@ -1,6 +1,6 @@
 # one test of CTest (see CMakeLists.txt): runs a test file with the headless runner and compares its dump with the snapshot of the app's test mode
 # up to the sections of the editor, which need the app (as tests/headless.sh does), in a CMake script so that it runs on every system
-#   cmake -DRUNNER=... -DLYV=... -DSNAPSHOT=... -DDATA=... -DOUT=... -DPYO=ON|OFF -P compare.cmake
+#   cmake -DRUNNER=... -DLYV=... -DSNAPSHOT=... -DOUT=... -DPYO=ON|OFF -P compare.cmake
 # a test file that needs what this machine doesn't have is skipped (exit code 77): pyo in a build without it
 # or a SoundFont at an absolute path (or one in the home directory) that isn't there
 
@@ -34,7 +34,7 @@ foreach(soundfont ${soundfonts})
 	endif()
 endforeach()
 
-execute_process(COMMAND "${RUNNER}" --test "${LYV}" --out "${OUT}" --data "${DATA}" RESULT_VARIABLE result OUTPUT_QUIET ERROR_QUIET)
+execute_process(COMMAND "${RUNNER}" --test "${LYV}" --out "${OUT}" RESULT_VARIABLE result OUTPUT_QUIET ERROR_QUIET)
 if(NOT result EQUAL 0)
 	message(FATAL_ERROR "the headless runner failed (${result}) on ${LYV}")
 endif()

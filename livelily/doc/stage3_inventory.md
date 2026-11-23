@@ -48,6 +48,15 @@ The core compiles without `USEPYO` too. Only one test file records what pyo does
 - **Python and pyo:** optional (`LIVELILY_PYO`). On Linux, CI can install pyo with pip. On macOS and Windows it builds without pyo at first, and the plan's open question of bundling Python decides the rest (stage 6).
 - **A hosted repository.** CI runs where the repository is hosted (e.g. GitHub Actions), and LiveLily has no remote yet. The workflow file is written and its steps checked locally; it runs once the repository is pushed.
 
+## Resources and search paths
+
+What ships with LiveLily is in `resources/`: the fonts (`fonts/`, with their licenses), the help files (`help/`) and the logo.
+The program finds them from its own path (`src/paths.h`): next to it, in a macOS bundle (`Contents/Resources`), in `../share/livelily`
+(installed on Linux), or in `../resources` (the source, while developing), so `bin/data` is gone. `\help name` looks for `help/name-help.lyv`
+in the search paths, in this order, like Pd's: the user's folder `Documents/LiveLily` (the same on every system), a folder for all the users
+(`/usr/local/share/livelily`, `/Library/LiveLily`, `%ProgramData%\LiveLily`), and the resources. Test mode searches only the resources.
+The test files and their snapshots (`tests/lyv`, `tests/snapshots`) and Adobe's Sonata font are kept out of the published repository.
+
 ## Steps, in order
 
 1. **Portable paths in the core.** A helper for the home directory (`HOME`, or `USERPROFILE` on Windows, and no crash when neither is set), and the headless runner finds its data directory from its own path portably (or from a `--data` option).

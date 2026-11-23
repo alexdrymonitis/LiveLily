@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include "color.h"
+#include <filesystem>
 #include "midi.h"
 #include "osc.h"
 #include "serial.h"
@@ -52,7 +53,6 @@
 // for the piano roll
 #define KEYSWIDTHCOEFF 8
 
-#define HELPFILEPATH "~/Documents/LiveLily/help_files"
 
 // a variable of a session (x = 5), with its value as a string and its type
 struct variable
@@ -423,6 +423,8 @@ class Session
 
 		// the data directory of LiveLily (bin/data), where relative paths start, e.g. of a SoundFont, set by the app at its start
 		std::string dataDirectory;
+		// where \help looks for help files (in their help folders), in order, which the front end sets (see paths.h)
+		std::vector<std::filesystem::path> searchPaths;
 
 		// the languages of the code of the panes
 		enum languages {livelily, python, lua};

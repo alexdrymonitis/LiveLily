@@ -59,8 +59,8 @@ void Staff::setRhythm(bool isRhythm)
 void Staff::setSize(int fontSize, float staffLinesDist)
 {
 	Staff::fontSize = fontSize;
-	notationFont.load("sonata.ttf", fontSize);
-	BPMDisplayFont.load("times-new-roman.ttf", fontSize*0.6);
+	notationFont.load("fonts/sonata.ttf", fontSize);
+	BPMDisplayFont.load("fonts/LiberationSerif-Regular.ttf", fontSize*0.6);
 	staffDist = staffLinesDist;
 	noteWidth = notationFont.stringWidth(BPMDisplayNotes[2]);
 	clefLength = max(notationFont.stringWidth(clefSyms[0]), notationFont.stringWidth(clefSyms[1]));
@@ -367,8 +367,8 @@ void Notes::setFontSize(int fontSize, float staffLinesDist)
 {
 	if (Notes::fontSize != fontSize) {
 		Notes::fontSize = fontSize;
-		notationFont.load("sonata.ttf", fontSize);
-		textFont.load("times-new-roman.ttf", fontSize/2);
+		notationFont.load("fonts/sonata.ttf", fontSize);
+		textFont.load("fonts/LiberationSerif-Regular.ttf", fontSize/2);
 		noteWidth = notationFont.stringWidth(notesSyms[2]);
 		noteHeight = notationFont.stringHeight(notesSyms[2]);
 		for (int i = 0; i < 8; i++) {

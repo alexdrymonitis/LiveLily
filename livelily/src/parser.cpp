@@ -12,6 +12,7 @@
 #include <utility> // to add pair and make_pair
 #include <sstream> // to create a string from vector<string>
 #include "system_command.h"
+#include "paths.h"
 #include <filesystem>
 #include "clock.h"
 #include <fstream>
@@ -3842,15 +3843,12 @@ CmdOutput Session::cmdHelp(CmdInput& cmdInput, int lineNum, int numLines)
 			newPane = 2;
 		}
 	}
-	std::string filePath = HELPFILEPATH;
-	if (startsWith(filePath, "~")) {
-		filePath = homeDirectory() + filePath.substr(1);
-	}
 	// the command can be given with or without its backslash
 	std::string helpName = cmdInput.inputVec[1];
 	if (startsWith(helpName, "\\")) helpName = helpName.substr(1);
-	filePath += "/" + helpName + "-help.lyv";
-	if (!frontend->openHelp(whichPane, filePath, newPane)) {
+	// the help file is in the help folder of a search path: the user's, the one for all users, or the resources of LiveLily (see paths.h)
+	std::filesystem::path helpFile = Paths::find(searchPaths, std::filesystem::path("help") / (helpName + "-help.lyv"));
+	if (helpFile.empty() || !frontend->openHelp(whichPane, helpFile.string(), newPane)) {
 		return genError("couldn't find help file for " + cmdInput.inputVec[1]);
 	}
 	return CmdOutput();

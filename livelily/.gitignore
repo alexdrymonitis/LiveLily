@@ -23,3 +23,9 @@
 .qtc_clangd/
 /bin/livelily_headless
 /build/
+
+# kept out of the published repository: the test files and their snapshots, the notation font that can not be redistributed, notes
+/tests/lyv/
+/tests/snapshots/
+/resources/fonts/sonata.ttf
+/claude_fixes.txt

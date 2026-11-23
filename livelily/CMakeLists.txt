@@ -1,7 +1,7 @@
 # LiveLily's core (the engine and the editor, with no openFrameworks) and its headless runner, which runs the tests with no window
 # (see doc/stage3_inventory.md); the app itself is still built with openFrameworks' makefiles (make wpyo) until stage 4
 #   cmake -B build && cmake --build build && ctest --test-dir build
-# the headless runner is built into bin/, next to the data of LiveLily (bin/data)
+# the headless runner is built into bin/, from where it finds LiveLily's resources in ../resources (see src/paths.h)
 
 cmake_minimum_required(VERSION 3.20)
 project(LiveLily LANGUAGES C CXX)
@@ -60,7 +60,7 @@ endif()
 # the core: the engine (session, parser, sequencer, instruments), the editor, its grids, and the keys
 set(LIVELILY_CORE_SOURCES
 	src/cellgrid.cpp src/clock.cpp src/codetext.cpp src/editor.cpp src/function.cpp src/instrument.cpp src/keys.cpp src/osc.cpp
-	src/parser.cpp src/sequencer.cpp src/session.cpp src/session_dump.cpp src/session_setup.cpp src/soundfont.cpp
+	src/parser.cpp src/paths.cpp src/sequencer.cpp src/session.cpp src/session_dump.cpp src/session_setup.cpp src/soundfont.cpp
 	src/system_command.cpp src/test_midi.cpp)
 if(LIVELILY_PYO)
 	list(APPEND LIVELILY_CORE_SOURCES src/PyoClass.cpp src/pyo_classes.cpp)
@@ -72,6 +72,10 @@ target_link_libraries(livelily_core PUBLIC ${LIVELILY_FLUIDSYNTH} Threads::Threa
 if(LIVELILY_PYO)
 	target_compile_definitions(livelily_core PUBLIC USEPYO)
 	target_link_libraries(livelily_core PUBLIC Python3::Python)
+endif()
+if(WIN32)
+	# the Documents folder (SHGetKnownFolderPath(), see paths.cpp)
+	target_link_libraries(livelily_core PUBLIC shell32 ole32)
 endif()
 if(MSVC)
 	target_compile_options(livelily_core PRIVATE /W3 /utf-8)
@@ -89,11 +93,12 @@ foreach(config ${CMAKE_CONFIGURATION_TYPES})
 	set_target_properties(livelily_headless PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${CONFIG} "${PROJECT_SOURCE_DIR}/bin")
 endforeach()
 
-# the tests: every test file (bin/data/*.lyv, tests/lyv/*.lyv) with a snapshot in tests/snapshots runs in the headless runner
+# the tests: every test file (tests/lyv/*.lyv) with a snapshot in tests/snapshots runs in the headless runner
+# (the test files are kept out of the published repository, so there the tests are only built and none runs)
 # and its dump is compared with the snapshot up to the sections of the editor (see tests/compare.cmake)
 # the snapshots are made by the app's test mode (tests/snapshots.sh save), which also checks the editor's sections and the screen
 enable_testing()
-file(GLOB LIVELILY_TEST_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/bin/data/*.lyv" "${PROJECT_SOURCE_DIR}/tests/lyv/*.lyv")
+file(GLOB LIVELILY_TEST_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tests/lyv/*.lyv")
 foreach(test_file ${LIVELILY_TEST_FILES})
 	get_filename_component(test_name "${test_file}" NAME_WE)
 	set(snapshot "${PROJECT_SOURCE_DIR}/tests/snapshots/${test_name}.dump")
@@ -101,7 +106,7 @@ foreach(test_file ${LIVELILY_TEST_FILES})
 		continue()
 	endif()
 	add_test(NAME ${test_name} COMMAND ${CMAKE_COMMAND}
-		-DRUNNER=$<TARGET_FILE:livelily_headless> -DLYV=${test_file} -DSNAPSHOT=${snapshot} -DDATA=${PROJECT_SOURCE_DIR}/bin/data
+		-DRUNNER=$<TARGET_FILE:livelily_headless> -DLYV=${test_file} -DSNAPSHOT=${snapshot}
 		-DOUT=${CMAKE_BINARY_DIR}/dumps/${test_name}.dump -DPYO=${LIVELILY_PYO} -P ${PROJECT_SOURCE_DIR}/tests/compare.cmake)
 	set_tests_properties(${test_name} PROPERTIES SKIP_RETURN_CODE 77)
 endforeach()

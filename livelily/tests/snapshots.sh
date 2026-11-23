@@ -1,5 +1,5 @@
 #!/bin/bash
-# runs every .lyv file of bin/data and tests/lyv in the test mode of LiveLily (see src/testmode.cpp) and saves or compares what the parser makes of it
+# runs every .lyv file of tests/lyv in the test mode of LiveLily (see src/testmode.cpp) and saves or compares what the parser makes of it
 #   tests/snapshots.sh save     saves the dumps to tests/snapshots, as the reference (run it before a change to the parser)
 #   tests/snapshots.sh check    dumps to tests/current and compares with tests/snapshots (run it after a change)
 # a file whose run crashes or doesn't finish is reported, and so is every file whose dump differs from its snapshot
@@ -33,10 +33,10 @@ mkdir -p "$outDir"
 rm -f "$outDir"/*.dump
 
 failed=0
-# the example files of bin/data, and the files of tests/lyv, which check particular rules of the parser
-for file in "$binDir"/data/*.lyv "$testsDir"/lyv/*.lyv; do
+# the files of tests/lyv (kept out of the published repository), which check the rules of the parser, the sequencer and the editor
+for file in "$testsDir"/lyv/*.lyv; do
 	name="$(basename "$file" .lyv)"
-	# the program is run from bin, as the files load help files and SoundFonts with paths relative to it
+	# the program finds LiveLily's resources from its own path (see src/paths.h), and is run from bin as before
 	(cd "$binDir" && timeout 120 ./livelily --test "$file" --out "$outDir/$name.dump" > "$outDir/$name.log" 2>&1)
 	status=$?
 	if [ $status -ne 0 ]; then

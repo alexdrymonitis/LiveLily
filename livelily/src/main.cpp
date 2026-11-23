@@ -1,9 +1,13 @@
 #include "ofMain.h"
 #include "ofApp.h"
+#include "paths.h"
 #include <filesystem>
 
 //========================================================================
 int main(int argc, char* argv[]){
+
+	// openFrameworks loads files (fonts, the logo) from LiveLily's resources (see paths.h), wherever the program is
+	ofSetDataPathRoot((Paths::resources(Paths::executable(argv[0])) / "").string());
 
 	// test mode, for checking the parser (see testmode.cpp):
 	// livelily --test file.lyv [--out dump.txt] [--screenshot image.png]
