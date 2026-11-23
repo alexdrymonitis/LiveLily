@@ -461,6 +461,8 @@ class Session
 		// the curly bracket depth while storing a function body, the function's own brackets included
 		int functionBodyDepth{};
 		int lastFunctionIndex{};
+		// the function set with .onrelease of a function that \func.unbind has just unbound, which isFunction() runs, or -1
+		int onReleaseFuncNdx = -1;
 
 		// the state of parsing bars (\bar), loops (\loop), and bars defined together (\bars)
 		// whether there was an error in a bar, so that its melodic lines are not stored

@@ -6581,6 +6581,7 @@ std::pair<bool, CmdOutput> Session::isFunction(std::vector<std::string>& command
 	int funcNdx = -1;
 	std::string functionBody;
 	std::vector<std::string> storedArgs;
+	std::string onReleaseFuncName;
 	{
 		std::lock_guard<std::mutex> lock(sharedData.functionsMutex);
 		if (functionIndexes.size() > 0) {
@@ -6593,8 +6594,15 @@ std::pair<bool, CmdOutput> Session::isFunction(std::vector<std::string>& command
 				lastFunctionIndex = functionIndexes[functionName];
 				funcNdx = lastFunctionIndex;
 				// functionFuncs() uses lastFunctionIndex, so it must be called while holding the lock
+				onReleaseFuncNdx = -1;
 				cmdOutput = functionFuncs(commands);
 				if (cmdOutput.errorCode > 0) return std::make_pair(functionExists, cmdOutput);
+				// a function unbound with \func.unbind runs the function set with its .onrelease, by its name, after the lock is released (below)
+				if (onReleaseFuncNdx > -1) {
+					auto onReleaseIt = sharedData.functions.find(onReleaseFuncNdx);
+					if (onReleaseIt != sharedData.functions.end()) onReleaseFuncName = onReleaseIt->second.getName();
+					onReleaseFuncNdx = -1;
+				}
 				if (!cmdOutput.outputVec.empty() && cmdOutput.outputVec[0].compare("noexec") == 0) executeFunction = false;
 				if (executeFunction) {
 					functionBody = sharedData.functions[funcNdx].printStr();
@@ -6604,6 +6612,10 @@ std::pair<bool, CmdOutput> Session::isFunction(std::vector<std::string>& command
 				}
 			}
 		}
+	}
+	if (!onReleaseFuncName.empty()) {
+		CmdInput cmdInput = {{onReleaseFuncName}, std::vector<std::string>(), false, true};
+		return std::make_pair(functionExists, parseCommand(cmdInput, lineNum, numLines));
 	}
 	if (functionExists && executeFunction) {
 		// the return value of this call (see \return), which a function called inside its body doesn't change, as it has its own

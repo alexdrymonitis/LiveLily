@@ -1197,7 +1197,12 @@ CmdOutput Session::functionFuncs(std::vector<std::string>& originalCommands)
 			if (!hasDot) {
 				return genError("setargs must be concatenated to the function name with a dot");
 			}
-			sharedData.functions[lastFunctionIndex].releaseBind();
+			// the function set with .onrelease runs when the function is unbound, as when its bind ends after its times
+			// but only after the lock of the functions is released, so isFunction() runs it (see onReleaseFuncNdx)
+			// (a function that isn't bound isn't released, so nothing runs)
+			bool wasBound = (sharedData.functions[lastFunctionIndex].getBoundInst() > -1);
+			int onRelease = sharedData.functions[lastFunctionIndex].releaseBind();
+			if (wasBound) onReleaseFuncNdx = onRelease;
 			// unbinding doesn't run the function, like the other methods
 			return genOutput("noexec");
 		}
@@ -1215,7 +1220,7 @@ CmdOutput Session::functionFuncs(std::vector<std::string>& originalCommands)
 				sharedData.functions[lastFunctionIndex].onUnbindFunc(-1);
 			}
 			else if (functionIndexes.find(commands[i+1]) == functionIndexes.end()) {
-				// read the line and store a function with it
+				return genError(commands[i+1] + " is not a defined function");
 			}
 			else {
 				sharedData.functions[lastFunctionIndex].onUnbindFunc(functionIndexes[commands[i+1]]);
