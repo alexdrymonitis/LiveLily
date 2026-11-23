@@ -51,8 +51,17 @@ std::vector<KeyEvent> parseKeys(const std::string& notation, std::string& error)
 		}
 		std::string lower;
 		for (char ch : inside) lower += (char)std::tolower((unsigned char)ch);
+		// a modifier pressed or released alone, held across the keys between, e.g. <CtrlDown>==<CtrlUp>
+		static const std::map<std::string, KeyEvent> holds = {
+			{"shiftdown", {Key::shift, true}}, {"shiftup", {Key::shift, false}}, {"ctrldown", {Key::control, true}},
+			{"ctrlup", {Key::control, false}}, {"altdown", {Key::alt, true}}, {"altup", {Key::alt, false}},
+		};
+		auto hold = holds.find(lower);
 		auto it = named.find(lower);
-		if (it != named.end()) {
+		if (hold != holds.end() && modifiers.empty()) {
+			events.push_back(hold->second);
+		}
+		else if (it != named.end()) {
 			tap(events, it->second, modifiers);
 		}
 		else if (inside.size() == 1) {

@@ -2825,6 +2825,10 @@ void ofApp::addPane(int key)
 	editors[session.whichPane].setAltPressed(false);
 	session.whichPane = newKey;
 	editors[session.whichPane].setActivity(true);
+	// the new pane has the modifier keys that are held now (e.g. Ctrl, after Ctrl+Shift+V)
+	editors[session.whichPane].setShiftPressed(shiftPressed);
+	editors[session.whichPane].setCtrlPressed(ctrlPressed);
+	editors[session.whichPane].setAltPressed(altPressed);
 	// if we add a second pane with the score visible
 	// if the panes are split vertically and the score is also vertical (opposite values)
 	// or both are horizontal
@@ -4708,6 +4712,11 @@ void ofApp::setActivePane(int activePane)
 	if (editors[session.whichPane].highlightManyChars) editors[session.whichPane].highlightManyChars = false;
 	session.whichPane = activePane;
 	editors[session.whichPane].setActivity(true);
+	// the pane that becomes active has the modifier keys that are held now, as the app keeps them, also when the app makes another pane
+	// active by itself (e.g. swapScorePosition() while the font size changes with Ctrl held)
+	editors[session.whichPane].setShiftPressed(shiftPressed);
+	editors[session.whichPane].setCtrlPressed(ctrlPressed);
+	editors[session.whichPane].setAltPressed(altPressed);
 }
 
 //--------------------------------------------------------------

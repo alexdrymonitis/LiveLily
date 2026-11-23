@@ -42,6 +42,7 @@ struct KeyEvent
 // on a US keyboard (e.g. $) with Shift around it, and a key in angle brackets is a named key with modifiers before it
 // e.g. <Esc>, <CR> (or <Return>), <BS>, <Tab>, <Del>, <Space>, <Left>, <Right>, <Up>, <Down>, <PageUp>, <PageDown>, <Home>, <End>
 // <lt> for <, and <S-CR>, <C-v>, <A-x> or <C-S-Left> with Shift, Control or Alt
+// and <ShiftDown>, <ShiftUp>, <CtrlDown>, <CtrlUp>, <AltDown>, <AltUp> for a modifier held across keys (e.g. <CtrlDown>==<CtrlUp>)
 // returns an empty vector and an error message for a key it doesn't know
 std::vector<KeyEvent> parseKeys(const std::string& notation, std::string& error);
 
