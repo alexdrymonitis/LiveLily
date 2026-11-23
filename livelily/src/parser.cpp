@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <deque>
 #include <ctype.h> // to add isdigit()
 #include <algorithm> // for replacing characters in a string
 #include <cmath> // to add abs()
@@ -2246,7 +2247,7 @@ CmdOutput Session::cmdInsts(CmdInput& cmdInput, int lineNum, int numLines)
 		}
 		sequencer.stopNow();
 		std::lock_guard<std::recursive_mutex> instrumentsLock(sharedData.instrumentsMutex);
-		for (map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
+		for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 			commandsMap[livelily][it->second.getName()[0]].erase("\\" + it->second.getName());
 		}
 		clearBars();
@@ -4425,7 +4426,7 @@ std::pair<int, std::string> Session::parseMelodicLine(std::vector<std::string> t
 	std::vector<int> dynamicsForScoreIndexes(tokens.size(), -1);
 	std::vector<int> dynamicsRampStart(tokens.size(), 0);
 	std::vector<int> dynamicsRampEnd(tokens.size(), 0);
-	std::vector<pair<unsigned, unsigned>> dynamicsRampIndexes(tokens.size());
+	std::vector<std::pair<unsigned, unsigned>> dynamicsRampIndexes(tokens.size());
 	std::vector<int> midiDynamicsRampDurs(tokens.size(), 0);
 	std::vector<int> glissandiIndexes(tokens.size(), 0);
 	std::vector<uint64_t> glissDursMs(tokens.size(), 0);
@@ -5548,7 +5549,7 @@ std::pair<int, std::string> Session::parseMelodicLine(std::vector<std::string> t
 		}
 		int midiVelsDiff = midiVels.at(endNdx) - midiVels.at(startNdx);
 		float step = valsDiff / std::max(numSteps, 1);
-		int midiVelsStep = midiVelsDiff / max(numSteps, 1);
+		int midiVelsStep = midiVelsDiff / std::max(numSteps, 1);
 		index2 = 1;
 		for (j = startNdx+1; j < endNdx; j++) {
 			dynamicsData.at(j) += (step * (float)index2);

@@ -5,6 +5,8 @@
 #include <sstream>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
+#include <stack>
 
 //--------------------------------------------------------------
 std::string Session::tieWarning(int loopNdx)
@@ -357,27 +359,27 @@ void Session::sendCursorToPart(int instNdx, bool cursor)
 void Session::printVector(std::vector<int> v)
 {
 	for (int elem : v) {
-		cout << elem << " ";
+		std::cout << elem << " ";
 	}
-	cout << endl;
+	std::cout << std::endl;
 }
 
 //--------------------------------------------------------------
 void Session::printVector(std::vector<std::string> v)
 {
 	for (std::string elem : v) {
-		cout << elem << " ";
+		std::cout << elem << " ";
 	}
-	cout << endl;
+	std::cout << std::endl;
 }
 
 //--------------------------------------------------------------
 void Session::printVector(std::vector<float> v)
 {
 	for (float elem : v) {
-		cout << elem << " ";
+		std::cout << elem << " ";
 	}
-	cout << endl;
+	std::cout << std::endl;
 }
 
 //--------------------------------------------------------------

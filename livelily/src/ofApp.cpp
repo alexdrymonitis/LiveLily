@@ -1,5 +1,6 @@
 #include "ofApp.h"
 #include "system_command.h"
+#include "clock.h"
 #include <set>
 #include "pyo_classes.h" // the Python code of the Pyo synths (pyoClasses), defined in pyo_classes.cpp
 #include <string>
@@ -1337,7 +1338,7 @@ void ofApp::update()
 	// check if any instrument has a delay for receiving OSC messages
 	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 		if (it->second.oscFifo.size() > 0) {
-			uint64_t stamp = ofGetElapsedTimeMillis();
+			uint64_t stamp = Clock::millis();
 			if (stamp >= it->second.oscFifo.back().second) {
 				it->second.scorePartSender->send(it->second.oscFifo.back().first);
 				it->second.oscFifo.pop_back();
@@ -2009,9 +2010,9 @@ void ofApp::drawScore()
 						break;
 				}
 				// regardless of the beattype, we calculate the alpha value here
-				if ((ofGetElapsedTimeMillis() - view.beatVizTimeStamp) >= view.beatVizRampStart) {
+				if ((Clock::millis() - view.beatVizTimeStamp) >= view.beatVizRampStart) {
 					// calculate how many steps the brightness has to dim, depending on the elapsed time and the steps per millisecond
-					int brightnessDegrade = (int)((ofGetElapsedTimeMillis()-(view.beatVizTimeStamp+view.beatVizRampStart))*view.beatVizStepsPerMs);
+					int brightnessDegrade = (int)((Clock::millis()-(view.beatVizTimeStamp+view.beatVizRampStart))*view.beatVizStepsPerMs);
 					view.beatVizDegrade = BEATVIZBRIGHTNESS - brightnessDegrade;
 					if (view.beatVizDegrade < 0) {
 						view.beatVizDegrade = 0;
@@ -2429,7 +2430,7 @@ void ofApp::drawPianoRoll()
 	std::vector<RollNote> rollNotes;
 	// then draw the notes of all instruments
 	if (session.sharedData.instruments.size() > 0 && session.sharedData.loopData.size() > 0) {
-		uint64_t timeStamp = ofGetElapsedTimeMillis();
+		uint64_t timeStamp = Clock::millis();
 		// the movement of the notes depends on the tempo of the currently playing bar
 		int thisBar = session.sharedData.loopData[session.sharedData.loopIndex][session.sharedData.thisBarIndex];
 		// the length of the area of the notes, from the edge of the score to the keyboard
@@ -2783,7 +2784,7 @@ void ofApp::drawSequencer()
 	if (session.sequencer.isThreadRunning() && session.sharedData.tempoMs.count(bar) && session.sharedData.numerator.count(bar)) {
 		float barMs = (float)(session.sharedData.tempoMs[bar] * session.sharedData.numerator[bar]);
 		if (barMs > 0) {
-			float progress = std::clamp((float)(ofGetElapsedTimeMillis() - view.pianoRollTimeStamp) / barMs, 0.0f, 1.0f);
+			float progress = std::clamp((float)(Clock::millis() - view.pianoRollTimeStamp) / barMs, 0.0f, 1.0f);
 			int step = std::min(numSteps - 1, (int)(progress * (float)barLength / (float)stepLength));
 			ofColor red = ofColor::red * brightnessCoeff;
 			ofSetColor(red.r, red.g, red.b, 191);
@@ -4718,7 +4719,7 @@ void ofApp::sendBeatVizInfo(int bar)
 {
 	// calculate the time stamp regardless of whether we're showing the beat
 	// or not in the editor, in case we have connected score parts
-	view.beatVizTimeStamp = ofGetElapsedTimeMillis();
+	view.beatVizTimeStamp = Clock::millis();
 	view.beatVizStepsPerMs = (float)BEATVIZBRIGHTNESS / ((float)session.sharedData.tempoMs[bar] / 4.0);
 	view.beatVizRampStart = session.sharedData.tempoMs[bar] / 4;
 	if (view.beatAnimate) {
@@ -5796,7 +5797,7 @@ void ofApp::exit()
 	session.sequencer.stopNow();
 	// the sequencer's thread calls the app (e.g. to highlight the notes that play), and it is held by Session
 	// which is destroyed after the members of the app, so the thread ends here
-	session.sequencer.waitForThread(false);
+	session.sequencer.waitForThread();
 	OscMessage m;
 	m.setAddress("/exit");
 	m.addIntArg(1);

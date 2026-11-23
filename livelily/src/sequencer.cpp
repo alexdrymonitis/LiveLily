@@ -45,7 +45,72 @@ void Sequencer::setup(SharedData *sData)
 	checkLoop = false;
 	tempBar = -1;
 	oscSender->setup(HOST, OFSENDPORT);
-	timer.setPeriodicEvent(100000); // 100 us
+}
+
+//--------------------------------------------------------------
+Sequencer::~Sequencer()
+{
+	waitForThread();
+}
+
+//--------------------------------------------------------------
+void Sequencer::startThread()
+{
+	std::unique_lock<std::mutex> lock(threadMutex);
+	if (threadRunning || !threadDone) return;
+	// the thread of the previous playback has ended (threadDone), so joining it doesn't wait
+	if (thread.joinable()) thread.join();
+	threadDone = false;
+	threadRunning = true;
+	thread = std::thread(&Sequencer::runThread, this);
+}
+
+//--------------------------------------------------------------
+void Sequencer::stopThread()
+{
+	threadRunning = false;
+}
+
+//--------------------------------------------------------------
+bool Sequencer::isThreadRunning() const
+{
+	return threadRunning;
+}
+
+//--------------------------------------------------------------
+bool Sequencer::isCurrentThread() const
+{
+	return std::this_thread::get_id() == thread.get_id();
+}
+
+//--------------------------------------------------------------
+void Sequencer::waitForThread()
+{
+	stopThread();
+	if (isCurrentThread()) return;
+	std::unique_lock<std::mutex> lock(threadMutex);
+	threadEnded.wait(lock, [this]() { return threadDone; });
+	if (thread.joinable()) thread.join();
+}
+
+//--------------------------------------------------------------
+void Sequencer::runThread()
+{
+	nextTick = std::chrono::steady_clock::now();
+	threadedFunction();
+	std::unique_lock<std::mutex> lock(threadMutex);
+	threadRunning = false;
+	threadDone = true;
+	threadEnded.notify_all();
+}
+
+//--------------------------------------------------------------
+void Sequencer::waitNextTick()
+{
+	std::this_thread::sleep_until(nextTick);
+	nextTick += tickPeriod;
+	auto now = std::chrono::steady_clock::now();
+	if (nextTick < now) nextTick = now + tickPeriod;
 }
 
 //--------------------------------------------------------------
@@ -1254,7 +1319,7 @@ void Sequencer::playDelayedInstrument(std::map<int, Instrument>::iterator instMa
 void Sequencer::threadedFunction()
 {
 	while (isThreadRunning()) {
-		timer.waitNext();
+		waitNextTick();
 		if (!step()) return;
 	}
 }

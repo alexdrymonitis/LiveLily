@@ -1,12 +1,16 @@
 #ifndef SEQUENCER_H
 #define SEQUENCER_H
 
-#include "ofMain.h"
 #include "osc.h"
 #include "midi.h"
 #include "frontend.h"
-#include "ofTimer.h"
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
 #include <map>
+#include <memory>
+#include <thread>
 #include <vector>
 #include <string>
 #include <functional>
@@ -21,9 +25,19 @@ struct SharedData;
 // the session that holds the sequencer (see session.h), which it calls (e.g. for the functions bound to instruments)
 class Session;
 
-class Sequencer : public ofThread
+class Sequencer
 {
 	public:
+		~Sequencer();
+		// the thread of the sequencer, which ticks every 100 microseconds while it plays (see threadedFunction())
+		// with the methods of openFrameworks' ofThread that LiveLily used: a thread that has been started runs until it stops itself
+		// or stopThread() is called, after which it ends at its next tick, and it can be started again once it has ended
+		void startThread();
+		void stopThread();
+		bool isThreadRunning() const;
+		// stops the thread and waits until it has ended (not from the thread itself)
+		void waitForThread();
+		bool isCurrentThread() const;
 		void setup(SharedData *sData);
 		void setSendMidiClock(bool sendMidiClockState);
 		void start();
@@ -168,7 +182,17 @@ class Sequencer : public ofThread
 		SharedData *sharedData;
 
 		std::shared_ptr<OscSender> oscSender = makeOscSender();
-		ofTimer timer;
+		// the period of the ticks of the thread, and the time of its next tick
+		static constexpr std::chrono::microseconds tickPeriod{100};
+		std::chrono::steady_clock::time_point nextTick;
+		// waits until the next tick, which comes one period after the previous one, or one period from now if the thread is late
+		void waitNextTick();
+		void runThread();
+		std::thread thread;
+		std::atomic<bool> threadRunning{false};
+		bool threadDone = true;
+		std::mutex threadMutex;
+		std::condition_variable threadEnded;
 		bool runSequencer;
 		bool sequencerRunning;
 		bool sequencerStart;
