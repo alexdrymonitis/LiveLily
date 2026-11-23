@@ -4,11 +4,13 @@
 // and writes the errors, warnings, and notes of the lines, and the parsed state, to a text file
 // if the file starts the sequencer (e.g. with \score.play), the sequencer plays a dry run at the end, on a simulated clock
 // and what it would have sent (MIDI, OSC, pyo code, clicks, bound functions) is written with its time (see Sequencer::dryRun())
-// a few frames later, when the window has been drawn, the screen is added: the grids of the panes and of the area below them (see cellgrid.h)
+// then the keys of the lines "% test keys: ..." are typed (see keys.h), and a few frames after that, when the window has been drawn
+// the state is written, and the screen: the grids of the panes and of the area below them (see cellgrid.h)
 // the dumps of the example files are compared before and after a change to the parser (see tests/snapshots.sh)
 
 #include "ofApp.h"
 #include "session_dump.h"
+#include "keys.h"
 #include <fstream>
 #include <sstream>
 #include <iomanip>
@@ -47,7 +49,18 @@ void ofApp::runTest()
 		out << "=== playback\n";
 		for (const std::string& line : playback) out << line << "\n";
 	}
-	dumpState(out);
+	// keys to type after the file has run, from lines like "% test keys: v$d" (see keys.h), which update() presses one by one
+	// and the state and the screen are written once they have been typed (see appendTestEnd())
+	testKeys.clear();
+	testKeyNdx = 0;
+	static const std::string keysPrefix = "% test keys: ";
+	for (const auto& line : editor.allLines) {
+		if (line.second.str.compare(0, keysPrefix.size(), keysPrefix) != 0) continue;
+		std::string error;
+		std::vector<KeyEvent> events = parseKeys(line.second.str.substr(keysPrefix.size()), error);
+		if (!error.empty()) out << "line " << line.first + 1 << " keys error: " << error << "\n";
+		testKeys.insert(testKeys.end(), events.begin(), events.end());
+	}
 }
 
 //--------------------------------------------------------------
@@ -86,11 +99,12 @@ void ofApp::dumpState(std::ostream& out)
 }
 
 //--------------------------------------------------------------
-void ofApp::appendTestScreen()
+void ofApp::appendTestEnd()
 {
-	// what the editor shows, which the snapshots compare too: every pane (its text, line numbers, and status line) and the area below the panes
 	std::ofstream out(testOut, std::ios::app);
 	if (!out.is_open()) return;
+	dumpState(out);
+	// what the editor shows, which the snapshots compare too: every pane (its text, line numbers, and status line) and the area below the panes
 	out << "=== screen\n";
 	for (auto& editor : editors) {
 		std::string pane = "pane " + std::to_string(editor.first + 1);

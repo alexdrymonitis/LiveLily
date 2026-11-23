@@ -9,6 +9,7 @@
 #include "session.h"
 #include "of_instrument_display.h"
 #include "of_grid_painter.h"
+#include "keys.h"
 #include "view_state.h"
 
 // what is drawn of an instrument (its staff and its notes), which the front end attaches to every instrument
@@ -284,9 +285,12 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		uint64_t testDoneFrame = 0;
 		void runTest();
 		void dumpState(std::ostream& out);
-		// adds the grids of the panes and of the area below them to the dump, as they were drawn (see draw())
-		void appendTestScreen();
+		// adds the state and the grids of the panes and of the area below them to the dump, as they were drawn (see draw())
+		void appendTestEnd();
 		bool testScreenWritten = false;
+		// the keys a test file types after it has run (see runTest()), pressed one by one in update()
+		std::vector<KeyEvent> testKeys;
+		size_t testKeyNdx = 0;
 		//---------------------------------
 		// the sequencer functions of the system
 		int setPatternIndex(bool increment);

@@ -198,6 +198,13 @@ void ofApp::update()
 			runTest();
 			// the program quits after drawing a few frames, with the screen in the dump (see draw())
 		}
+		// the keys of the test, one event a frame, as they are typed; the screen is written a few frames after the last one
+		else if (testDone && testKeyNdx < testKeys.size()) {
+			const KeyEvent& event = testKeys[testKeyNdx++];
+			if (event.press) keyPressed(event.key);
+			else keyReleased(event.key);
+			testDoneFrame = ofGetFrameNum();
+		}
 		return;
 	}
 	// apply any tracebacks set from the sequencer thread
@@ -691,9 +698,9 @@ void ofApp::draw()
 	editors[session.whichPane].drawCompletions();
 	// in test mode, a few frames after the file has run, the screen as it is drawn is added to the dump, the window is saved
 	// if a screenshot was asked for, and the program quits (see testmode.cpp)
-	if (!testFile.empty() && testDone && !testScreenWritten && ofGetFrameNum() > testDoneFrame + 3) {
+	if (!testFile.empty() && testDone && testKeyNdx >= testKeys.size() && !testScreenWritten && ofGetFrameNum() > testDoneFrame + 3) {
 		testScreenWritten = true;
-		appendTestScreen();
+		appendTestEnd();
 		if (!testScreenshot.empty()) ofSaveScreen(testScreenshot);
 		ofExit(0);
 	}
