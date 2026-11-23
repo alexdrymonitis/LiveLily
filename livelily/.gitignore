@@ -21,3 +21,4 @@
 *.swp
 *.qbs.user
 .qtc_clangd/
+/bin/livelily_headless
