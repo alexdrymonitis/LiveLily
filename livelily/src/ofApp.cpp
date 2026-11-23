@@ -1968,9 +1968,7 @@ void ofApp::drawScore()
 		// in the if test below we set the number of bars to be displayed to fit the remaining bars
 		// e.g. in a six-bar loop, when the first four bars have been played, we need to display two bars only
 		// not four bars which is the maximum number of bars to display (these numbers are hypothetical)
-		if (ndx > 0) {
-			session.sharedData.numBars -= ((int)session.sharedData.loopData[session.sharedData.loopIndex].size() - ndx);
-		}
+		session.sharedData.numBars = std::min(session.sharedData.numBars, (int)session.sharedData.loopData[session.sharedData.loopIndex].size() - ndx);
 	}
 	else {
 		session.sharedData.numBars = 1;
@@ -2125,7 +2123,7 @@ void ofApp::drawScore()
 			}
 			// if we're staying in the same loop, when the currently playing bar is displayed at the right-most staff
 			// all the other bars must display the next bars of the loop (if there are any)
-			else if (((int)session.sharedData.thisBarIndex % session.sharedData.numBars) == session.sharedData.numBars - 1 && i < session.sharedData.numBars - 1) {
+			else if ((int)session.sharedData.thisBarIndex - ndx == session.sharedData.numBars - 1 && i < session.sharedData.numBars - 1) {
 				bar = session.sharedData.loopData[session.sharedData.loopIndex][(barNdx+session.sharedData.numBars)%(int)session.sharedData.loopData[session.sharedData.loopIndex].size()];
 				// the calculations below determine whether the remaining bars are less than sharedData.numBars - 1
 				// (we subtract one because in the last slot, we display the bar of the current loop chunk)
@@ -2134,10 +2132,10 @@ void ofApp::drawScore()
 				// we need to display two bars
 				// when at the last bar of the first chunk, we display the 5th and 6th bar on the left side
 				// and the 4th bar on the right side, with the 3rd slot being blank
-				int loopIndexLocal = session.sharedData.thisBarIndex + 1;
-				if (loopIndexLocal >= (int)session.sharedData.loopData[session.sharedData.loopIndex].size()) loopIndexLocal = 0;
-				int ndxLocal = (((loopIndexLocal) - ((loopIndexLocal) % session.sharedData.numBars)) / session.sharedData.numBars) * session.sharedData.numBars;
-				int numBarsLocal = (ndxLocal > 0 ? session.sharedData.numBars - ((int)session.sharedData.loopData[session.sharedData.loopIndex].size() - ndxLocal) : session.sharedData.numBars);
+				int loopSize = (int)session.sharedData.loopData[session.sharedData.loopIndex].size();
+				int ndxLocal = ndx + session.sharedData.numBars;
+				if (ndxLocal >= loopSize) ndxLocal = 0;
+				int numBarsLocal = std::min(std::min(numBarsToDisplay, loopSize), loopSize - ndxLocal);
 				if (i >= numBarsLocal) showBar = false;
 				else showBar = true;
 			}
