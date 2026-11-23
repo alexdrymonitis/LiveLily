@@ -17,7 +17,7 @@ jobs:
           # with Python embedded on Linux; macOS and Windows without it for now (see the plan's question of bundling Python)
           - os: ubuntu-24.04
             pyo: "ON"
-          - os: macos-14
+          - os: macos-latest
             pyo: "OFF"
           - os: windows-2022
             pyo: "OFF"
