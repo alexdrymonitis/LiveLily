@@ -7170,6 +7170,9 @@ std::pair<bool, CmdOutput> Session::isVariable(std::vector<std::string>& origina
 					// variable type 0 is simple variable
 					if (!variables[varName].varType) {
 						cmdOutput.outputVec.push_back(variables[varName].varStr);
+						// \x.val gives the value, and what follows it in a line, which is not an assignment or an operation (see above)
+						// stays in the line after the value (e.g. \print \x.val \y.val prints both values)
+						if (hasDot && commands.size() > 2 && commands[1] == "val") cmdOutput.keepsArgs = true;
 					}
 					else {
 						// assemble the command changing the variable name with its value
