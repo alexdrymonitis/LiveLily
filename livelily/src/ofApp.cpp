@@ -605,10 +605,12 @@ void ofApp::draw()
 	ofSetLineWidth(lineWidth);
 	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 		it->second.drawText();
+		paintGrids(it->second.takePaints(), font, brightnessCoeff);
 		// draw the pane separator for panes that do not touch the traceback printing area
 		if ((paneSplitOrientation == 0 && numPanes.find(it->second.getPaneRow()+1) != numPanes.end()) || \
 				(paneSplitOrientation == 1 && it->second.getPaneCol() < numPanes[it->second.getPaneRow()])) {
 			it->second.drawPaneSeparator();
+			paintGrids(it->second.takePaints(), font, brightnessCoeff);
 		}
 	}
 	ofSetColor(foregroundColor*brightnessCoeff);
@@ -669,6 +671,7 @@ void ofApp::draw()
 		if ((paneSplitOrientation == 0 && numPanes.find(it->second.getPaneRow()+1) == numPanes.end()) || \
 				(paneSplitOrientation == 1 && it->second.getPaneCol() >= numPanes[it->second.getPaneRow()])) {
 			it->second.drawPaneSeparator();
+			paintGrids(it->second.takePaints(), font, brightnessCoeff);
 		}
 	}
 	// draw a horizontal line to separate the panes and score from the traceback area
@@ -696,6 +699,7 @@ void ofApp::draw()
 	}
 	// the pop-up of autocompletion is drawn last, so that it is on top of everything
 	editors[session.whichPane].drawCompletions();
+	paintGrids(editors[session.whichPane].takePaints(), font, brightnessCoeff);
 	// in test mode, a few frames after the file has run, the screen as it is drawn is added to the dump, the window is saved
 	// if a screenshot was asked for, and the program quits (see testmode.cpp)
 	if (!testFile.empty() && testDone && testKeyNdx >= testKeys.size() && !testScreenWritten && ofGetFrameNum() > testDoneFrame + 3) {
@@ -4173,10 +4177,13 @@ void ofApp::setFontSize(bool calculateCoords)
 		cursorHeight = font.stringHeight("q");
 		float heightDiff = font.stringHeight("l") - font.stringHeight("o");
 		cursorHeight += heightDiff;
+		// from the baseline of the text to the bottom of its row, which centers the letters in the rows of the editor
+		characterOffset = font.stringHeight("j") - font.stringHeight("l");
+		characterOffset /= 2;
 		maxShellChars = (size_t)(view.screenWidth / oneCharacterWidth);
 	}
 	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
-		it->second.setFontSize(fontSize, oneCharacterWidth, cursorHeight);
+		it->second.setFontSize(fontSize, oneCharacterWidth, cursorHeight, characterOffset);
 	}
 	if (calculateCoords) setPaneCoords();
 }

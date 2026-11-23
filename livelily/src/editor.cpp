@@ -6,8 +6,6 @@
 #include <utility> // to add pair and make_pair
 #include <filesystem>
 #include "editor.h"
-#include "of_grid_painter.h"
-#include "of_color.h"
 
 // the app that holds the editors (see editor_host.h), which it sets when it starts
 EditorHost* Editor::host = nullptr;
@@ -809,13 +807,7 @@ void Editor::drawText()
 	Color cursorColor = foreground;
 	// the visible part of the line before the cursor, from how far the line has scrolled
 	std::string beforeCursorStr = allLines[cursorLineIndex].str.substr(std::min((size_t)allLines[cursorLineIndex].startPos, allLines[cursorLineIndex].str.size()), std::max(0, cursorPos));
-	int cursorX = lineNumberWidth + font.stringWidth(beforeCursorStr) + oneAndHalfCharacterWidth + frameXOffset;
-	// font.stringWidth() returns +1 when the string ends with a white space
-	// so we subtract the length of one character, if this is the case
-	{
-		// the character before the cursor, at its position in the line (the cursor position is relative to how far the line has scrolled)
-		if (!beforeCursorStr.empty() && beforeCursorStr.back() == ' ') cursorX -= oneCharacterWidth;
-	}
+	int cursorX = lineNumberWidth + ((int)beforeCursorStr.size() * oneCharacterWidth) + oneAndHalfCharacterWidth + frameXOffset;
 	cursorScreenRow = cursorLineIndex - lineCountOffset;
 	if (wrapLines) {
 		// the cursor is in the row of its line where its position falls
@@ -1110,7 +1102,7 @@ void Editor::drawText()
 	/*******************************************************************/
 	// then the hint of arguments, in the spaces that make room for it (see above), in a color between the foreground and the background
 	if (!argHint.empty()) {
-		Color hintColor = toColor(toOf(foreground).getLerped(toOf(background), 0.55f));
+		Color hintColor = lerp(foreground, background, 0.55f);
 		for (size_t c = 0; c < argHint.size(); c++) {
 			int row, col;
 			if (wrapLines) {
@@ -1174,10 +1166,10 @@ void Editor::drawText()
 	geometry.cellHeight = cursorHeight;
 	geometry.descent = characterOffset;
 	geometry.toEndWidth = rectWidth;
-	paintGrid(textGrid, geometry, font, host->editorBrightness());
+	paints.push_back({&textGrid, geometry});
 	GridGeometry gutterGeometry = geometry;
 	gutterGeometry.x = gutterX;
-	paintGrid(gutterGrid, gutterGeometry, font, host->editorBrightness());
+	paints.push_back({&gutterGrid, gutterGeometry});
 	if (prevCursorPos != cursorPos) prevCursorPos = cursorPos;
 }
 
@@ -1264,15 +1256,15 @@ void Editor::drawPaneSeparator()
 	geometry.cellHeight = cursorHeight;
 	geometry.descent = characterOffset;
 	geometry.toEndWidth = frameWidth;
-	float brightness = host->editorBrightness();
-	paintGridBackgrounds(statusGrid, geometry, brightness);
+	paints.push_back({&statusGrid, geometry, GridPaint::Part::backgrounds});
 	geometry.x = halfCharacterWidth + frameXOffset;
-	paintGridText(statusGrid, geometry, font, brightness, 0, fileNameCol);
+	paints.push_back({&statusGrid, geometry, GridPaint::Part::text, 0, fileNameCol});
 	geometry.x = fileNameXOffset - (fileNameCol * oneCharacterWidth);
-	paintGridText(statusGrid, geometry, font, brightness, fileNameCol, modeCol);
+	paints.push_back({&statusGrid, geometry, GridPaint::Part::text, fileNameCol, modeCol});
 	if (!mode.empty()) {
-		geometry.x = frameXOffset + frameWidth - font.stringWidth(mode) - 10 - (modeCol * oneCharacterWidth);
-		paintGridText(statusGrid, geometry, font, brightness, modeCol, cols);
+		// the font's width of the mode is its number of characters, as every character is as wide as a column
+		geometry.x = frameXOffset + frameWidth - ((int)mode.size() * oneCharacterWidth) - 10 - (modeCol * oneCharacterWidth);
+		paints.push_back({&statusGrid, geometry, GridPaint::Part::text, modeCol, cols});
 	}
 }
 
@@ -1386,20 +1378,19 @@ void Editor::resetCursorPos(int oldMaxCharactersPerString)
 }
 
 //--------------------------------------------------------------
-void Editor::setFontSize(int fontSize, float oneCharacterWidth, float cursorHeight)
+void Editor::setFontSize(int fontSize, float oneCharacterWidth, float cursorHeight, float characterOffset)
 {
+	// the app loads the font and measures it, as it paints the grids of the editor (see takePaints())
 	// store the previous the maximum characters per string
 	int oldMaxCharactersPerString = maxCharactersPerString;
 	if (!fontLoaded || fontSize != Editor::fontSize) {
 		Editor::fontSize = fontSize;
-		font.load("DroidSansMono.ttf", fontSize);
 		// we're using a monospace font, so we get the width of any character
 		Editor::oneCharacterWidth = oneCharacterWidth;
 		halfCharacterWidth = oneCharacterWidth / 2;
 		oneAndHalfCharacterWidth = oneCharacterWidth + halfCharacterWidth;
-		// the variable below helps center the cursor at the Y axis with respect to the letters
-		characterOffset = font.stringHeight("j") - font.stringHeight("l");
-		characterOffset /= 2;
+		// the distance from the baseline of the text to the bottom of its row, which helps center the letters in their rows
+		Editor::characterOffset = characterOffset;
 		Editor::cursorHeight = cursorHeight;
 		setMaxCharactersPerString();
 		fontLoaded = true;
@@ -4394,7 +4385,7 @@ void Editor::printVector(std::vector<int> v)
 	for (unsigned i = 0; i < v.size(); i++) {
 		std::cout << v[i] << " ";
 	}
-	std::cout << endl;
+	std::cout << std::endl;
 }
 
 //--------------------------------------------------------------
@@ -4403,7 +4394,7 @@ void Editor::printVector(std::vector<std::string> v)
 	for (unsigned i = 0; i < v.size(); i++) {
 		std::cout << v[i] << " ";
 	}
-	std::cout << endl;
+	std::cout << std::endl;
 }
 
 //--------------------------------------------------------------
@@ -4412,7 +4403,7 @@ void Editor::printVector(std::vector<float> v)
 	for (unsigned i = 0; i < v.size(); i++) {
 		std::cout << v[i] << " ";
 	}
-	std::cout << endl;
+	std::cout << std::endl;
 }
 
 /******************** autocompletion **********************/
@@ -4781,7 +4772,6 @@ void Editor::drawCompletions()
 		clearCompletions();
 		return;
 	}
-	float brightness = host->editorBrightness();
 	float windowWidth = host->windowWidth();
 	float windowHeight = host->windowHeight();
 	const int maxRows = 10;
@@ -4835,5 +4825,14 @@ void Editor::drawCompletions()
 	geometry.descent = characterOffset;
 	geometry.toEndWidth = width;
 	geometry.textInset = padding;
-	paintGrid(completionGrid, geometry, font, brightness);
+	paints.push_back({&completionGrid, geometry});
+}
+
+//--------------------------------------------------------------
+std::vector<GridPaint> Editor::takePaints()
+{
+	// the grids drawText(), drawPaneSeparator() and drawCompletions() have filled, which the app paints (see of_grid_painter.h)
+	std::vector<GridPaint> taken;
+	taken.swap(paints);
+	return taken;
 }

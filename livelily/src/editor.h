@@ -1,7 +1,8 @@
 #ifndef EDITOR_H
 #define EDITOR_H
 
-#include "ofMain.h"
+#include <cstdint>
+#include <map>
 #include "codetext.h"
 #include "cellgrid.h"
 #include "editor_host.h"
@@ -171,7 +172,10 @@ class Editor
 		// max number of lines that fit in the window
 		void setMaxCharactersPerString();
 		void resetCursorPos(int oldMaxCharactersPerString);
-		void setFontSize(int fontSize, float oneCharacterWidth, float cursorHeight);
+		// the size of the font, and its measures: the width of a character, the height of a row, and from the baseline to the bottom of a row
+		void setFontSize(int fontSize, float oneCharacterWidth, float cursorHeight, float characterOffset);
+		// the grids the drawing functions have filled since the last call, in their order, for the app to paint (see of_grid_painter.h)
+		std::vector<GridPaint> takePaints();
 		int getHalfCharacterWidth();
 		void setMaxNumLines(int numLines);
 		int getMaxNumLines();
@@ -374,7 +378,8 @@ class Editor
 		bool typingShell;
 		bool showShell;
 
-		ofTrueTypeFont font;
+		// the grids filled by the drawing functions, waiting to be painted (see takePaints())
+		std::vector<GridPaint> paints;
 		// the text area and the line numbers of the pane, filled by drawText() and painted at its end (see cellgrid.h)
 		CellGrid textGrid;
 		CellGrid gutterGrid;

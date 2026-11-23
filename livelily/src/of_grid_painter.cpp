@@ -123,3 +123,21 @@ void paintGridText(const CellGrid& grid, const GridGeometry& g, ofTrueTypeFont& 
 {
 	for (int row = 0; row < grid.rows; row++) paintText(grid, g, font, brightness, row, std::max(0, fromCol), std::min(grid.cols, toCol));
 }
+
+void paintGrids(const std::vector<GridPaint>& paints, ofTrueTypeFont& font, float brightness)
+{
+	for (const GridPaint& paint : paints) {
+		if (!paint.grid) continue;
+		switch (paint.part) {
+			case GridPaint::Part::backgrounds:
+				paintGridBackgrounds(*paint.grid, paint.geometry, brightness);
+				break;
+			case GridPaint::Part::text:
+				paintGridText(*paint.grid, paint.geometry, font, brightness, paint.fromCol, paint.toCol);
+				break;
+			default:
+				paintGrid(*paint.grid, paint.geometry, font, brightness);
+				break;
+		}
+	}
+}

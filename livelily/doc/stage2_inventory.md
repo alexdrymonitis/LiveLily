@@ -14,7 +14,9 @@ Each step is one commit, checked with the snapshot tests, the headless tests, an
 - [x] Step 6: the screen in the test dump (`=== screen`, written by `dumpGrid()` in `cellgrid.cpp` a few frames after the file has run); the messages below the panes are now in the same order on every run, so the screen and the screenshots are the same every time
 - [x] Step 7: `EditorHost` (`editor_host.h`, implemented by `ofApp`): the editor no longer uses `ofGetAppPtr()`; its time is `Clock`, and the clipboard, file dialogs and window size come from the host. What is left of openFrameworks in the editor is its font and the painting (step 9)
 - [x] Step 8: key events: `keys.h` names LiveLily's key codes (those of openFrameworks, which also go over OSC and come from Python) and parses a notation like Vim's (`<Esc>`, `<S-CR>`, `<C-v>`); a test file types keys with lines `% test keys: ...`, one event a frame, before its state and screen are written (`visual_test`, `visual_selection_test`). The dispatch of keys stays in `ofApp::executeKeyPressed()`, with the panes, until stage 5
-- [ ] Step 9: the editor without openFrameworks
+- [x] Step 9: the editor without openFrameworks: the editor fills its grids and queues them (`Editor::takePaints()`), the app paints them with its font (`paintGrids()`), and the editor, `cellgrid.cpp` and `keys.cpp` compile with no openFrameworks. The screenshots of all the test files are the same as before. Follow-up for stage 5: the headless runner can't write the editor's sections and the screen yet, as alignment (`alignment.cpp`), the spans of the note highlights (`ofApp::storeEditorNoteSpans()`) and the layout of the panes (`ofApp::setPaneCoords()`) are still in `ofApp`, and move with the panes
+
+Stage 2 is done.
 
 ## What the editor draws today
 
@@ -82,6 +84,6 @@ It also uses openFrameworks for time (`ofGetElapsedTimeMillis()`, 14), the file 
 6. **The screen in the test dump.** Test mode writes the grids of the panes and of the area below them as text (a `=== screen` section, with the colors as letters on a second layer), so that the snapshots test what the editor shows.
 7. **`EditorHost`.** The editor reaches the app only through an interface for the uses above; time goes through `Clock`, the dialogs through the host, and the name tables come from the `Session`.
 8. **Key events.** LiveLily's own key codes and key events (key, press or release, with the modifiers as keys of their own), which a front end makes from its keys, and which the tests type. Moving the dispatch of keys out of `ofApp` goes with the panes, in stage 5.
-9. **The editor without openFrameworks.** The editor and its grid compile with no openFrameworks, and the headless runner uses the real editor, so `tests/headless.sh` compares the whole dump, editor sections and screen included. This ends stage 2.
+9. **The editor without openFrameworks.** The editor and its grid compile with no openFrameworks. This ends stage 2. (Running the real editor in the headless runner, so that `tests/headless.sh` compares the editor sections and the screen too, needs alignment, the note highlights and the layout of the panes out of `ofApp`, and goes with the panes in stage 5.)
 
 The panes' layout (their sizes in pixels, the score beside them) stays in the app in this stage; it is laid out in cells in stage 5, where the terminal needs it.

@@ -18,6 +18,14 @@ struct Color
 	bool operator!=(const Color& other) const { return !(*this == other); }
 };
 
+// a color between two, as openFrameworks' ofColor::getLerped() computes it (every channel truncated to a whole value)
+inline Color lerp(const Color& from, const Color& to, float amount)
+{
+	float inv = 1.f - amount;
+	return Color((uint8_t)(inv * from.r + amount * to.r), (uint8_t)(inv * from.g + amount * to.g),
+			(uint8_t)(inv * from.b + amount * to.b), (uint8_t)(inv * from.a + amount * to.a));
+}
+
 // the named colors, with the same names and values as those of openFrameworks (the colors of CSS, as openFrameworks computes them)
 namespace Colors {
 	inline constexpr Color gray{127, 127, 127};

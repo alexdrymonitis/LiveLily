@@ -433,6 +433,8 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		int fontSize; // the size of the font of the editor
 		int instFontSize; // the size of the font of the instrument display
 		float cursorHeight;
+		// from the baseline of the text to the bottom of its row in the editor (see setFontSize())
+		float characterOffset = 0;
 
 		bool shiftPressed;
 		bool ctrlPressed;
