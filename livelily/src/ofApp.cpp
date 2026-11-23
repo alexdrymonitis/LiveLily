@@ -2001,11 +2001,11 @@ void ofApp::drawScore()
 				switch (session.sharedData.beatVizType) {
 					case 1:
 						beatPulseStartX = scoreXStartPnt + scoreXOffset;
-						beatPulseEndX = scoreXStartPnt + scoreXOffset + session.sharedData.instruments.begin()->second.getStaffXLength();
+						beatPulseEndX = scoreXStartPnt + scoreXOffset + session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength();
 						if (scoreOrientation == 1) {
-							beatPulseEndX += (session.sharedData.instruments.begin()->second.getStaffXLength() * (session.sharedData.numBars-1));
-							beatPulseEndX -= (session.sharedData.instruments.begin()->second.getClefXOffset() * (session.sharedData.numBars-1));
-							beatPulseEndX -= (session.sharedData.instruments.begin()->second.getMeterXOffset() * (session.sharedData.numBars-1));
+							beatPulseEndX += (session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength() * (session.sharedData.numBars-1));
+							beatPulseEndX -= (session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getClefXOffset() * (session.sharedData.numBars-1));
+							beatPulseEndX -= (session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getMeterXOffset() * (session.sharedData.numBars-1));
 						}
 						beatPulsePosX = beatPulseStartX - session.sharedData.staffLinesDist;
 						beatPulseSizeX = beatPulseEndX - beatPulseStartX;
@@ -2042,7 +2042,7 @@ void ofApp::drawScore()
 		//float prevNotesOffsetX = notesOffsetX;
 		//float notesXCoef = (sharedData.instruments.begin()->second.getStaffXLength() + staffOffsetX - notesOffsetX) / notesLength;
 		if (showBarCount && session.sharedData.instruments.size() > 0) {
-			ofColor color = toOf(session.sharedData.instruments[0].getStaffColor());
+			ofColor color = toOf(session.sharedData.instruments[0].displayAs<ScoreView>().getStaffColor());
 			ofSetColor(color.r*brightnessCoeff, color.g*brightnessCoeff, color.b*brightnessCoeff);
 			std::string barCountStr = "(" + std::to_string(session.sharedData.thisBarIndex+1) + "/" + std::to_string(session.sharedData.loopData[session.sharedData.loopIndex].size()) + ") " + std::to_string(session.sharedData.barCounter);
 			font.drawString(barCountStr, scoreXOffset+scoreBackgroundWidth-font.stringWidth(barCountStr)-20, scoreYOffset+20);
@@ -2078,7 +2078,7 @@ void ofApp::drawScore()
 				}
 			}
 			// get the meter of this bar to determine if it has changed and thus it has be to written
-			std::pair<int, int> thisMeter = session.sharedData.instruments.begin()->second.getMeter(bar);
+			std::pair<int, int> thisMeter = session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getMeter(bar);
 			std::pair<int, int> thisTempo = std::make_pair(session.sharedData.tempoBaseForScore[bar], session.sharedData.BPMTempi[bar]);
 			if (i > 0 && scoreOrientation > 0) {
 				if (prevMeter.first != thisMeter.first || prevMeter.second != thisMeter.second) {
@@ -2145,16 +2145,16 @@ void ofApp::drawScore()
 			if (i > 0) {
 				// only the notes need to go back some pixels, in case the clef or meter is not drawn
 				// so we use a separate value for the X coordinate
-				staffOffsetX += session.sharedData.instruments.begin()->second.getStaffXLength();
-				notesOffsetX += session.sharedData.instruments.begin()->second.getStaffXLength();
+				staffOffsetX += session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength();
+				notesOffsetX += session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength();
 			}
 			if (prevDrawClef != drawClef) {
-				if (drawClef) notesOffsetX += session.sharedData.instruments.begin()->second.getClefXOffset();
-				else notesOffsetX -= session.sharedData.instruments.begin()->second.getClefXOffset();
+				if (drawClef) notesOffsetX += session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getClefXOffset();
+				else notesOffsetX -= session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getClefXOffset();
 			}
 			if (prevDrawMeter != drawMeter) {
-				if (drawMeter) notesOffsetX += session.sharedData.instruments.begin()->second.getMeterXOffset();
-				else notesOffsetX -= session.sharedData.instruments.begin()->second.getMeterXOffset();
+				if (drawMeter) notesOffsetX += session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getMeterXOffset();
+				else notesOffsetX -= session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getMeterXOffset();
 			}
 			// set position of single bars based on the position of the bars of the previous loop
 			if (session.sharedData.numBars == 1 && scoreOrientation > 0) {
@@ -2172,12 +2172,12 @@ void ofApp::drawScore()
 				else {
 					session.sharedData.thisPosition = 0;
 				}
-				staffOffsetX += session.sharedData.instruments.begin()->second.getStaffXLength() * (float)slot;
-				notesOffsetX += session.sharedData.instruments.begin()->second.getStaffXLength() * (float)slot;
+				staffOffsetX += session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength() * (float)slot;
+				notesOffsetX += session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength() * (float)slot;
 			}
-			float notesXCoef = notesLength * session.sharedData.instruments.begin()->second.getXCoef(); // sharedData.instruments.begin()->second.getStaffXLength();
-			if (drawClef) notesXCoef -= session.sharedData.instruments.begin()->second.getClefXOffset();
-			if (drawMeter) notesXCoef -= session.sharedData.instruments.begin()->second.getMeterXOffset();
+			float notesXCoef = notesLength * session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getXCoef(); // sharedData.instruments.begin()->second.getStaffXLength();
+			if (drawClef) notesXCoef -= session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getClefXOffset();
+			if (drawMeter) notesXCoef -= session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getMeterXOffset();
 			notesXCoef /= notesLength; // (notesLength * sharedData.instruments.begin()->second.getXCoef());
 			// if we're displaying the beat pulse on each beat instead of a rectangle that encloses the whole score
 			// we need to display it here, in case we display the score horizontally, where we need to give
@@ -2189,8 +2189,8 @@ void ofApp::drawScore()
 					//beatPulseStartX = ((notesLength * notesXCoef)  / sharedData.numerator[getPlayingBarIndex()]) * sharedData.beatCounter;
 					//beatPulseStartX *= notesXCoef;
 					//beatPulseStartX += notesOffsetX;
-					if (session.sharedData.beatCounter == -1) beatPulseStartX = notesOffsetX - session.sharedData.instruments.begin()->second.getClefXOffset();
-					noteSize = session.sharedData.instruments.begin()->second.getNoteWidth();
+					if (session.sharedData.beatCounter == -1) beatPulseStartX = notesOffsetX - session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getClefXOffset();
+					noteSize = session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getNoteWidth();
 					beatPulsePosX = beatPulseStartX - noteSize;
 					beatPulseSizeX = noteSize * 2;
 					beatPulseMinPosY += scoreYOffset;
@@ -2237,7 +2237,7 @@ void ofApp::drawScore()
 				if (host != it->first) {
 					// a voice of the staff of another instrument has no staff, name, or connecting lines of its own
 					if (showBar && staffYOf.find(host) != staffYOf.end()) {
-						it->second.drawNotes(bar, i, &session.sharedData.loopData[insertNaturalsNdx], notesOffsetX, staffYOf[host], scoreYOffset, animate, notesXCoef, nextBarOfScore);
+						it->second.displayAs<ScoreView>().drawNotes(bar, i, &session.sharedData.loopData[insertNaturalsNdx], notesOffsetX, staffYOf[host], scoreYOffset, animate, notesXCoef, nextBarOfScore);
 					}
 					continue;
 				}
@@ -2256,7 +2256,7 @@ void ofApp::drawScore()
 						Instrument& inst = session.sharedData.instruments[staffInsts[k]];
 						float xPos = scoreXOffset + (session.sharedData.blankSpace * 0.75) + (session.sharedData.longestInstNameWidth - instNameWidths[staffInsts[k]]);
 						float yPos = firstYPos + (lineHeight * (float)k);
-						ofColor color = toOf(inst.getStaffColor());
+						ofColor color = toOf(inst.displayAs<ScoreView>().getStaffColor());
 						ofSetColor(color.r*brightnessCoeff, color.g*brightnessCoeff, color.b*brightnessCoeff);
 						instFont.drawString(inst.getName(), xPos, yPos);
 					}
@@ -2268,7 +2268,7 @@ void ofApp::drawScore()
 				// staffOffsetX includes the X offset of all previous bars (and of a single bar in horizontal view)
 				// and scoreYOffset is the Y offset of the score (e.g. when the score is at the bottom in horizontal view)
 				// the start of the staff can also be moved with \movex, so we include this too
-				float connectingLineX = staffOffsetX + it->second.getStaffXStartOffset();
+				float connectingLineX = staffOffsetX + it->second.displayAs<ScoreView>().getStaffXStartOffset();
 				float connectingLineY1 = yStartPnt + scoreYOffset;
 				float connectingLineY2 = connectingLineY1 - session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2);
 				// each staff draws its own vertical lines at its sides (from its top to its bottom line) in Staff::drawStaff()
@@ -2282,7 +2282,7 @@ void ofApp::drawScore()
 					}
 					// if this instrument is groupped with the previous one, connect them at the end of the bar
 					if (it->second.getGroup() == prevInst->second.getID() && it->second.getGroup() > -1) {
-						float connectingLineXEnd = staffOffsetX + session.sharedData.instruments.begin()->second.getStaffXLength();
+						float connectingLineXEnd = staffOffsetX + session.sharedData.instruments.begin()->second.displayAs<ScoreView>().getStaffXLength();
 						ofDrawLine(connectingLineXEnd, connectingLineY1, connectingLineXEnd, connectingLineY2);
 					}
 				}
@@ -2290,8 +2290,8 @@ void ofApp::drawScore()
 				// drawn above every other staff, it would fall on the staff above it
 				bool drawTempoLocal = (showTempo && drawTempo && j == 0);
 				if (showBar) {
-					it->second.drawStaff(bar, staffOffsetX, yStartPnt, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempoLocal);
-					it->second.drawNotes(bar, i, &session.sharedData.loopData[insertNaturalsNdx], notesOffsetX, yStartPnt, scoreYOffset, animate, notesXCoef, nextBarOfScore);
+					it->second.displayAs<ScoreView>().drawStaff(bar, staffOffsetX, yStartPnt, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempoLocal);
+					it->second.displayAs<ScoreView>().drawNotes(bar, i, &session.sharedData.loopData[insertNaturalsNdx], notesOffsetX, yStartPnt, scoreYOffset, animate, notesXCoef, nextBarOfScore);
 				}
 				yStartPnt += (session.sharedData.allStaffDiffs + (session.sharedData.staffLinesDist * 2));
 				j++;
@@ -4831,13 +4831,13 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 						break;
 					case 1:
 						for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-							it->second.setStaffColor(colorCounter, rgbVal);
-							it->second.setNotesColor(colorCounter, rgbVal);
+							it->second.displayAs<ScoreView>().setStaffColor(colorCounter, rgbVal);
+							it->second.displayAs<ScoreView>().setNotesColor(colorCounter, rgbVal);
 						}
 						break;
 					case 2:
 						for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-							it->second.setActiveNotesColor(colorCounter, rgbVal);
+							it->second.displayAs<ScoreView>().setActiveNotesColor(colorCounter, rgbVal);
 						}
 						break;
 					case 3:
@@ -4873,16 +4873,16 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 					beatColor.g = 255 - beatColor.g;
 					beatColor.b = 255 - beatColor.b;
 					for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-						it->second.invertColor();
+						it->second.displayAs<ScoreView>().invertColor();
 					}
 				}
 				else if (commands[i].compare("reset") == 0){
 					scoreBackgroundColor = ofColor::white;
 					beatColor = ofColor::paleGreen;
 					for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-						it->second.setStaffColor(Colors::black);
-						it->second.setNotesColor(Colors::black);
-						it->second.setActiveNotesColor(Colors::red);
+						it->second.displayAs<ScoreView>().setStaffColor(Colors::black);
+						it->second.displayAs<ScoreView>().setNotesColor(Colors::black);
+						it->second.displayAs<ScoreView>().setActiveNotesColor(Colors::red);
 					}
 				}
 				else {
@@ -4895,13 +4895,13 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 								break;
 							case 1:
 								for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-									it->second.setStaffColor(color);
-									it->second.setNotesColor(color);
+									it->second.displayAs<ScoreView>().setStaffColor(color);
+									it->second.displayAs<ScoreView>().setNotesColor(color);
 								}
 								break;
 							case 2:
 								for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-									it->second.setActiveNotesColor(color);
+									it->second.displayAs<ScoreView>().setActiveNotesColor(color);
 								}
 								break;
 							case 3:
@@ -5021,7 +5021,7 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 		if (!session.isNumber(commands[1])) return "\"movex\" takes a number as an argument";
 		int numPixels = stoi(commands[1]);
 		for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-			it->second.moveScoreX(numPixels);
+			it->second.displayAs<ScoreView>().moveScoreX(numPixels);
 		}
 	}
 
@@ -5032,7 +5032,7 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 		if (!session.isNumber(commands[1])) return "\"movey\" takes a number as an argument";
 		int numPixels = stoi(commands[1]);
 		for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-			it->second.moveScoreY(numPixels);
+			it->second.displayAs<ScoreView>().moveScoreY(numPixels);
 		}
 	}
 
@@ -5041,7 +5041,7 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 			return "\"recenter\" takes no arguments";
 		}
 		for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-			it->second.recenterScore();
+			it->second.displayAs<ScoreView>().recenterScore();
 		}
 	}
 
@@ -5056,7 +5056,7 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 		}
 		numBarsToDisplay = numBarsLocal;
 		for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-			it->second.setNumBarsToDisplay(numBarsToDisplay);
+			it->second.displayAs<ScoreView>().setNumBarsToDisplay(numBarsToDisplay);
 		}
 		// the length of the staves depends on the number of bars displayed, so set it and the note positions again
 		setScoreSizes();
@@ -5294,13 +5294,13 @@ void ofApp::setScoreCoords()
 	session.sharedData.notesXStartPnt = 0;
 	notesLength = staffLength - (session.sharedData.staffLinesDist * NOTESXOFFSETCOEF);
 	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-		it->second.setStaffCoords(staffLength, session.sharedData.staffLinesDist);
-		it->second.setNoteCoords(notesLength, session.sharedData.staffLinesDist, session.sharedData.scoreFontSize);
+		it->second.displayAs<ScoreView>().setStaffCoords(staffLength, session.sharedData.staffLinesDist);
+		it->second.displayAs<ScoreView>().setNoteCoords(notesLength, session.sharedData.staffLinesDist, session.sharedData.scoreFontSize);
 	}
 	// get the note width from the first instrument, as they all have the same size
 	if (session.sharedData.instruments.size() > 0) {
-		session.sharedData.noteWidth = session.sharedData.instruments[0].getNoteWidth();
-		session.sharedData.noteHeight = session.sharedData.instruments[0].getNoteHeight();
+		session.sharedData.noteWidth = session.sharedData.instruments[0].displayAs<ScoreView>().getNoteWidth();
+		session.sharedData.noteHeight = session.sharedData.instruments[0].displayAs<ScoreView>().getNoteHeight();
 	}
 }
 
@@ -5323,7 +5323,7 @@ void ofApp::resetScoreYOffset()
 void ofApp::setNotePositions(int barIndex)
 {
 	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-		if (!it->second.getCopied(barIndex)) it->second.setNotePositions(barIndex);
+		if (!it->second.getCopied(barIndex)) it->second.displayAs<ScoreView>().setNotePositions(barIndex);
 	}
 	applyMergeLayout(barIndex);
 }
@@ -5332,7 +5332,7 @@ void ofApp::setNotePositions(int barIndex)
 void ofApp::setNotePositions(int barIndex, int numBars)
 {
 	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-		if (!it->second.getCopied(barIndex)) it->second.setNotePositions(barIndex, numBars);
+		if (!it->second.getCopied(barIndex)) it->second.displayAs<ScoreView>().setNotePositions(barIndex, numBars);
 	}
 	for (int i = 0; i < numBars; i++) applyMergeLayout(barIndex + i);
 }
@@ -5358,10 +5358,10 @@ void ofApp::applyMergeLayout(int bar)
 		for (int inst : group) {
 			auto it = session.sharedData.instruments.find(inst);
 			if (it == session.sharedData.instruments.end()) return;
-			columns.push_back(it->second.getNoteColumns(bar));
-			dirs.push_back(it->second.getForcedStemDir());
+			columns.push_back(it->second.displayAs<ScoreView>().getNoteColumns(bar));
+			dirs.push_back(it->second.displayAs<ScoreView>().getForcedStemDir());
 		}
-		float noteWidth = session.sharedData.instruments[group.front()].getScoreNoteWidth();
+		float noteWidth = session.sharedData.instruments[group.front()].displayAs<ScoreView>().getScoreNoteWidth();
 		float halfStaffDist = session.sharedData.staffLinesDist / 2.0f;
 		// the column of a voice that starts at the X coordinate, or -1
 		auto columnAt = [&](size_t voice, float x) {
@@ -5396,7 +5396,7 @@ void ofApp::applyMergeLayout(int bar)
 						if (!sharedHead && shift < noteWidth) shift = noteWidth;
 					}
 				}
-				if (shift != 0) session.sharedData.instruments[group[v]].shiftNoteColumn(bar, (int)i, shift);
+				if (shift != 0) session.sharedData.instruments[group[v]].displayAs<ScoreView>().shiftNoteColumn(bar, (int)i, shift);
 			}
 		}
 	}
@@ -5434,12 +5434,12 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 		bool firstInst = true;
 		for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
 			if (session.mergeHostOf(it->first) != it->first) continue;
-			float maxPosition = it->second.getMaxYPos(barNdx);
-			float minPosition = it->second.getMinYPos(barNdx);
+			float maxPosition = it->second.displayAs<ScoreView>().getMaxYPos(barNdx);
+			float minPosition = it->second.displayAs<ScoreView>().getMinYPos(barNdx);
 			for (auto voiceIt = session.sharedData.instruments.begin(); voiceIt != session.sharedData.instruments.end(); ++voiceIt) {
 				if (voiceIt->first == it->first || session.mergeHostOf(voiceIt->first) != it->first) continue;
-				maxPosition = std::max(maxPosition, voiceIt->second.getMaxYPos(barNdx));
-				minPosition = std::min(minPosition, voiceIt->second.getMinYPos(barNdx));
+				maxPosition = std::max(maxPosition, voiceIt->second.displayAs<ScoreView>().getMaxYPos(barNdx));
+				minPosition = std::min(minPosition, voiceIt->second.displayAs<ScoreView>().getMinYPos(barNdx));
 			}
 			if (firstInst) {
 				firstMinPosition = std::min(firstMinPosition, minPosition);
@@ -5499,7 +5499,7 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 void ofApp::swapScorePosition(int orientation)
 {
 	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-		it->second.setScoreOrientation(orientation);
+		it->second.displayAs<ScoreView>().setScoreOrientation(orientation);
 	}
 	// use a boolean to determine whether before exiting the function we will calculate coords for the score
 	bool setCoords = scoreOrientation != orientation ? true : false;
@@ -5642,7 +5642,7 @@ void ofApp::setScoreSizes()
 	// for a 35 font size the staff lines distance is 10
 	session.sharedData.longestInstNameWidth = 0;
 	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-		it->second.setNotesFontSize(session.sharedData.scoreFontSize, session.sharedData.staffLinesDist);
+		it->second.displayAs<ScoreView>().setNotesFontSize(session.sharedData.scoreFontSize, session.sharedData.staffLinesDist);
 		size_t nameWidth = instFont.stringWidth(it->second.getName());
 		instNameWidths[it->first] = nameWidth;
 		if ((int)nameWidth > session.sharedData.longestInstNameWidth) {
@@ -5656,7 +5656,7 @@ void ofApp::setScoreSizes()
 			for (auto it2 = session.sharedData.instruments.begin(); it2 != session.sharedData.instruments.end(); ++it2) {
 				it2->second.setMeter(it->second, session.sharedData.numerator[it->second],
 						session.sharedData.denominator[it->second], session.sharedData.numBeats[it->second]);
-				it2->second.setNotePositions(it->second);
+				it2->second.displayAs<ScoreView>().setNotePositions(it->second);
 			}
 			applyMergeLayout(it->second);
 		}
@@ -5667,7 +5667,7 @@ void ofApp::setScoreSizes()
 void ofApp::setScoreNotes(int barIndex)
 {
 	for (auto it = session.sharedData.instruments.begin(); it != session.sharedData.instruments.end(); ++it) {
-		it->second.setScoreNotes(barIndex, session.sharedData.numerator[barIndex],
+		it->second.displayAs<ScoreView>().setScoreNotes(it->second, barIndex, session.sharedData.numerator[barIndex],
 								 session.sharedData.denominator[barIndex], session.sharedData.numBeats[barIndex],
 								 session.sharedData.BPMTempi[barIndex], session.sharedData.tempoBaseForScore[barIndex],
 								 session.sharedData.BPMDisplayHasDot[barIndex], session.sharedData.BPMMultiplier[barIndex]);
@@ -6330,16 +6330,18 @@ void ofApp::storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNo
 void ofApp::instrumentCreated(int instNdx)
 {
 	Instrument& inst = session.sharedData.instruments[instNdx];
+	// what is drawn of the instrument (its staff and its notes)
+	inst.attachDisplay(std::make_shared<ScoreView>());
 	// the width of its name, for the space of the names left of the score
 	int thisInstNameWidth = instFont.stringWidth(inst.getName());
 	instNameWidths[instNdx] = thisInstNameWidth;
 	if (thisInstNameWidth > session.sharedData.longestInstNameWidth) {
 		session.sharedData.longestInstNameWidth = thisInstNameWidth;
 	}
-	inst.setNotesFontSize(session.sharedData.scoreFontSize, session.sharedData.staffLinesDist);
+	inst.displayAs<ScoreView>().setNotesFontSize(session.sharedData.scoreFontSize, session.sharedData.staffLinesDist);
 	// a new instrument must be displayed like the existing ones, in case the score is not in its default state
-	inst.setScoreOrientation(scoreOrientation);
-	inst.setNumBarsToDisplay(numBarsToDisplay);
+	inst.displayAs<ScoreView>().setScoreOrientation(scoreOrientation);
+	inst.displayAs<ScoreView>().setNumBarsToDisplay(numBarsToDisplay);
 	setScoreCoords();
 }
 
@@ -6388,4 +6390,14 @@ void ofApp::instrumentsCleared()
 	std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
 	activeEditorNotes.clear();
 	activeEditorRests.clear();
+}
+
+//--------------------------------------------------------------
+void ofApp::layoutInstrumentBar(int instNdx, int bar)
+{
+	SharedData& data = session.sharedData;
+	Instrument& inst = data.instruments[instNdx];
+	inst.displayAs<ScoreView>().setScoreNotes(inst, bar, data.numerator[bar], data.denominator[bar], data.numBeats[bar],
+			data.BPMTempi[bar], data.tempoBaseForScore[bar], data.BPMDisplayHasDot[bar], data.BPMMultiplier[bar]);
+	inst.displayAs<ScoreView>().setNotePositions(bar);
 }

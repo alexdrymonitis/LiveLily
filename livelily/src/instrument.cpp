@@ -1,6 +1,5 @@
 #include "instrument.h"
-// the score objects (Staff and Notes) draw with openFrameworks, so the colors of the instrument are converted for them
-#include "of_color.h"
+#include <iostream>
 
 //--------------------------------------------------------------
 Instrument::Instrument()
@@ -61,9 +60,6 @@ Instrument::Instrument()
 	groupID = -1;
 	midiPort = -1;
 
-	setStaffColor(Colors::black);
-	setNotesColor(Colors::black);
-	setActiveNotesColor(Colors::red);
 }
 
 //--------------------------------------------------------------
@@ -82,8 +78,7 @@ std::string Instrument::getName()
 void Instrument::setID(int id)
 {
 	objID = id;
-	staff.setID(id);
-	notesObj.setID(id);
+	if (display) display->setID(id);
 }
 
 //--------------------------------------------------------------
@@ -108,7 +103,7 @@ Color Instrument::getColor()
 void Instrument::setGroup(int groupID)
 {
 	Instrument::groupID = groupID;
-	staff.setGroup(groupID);
+	if (display) display->setGroup(groupID);
 }
 
 //--------------------------------------------------------------
@@ -121,8 +116,7 @@ int Instrument::getGroup()
 void Instrument::setRhythm(bool isRhythm)
 {
 	isRhythmBool = isRhythm;
-	staff.setRhythm(isRhythm);
-	notesObj.setRhythm(isRhythm);
+	if (display) display->setRhythm(isRhythm);
 	if (isRhythm) setClef(0, 3);
 }
 
@@ -179,7 +173,7 @@ int64_t Instrument::stepStartUs(int bar, int step, float tempo)
 //--------------------------------------------------------------
 void Instrument::setActiveNote(int ndx)
 {
-	notesObj.setActiveNote(ndx);
+	if (display) display->setActiveNote(ndx);
 }
 
 //--------------------------------------------------------------
@@ -268,17 +262,7 @@ int Instrument::setDuration(std::string subcommand, float dur)
 	return 1;
 }
 
-//--------------------------------------------------------------
-void Instrument::setNumBarsToDisplay(int numBars)
-{
-	staff.setNumBarsToDisplay(numBars);
-}
 
-//--------------------------------------------------------------
-float Instrument::getXCoef()
-{
-	return staff.getXCoef();
-}
 
 //--------------------------------------------------------------
 void Instrument::setPassed(bool passedBool)
@@ -322,11 +306,6 @@ bool Instrument::hasNewStep()
 	return hasNewStepBool;
 }
 
-//--------------------------------------------------------------
-std::pair<int, int> Instrument::isLinked(int bar)
-{
-	return notesObj.isBarLinked(bar);
-}
 
 //--------------------------------------------------------------
 void Instrument::setNewStep(bool stepState)
@@ -361,14 +340,14 @@ void Instrument::setMultiBarsStrBegin(size_t pos)
 //--------------------------------------------------------------
 void Instrument::setClef(int bar, int clefIdx)
 {
-	staff.setClef(bar, clefIdx);
-	notesObj.setClef(bar, clefIdx);
+	clefs[bar] = clefIdx;
+	if (display) display->setClef(bar, clefIdx);
 }
 
 //--------------------------------------------------------------
 int Instrument::getClef(int bar)
 {
-	return staff.getClef(bar);
+	return clefs[bar];
 }
 
 //--------------------------------------------------------------
@@ -423,235 +402,41 @@ void Instrument::createEmptyMelody(int barIndex)
 //--------------------------------------------------------------
 void Instrument::deleteNotesBar(int bar)
 {
-	notesObj.deleteBar(bar);
+	if (display) display->deleteBar(bar);
 }
 
 //--------------------------------------------------------------
 void Instrument::setMeter(int bar, int numerator, int denominator, int numBeats)
 {
-	staff.setMeter(bar, numerator, denominator);
-	notesObj.setMeter(bar, numerator, denominator, numBeats);
+	meters[bar] = {numerator, denominator, numBeats};
+	if (display) display->setMeter(bar, numerator, denominator, numBeats);
 }
 
-//--------------------------------------------------------------
-std::pair<int, int> Instrument::getMeter(int bar)
-{
-	return staff.getMeter(bar);
-}
 
-//--------------------------------------------------------------
-void Instrument::setScoreNotes(int bar, int numerator, int denominator, int numBeats,
-		int BPMTempo, int beatAtValue, bool hasDot, int BPMMultiplier)
-{
-	//setMeter(bar, numerator, denominator, numBeats);
-	staff.setTempo(bar, BPMTempo, beatAtValue, hasDot);
-	notesObj.setNotes(bar,
-			scoreNotes[bar],
-			scoreAccidentals[bar],
-			scoreNaturalSignsNotWritten[bar],
-			scoreOctaves[bar],
-			scoreOttavas[bar],
-			scoreDurs[bar],
-			scoreDotIndexes[bar],
-			scoreDotsCounter[bar],
-			scoreGlissandi[bar],
-			articulations[bar],
-			scoreDynamics[bar],
-			scoreDynamicsIndexes[bar],
-			scoreDynamicsRampStart[bar],
-			scoreDynamicsRampEnd[bar],
-			scoreDynamicsRampDir[bar],
-			slurIndexes[bar],
-			tieIndexes[bar],
-			isWholeBarSlurred[bar],
-			scoreTupletRatios[bar],
-			scoreTupletStartStop[bar],
-			scoreTexts[bar],
-			textIndexes[bar],
-			BPMMultiplier);
-	auto rampIt = openDynamicsRamp.find(bar);
-	notesObj.setDynamicsRampOpenAtEnd(bar, rampIt != openDynamicsRamp.end() && rampIt->second.first > -1);
-}
 
-//--------------------------------------------------------------
-void Instrument::setNotePositions(int bar)
-{
-	notesObj.setNotePositions(bar);
-	notesObj.storeArticulationsCoords(bar);
-	notesObj.storeTupletCoords(bar);
-	notesObj.storeSlurCoords(bar);
-	notesObj.storeOttavaCoords(bar);
-	notesObj.storeTextCoords(bar);
-	notesObj.storeDynamicsCoords(bar);
-	notesObj.storeMinMaxY(bar);
-}
 
-//--------------------------------------------------------------
-void Instrument::setNotePositions(int bar, int numBars)
-{
-	for (int i = 0; i < numBars; i++) {
-		notesObj.setNotePositions(bar+i);
-		notesObj.storeMinMaxY(bar+i);
-	}
-	for (int i = 0; i < numBars; i++) {
-		notesObj.storeArticulationsCoords(bar+i);
-		notesObj.storeMinMaxY(bar+i);
-	}
-	for (int i = 0; i < numBars; i++) {
-		notesObj.storeTupletCoords(bar+i);
-		notesObj.storeMinMaxY(bar+i);
-	}
-	for (int i = 0; i < numBars; i++) {
-		notesObj.storeSlurCoords(bar+i);
-		notesObj.storeMinMaxY(bar+i);
-	}
-	for (int i = 0; i < numBars; i++) {
-		notesObj.storeOttavaCoords(bar+i);
-		notesObj.storeMinMaxY(bar+i);
-	}
-	for (int i = 0; i < numBars; i++) {
-		notesObj.storeTextCoords(bar+i);
-		notesObj.storeMinMaxY(bar+i);
-	}
-	for (int i = 0; i < numBars; i++) {
-		notesObj.storeDynamicsCoords(bar+i);
-		notesObj.storeMinMaxY(bar+i);
-	}
-}
 
-//--------------------------------------------------------------
-void Instrument::setNoteCoords(float xLen, float staffLineDist, int fontSize)
-{
-	notesObj.setCoords(xLen, staffLineDist, fontSize);
-}
 
 //--------------------------------------------------------------
 void Instrument::setAccidentalsOffsetCoef(float coef)
 {
-	notesObj.setAccidentalsOffsetCoef(coef);
+	accidentalsOffsetCoef = coef;
+	accidentalsOffsetSet = true;
+	if (display) display->setAccidentalsOffsetCoef(coef);
 }
 
-//--------------------------------------------------------------
-void Instrument::setScoreOrientation(int orientation)
-{
-	staff.setOrientation(orientation);
-	notesObj.setOrientation(orientation);
-	notesObj.setOrientationForDots(orientation);
-}
 
-//--------------------------------------------------------------
-void Instrument::setStaffColor(Color color)
-{
-	staff.staffColor = toOf(color);
-}
 
-//--------------------------------------------------------------
-void Instrument::setStaffColor(int color, int val)
-{
-	switch (color) {
-		case 0:
-			staff.staffColor.r = val;
-			break;
-		case 1:
-			staff.staffColor.g = val;
-			break;
-		case 2:
-			staff.staffColor.b = val;
-			break;
-		default:
-			break;
-	}
-}
 
-//--------------------------------------------------------------
-void Instrument::setStaffColor(int r, int g, int b)
-{
-	staff.staffColor.r = r;
-	staff.staffColor.g = g;
-	staff.staffColor.b = b;
-}
 
-//--------------------------------------------------------------
-Color Instrument::getStaffColor()
-{
-	return toColor(staff.staffColor);
-}
 
-//--------------------------------------------------------------
-void Instrument::setNotesColor(Color color)
-{
-	notesObj.notesColor = toOf(color);
-}
 
-//--------------------------------------------------------------
-void Instrument::setNotesColor(int r, int g, int b)
-{
-	notesObj.notesColor.r = r;
-	notesObj.notesColor.g = g;
-	notesObj.notesColor.b = b;
-}
 
-//--------------------------------------------------------------
-void Instrument::setNotesColor(int color, int val)
-{
-	switch (color) {
-		case 0:
-			notesObj.notesColor.r = val;
-			break;
-		case 1:
-			notesObj.notesColor.g = val;
-			break;
-		case 2:
-			notesObj.notesColor.b = val;
-			break;
-		default:
-			break;
-	}
-}
 
-//--------------------------------------------------------------
-Color Instrument::getNotesColor()
-{
-	return toColor(notesObj.notesColor);
-}
 
-//--------------------------------------------------------------
-void Instrument::setActiveNotesColor(Color color)
-{
-	notesObj.activeNotesColor = toOf(color);
-}
 
-//--------------------------------------------------------------
-void Instrument::setActiveNotesColor(int color, int val)
-{
-	switch (color) {
-		case 0:
-			notesObj.activeNotesColor.r = val;
-			break;
-		case 1:
-			notesObj.activeNotesColor.g = val;
-			break;
-		case 2:
-			notesObj.activeNotesColor.b = val;
-			break;
-		default:
-			break;
-	}
-}
 
-//--------------------------------------------------------------
-void Instrument::setActiveNotesColor(int r, int g, int b)
-{
-	notesObj.activeNotesColor.r = r;
-	notesObj.activeNotesColor.g = g;
-	notesObj.activeNotesColor.b = b;
-}
 
-//--------------------------------------------------------------
-Color Instrument::getActiveNotesColor()
-{
-	return toColor(notesObj.activeNotesColor);
-}
 
 //--------------------------------------------------------------
 void Instrument::setGlissandoStart(bool startGlissBool)
@@ -665,113 +450,54 @@ bool Instrument::getGlissandoStart()
 	return startGliss;
 }
 
-//--------------------------------------------------------------
-void Instrument::invertColor()
-{
-	staff.staffColor.r = 255 - staff.staffColor.r;
-	staff.staffColor.g = 255 - staff.staffColor.g;
-	staff.staffColor.b = 255 - staff.staffColor.b;
-	notesObj.notesColor.r = 255 - notesObj.notesColor.r;
-	notesObj.notesColor.g = 255 - notesObj.notesColor.g;
-	notesObj.notesColor.b = 255 - notesObj.notesColor.b;
-	notesObj.activeNotesColor.r = 255 - notesObj.activeNotesColor.r;
-	notesObj.activeNotesColor.g = 255 - notesObj.activeNotesColor.g;
-	notesObj.activeNotesColor.b = 255 - notesObj.activeNotesColor.b;
-}
 
-//--------------------------------------------------------------
-void Instrument::moveScoreX(int numPixels)
-{
-	staff.moveScoreX(numPixels);
-	notesObj.moveScoreX(numPixels);
-}
 
-//--------------------------------------------------------------
-void Instrument::moveScoreY(int numPixels)
-{
-	staff.moveScoreY(numPixels);
-	notesObj.moveScoreY(numPixels);
-}
 
-//--------------------------------------------------------------
-void Instrument::recenterScore()
-{
-	staff.recenterScore();
-	notesObj.recenterScore();
-}
 
-//--------------------------------------------------------------
-float Instrument::getStaffXStartOffset()
-{
-	return staff.getXStartOffset();
-}
 
-//--------------------------------------------------------------
-float Instrument::getStaffXLength()
-{
-	return staff.getXLength();
-}
 
-//--------------------------------------------------------------
-float Instrument::getNoteWidth()
-{
-	return notesObj.getNoteWidth();
-}
 
-//--------------------------------------------------------------
-float Instrument::getNoteHeight()
-{
-	return notesObj.getNoteHeight();
-}
 
-//--------------------------------------------------------------
-void Instrument::setStaffCoords(float xStartPnt, float staffLineDist)
-{
-	staff.setCoords(xStartPnt, staffLineDist);
-}
 
-//--------------------------------------------------------------
-void Instrument::setNotesFontSize(int fontSize, float staffLinesDist)
-{
-	staff.setSize(fontSize, staffLinesDist);
-	notesObj.setFontSize(fontSize, staffLinesDist);
-}
 
 //--------------------------------------------------------------
 void Instrument::setAnimation(bool animationState)
 {
-	notesObj.setAnimation(animationState);
-
+	animation = animationState;
+	if (display) display->setAnimation(animationState);
 }
 
 //--------------------------------------------------------------
 void Instrument::setLoopStart(bool loopStartState)
 {
-	staff.isLoopStart = loopStartState;
+	loopStart = loopStartState;
+	if (display) display->setLoopStart(loopStartState);
 }
 
 //--------------------------------------------------------------
 void Instrument::setLoopEnd(bool loopEndState)
 {
-	staff.isLoopEnd = loopEndState;
+	loopEnd = loopEndState;
+	if (display) display->setLoopEnd(loopEndState);
 }
 
 //--------------------------------------------------------------
 void Instrument::setScoreEnd(bool scoreEndState)
 {
-	staff.isScoreEnd = scoreEndState;
+	scoreEnd = scoreEndState;
+	if (display) display->setScoreEnd(scoreEndState);
 }
 
 //--------------------------------------------------------------
 bool Instrument::isLoopStart()
 {
-	return staff.isLoopStart;
+	return loopStart;
 }
 
 //--------------------------------------------------------------
 bool Instrument::isLoopEnd()
 {
-	return staff.isLoopEnd;
+	return loopEnd;
 }
 
 //--------------------------------------------------------------
@@ -818,7 +544,7 @@ void Instrument::setMute(bool mute)
 {
 	muteState = mute;
 	soundMuteState = -1;
-	notesObj.setMute(mute);
+	if (display) display->setMute(mute);
 	toMuteState = false;
 	toUnmuteState = false;
 }
@@ -1009,7 +735,7 @@ int Instrument::getSoundFontChannel()
 //--------------------------------------------------------------
 void Instrument::setActiveNote()
 {
-	notesObj.setActiveNote(barDataCounter);
+	if (display) display->setActiveNote(barDataCounter);
 }
 
 //--------------------------------------------------------------
@@ -1095,71 +821,55 @@ float Instrument::getDynamic(int bar)
 	return dynamics[bar][barDataCounter];
 }
 
-//--------------------------------------------------------------
-float Instrument::getMinVsAnchor(int bar)
-{
-	return notesObj.getMinVsAnchor(bar);
-}
 
-//--------------------------------------------------------------
-float Instrument::getMaxYPos(int bar)
-{
-	return notesObj.getMaxYPos(bar);
-}
 
-//--------------------------------------------------------------
-float Instrument::getMinYPos(int bar)
-{
-	return notesObj.getMinYPos(bar);
-}
 
-//--------------------------------------------------------------
-float Instrument::getClefXOffset()
-{
-	return staff.getClefXOffset();
-}
 
-//--------------------------------------------------------------
-float Instrument::getMeterXOffset()
-{
-	return staff.getMeterXOffset();
-}
 
-//--------------------------------------------------------------
-void Instrument::drawStaff(int bar, float xOffset, float yStartPnt, float yOffset, bool drawClef,
-		bool drawMeter, bool drawLoopStartEnd, bool drawTempo)
-{
-	staff.drawStaff(bar, xOffset, yStartPnt, yOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempo);
-}
 
-//--------------------------------------------------------------
-void Instrument::drawNotes(int bar, int loopNdx,  std::vector<int> *v, float xOffset, float yStartPnt, float yOffset, bool animate, float xCoef, int nextBar)
-{
-	notesObj.drawNotes(bar, loopNdx, v, xOffset, yStartPnt, yOffset, animate, xCoef, nextBar);
-}
 
 void Instrument::printVector(std::vector<int> v)
 {
 	for (int elem : v) {
-		cout << elem << " ";
+		std::cout << elem << " ";
 	}
-	cout << endl;
+	std::cout << std::endl;
 }
 
 //--------------------------------------------------------------
 void Instrument::printVector(std::vector<std::string> v)
 {
 	for (std::string elem : v) {
-		cout << elem << " ";
+		std::cout << elem << " ";
 	}
-	cout << endl;
+	std::cout << std::endl;
 }
 
 //--------------------------------------------------------------
 void Instrument::printVector(std::vector<float> v)
 {
 	for (float elem : v) {
-		cout << elem << " ";
+		std::cout << elem << " ";
 	}
-	cout << endl;
+	std::cout << std::endl;
+}
+
+//--------------------------------------------------------------
+void Instrument::attachDisplay(std::shared_ptr<InstrumentDisplay> newDisplay)
+{
+	display = newDisplay;
+	if (!display) return;
+	// the display gets what the instrument has been told so far, as if it had been there from the start
+	display->setID(objID);
+	display->setGroup(groupID);
+	display->setRhythm(isRhythmBool);
+	for (const auto& clef : clefs) display->setClef(clef.first, clef.second);
+	for (const auto& meter : meters) display->setMeter(meter.first, meter.second[0], meter.second[1], meter.second[2]);
+	if (accidentalsOffsetSet) display->setAccidentalsOffsetCoef(accidentalsOffsetCoef);
+	display->setAnimation(animation);
+	display->setLoopStart(loopStart);
+	display->setLoopEnd(loopEnd);
+	display->setScoreEnd(scoreEnd);
+	display->setMute(muteState);
+	if (voiceSet) display->setVoice(voice, numVoices);
 }

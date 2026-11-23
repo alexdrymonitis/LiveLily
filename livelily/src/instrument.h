@@ -1,13 +1,40 @@
 #ifndef INSTRUMENT_H
 #define INSTRUMENT_H
 
-#include "ofMain.h"
 #include "color.h"
 #include "osc.h"
-#include "score.h"
+#include <array>
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
 #define MINDUR 256
+
+// what the front end draws of an instrument (its staff and its notes, see of_instrument_display.h), as the engine sees it
+// the engine tells it what changes, as these calls, and the front end does the rest (layout, colors, drawing)
+class InstrumentDisplay
+{
+	public:
+		virtual ~InstrumentDisplay() = default;
+		virtual void setID(int id) = 0;
+		virtual void setGroup(int groupID) = 0;
+		virtual void setRhythm(bool isRhythm) = 0;
+		// the note that plays, which is drawn in the color of the active notes
+		virtual void setActiveNote(int ndx) = 0;
+		virtual void setClef(int bar, int clefIdx) = 0;
+		virtual void deleteBar(int bar) = 0;
+		virtual void setMeter(int bar, int numerator, int denominator, int numBeats) = 0;
+		virtual void setAccidentalsOffsetCoef(float coef) = 0;
+		virtual void setAnimation(bool animationState) = 0;
+		virtual void setLoopStart(bool loopStartState) = 0;
+		virtual void setLoopEnd(bool loopEndState) = 0;
+		virtual void setScoreEnd(bool scoreEndState) = 0;
+		virtual void setMute(bool mute) = 0;
+		virtual void setVoice(int voice, int numVoices) = 0;
+};
 
 class Instrument
 {
@@ -37,8 +64,6 @@ class Instrument
 		void setStaccatissimoDur(float dur);
 		void setTenutoDur(float dur);
 		int setDuration(std::string subcommand, float dur);
-		void setNumBarsToDisplay(int numBars);
-		float getXCoef();
 		void setPassed(bool passed);
 		bool hasPassed();
 		void setCopied(int barIndex, bool copyState);
@@ -46,7 +71,6 @@ class Instrument
 		void setCopyNdx(int barIndex, int barToCopy);
 		int getCopyNdx(int barIndex);
 		bool hasNewStep();
-		std::pair<int, int> isLinked(int bar);
 		void setNewStep(bool stepState);
 		int getNewStep();
 		bool getMultiBarsDone();
@@ -58,39 +82,10 @@ class Instrument
 		void createEmptyMelody(int barIndex);
 		void deleteNotesBar(int bar);
 		void setMeter(int bar, int numerator, int denominator, int numBeats);
-		std::pair<int, int> getMeter(int bar);
-		void setScoreNotes(int bar, int numerator, int denominator, int numBeats,
-				int BPMValue, int beatAtValue, bool hasDot, int BPMMultiplier);
-		void setNoteCoords(float xLen, float staffLineDist, int fontSize);
 		void setAccidentalsOffsetCoef(float coef);
-		void setNotePositions(int bar);
-		void setNotePositions(int bar, int numBars);
-		void setScoreOrientation(int orientation);
-		void setStaffColor(Color color);
-		void setStaffColor(int color, int rgbVal);
-		void setStaffColor(int r, int g, int b);
-		Color getStaffColor();
-		void setNotesColor(Color color);
-		void setNotesColor(int color, int rgbVal);
-		void setNotesColor(int r, int g, int b);
-		Color getNotesColor();
-		void setActiveNotesColor(Color color);
-		void setActiveNotesColor(int color, int rgbVal);
-		void setActiveNotesColor(int r, int g, int b);
-		Color getActiveNotesColor();
 		void setGlissandoStart(bool startGliss);
 		bool getGlissandoStart();
-		void invertColor();
-		void moveScoreX(int numPixels);
-		void moveScoreY(int numPixels);
-		void recenterScore();
-		float getStaffXLength();
-		float getStaffXStartOffset();
-		float getNoteWidth();
-		float getNoteHeight();
 		float getStaffYAnchor();
-		void setStaffCoords(float xStartPnt, float staffLineDist);
-		void setNotesFontSize(int fontSize, float staffLinesDist);
 		void setAnimation(bool animationState);
 		void setLoopStart(bool loopStartState);
 		void setLoopEnd(bool loopEndState);
@@ -141,21 +136,8 @@ class Instrument
 		int getMidiVel(int bar);
 		int getArticulationIndex(int bar);
 		float getDynamic(int bar);
-		float getMinVsAnchor(int bar);
-		// the voice of the instrument in a staff with merged instruments (see \merge and Notes::setVoice())
-		void setVoice(int voice, int numVoices) { notesObj.setVoice(voice, numVoices); }
-		int getForcedStemDir() { return notesObj.getForcedStemDir(); }
-		std::vector<Notes::NoteColumn> getNoteColumns(int bar) { return notesObj.getColumns(bar); }
-		void shiftNoteColumn(int bar, int noteNdx, float dx) { notesObj.shiftColumn(bar, noteNdx, dx); }
-		float getScoreNoteWidth() { return notesObj.getNoteWidth(); }
-		float getMaxYPos(int bar);
-		float getMinYPos(int bar);
-		float getClefXOffset();
-		float getMeterXOffset();
-		void drawStaff(int bar, float xOffset, float yStartPnt, float yOffset, bool drawClef,
-				bool drawMeter, bool drawLoopStartEnd, bool drawTempo);
-		void drawNotes(int bar, int loopNdx, std::vector<int> *v, float xOffset, float yStartPnt,
-				float yOffset, bool animate, float xCoef, int nextBar = -1);
+		// the voice of the instrument in a staff with merged instruments (see \merge and Notes::setVoice() in score.h)
+		void setVoice(int voice, int numVoices) { this->voice = voice; this->numVoices = numVoices; voiceSet = true; if (display) display->setVoice(voice, numVoices); }
 		void printVector(std::vector<int> v);
 		void printVector(std::vector<std::string> v);
 		void printVector(std::vector<float> v);
@@ -318,9 +300,33 @@ class Instrument
 		bool passed; // set to true when a melodic line passes all tests
 		bool firstIter;
 
+		// what the front end draws of the instrument (see InstrumentDisplay), which it attaches when the instrument is created
+		// (see FrontendHost::instrumentCreated()), with what the instrument has been told so far
+		// copies of the instrument (e.g. in the instruments map) share it
+		std::shared_ptr<InstrumentDisplay> display;
+		void attachDisplay(std::shared_ptr<InstrumentDisplay> newDisplay);
+		// the display as the type of the front end, which is attached if there is none yet
+		// a template, so that only the front end, which knows the type, uses it
+		template <typename T> T& displayAs()
+		{
+			if (!display) attachDisplay(std::make_shared<T>());
+			return *static_cast<T*>(display.get());
+		}
+
 	private:
-		Staff staff;
-		Notes notesObj;
+		// what the instrument tells its display, kept so that a display attached later gets it too (see attachDisplay())
+		// and so that the engine can read back what it set (getClef(), isLoopStart(), isLoopEnd())
+		std::map<int, int> clefs;
+		std::map<int, std::array<int, 3>> meters; // numerator, denominator, number of beats
+		bool accidentalsOffsetSet = false;
+		float accidentalsOffsetCoef = 0;
+		bool animation = false;
+		bool loopStart = false;
+		bool loopEnd = false;
+		bool scoreEnd = false;
+		bool voiceSet = false;
+		int voice = 1;
+		int numVoices = 1;
 		int objID;
 		int groupID;
 		bool multiBarsDone;

@@ -1830,9 +1830,7 @@ void Session::addedInstruments(int numInstsBefore)
 			inst.setPassed(false);
 			if (sharedData.numerator.find(bar) == sharedData.numerator.end()) continue;
 			inst.setMeter(bar, sharedData.numerator[bar], sharedData.denominator[bar], sharedData.numBeats[bar]);
-			inst.setScoreNotes(bar, sharedData.numerator[bar], sharedData.denominator[bar], sharedData.numBeats[bar],
-					sharedData.BPMTempi[bar], sharedData.tempoBaseForScore[bar], sharedData.BPMDisplayHasDot[bar], sharedData.BPMMultiplier[bar]);
-			inst.setNotePositions(bar);
+			frontend->layoutInstrumentBar(instNdx, bar);
 		}
 	}
 }

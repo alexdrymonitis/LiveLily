@@ -7,6 +7,10 @@
 #include "audio.h"
 #include "frontend.h"
 #include "session.h"
+#include "of_instrument_display.h"
+
+// what is drawn of an instrument (its staff and its notes), which the front end attaches to every instrument
+using ScoreView = OfInstrumentDisplay;
 #include <map>
 #include <vector>
 #include <utility> // to add pair
@@ -175,6 +179,7 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		void instrumentCreated(int instNdx) override;
 		void instrumentRemoved(int instNdx) override;
 		void instrumentsCleared() override;
+		void layoutInstrumentBar(int instNdx, int bar) override;
 		std::pair<int, int> mousePosition() override { return {mouseX, mouseY}; }
 		void setPaneFromOsc(int pane, const std::string& address) override { fromOscAddr[pane] = address; fromOsc[pane] = true; }
 		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);

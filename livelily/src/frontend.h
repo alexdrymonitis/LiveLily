@@ -60,6 +60,8 @@ class FrontendHost
 		virtual void instrumentCreated(int instNdx) = 0;
 		virtual void instrumentRemoved(int instNdx) = 0;
 		virtual void instrumentsCleared() = 0;
+		// lays out a bar of one instrument in the score (e.g. the empty bars of an instrument added after the bars were defined)
+		virtual void layoutInstrumentBar(int instNdx, int bar) = 0;
 		// the position of the mouse over the window (\mousex, \mousey, \mouse)
 		virtual std::pair<int, int> mousePosition() = 0;
 		// a pane gets what is typed in it from OSC messages to an address (\fromosc)
