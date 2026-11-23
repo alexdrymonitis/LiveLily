@@ -1196,7 +1196,8 @@ CmdOutput Session::functionFuncs(std::vector<std::string>& originalCommands)
 				return genError("setargs must be concatenated to the function name with a dot");
 			}
 			sharedData.functions[lastFunctionIndex].releaseBind();
-			return genOutput("");
+			// unbinding doesn't run the function, like the other methods
+			return genOutput("noexec");
 		}
 		else if (commands[i].compare("onrelease") == 0) {
 			if (commands.size() < i+2) {
