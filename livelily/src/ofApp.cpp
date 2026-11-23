@@ -203,7 +203,6 @@ void ofApp::setup()
 	// piano roll variables, with the keys of a piano, from A0 to C8 (see setPianoRollRange())
 	view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
 	setPianoRollRange(21, 108);
-	view.pianoRollMinDur = (scoreBackgroundWidth - view.pianoRollKeysWidth) / (float)MINDUR;
 
 	session.maestroToggleSet = false;
 	session.receivingMaestro = false;
@@ -2479,8 +2478,12 @@ void ofApp::drawPianoRoll()
 				if (instIt->second.notes.find(bar) == instIt->second.notes.end()) {
 					continue;
 				}
+				// every bar fills the roll, whatever its meter, as the roll moves by its length in the time of a bar
+				// (numBeats is the length of a bar in the units of the durations, MINDUR for a whole note)
+				float barUnits = (session.sharedData.numBeats[bar] > 0 ? (float)session.sharedData.numBeats[bar] : (float)MINDUR);
+				float unitLength = rollLength / barUnits;
 				for (size_t j = 0; j < instIt->second.notes.at(bar).size(); j++) {
-					float noteLength = (float)instIt->second.durs.at(bar).at(j) * view.pianoRollMinDur;
+					float noteLength = (float)instIt->second.durs.at(bar).at(j) * unitLength;
 					float durPercentage = instIt->second.durPercentages[instIt->second.articulations[bar][j][0]];
 					// the position of the note along the roll, towards the keyboard
 					// the ADSR release part is removed from the length of the note, so its start moves by as much
@@ -2494,6 +2497,11 @@ void ofApp::drawPianoRoll()
 						// a note of this bar ends at the keyboard
 						float diff = length - (rollStart + rollLength - pos);
 						if (diff > 0) length -= diff;
+						// and is not drawn beyond the edge of the score
+						if (pos < rollStart) {
+							length -= (rollStart - pos);
+							pos = rollStart;
+						}
 					}
 					else {
 						// a note of the next bar starts at the edge of the score
@@ -5520,7 +5528,6 @@ void ofApp::swapScorePosition(int orientation)
 			}
 			view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
 			view.pianoRollKeysHeight = scoreBackgroundHeight / view.pianoRollLength;
-			view.pianoRollMinDur = (scoreBackgroundWidth - view.pianoRollKeysWidth) / (float)MINDUR;
 			if (scoreXOffset == 0) scoreXOffset = view.screenWidth / 2;
 			else scoreXOffset = 0;
 			// check if the editor is split in panes and change the active pane accordingly
@@ -5613,7 +5620,6 @@ void ofApp::swapScorePosition(int orientation)
 			}
 			view.pianoRollKeysWidth = scoreBackgroundWidth / view.pianoRollLength;
 			view.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
-			view.pianoRollMinDur = (scoreBackgroundHeight - view.pianoRollKeysHeight) / (float)MINDUR;
 			break;
 		case 2:
 			scoreXOffset = 0;
@@ -5622,7 +5628,6 @@ void ofApp::swapScorePosition(int orientation)
 			scoreBackgroundHeight = view.tracebackBase - cursorHeight;
 			view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
 			view.pianoRollKeysHeight = scoreBackgroundHeight / view.pianoRollLength;
-			view.pianoRollMinDur = (scoreBackgroundWidth - view.pianoRollKeysWidth) / (float)MINDUR;
 		default:
 			break;
 	}
@@ -5864,7 +5869,6 @@ void ofApp::resizeWindow()
 		scoreBackgroundHeight = view.tracebackBase - cursorHeight;
 		view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
 		view.pianoRollKeysHeight = scoreBackgroundHeight / view.pianoRollLength;
-		view.pianoRollMinDur = (scoreBackgroundWidth - view.pianoRollKeysWidth) / (float)MINDUR;
 		if (scoreXOffset > 0) scoreXOffset = view.screenWidth / 2;
 	}
 	else {
@@ -5872,7 +5876,6 @@ void ofApp::resizeWindow()
 		scoreBackgroundHeight = (view.tracebackBase / 2) - cursorHeight;
 		view.pianoRollKeysWidth = scoreBackgroundWidth / view.pianoRollLength;
 		view.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
-		view.pianoRollMinDur = (scoreBackgroundHeight - view.pianoRollKeysHeight) / (float)MINDUR;
 	}
 	resetScoreYOffset();
 	setScoreSizes();

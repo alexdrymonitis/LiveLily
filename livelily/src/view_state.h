@@ -52,7 +52,6 @@ struct ViewState
 	// the lowest and highest keys of the piano roll, as MIDI notes, A0 to C8 like a piano by default (see \score.show pianoroll)
 	int pianoRollLowestKey = 21;
 	int pianoRollHighestKey = 108;
-	float pianoRollMinDur;
 	float pianoRollKeysWidth;
 	float pianoRollKeysHeight;
 	uint64_t pianoRollTimeStamp;
