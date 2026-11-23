@@ -269,6 +269,9 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost
 		uint64_t testDoneFrame = 0;
 		void runTest();
 		void dumpState(std::ostream& out);
+		// adds the grids of the panes and of the area below them to the dump, as they were drawn (see draw())
+		void appendTestScreen();
+		bool testScreenWritten = false;
 		//---------------------------------
 		// the sequencer functions of the system
 		int setPatternIndex(bool increment);

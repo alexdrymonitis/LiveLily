@@ -147,6 +147,10 @@ class Editor
 		void drawText();
 		// sets the cursor of the text grid (see GridCursor), drawn in a token (inRow, before the token from splitCol) or after the text
 		void markCursor(int cursorX, Color color, bool inRow, int splitCol);
+		// the grids of the pane as they were last drawn (see drawText(), drawPaneSeparator()), for the test dumps
+		const CellGrid& getTextGrid() const { return textGrid; }
+		const CellGrid& getGutterGrid() const { return gutterGrid; }
+		const CellGrid& getStatusGrid() const { return statusGrid; }
 		void drawPaneSeparator();
 		void setDPressed(bool dPressedState);
 		void setStringsStartPos();

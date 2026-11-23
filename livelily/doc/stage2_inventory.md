@@ -11,7 +11,7 @@ Each step is one commit, checked with the snapshot tests, the headless tests, an
 - [x] Step 3: the completion pop-up in the grid (`completionGrid`, placed by pixels, with the text inset by half a character)
 - [x] Step 4: the status line of a pane in the grid (`statusGrid`: the text in cells, its three parts painted where they were)
 - [x] Step 5: the area below the panes in the grid (`ofApp::belowGrid`: the messages of the lines, or the shell with its cursor)
-- [ ] Step 6: the screen in the test dump
+- [x] Step 6: the screen in the test dump (`=== screen`, written by `dumpGrid()` in `cellgrid.cpp` a few frames after the file has run); the messages below the panes are now in the same order on every run, so the screen and the screenshots are the same every time
 - [ ] Step 7: `EditorHost`
 - [ ] Step 8: key events
 - [ ] Step 9: the editor without openFrameworks

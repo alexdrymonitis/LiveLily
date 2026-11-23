@@ -6,6 +6,7 @@
 // gives the same picture as drawing directly, while a terminal can paint the same grid in its own cells
 
 #include "color.h"
+#include <iosfwd>
 #include <string>
 #include <vector>
 
@@ -108,5 +109,9 @@ class CellGrid
 		std::vector<GridMark> marks;
 		GridCursor cursor;
 };
+
+// writes a grid as text, for the test dumps (see testmode.cpp): its text and the colors of its text as letters, row by row
+// (with a legend of the colors), then its layers (backgrounds, selections, outlines, marks, and the cursor)
+void dumpGrid(std::ostream& out, const std::string& title, const CellGrid& grid);
 
 #endif

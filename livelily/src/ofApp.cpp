@@ -194,8 +194,7 @@ void ofApp::update()
 			testDone = true;
 			testDoneFrame = ofGetFrameNum();
 			runTest();
-			// with a screenshot, the program quits after drawing (see draw())
-			if (testScreenshot.empty()) ofExit(0);
+			// the program quits after drawing a few frames, with the screen in the dump (see draw())
 		}
 		return;
 	}
@@ -688,9 +687,12 @@ void ofApp::draw()
 	}
 	// the pop-up of autocompletion is drawn last, so that it is on top of everything
 	editors[session.whichPane].drawCompletions();
-	// in test mode with a screenshot, the window is saved a few frames after the file has run, and the program quits (see testmode.cpp)
-	if (!testScreenshot.empty() && testDone && ofGetFrameNum() > testDoneFrame + 3) {
-		ofSaveScreen(testScreenshot);
+	// in test mode, a few frames after the file has run, the screen as it is drawn is added to the dump, the window is saved
+	// if a screenshot was asked for, and the program quits (see testmode.cpp)
+	if (!testFile.empty() && testDone && !testScreenWritten && ofGetFrameNum() > testDoneFrame + 3) {
+		testScreenWritten = true;
+		appendTestScreen();
+		if (!testScreenshot.empty()) ofSaveScreen(testScreenshot);
 		ofExit(0);
 	}
 }

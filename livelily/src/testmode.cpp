@@ -4,6 +4,7 @@
 // and writes the errors, warnings, and notes of the lines, and the parsed state, to a text file
 // if the file starts the sequencer (e.g. with \score.play), the sequencer plays a dry run at the end, on a simulated clock
 // and what it would have sent (MIDI, OSC, pyo code, clicks, bound functions) is written with its time (see Sequencer::dryRun())
+// a few frames later, when the window has been drawn, the screen is added: the grids of the panes and of the area below them (see cellgrid.h)
 // the dumps of the example files are compared before and after a change to the parser (see tests/snapshots.sh)
 
 #include "ofApp.h"
@@ -82,4 +83,20 @@ void ofApp::dumpState(std::ostream& out)
 	// the text of the editor at the end, which commands like \editor.alignment change
 	out << "=== editor\n";
 	for (const auto& line : editors[session.whichPane].allLines) out << line.second.str << "\n";
+}
+
+//--------------------------------------------------------------
+void ofApp::appendTestScreen()
+{
+	// what the editor shows, which the snapshots compare too: every pane (its text, line numbers, and status line) and the area below the panes
+	std::ofstream out(testOut, std::ios::app);
+	if (!out.is_open()) return;
+	out << "=== screen\n";
+	for (auto& editor : editors) {
+		std::string pane = "pane " + std::to_string(editor.first + 1);
+		dumpGrid(out, pane + " text", editor.second.getTextGrid());
+		dumpGrid(out, pane + " line numbers", editor.second.getGutterGrid());
+		dumpGrid(out, pane + " status line", editor.second.getStatusGrid());
+	}
+	dumpGrid(out, "below the panes", belowGrid);
 }
