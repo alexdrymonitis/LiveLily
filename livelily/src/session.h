@@ -84,7 +84,7 @@ struct CmdOutput
 // the engine of LiveLily: the state of a session, the parser (parser.cpp, session.cpp) and the sequencer, without the user interface
 // (see doc/stage1_inventory.md, step 5)
 // it reaches the user interface only through FrontendHost (frontend.h), and the system only through the interfaces of the platform
-// the front end (ofApp for now) holds a Session, and sets its frontend (and audioCallback) when it starts
+// the front end (ofApp for now) holds a Session, sets its frontend (and audioCallback) when it starts, and then calls setup()
 class Session
 {
 	public:
@@ -93,6 +93,9 @@ class Session
 
 		// the user interface, as the engine sees it (see frontend.h), which the front end sets when it starts
 		FrontendHost* frontend = nullptr;
+		// sets the defaults of the session and the tables of the names of its languages, once frontend is set (see session_setup.cpp)
+		// foreground is the color of names that are not highlighted
+		void setup(Color foreground);
 		// the pane whose code runs, which the front end sets (the active pane)
 		int whichPane = 0;
 

@@ -51,38 +51,10 @@ void ofApp::setup()
 
 	unsigned int framerate = 60;
 
-	session.sequencer.setup(&session.sharedData);
-	session.sequencer.setMidiOutput(session.midi.get());
-	session.sequencer.setFrontend(this);
-
-	// define audio properties
-	session.sampleRate = 48000;
-	session.bufferSize = 256;
-	session.inChannels = 2;
-	session.outChannels = 2;
-	//audioDevID = 1;
-	session.inSoundDeviceSet = false;
-	session.outSoundDeviceSet = false;
-	session.pyoSet = false;
-
-	session.startSequencer = false;
+	// the defaults of the session and the tables of the names of its languages (see session_setup.cpp)
+	session.setup(toColor(foregroundColor));
 
 	notesID = 0;
-	session.parsingBar = false;
-	session.parsingBars = false;
-	session.parsingLoop = false;
-	session.storingFunction = false;
-	session.storingList = false;
-	session.barsIterCounter = 0;
-	session.numBarsToParse = 0;
-	session.numBarsToParseSet = false;
-	session.barsCmdNumBars = 0;
-	session.firstInstForBarsIndex = 0;
-	session.firstInstForBarsSet = false;
-	session.checkIfAllPartsReceivedBarData = false;
-	session.lastFunctionIndex = 0;
-	session.storingFunctionIndex = 0;
-	session.functionBodyDepth = 0;
 	fullScreen = false;
 	isWindowResized = false;
 	windowResizeTimeStamp = 0;
@@ -93,11 +65,6 @@ void ofApp::setup()
 
 	ofSetWindowTitle("LiveLily");
 
-	//oscReceiver->setup(OSCPORT);
-	session.oscReceiverIsSet = false;
-	// waiting time to receive a response from a score part server is one frame at 60 FPS
-	session.scorePartResponseTime = (uint64_t)((1000.0 / 60.0) + 0.5);
-
 	view.screenWidth = ofGetWindowWidth();
 	view.screenHeight = ofGetWindowHeight();
 	view.middleOfScreenX = view.screenWidth / 2;
@@ -105,8 +72,6 @@ void ofApp::setup()
 	view.staffXOffset = view.middleOfScreenX;
 	view.staffWidth = view.screenWidth;
 	numBarsToDisplay = 2;
-
-	session.sharedData.numInstruments = 0;
 
 	shiftPressed = false;
 	ctrlPressed = false;
@@ -123,7 +88,6 @@ void ofApp::setup()
 
 	ofTrueTypeFont::setGlobalDpi(72);
 	fontSize = 18;
-	session.whichPane = 0;
 	Editor editor;
 	editors[0] = editor;
 	editors[0].setActivity(true);
@@ -138,21 +102,6 @@ void ofApp::setup()
 	setFontSize(true);
 	screenSplitHorizontal = view.screenWidth;
 
-	session.sharedData.tempoMs[0] = 500;
-	session.sharedData.BPMMultiplier[0] = 1;
-	session.sharedData.beatAtDifferentThanDivisor[0] = false;
-	session.sharedData.beatAtValCounter = 0;
-	session.sharedData.numerator[0] = 4;
-	session.sharedData.denominator[0] = 4;
-	session.sharedData.numBeats[0] = 4;
-
-	session.barError = false;
-
-	session.sharedData.loopIndex = 0;
-	session.sharedData.tempLoopIndex = 0;
-	session.sharedData.thisBarIndex = 0;
-	session.sharedData.beatCounter = 0; // this is controlled by the sequencer
-	session.sharedData.barCounter = 0; // also controlled by the sequencer
 	view.numBars = view.prevNumBars = 1;
 	view.thisPosition = view.prevPosition = 0;
 	showBarCount = false;
@@ -163,7 +112,6 @@ void ofApp::setup()
 	//showScope = false;
 	showScore = false;
 	scoreType = 0;
-	session.seqResolution = 16;
 	view.longestInstNameWidth = 0;
 	view.staffLinesDist = 10.0;
 	view.scoreFontSize = 35;
@@ -171,8 +119,6 @@ void ofApp::setup()
 	instFont.load("Monaco.ttf", instFontSize);
 	view.notesXStartPnt = 0;
 	view.blankSpace = 10;
-	session.sharedData.animate = false;
-	session.sharedData.setAnimation = false;
 	view.beatAnimate = false;
 	view.setBeatAnimation = false;
 	view.beatViz = false;
@@ -205,17 +151,6 @@ void ofApp::setup()
 	view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
 	setPianoRollRange(21, 108);
 
-	session.maestroToggleSet = false;
-	session.receivingMaestro = false;
-	session.maestroValNdx = 0;
-	session.maestroInitialized = false;
-	session.maestroBeatsIn = 1;
-	session.maestroValThresh = 7.5;
-	session.maestroTimeStamp = ofGetElapsedTimeMillis();
-	session.maestroAddress = "/maestro";
-	session.maestroToggleAddress = "/toggle";
-	session.maestroLevareAddress = "/levare";
-
 	view.pyStdoutStr = "";
 	view.pyStdoutStrNdx = 0;
 	view.typePyStrCharByChar = true;
@@ -225,737 +160,15 @@ void ofApp::setup()
 	view.pyStdoutKeyModNdx = 0;
 	view.pyStdoutStrVecNdx = 0;
 
-	session.correctOnSameOctaveOnly = true;
-
-	session.serialPortOpen = false;
-
-	session.sharedData.PPQN = 24;
-	session.sharedData.PPQNCounter = 0;
-	// get the ms duration of the PPQM
-	session.sharedData.PPQNPerUs[0] = (uint64_t)(session.sharedData.tempoMs[0] / (float)session.sharedData.PPQN) * 1000;
-
 	exiting = false;
 
 	mouseX = 0;
 	mouseY = 0;
 
-	// set the notes chars
-	for (int i = 2; i < 9; i++) {
-		session.noteChars[i-2] = char((i%7)+97);
-	}
-	session.noteChars[7] = char(114); // "r" for rest
-
-	// store the articulation names std::strings
-	std::string articulSymsLocal[8] = {"none", "marcato", "trill", "tenuto", \
-								  "staccatissimo", "accent", "staccato", "portando"};
-	for (int i = 0; i < 8; i++) {
-		session.sharedData.articulSyms[i] = articulSymsLocal[i];
-	}
-
 	// create the beat rectangle transparency cosine table
 	for (int i = 0; i <= BEATVIZBRIGHTNESS; i++) {
 		view.beatVizCosTab[i] = (int)(((cos(((float)i/(float)(BEATVIZBRIGHTNESS+1))*M_PI) * -0.5) + 0.5) * 255);
 	}
-
-	/* Colors used for syntax highlighting for LiveLily
-	   first level commands -- fuchsia
-	   methods --------------- violet
-	   arguments ------------- skyBlue
-	   instruments ----------- greenYellow
-	   bars ------------------ orchid
-	   loops ----------------- lightSeaGreen
-	   functions ------------- turqoise
-	   groups ---------------- lightSteelBlue
-	   command execution ----- cyan
-	   errors ---------------- red
-	   warnings -------------- orange
-	   brackets pairing ------ magenta
-	   comments -------------- gray
-	   digits ---------------- gold
-	   text highlight box ---- goldenRod
-	   strings --------------- aqua
-	   variables ------------- darkTurquoise
-	   python decorators ----- coral
-	   -- paleGreen is used for the pulse of the beat
-	*/
-	// first level commands
-	// the commands of LiveLily, from the table of commands (see commandTable() in parser.cpp)
-	// so that a command added there is colored, autocompleted, and reserved as a name (see reservedNames below)
-	for (const auto& command : session.commandTable()) session.commandsMap[Session::livelily][command.first[1]][command.first] = Colors::fuchsia;
-	session.commandsMap[Session::livelily]['j'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['q'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['x'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['z'][""] = toColor(foregroundColor);
-
-	// methods
-	session.commandsMap[Session::livelily]['a']["accoffset"] = Colors::violet;
-	session.commandsMap[Session::livelily]['a']["add"] = Colors::violet;
-	session.commandsMap[Session::livelily]['a']["alignment"] = Colors::violet;
-	session.commandsMap[Session::livelily]['a']["autobrackets"] = Colors::violet;
-	session.commandsMap[Session::livelily]['a']["autocomplete"] = Colors::violet;
-	session.commandsMap[Session::livelily]['a']["animation"] = Colors::violet;
-	session.commandsMap[Session::livelily]['b']["beatsin"] = Colors::violet;
-	session.commandsMap[Session::livelily]['b']["beattype"] = Colors::violet;
-	session.commandsMap[Session::livelily]['b']["bind"] = Colors::violet;
-	session.commandsMap[Session::livelily]['c']["check"] = Colors::violet;
-	session.commandsMap[Session::livelily]['c']["clear"] = Colors::violet;
-	session.commandsMap[Session::livelily]['c']["colors"] = Colors::violet;
-	session.commandsMap[Session::livelily]['c']["correct"] = Colors::violet;
-	session.commandsMap[Session::livelily]['c']["cursor"] = Colors::violet;
-	session.commandsMap[Session::livelily]['d']["delay"] = Colors::violet;
-	session.commandsMap[Session::livelily]['f']["finish"] = Colors::violet;
-	session.commandsMap[Session::livelily]['f']["fullscreen"] = Colors::violet;
-	session.commandsMap[Session::livelily]['g']["goto"] = Colors::violet;
-	session.commandsMap[Session::livelily]['h']["hide"] = Colors::violet;
-	session.commandsMap[Session::livelily]['i']["init"] = Colors::violet;
-	session.commandsMap[Session::livelily]['l']["levareaddr"] = Colors::violet;
-	session.commandsMap[Session::livelily]['l']["locate"] = Colors::violet;
-	session.commandsMap[Session::livelily]['m']["mainaddr"] = Colors::violet;
-	session.commandsMap[Session::livelily]['m']["map"] = Colors::violet;
-	session.commandsMap[Session::livelily]['m']["midichan"] = Colors::violet;
-	session.commandsMap[Session::livelily]['m']["midiport"] = Colors::violet;
-	session.commandsMap[Session::livelily]['m']["movex"] = Colors::violet;
-	session.commandsMap[Session::livelily]['m']["movey"] = Colors::violet;
-	session.commandsMap[Session::livelily]['n']["normal"] = Colors::violet;
-	session.commandsMap[Session::livelily]['n']["numbars"] = Colors::violet;
-	session.commandsMap[Session::livelily]['o']["onrelease"] = Colors::violet;
-	session.commandsMap[Session::livelily]['p']["play"] = Colors::violet;
-	session.commandsMap[Session::livelily]['r']["recenter"] = Colors::violet;
-	session.commandsMap[Session::livelily]['r']["release"] = Colors::violet;
-	session.commandsMap[Session::livelily]['r']["remove"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["send"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["sendmidi"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["setargs"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["setup"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["sendto"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["seqres"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["show"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["showbeat"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["sndfont"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["stop"] = Colors::violet;
-	session.commandsMap[Session::livelily]['s']["stopnow"] = Colors::violet;
-	session.commandsMap[Session::livelily]['t']["toggleaddr"] = Colors::violet;
-	session.commandsMap[Session::livelily]['t']["transpose"] = Colors::violet;
-	session.commandsMap[Session::livelily]['t']["traverse"] = Colors::violet;
-	session.commandsMap[Session::livelily]['t']["tune"] = Colors::violet;
-	session.commandsMap[Session::livelily]['u']["unbind"] = Colors::violet;
-	session.commandsMap[Session::livelily]['u']["update"] = Colors::violet;
-	session.commandsMap[Session::livelily]['v']["val"] = Colors::violet;
-	session.commandsMap[Session::livelily]['v']["valndx"] = Colors::violet;
-	session.commandsMap[Session::livelily]['v']["valthresh"] = Colors::violet;
-	session.commandsMap[Session::livelily]['v']["volume"] = Colors::violet;
-
-	// arguments
-	session.commandsMap[Session::livelily]['a']["all"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['a']["alto"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["barcount"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["barstart"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["bass"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["beat"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['c']["char"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['f']["fr"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['f']["framerate"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['h']["hor"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['i']["immediately"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['i']["invert"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["line"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["localhost"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["loopstart"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['n']["notes"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['o']["off"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['o']["on"] = Colors::skyBlue;
-	// the widths of the units of \editor.alignment
-	session.commandsMap[Session::livelily]['s']["short"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["long"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['o']["onlast"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['o']["onoctave"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["perc"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["percussion"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["pianoroll"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["sequencer"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["seq"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["python"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['r']["reset"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['r']["rhythm"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["scope"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['t']["tempo"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['t']["treble"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['v']["vert"] = Colors::skyBlue;
-
-	// color names, same color as arguments above
-	session.commandsMap[Session::livelily]['a']["aliceBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['a']["antiqueWhite"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['a']["aqua"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['a']["aquamarine"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['a']["azure"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["black"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["blue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["beige"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["bisque"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["blanchedAlmond"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["blueViolet"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["brown"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['b']["burlyWood"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['c']["cyan"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['c']["cadetBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['c']["chartreuse"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['c']["chocolate"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['c']["coral"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['c']["cornflowerBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['c']["cornsilk"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['c']["crimson"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkCyan"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkGoldenRod"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkGray"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkGrey"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkKhaki"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkMagenta"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkOliveGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkOrange"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkOrchid"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkRed"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkSalmon"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkSeaGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkSlateBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkSlateGray"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkSlateGrey"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkTurquoise"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["darkViolet"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["deepPink"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["deepSkyBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["dimGray"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["dimGrey"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['d']["dodgerBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['f']["fireBrick"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['f']["floralWhite"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['f']["forestGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['f']["fuchsia"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['g']["green"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['g']["gray"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['g']["gainsboro"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['g']["ghostWhite"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['g']["gold"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['g']["goldenRod"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['g']["grey"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['g']["greenYellow"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['h']["honeyDew"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['h']["hotPink"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['i']["indianRed "] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['i']["indigo "] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['i']["ivory"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['k']["khaki"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lavender"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lavenderBlush"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lawnGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lemonChiffon"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightCoral"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightCyan"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightGoldenRodYellow"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightGray"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightGrey"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightPink"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightSalmon"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightSeaGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightSkyBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightSlateGray"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightSlateGrey"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightSteelBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lightYellow"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["lime"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["limeGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['l']["linen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["magenta"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["maroon"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mediumAquaMarine"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mediumBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mediumOrchid"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mediumPurple"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mediumSeaGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mediumSlateBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mediumSpringGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mediumTurquoise"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mediumVioletRed"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["midnightBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mintCream"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["mistyRose"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['m']["moccasin"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['n']["navajoWhite"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['n']["navy"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['o']["oldLace"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['o']["olive"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['o']["oliveDrab"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['o']["orange"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['o']["orangeRed"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['o']["orchid"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["paleGoldenRod"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["paleGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["paleTurquoise"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["paleVioletRed"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["papayaWhip"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["peachPuff"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["peru"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["pink"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["plum"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["powderBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['p']["purple"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['r']["red"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['r']["rosyBrown"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['r']["royalBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["saddleBrown"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["salmon"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["sandyBrown"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["seaGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["seaShell"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["sienna"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["silver"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["skyBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["slateBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["slateGray"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["slateGrey"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["snow"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["springGreen"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['s']["steelBlue"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['t']["tan"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['t']["teal"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['t']["thistle"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['t']["tomato"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['t']["turquoise"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['v']["violet"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['w']["white"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['w']["wheat"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['w']["whiteSmoke"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['y']["yellow"] = Colors::skyBlue;
-	session.commandsMap[Session::livelily]['y']["yellowGreen"] = Colors::skyBlue;
-
-	// dummy upper case letters (the LiveLily language doesn't have keywords with upper case letters)
-	session.commandsMap[Session::livelily]['A'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['B'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['C'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['D'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['E'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['F'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['G'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['H'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['I'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['J'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['K'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['L'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['M'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['N'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['O'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['P'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['Q'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['R'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['S'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['T'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['U'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['V'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['W'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['X'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['Y'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::livelily]['Z'][""] = toColor(foregroundColor);
-	// the commands of LiveLily are reserved names (see isReservedName()), which are stored before any name is defined
-	for (const auto& byChar : session.commandsMap[Session::livelily]) {
-		for (const auto& cmd : byChar.second) {
-			if (cmd.first.size() > 1 && cmd.first[0] == '\\') session.reservedNames.insert(cmd.first);
-		}
-	}
-
-	/* Colors used for syntax highlighting for Python
-	   commands -------------- fuchsia
-	   keywords -------------- violet
-	   Pyo classes ----------- deepSkyBlue
-	   command execution ----- cyan
-	   errors ---------------- red
-	   warnings -------------- orange
-	   brackets pairing ------ magenta
-	   comments -------------- gray
-	   digits ---------------- gold
-	   text highlight box ---- goldenRod
-	   strings --------------- aqua
-	   -- paleGreen is used for the pulse of the beat
-	*/
-	// keywords
-	session.commandsMap[Session::python]['a']["as"] = Colors::violet;
-	session.commandsMap[Session::python]['a']["assert"] = Colors::violet;
-	session.commandsMap[Session::python]['a']["and"] = Colors::violet;
-	session.commandsMap[Session::python]['b']["break"] = Colors::violet;
-	session.commandsMap[Session::python]['c']["class"] = Colors::violet;
-	session.commandsMap[Session::python]['c']["continue"] = Colors::violet;
-	session.commandsMap[Session::python]['d']["def"] = Colors::violet;
-	session.commandsMap[Session::python]['d']["del"] = Colors::violet;
-	session.commandsMap[Session::python]['e']["elif"] = Colors::violet;
-	session.commandsMap[Session::python]['e']["else"] = Colors::violet;
-	session.commandsMap[Session::python]['e']["except"] = Colors::violet;
-	session.commandsMap[Session::python]['f']["for"] = Colors::violet;
-	session.commandsMap[Session::python]['f']["from"] = Colors::violet;
-	session.commandsMap[Session::python]['f']["finally"] = Colors::violet;
-	session.commandsMap[Session::python]['g']["global"] = Colors::violet;
-	session.commandsMap[Session::python]['h'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['i']["if"] = Colors::violet;
-	session.commandsMap[Session::python]['i']["is"] = Colors::violet;
-	session.commandsMap[Session::python]['i']["import"] = Colors::violet;
-	session.commandsMap[Session::python]['i']["in"] = Colors::violet;
-	session.commandsMap[Session::python]['j'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['k'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['l']["lambda"] = Colors::violet;
-	session.commandsMap[Session::python]['m'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['n']["not"] = Colors::violet;
-	session.commandsMap[Session::python]['n']["nonlocal"] = Colors::violet;
-	session.commandsMap[Session::python]['n']["not"] = Colors::violet;
-	session.commandsMap[Session::python]['o']["or"] = Colors::violet;
-	session.commandsMap[Session::python]['p']["pass"] = Colors::violet;
-	session.commandsMap[Session::python]['q'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['r']["raise"] = Colors::violet;
-	session.commandsMap[Session::python]['r']["return"] = Colors::violet;
-	session.commandsMap[Session::python]['s'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['t']["try"] = Colors::violet;
-	session.commandsMap[Session::python]['u'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['v'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['w']["while"] = Colors::violet;
-	session.commandsMap[Session::python]['w']["with"] = Colors::violet;
-	session.commandsMap[Session::python]['x'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['y']["yield"] = Colors::violet;
-	session.commandsMap[Session::python]['z'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['F']["False"] = Colors::violet;
-	session.commandsMap[Session::python]['J'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['K'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['N']["None"] = Colors::violet;
-	session.commandsMap[Session::python]['Q'][""] = toColor(foregroundColor);
-	session.commandsMap[Session::python]['T']["True"] = Colors::violet;
-
-	// Pyo classes
-	session.commandsMap[Session::python]['A']["Abs"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['A']["Atan2"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['A']["Adsr"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['A']["AllpassWV"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['A']["Allpass"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['A']["Allpass2"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['A']["Atone"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['A']["AToDB"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['A']["AtanTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['A']["AttackDetector"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['A']["Average"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["Balance"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["Biquad"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["Biquadx"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["Biquada"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["BandSplit"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["ButLP"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["ButHP"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["ButBP"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["ButBR"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["Blit"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["BrownNoise"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["Between"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["Beat"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["Bendin"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['B']["Binaural"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Centroid"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Cos"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Ceil"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Clip"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Convolve"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Chorus"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["ComplexRes"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["CarToPol"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["CvlVerb"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["ChenLee"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["CrossFM"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["CallAfter"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["CtlScan"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["CtlScan2"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Change"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Cloud"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Count"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Counter"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["CentsToTranspo"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Clean_objects"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Compare"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["ConotrolRead"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["ConotrolRec"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["ChebyTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["CosLogTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["CosTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["CurvyTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['C']["Compress"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['D']["Div"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['D']["Degrade"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['D']["Disto"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['D']["Delay"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['D']["Delay1"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['D']["DCBlock"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['D']["DBToA"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['D']["Denorm"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['D']["DataTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['D']["Dummy"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["Expseg"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["Exp"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventScale"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventGenerator"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventDummy"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventFilter"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventKey"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventSeq"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventSlide"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventIndex"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventMarkov"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventChoice"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventDrunk"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventNoise"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventCall"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventConditional"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EventInstrument"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["Events"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["EQ"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["Euclide"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["ExpTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['E']["Expand"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["Fader"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["Follower"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["Follower2"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["Floor"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["FreqShift"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["FFT"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["FrameAccum"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["FrameDelta"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["FastSine"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["FM"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["FToM"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["FourBand"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['F']["Freeverb"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['G']["Gate"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['G']["Granulator"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['G']["Granule"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['H']["Hilbert"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['H']["HannTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['H']["HarmTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['H']["HRTF"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['H']["Harmonizer"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['I']["IRWinSync"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['I']["IRAverage"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['I']["IRPulse"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['I']["IRFM"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['I']["IFFTMatrix"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['I']["Input"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['I']["InputFader"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['I']["Iter"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['I']["IFFT"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['I']["Interp"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["Log"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["Log2"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["Log10"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["Linseg"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["LFO"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["Lorenz"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["LogiMap"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["Lookup"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["Looper"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["LinTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['L']["LogTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MidiListener"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MidiDispatcher"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["Mirror"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["Min"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["Max"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MultiBand"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["Mix"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MatrixMorph"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MatrixPointer"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MatrixRec"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MatrixRecLoop"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MidiAdsr"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MidiDelAdsr"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MidiCtl"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["Metro"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MToF"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MToT"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["Map"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MoogLP"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["Mixer"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MidiLinseg"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['M']["MML"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['N']["Noise"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['N']["Notein"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['N']["NextTrig"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['N']["NoteinRead"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['N']["NoteinRec"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['N']["NewTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['N']["NewMatrix"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['O']["OscListener"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['O']["OscDataReceive"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['O']["OscDataSend"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['O']["OscListReceive"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['O']["OscReceive"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['O']["OscSend"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['O']["Osc"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['O']["OscBank"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['O']["OscLoop"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['O']["OscTrig"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyoBaseObject"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyoObject"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyoTableObject"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyoMatrixObject"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyoPVObject"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PeakAmp"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PolToCar"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVAnal"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVSynth"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVAddSynth"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVTranspose"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVVerb"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVGate"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVCross"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVMult"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVMorph"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVFilter"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVDelay"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVBuffer"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVShift"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVAmpMod"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVFreqMod"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVBufLoops"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVBufTabLoops"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PVMix"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Phasor"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PinkNoise"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Particle"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Particle2"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Pointer"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Pointer2"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Pulsar"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Percent"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyGuiControlSlider"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyGuiVuMeter"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyGuiGrapher"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyGuiMultiSlider"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyGuiSpectrum"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyGuiScope"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyGuiSndView"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PyGuiKeyboard"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["ParaTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PartialTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Port"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Phaser"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["PadSynthTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Print"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Pan"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Pow"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Programin"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['P']["Pattern"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["RawMidi"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["RandDur"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["RandInt"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["Randh"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["Randi"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["Record"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["Resample"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["RMS"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["Round"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["Reson"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["Resonx"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["RCOsc"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['R']["Rossler"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Server"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Spectrum"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Scope"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Sin"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Sqrt"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Sub"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Sig"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SigTo"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SDelay"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SVF"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SVF2"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["STRev"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SmoothDelay"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Sine"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SineLoop"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SumOsc"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SuperSaw"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Stream"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SPan"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Selector"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Switch"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Score"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SfPlayer"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SfMarkerLooper"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SfMarkerShuffler"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SampHold"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Scale"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Snap"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SawTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SyncTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SndTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SquareTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SharedTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SLMap"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SLMapFreq"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SLMapMul"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SLMapPhase"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SLMapQ"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SLMapDur"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["SLMapPan"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Select"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['S']["Seq"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["Tan"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["Tanh"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["Tone"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["Touchin"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TableIndex"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TableMorph"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TablePut"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TableRead"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TableRec"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TableWrite"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TableScale"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TableFill"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TableScan"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["Thresh"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["Timer"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["Trig"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigBurst"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigChoice"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigEnv"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigExpseg"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigFunc"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigLinseg"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigRand"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigRandInt"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigTableRec"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigVal"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigXnoise"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrigXnoiseMidi"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TranspoToCents"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TrackHold"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['T']["TriangleTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['U']["Urn"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['V']["Vocoder"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['V']["Vectral"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['V']["VarPort"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['V']["VoiceManager"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['W']["Wrap"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['W']["Waveguide"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['W']["WGVerb"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['W']["WinTable"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['X']["XNoise"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['X']["XNoiseDur"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['X']["XNoiseMidi"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['Y']["Yin"] = Colors::deepSkyBlue;
-	session.commandsMap[Session::python]['Z']["ZCross"] = Colors::deepSkyBlue;
-
-	// push commands that won't let the editor tokenize based on digits
-	session.commandsToNotTokenize.push_back("\\insts");
-	session.commandsToNotTokenize.push_back("\\bar");
-	session.commandsToNotTokenize.push_back("\\bars");
-	session.commandsToNotTokenize.push_back("\\loop");
-	session.commandsToNotTokenize.push_back("\\function");
-	session.commandsToNotTokenize.push_back("\\std::list");
-	session.commandsToNotTokenize.push_back("\\group");
 
 	// commands that the editor needs to check in case of multi-line executing
 	// but starting on the first line that is not indented
@@ -970,154 +183,6 @@ void ofApp::setup()
 	noIndentCheck[Session::python].push_back("while");
 	noIndentCheck[Session::python].push_back("if");
 
-	// a map with the color names, copied from the colorsExtendedExample
-	session.colorNameMap["white"] = Colors::white;
-	session.colorNameMap["gray"] = Colors::gray;
-	session.colorNameMap["black"] = Colors::black;
-	session.colorNameMap["red"] = Colors::red;
-	session.colorNameMap["green"] = Colors::green;
-	session.colorNameMap["blue"] = Colors::blue;
-	session.colorNameMap["cyan"] = Colors::cyan;
-	session.colorNameMap["magenta"] = Colors::magenta;
-	session.colorNameMap["yellow"] = Colors::yellow;
-	session.colorNameMap["aliceBlue"] = Colors::aliceBlue;
-	session.colorNameMap["antiqueWhite"] = Colors::antiqueWhite;
-	session.colorNameMap["aqua"] = Colors::aqua;
-	session.colorNameMap["aquamarine"] = Colors::aquamarine;
-	session.colorNameMap["azure"] = Colors::azure;
-	session.colorNameMap["beige"] = Colors::beige;
-	session.colorNameMap["bisque"] = Colors::bisque;
-	session.colorNameMap["blanchedAlmond"] = Colors::blanchedAlmond;
-	session.colorNameMap["blueViolet"] = Colors::blueViolet;
-	session.colorNameMap["brown"] = Colors::brown;
-	session.colorNameMap["burlyWood"] = Colors::burlyWood;
-	session.colorNameMap["cadetBlue"] = Colors::cadetBlue;
-	session.colorNameMap["chartreuse"] = Colors::chartreuse;
-	session.colorNameMap["chocolate"] = Colors::chocolate;
-	session.colorNameMap["coral"] = Colors::coral;
-	session.colorNameMap["cornflowerBlue"] = Colors::cornflowerBlue;
-	session.colorNameMap["cornsilk"] = Colors::cornsilk;
-	session.colorNameMap["crimson"] = Colors::crimson;
-	session.colorNameMap["darkBlue"] = Colors::darkBlue;
-	session.colorNameMap["darkCyan"] = Colors::darkCyan;
-	session.colorNameMap["darkGoldenRod"] = Colors::darkGoldenRod;
-	session.colorNameMap["darkGray"] = Colors::darkGray;
-	session.colorNameMap["darkGrey"] = Colors::darkGrey;
-	session.colorNameMap["darkGreen"] = Colors::darkGreen;
-	session.colorNameMap["darkKhaki"] = Colors::darkKhaki;
-	session.colorNameMap["darkMagenta"] = Colors::darkMagenta;
-	session.colorNameMap["darkOliveGreen"] = Colors::darkOliveGreen;
-	session.colorNameMap["darkOrange"] = Colors::darkOrange;
-	session.colorNameMap["darkOrchid"] = Colors::darkOrchid;
-	session.colorNameMap["darkRed"] = Colors::darkRed;
-	session.colorNameMap["darkSalmon"] = Colors::darkSalmon;
-	session.colorNameMap["darkSeaGreen"] = Colors::darkSeaGreen;
-	session.colorNameMap["darkSlateBlue"] = Colors::darkSlateBlue;
-	session.colorNameMap["darkSlateGray"] = Colors::darkSlateGray;
-	session.colorNameMap["darkSlateGrey"] = Colors::darkSlateGrey;
-	session.colorNameMap["darkTurquoise"] = Colors::darkTurquoise;
-	session.colorNameMap["darkViolet"] = Colors::darkViolet;
-	session.colorNameMap["deepPink"] = Colors::deepPink;
-	session.colorNameMap["deepSkyBlue"] = Colors::deepSkyBlue;
-	session.colorNameMap["dimGray"] = Colors::dimGray;
-	session.colorNameMap["dimGrey"] = Colors::dimGrey;
-	session.colorNameMap["dodgerBlue"] = Colors::dodgerBlue;
-	session.colorNameMap["fireBrick"] = Colors::fireBrick;
-	session.colorNameMap["floralWhite"] = Colors::floralWhite;
-	session.colorNameMap["forestGreen"] = Colors::forestGreen;
-	session.colorNameMap["fuchsia"] = Colors::fuchsia;
-	session.colorNameMap["gainsboro"] = Colors::gainsboro;
-	session.colorNameMap["ghostWhite"] = Colors::ghostWhite;
-	session.colorNameMap["gold"] = Colors::gold;
-	session.colorNameMap["goldenRod"] = Colors::goldenRod;
-	session.colorNameMap["grey"] = Colors::grey;
-	session.colorNameMap["greenYellow"] = Colors::greenYellow;
-	session.colorNameMap["honeyDew"] = Colors::honeyDew;
-	session.colorNameMap["hotPink"] = Colors::hotPink;
-	session.colorNameMap["indianRed "] = Colors::indianRed;
-	session.colorNameMap["indigo "] = Colors::indigo;
-	session.colorNameMap["ivory"] = Colors::ivory;
-	session.colorNameMap["khaki"] = Colors::khaki;
-	session.colorNameMap["lavender"] = Colors::lavender;
-	session.colorNameMap["lavenderBlush"] = Colors::lavenderBlush;
-	session.colorNameMap["lawnGreen"] = Colors::lawnGreen;
-	session.colorNameMap["lemonChiffon"] = Colors::lemonChiffon;
-	session.colorNameMap["lightBlue"] = Colors::lightBlue;
-	session.colorNameMap["lightCoral"] = Colors::lightCoral;
-	session.colorNameMap["lightCyan"] = Colors::lightCyan;
-	session.colorNameMap["lightGoldenRodYellow"] = Colors::lightGoldenRodYellow;
-	session.colorNameMap["lightGray"] = Colors::lightGray;
-	session.colorNameMap["lightGrey"] = Colors::lightGrey;
-	session.colorNameMap["lightGreen"] = Colors::lightGreen;
-	session.colorNameMap["lightPink"] = Colors::lightPink;
-	session.colorNameMap["lightSalmon"] = Colors::lightSalmon;
-	session.colorNameMap["lightSeaGreen"] = Colors::lightSeaGreen;
-	session.colorNameMap["lightSkyBlue"] = Colors::lightSkyBlue;
-	session.colorNameMap["lightSlateGray"] = Colors::lightSlateGray;
-	session.colorNameMap["lightSlateGrey"] = Colors::lightSlateGrey;
-	session.colorNameMap["lightSteelBlue"] = Colors::lightSteelBlue;
-	session.colorNameMap["lightYellow"] = Colors::lightYellow;
-	session.colorNameMap["lime"] = Colors::lime;
-	session.colorNameMap["limeGreen"] = Colors::limeGreen;
-	session.colorNameMap["linen"] = Colors::linen;
-	session.colorNameMap["maroon"] = Colors::maroon;
-	session.colorNameMap["mediumAquaMarine"] = Colors::mediumAquaMarine;
-	session.colorNameMap["mediumBlue"] = Colors::mediumBlue;
-	session.colorNameMap["mediumOrchid"] = Colors::mediumOrchid;
-	session.colorNameMap["mediumPurple"] = Colors::mediumPurple;
-	session.colorNameMap["mediumSeaGreen"] = Colors::mediumSeaGreen;
-	session.colorNameMap["mediumSlateBlue"] = Colors::mediumSlateBlue;
-	session.colorNameMap["mediumSpringGreen"] = Colors::mediumSpringGreen;
-	session.colorNameMap["mediumTurquoise"] = Colors::mediumTurquoise;
-	session.colorNameMap["mediumVioletRed"] = Colors::mediumVioletRed;
-	session.colorNameMap["midnightBlue"] = Colors::midnightBlue;
-	session.colorNameMap["mintCream"] = Colors::mintCream;
-	session.colorNameMap["mistyRose"] = Colors::mistyRose;
-	session.colorNameMap["moccasin"] = Colors::moccasin;
-	session.colorNameMap["navajoWhite"] = Colors::navajoWhite;
-	session.colorNameMap["navy"] = Colors::navy;
-	session.colorNameMap["oldLace"] = Colors::oldLace;
-	session.colorNameMap["olive"] = Colors::olive;
-	session.colorNameMap["oliveDrab"] = Colors::oliveDrab;
-	session.colorNameMap["orange"] = Colors::orange;
-	session.colorNameMap["orangeRed"] = Colors::orangeRed;
-	session.colorNameMap["orchid"] = Colors::orchid;
-	session.colorNameMap["paleGoldenRod"] = Colors::paleGoldenRod;
-	session.colorNameMap["paleGreen"] = Colors::paleGreen;
-	session.colorNameMap["paleTurquoise"] = Colors::paleTurquoise;
-	session.colorNameMap["paleVioletRed"] = Colors::paleVioletRed;
-	session.colorNameMap["papayaWhip"] = Colors::papayaWhip;
-	session.colorNameMap["peachPuff"] = Colors::peachPuff;
-	session.colorNameMap["peru"] = Colors::peru;
-	session.colorNameMap["pink"] = Colors::pink;
-	session.colorNameMap["plum"] = Colors::plum;
-	session.colorNameMap["powderBlue"] = Colors::powderBlue;
-	session.colorNameMap["purple"] = Colors::purple;
-	session.colorNameMap["rosyBrown"] = Colors::rosyBrown;
-	session.colorNameMap["royalBlue"] = Colors::royalBlue;
-	session.colorNameMap["saddleBrown"] = Colors::saddleBrown;
-	session.colorNameMap["salmon"] = Colors::salmon;
-	session.colorNameMap["sandyBrown"] = Colors::sandyBrown;
-	session.colorNameMap["seaGreen"] = Colors::seaGreen;
-	session.colorNameMap["seaShell"] = Colors::seaShell;
-	session.colorNameMap["sienna"] = Colors::sienna;
-	session.colorNameMap["silver"] = Colors::silver;
-	session.colorNameMap["skyBlue"] = Colors::skyBlue;
-	session.colorNameMap["slateBlue"] = Colors::slateBlue;
-	session.colorNameMap["slateGray"] = Colors::slateGray;
-	session.colorNameMap["slateGrey"] = Colors::slateGrey;
-	session.colorNameMap["snow"] = Colors::snow;
-	session.colorNameMap["springGreen"] = Colors::springGreen;
-	session.colorNameMap["steelBlue"] = Colors::steelBlue;
-	session.colorNameMap["tan"] = Colors::tan;
-	session.colorNameMap["teal"] = Colors::teal;
-	session.colorNameMap["thistle"] = Colors::thistle;
-	session.colorNameMap["tomato"] = Colors::tomato;
-	session.colorNameMap["turquoise"] = Colors::turquoise;
-	session.colorNameMap["violet"] = Colors::violet;
-	session.colorNameMap["wheat"] = Colors::wheat;
-	session.colorNameMap["whiteSmoke"] = Colors::whiteSmoke;
-	session.colorNameMap["yellowGreen"] = Colors::yellowGreen;
 }
 
 //--------------------------------------------------------------
@@ -1150,7 +215,7 @@ void ofApp::update()
 			float val = m.getArgAsFloat(session.maestroValNdx);
 			if (session.receivingMaestro) {
 				if (val > session.maestroValThresh) {
-					if (!view.beatUpdated && ofGetElapsedTimeMillis() - session.maestroTimeStamp > MAESTROTHRESH) {
+					if (!view.beatUpdated && Clock::millis() - session.maestroTimeStamp > MAESTROTHRESH) {
 						if (session.maestroInitialized) {
 							int bar = session.getPlayingBarIndex();
 							session.sharedData.beatCounter++;
@@ -1162,14 +227,14 @@ void ofApp::update()
 								}
 								bar = session.getPlayingBarIndex();
 							}
-							session.sharedData.BPMTempi[bar] = session.msToBPM(ofGetElapsedTimeMillis() - session.maestroTimeStamp);
+							session.sharedData.BPMTempi[bar] = session.msToBPM(Clock::millis() - session.maestroTimeStamp);
 							sendBeatVizInfo(bar);
 						}
 						else {
 							session.maestroInitialized = true;
 						}
 						view.beatUpdated = true;
-						session.maestroTimeStamp = ofGetElapsedTimeMillis();
+						session.maestroTimeStamp = Clock::millis();
 						//cout << sharedData.beatCounter << endl;
 						//printVector(maestroVec);
 						float accum = 0;
@@ -2644,7 +1709,6 @@ void ofApp::drawPianoRoll()
 	}
 }
 
-
 //--------------------------------------------------------------
 void ofApp::drawScope()
 {
@@ -2803,7 +1867,6 @@ void ofApp::setNormalModeShift()
 {
 	if (!editors[session.whichPane].getInserting()) editors[session.whichPane].setShiftPressed(editors[session.whichPane].getVisualMode());
 }
-
 
 //--------------------------------------------------------------
 // all LiveLily commands and the names defined in the session (instruments, bars, functions, etc.), with their backslash
@@ -3801,7 +2864,6 @@ void ofApp::storeActiveEditorRest(int instNdx, int barNdx, int dataCounter)
 	activeEditorRests.insert(instNdx);
 }
 
-
 //--------------------------------------------------------------
 void ofApp::clearActiveEditorElement(int instNdx)
 {
@@ -3865,13 +2927,7 @@ std::vector<EditorNoteSpan> ofApp::getActiveEditorNoteSpans(int paneNdx)
 
 /*************** arithmetic operations functions **************/
 
-
-
 /********************* clearing functions *********************/
-
-
-
-
 
 /************ command typing/executing functions **************/
 //--------------------------------------------------------------
@@ -4711,7 +3767,6 @@ void ofApp::quickSort(uint64_t arr[], int arr2[], int low, int high)
 	}
 }
 
-
 /****************** OSC to parts functions ********************/
 
 //--------------------------------------------------------------
@@ -4738,63 +3793,23 @@ void ofApp::sendBeatVizInfo(int bar)
 	m.clear();
 }
 
-
-
-
-
-
-
-
-
-
-
 /******************** debugging functions *********************/
-
-
 
 /************** string/char state query functions *************/
 
-
 /*************** index/char location functions ***************/
-
-
-
-
 
 /******************** tokenizing functions *********************/
 
-
-
 /*************** token balance ckeck functions ****************/
-
 
 /******************* list handling functions ******************/
 
-
 /******************** new bar/loop functions ******************/
-
-
-
-
-
 
 /*************** API type generating functions ****************/
 
-
-
-
-
-
-
-
-
-
 /************* bar/loop index querying functions **************/
-
-
-
-
-
 
 /***** functions that contain commands/data for the score *****/
 //--------------------------------------------------------------
@@ -5078,7 +4093,6 @@ std::string ofApp::scoreViewCommand(const std::vector<std::string>& commands)
 	return "";
 }
 
-
 //--------------------------------------------------------------
 void ofApp::setShowScore(int ndx)
 {
@@ -5125,7 +4139,6 @@ void ofApp::setShowScore(int ndx)
 	editors[session.whichPane].setMaxCharactersPerString();
 }
 
-
 //--------------------------------------------------------------
 bool ofApp::isScoreVisible()
 {
@@ -5133,9 +4146,6 @@ bool ofApp::isScoreVisible()
 }
 
 /********************* instrument functions *******************/
-
-
-
 
 /*********** coordinates/positions/sizes functions ************/
 //--------------------------------------------------------------
@@ -5334,9 +4344,6 @@ void ofApp::setNotePositions(int barIndex, int numBars)
 	}
 	for (int i = 0; i < numBars; i++) applyMergeLayout(barIndex + i);
 }
-
-
-
 
 //--------------------------------------------------------------
 void ofApp::applyMergeLayout(int bar)
@@ -5942,7 +4949,6 @@ void ofApp::onAudioOut(float* out, int numFrames, int numChannels, int sampleRat
 	// the click track is added to the output (see \clicktrack)
 	if (!exiting) session.sharedData.clickTrack.process(out, numFrames, numChannels, sampleRate);
 }
-
 
 /*********** front-end functions moved from the parser (see Session in session.h) ***********/
 //--------------------------------------------------------------
