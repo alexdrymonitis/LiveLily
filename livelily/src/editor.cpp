@@ -834,8 +834,6 @@ void Editor::drawText()
 			// iterate through each word to check for keywords
 			// set last argument to tokenizeString to true to include the delimiters
 			std::vector<std::string> tokens = tokenizeString(allLines[i].str, delimiters[thisLang], true);
-			int xOffset = strXOffset;
-			if (cursorLineIndex == i) xOffset -= (allLines[i].startPos * oneCharacterWidth);
 			bool isComment = false;
 			bool isString = false;
 			bool isCursorInsideKeyword = false;
@@ -1011,7 +1009,6 @@ void Editor::drawText()
 						int startPos = (i == cursorLineIndex ? allLines[i].startPos : 0);
 						textGrid.write(firstRowOf(i), charAccum - startPos, *subit, currentColor);
 					}
-					xOffset += ((*subit).size() * oneCharacterWidth);
 					charAccum += (int)(*subit).size();
 				}
 			}

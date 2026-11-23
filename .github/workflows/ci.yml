@@ -28,7 +28,7 @@ jobs:
       run:
         working-directory: livelily
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install the dependencies (Linux)
         if: runner.os == 'Linux'
@@ -64,9 +64,12 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            toolchain="-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+            extra="-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            # Homebrew's packages (FluidSynth), also where CMake doesn't look by itself
+            extra="-DCMAKE_PREFIX_PATH=$(brew --prefix)"
           fi
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLIVELILY_PYO=${{ matrix.pyo }} $toolchain
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLIVELILY_PYO=${{ matrix.pyo }} $extra
 
       - name: Build
         run: cmake --build build --config Release --parallel 2
