@@ -97,7 +97,7 @@ void paintGrid(const CellGrid& grid, const GridGeometry& g, ofTrueTypeFont& font
 		for (const GridSpan& span : grid.selections) {
 			if (span.row != row) continue;
 			setColor(span.background, brightness);
-			ofDrawRectangle(g.x + (span.col * g.cellWidth), rowTop(g, row, span.snap), span.backgroundCols * g.cellWidth, g.cellHeight);
+			ofDrawRectangle(g.x + (span.col * g.cellWidth), rowTop(g, row, span.snap), (int)span.text.size() * g.cellWidth, g.cellHeight);
 			setColor(span.textColor, brightness);
 			font.drawString(span.text, g.x + (span.col * g.cellWidth), baselineOf(g, row));
 		}

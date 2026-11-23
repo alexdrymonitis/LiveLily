@@ -827,8 +827,6 @@ void Editor::drawText()
 		span.row = row;
 		span.col = col;
 		span.text = text;
-		// the background is as wide as font.stringWidth() of the text, which counts a space at its end twice
-		span.backgroundCols = (int)text.size() + (!text.empty() && text.back() == ' ' ? 1 : 0);
 		span.background = Colors::goldenRod;
 		span.textColor = Color(0, 0, 0);
 		span.snap = snap;

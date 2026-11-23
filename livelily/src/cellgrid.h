@@ -39,8 +39,6 @@ struct GridSpan
 	int row = 0;
 	int col = 0;
 	std::string text;
-	// the background reaches this many columns, which can be more than the text (see Editor::drawText())
-	int backgroundCols = 0;
 	Color background{};
 	Color textColor{};
 	bool snap = false;
