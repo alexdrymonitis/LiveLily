@@ -70,6 +70,8 @@ jobs:
             # which its pkg-config leaves out as system ones, though Apple's compiler and linker don't search them
             extra="-DCMAKE_PREFIX_PATH=$(brew --prefix)"
             export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1 PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
+            # FluidSynth requires readline, which Homebrew keeps out of pkg-config's path
+            export PKG_CONFIG_PATH="$(brew --prefix readline)/lib/pkgconfig:$PKG_CONFIG_PATH"
           fi
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DLIVELILY_PYO=${{ matrix.pyo }} $extra
 
