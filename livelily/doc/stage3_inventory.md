@@ -57,7 +57,7 @@ The program finds them from its own path (`src/paths.h`): next to it, in a macOS
 (installed on Linux), or in `../resources` (the source, while developing), so `bin/data` is gone. `\help name` looks for `help/name-help.lyv`
 in the search paths, in this order, like Pd's: the user's folder `Documents/LiveLily` (the same on every system), a folder for all the users
 (`/usr/local/share/livelily`, `/Library/LiveLily`, `%ProgramData%\LiveLily`), and the resources. Test mode searches only the resources.
-The test files and their snapshots (`tests/lyv`, `tests/snapshots`) and Adobe's Sonata font are kept out of the published repository.
+The test files and their snapshots (`tests/private`, a private repository of their own) and Adobe's Sonata font are kept out of the published repository.
 
 ## Steps, in order
 

@@ -1,7 +1,7 @@
 #!/bin/bash
-# runs every .lyv file of tests/lyv in the test mode of LiveLily (see src/testmode.cpp) and saves or compares what the parser makes of it
-#   tests/snapshots.sh save     saves the dumps to tests/snapshots, as the reference (run it before a change to the parser)
-#   tests/snapshots.sh check    dumps to tests/current and compares with tests/snapshots (run it after a change)
+# runs every .lyv file of tests/private/lyv in the test mode of LiveLily (see src/testmode.cpp) and saves or compares what the parser makes of it
+#   tests/snapshots.sh save     saves the dumps to tests/private/snapshots, as the reference (run it before a change to the parser)
+#   tests/snapshots.sh check    dumps to tests/current and compares with tests/private/snapshots (run it after a change)
 # a file whose run crashes or doesn't finish is reported, and so is every file whose dump differs from its snapshot
 # build the program first (make wpyo -j2)
 
@@ -25,7 +25,7 @@ if [ -n "$newerSource" ]; then
 	exit 2
 fi
 if [ "$mode" = "save" ]; then
-	outDir="$testsDir/snapshots"
+	outDir="$testsDir/private/snapshots"
 else
 	outDir="$testsDir/current"
 fi
@@ -33,8 +33,8 @@ mkdir -p "$outDir"
 rm -f "$outDir"/*.dump
 
 failed=0
-# the files of tests/lyv (kept out of the published repository), which check the rules of the parser, the sequencer and the editor
-for file in "$testsDir"/lyv/*.lyv; do
+# the files of tests/private/lyv (a private repository, kept out of the published one), which check the parser, the sequencer and the editor
+for file in "$testsDir"/private/lyv/*.lyv; do
 	name="$(basename "$file" .lyv)"
 	# the program finds LiveLily's resources from its own path (see src/paths.h), and is run from bin as before
 	(cd "$binDir" && timeout 120 ./livelily --test "$file" --out "$outDir/$name.dump" > "$outDir/$name.log" 2>&1)
@@ -46,10 +46,10 @@ for file in "$testsDir"/lyv/*.lyv; do
 	fi
 	rm -f "$outDir/$name.log"
 	if [ "$mode" = "check" ]; then
-		if [ ! -f "$testsDir/snapshots/$name.dump" ]; then
+		if [ ! -f "$testsDir/private/snapshots/$name.dump" ]; then
 			echo "NEW      $name (no snapshot)"
-		elif ! diff -q "$testsDir/snapshots/$name.dump" "$outDir/$name.dump" > /dev/null; then
-			echo "DIFFERS  $name (diff tests/snapshots/$name.dump tests/current/$name.dump)"
+		elif ! diff -q "$testsDir/private/snapshots/$name.dump" "$outDir/$name.dump" > /dev/null; then
+			echo "DIFFERS  $name (diff tests/private/snapshots/$name.dump tests/current/$name.dump)"
 			failed=1
 		else
 			echo "ok       $name"

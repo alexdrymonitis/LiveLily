@@ -24,8 +24,9 @@
 /bin/livelily_headless
 /build/
 
-# kept out of the published repository: the test files and their snapshots, the notation font that can not be redistributed, notes
-/tests/lyv/
-/tests/snapshots/
+# kept out of the published repository: the test files, their snapshots and notes (a private repository of their own, in tests/private)
+# the notation font that can not be redistributed, and where openFrameworks is on this machine (see config.make)
+/tests/private/
 /resources/fonts/sonata.ttf
 /claude_fixes.txt
+/config.local.make

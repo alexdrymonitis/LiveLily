@@ -7,8 +7,11 @@
 # OF ROOT
 #   The location of your root openFrameworks installation
 #       (default) OF_ROOT = ../../..
+#   a config.local.make next to this file, which isn't in the repository, can set it to where openFrameworks is on this machine
+#   (e.g. OF_ROOT = /home/me/openFrameworks), so that LiveLily can be anywhere
 ################################################################################
-OF_ROOT = ../../..
+-include config.local.make
+OF_ROOT ?= ../../..
 #PROJECT_LDFLAGS = `python3-config --ldflags --embed` # linker flags for Python
 # FluidSynth plays the SoundFonts of instruments (see src/soundfont.cpp), the wpyo target in the Makefile adds it too
 PROJECT_LDFLAGS = -lfluidsynth

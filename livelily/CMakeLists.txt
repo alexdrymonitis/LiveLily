@@ -118,15 +118,15 @@ foreach(config ${CMAKE_CONFIGURATION_TYPES})
 	set_target_properties(livelily_headless PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${CONFIG} "${PROJECT_SOURCE_DIR}/bin")
 endforeach()
 
-# the tests: every test file (tests/lyv/*.lyv) with a snapshot in tests/snapshots runs in the headless runner
+# the tests: every test file (tests/private/lyv/*.lyv) with a snapshot in tests/private/snapshots runs in the headless runner
 # (the test files are kept out of the published repository, so there the tests are only built and none runs)
 # and its dump is compared with the snapshot up to the sections of the editor (see tests/compare.cmake)
 # the snapshots are made by the app's test mode (tests/snapshots.sh save), which also checks the editor's sections and the screen
 enable_testing()
-file(GLOB LIVELILY_TEST_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tests/lyv/*.lyv")
+file(GLOB LIVELILY_TEST_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tests/private/lyv/*.lyv")
 foreach(test_file ${LIVELILY_TEST_FILES})
 	get_filename_component(test_name "${test_file}" NAME_WE)
-	set(snapshot "${PROJECT_SOURCE_DIR}/tests/snapshots/${test_name}.dump")
+	set(snapshot "${PROJECT_SOURCE_DIR}/tests/private/snapshots/${test_name}.dump")
 	if(NOT EXISTS "${snapshot}")
 		continue()
 	endif()
