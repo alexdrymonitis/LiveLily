@@ -28,7 +28,7 @@ jobs:
       run:
         working-directory: livelily
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the dependencies (Linux)
         if: runner.os == 'Linux'
@@ -38,7 +38,7 @@ jobs:
 
       - name: Set up Python
         if: matrix.pyo == 'ON'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -48,7 +48,7 @@ jobs:
 
       - name: Cache the packages of vcpkg (Windows)
         if: runner.os == 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/vcpkg-cache
           key: vcpkg-${{ runner.os }}-fluidsynth
@@ -66,8 +66,10 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             extra="-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            # Homebrew's packages (FluidSynth), also where CMake doesn't look by itself
+            # Homebrew's packages (FluidSynth), also where CMake doesn't look by itself, and with the directories of Homebrew's prefix
+            # which its pkg-config leaves out as system ones, though Apple's compiler and linker don't search them
             extra="-DCMAKE_PREFIX_PATH=$(brew --prefix)"
+            export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1 PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
           fi
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DLIVELILY_PYO=${{ matrix.pyo }} $extra
 
