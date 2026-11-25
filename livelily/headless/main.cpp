@@ -10,6 +10,8 @@
 
 #include "session.h"
 #include "workspace.h"
+#include "views.h"
+#include "canvas.h"
 #include "test_run.h"
 #include "codetext.h"
 #include "clock.h"
@@ -36,8 +38,14 @@ class HeadlessFrontend : public FrontendHost, public EditorHost, public Workspac
 	public:
 		Session& session;
 		Workspace workspace{session, *this};
+		// the views, laid out as in the app, but not drawn: the score, the piano roll, the sequencer, the oscilloscope
+		float brightness = 1;
+		int lineWidth = 2;
+		float cellWidthValue = cellW;
+		float cellHeightValue = cellH;
+		bool exiting = false;
+		Views views{session, workspace, brightness, lineWidth, cellWidthValue, cellHeightValue, exiting};
 		float targetFrameRate = 60;
-		bool showNotes = false;
 		std::string clipboardText;
 		// the playback, for --play
 		bool recording = false;
@@ -86,60 +94,52 @@ class HeadlessFrontend : public FrontendHost, public EditorHost, public Workspac
 		void sendLinesTo(int pane, const std::string& host, int targetPane) override { workspace.sendLinesTo(pane, host, targetPane); }
 		int tabSize(int pane) override { return workspace.tabSize(pane); }
 		void connectLineToBar(int pane, int line, int instNdx, int bar) override { workspace.connectLineToBar(pane, line, instNdx, bar); }
-		// the score isn't drawn, but whether its area is shown beside the panes (with the score, the piano roll, the oscilloscope
-		// or the sequencer), which takes half of the window, and whether that is the score, are kept as in the app (see ofApp::setShowScore())
-		// as the panes are laid out by them, and the sequencer asks whether the score is shown
-		std::string scoreViewCommand(const std::vector<std::string>& methodAndArgs) override
-		{
-			bool shown = scoreArea;
-			std::string method = (methodAndArgs.empty() ? std::string() : methodAndArgs[0]);
-			std::string what = (methodAndArgs.size() > 1 ? methodAndArgs[1] : std::string());
-			// the bar count, the tempo, and the beat are shown with the score, and don't show or hide it
-			bool partOfScore = (what == "barcount" || what == "tempo" || what == "beat");
-			if (method == "show" && !partOfScore) {
-				bool view = (what.empty() || what == "score" || what == "pianoroll" || what == "scope" || what == "seq" || what == "sequencer");
-				if (view) {
-					scoreArea = true;
-					showNotes = (what.empty() || what == "score");
-				}
-			}
-			else if (method == "hide" && !partOfScore) {
-				scoreArea = false;
-				showNotes = false;
-			}
-			// the panes get the half of the window the score doesn't take, or all of it again, as in the app
-			if (scoreArea != shown) workspace.layout();
-			return "";
-		}
-		bool scoreArea = false;
-		void setScoreNotes(int) override {}
-		void setNotePositions(int) override {}
-		void setNotePositions(int, int) override {}
-		void calculateStaffPositions(int, bool) override {}
-		void scoreMustUpdate() override {}
-		void instrumentCreated(int) override {}
-		void instrumentRemoved(int instNdx) override { workspace.instrumentRemoved(instNdx); }
+		// what the engine asks of the views, which are laid out as in the app (see views.h)
+		std::string scoreViewCommand(const std::vector<std::string>& methodAndArgs) override { return views.scoreViewCommand(methodAndArgs); }
+		void setScoreNotes(int bar) override { views.setScoreNotes(bar); }
+		void setNotePositions(int bar) override { views.setNotePositions(bar); }
+		void setNotePositions(int bar, int numBars) override { views.setNotePositions(bar, numBars); }
+		void calculateStaffPositions(int bar, bool windowChanged) override { views.calculateStaffPositions(bar, windowChanged); }
+		void scoreMustUpdate() override { views.mustUpdateScore = true; }
+		void instrumentCreated(int instNdx) override { views.instrumentCreated(instNdx); }
+		void instrumentRemoved(int instNdx) override { views.instrumentRemoved(instNdx); }
 		void instrumentsCleared() override { workspace.instrumentsCleared(); }
-		void layoutInstrumentBar(int, int) override {}
+		void layoutInstrumentBar(int instNdx, int bar) override { views.layoutInstrumentBar(instNdx, bar); }
 		std::pair<int, int> mousePosition() override { return {0, 0}; }
 		void setPaneFromOsc(int, const std::string&) override {}
 		void storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNotes) override
 		{
 			workspace.storeEditorNoteSpans(lineNum, instNdx, barNdx, numNotes);
 		}
-		bool scoreShown() override { return showNotes; }
-		void sequencerStarted(float, uint64_t) override { record("start"); }
-		void beat(uint64_t, float, uint64_t) override { record("beat"); }
-		void barStarted(uint64_t) override { record("bar"); }
-		void loopChanged() override { record("loop changed"); }
+		bool scoreShown() override { return views.scoreShown(); }
+		void sequencerStarted(float stepsPerMs, uint64_t rampStart) override
+		{
+			views.sequencerStarted(stepsPerMs, rampStart);
+			record("start");
+		}
+		void beat(uint64_t timeStamp, float stepsPerMs, uint64_t rampStart) override
+		{
+			views.beat(timeStamp, stepsPerMs, rampStart);
+			record("beat");
+		}
+		void barStarted(uint64_t timeStamp) override
+		{
+			views.barStarted(timeStamp);
+			record("bar");
+		}
+		void loopChanged() override
+		{
+			views.loopChanged();
+			record("loop changed");
+		}
 		void setPythonTyping(bool) override {}
 
 		// EditorHost (see editor_host.h)
 		Session& editorSession() override { return session; }
-		Color editorForeground() override { return Colors::white; }
-		Color editorBackground() override { return Colors::black; }
-		float editorBrightness() override { return 1; }
-		int scoreBesidePanesWidth() override { return (scoreArea ? windowW / 2 : -1); }
+		Color editorForeground() override { return views.foregroundColor; }
+		Color editorBackground() override { return views.backgroundColor; }
+		float editorBrightness() override { return brightness; }
+		int scoreBesidePanesWidth() override { return views.scoreBesidePanesWidth(); }
 		void parseStrings(int index, int numLines) override { workspace.parseStrings(index, numLines); }
 		std::vector<EditorNoteSpan> getActiveEditorNoteSpans(int pane) override { return workspace.getActiveEditorNoteSpans(pane); }
 		void alignAfterEdit(int pane, bool space) override { workspace.alignAfterEdit(pane, space); }
@@ -166,11 +166,10 @@ class HeadlessFrontend : public FrontendHost, public EditorHost, public Workspac
 
 		// WorkspaceHost (see workspace.h)
 		Metrics workspaceMetrics() override { return {(float)windowW, (float)windowH, cellW, cellH}; }
-		// the score is beside the panes, on the right, while it is shown; it is never moved, which the app does with Ctrl+P
-		// (so the test files that show the score and type keys are compared only up to the editor's sections, see tests/compare.cmake)
-		ScorePlacement scorePlacement() override { return {scoreArea, 0, false}; }
-		void swapScorePosition(int) override {}
-		void revealActivePane() override {}
+		// the score, as in the app
+		ScorePlacement scorePlacement() override { return views.scorePlacement(); }
+		void swapScorePosition(int orientation) override { views.swapScorePosition(orientation); }
+		void revealActivePane() override { views.revealActivePane(); }
 		void applyFont(bool, bool layout) override
 		{
 			for (auto& editor : workspace.editors) editor.second.setFontSize(fontSize, cellW, cellH, characterOffset);
@@ -179,18 +178,13 @@ class HeadlessFrontend : public FrontendHost, public EditorHost, public Workspac
 		void quitNow() override { quit = true; }
 		bool quit = false;
 		void changeFontSize(int) override {}
-		void changeScoreSize(int) override {}
+		void changeScoreSize(int delta) override { views.changeScoreSize(delta); }
 		void changeBrightness(float) override {}
 		void toggleFullscreen() override {}
-		void hideScore() override
-		{
-			bool shown = scoreArea;
-			scoreArea = showNotes = false;
-			if (shown) workspace.layout();
-		}
-		void belowAreaMoved(float) override {}
-		void belowAreaReset() override {}
-		Color belowAreaBackground() override { return Colors::black; }
+		void hideScore() override { views.setShowScore(-1); }
+		void belowAreaMoved(float prevTop) override { views.moveScoreWithTraceback(prevTop); }
+		void belowAreaReset() override { views.resetScoreYOffset(); }
+		Color belowAreaBackground() override { return views.backgroundColor; }
 
 		// AudioCallback (see audio.h): the audio of --play, as the app plays it: pyo's output, if pyo runs, and the click track
 		void onAudioIn(const float* in, int, int) override
@@ -238,6 +232,9 @@ int main(int argc, char* argv[])
 	if (outFile.empty()) outFile = testFile + ".dump";
 
 	PlatformScope platform;
+	// the views are laid out, but not drawn
+	NullCanvas canvas;
+	Canvas::current = &canvas;
 	Session session;
 	HeadlessFrontend frontend(session);
 	session.frontend = &frontend;
@@ -259,9 +256,11 @@ int main(int argc, char* argv[])
 	}
 	else platform.findDevices();
 	session.setup(Colors::white);
-	// one pane, as the app starts with
+	// one pane, and the views, as the app starts with them (see ofApp::setup())
+	frontend.views.setWindow(HeadlessFrontend::windowW, HeadlessFrontend::windowH);
 	frontend.workspace.setupFirstPane();
 	frontend.applyFont(true, true);
+	frontend.views.setup();
 
 	if (playSeconds > 0) {
 		Editor& editor = frontend.workspace.editors[session.whichPane];

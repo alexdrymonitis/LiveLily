@@ -19,6 +19,7 @@ class OfCanvas : public Canvas
 		void vertex(float x, float y) override;
 		void bezierVertex(float cx1, float cy1, float cx2, float cy2, float x, float y) override;
 		void endShape(bool close) override;
+		void polyline(const std::vector<std::pair<float, float>>& points) override;
 		void push() override;
 		void pop() override;
 		void translate(float x, float y) override;

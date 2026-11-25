@@ -12,6 +12,7 @@
 #include "keys.h"
 #include "view_state.h"
 #include "workspace.h"
+#include "views.h"
 #include "of_canvas.h"
 
 #include <map>
@@ -39,13 +40,11 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// declared first, so that it is destroyed after everything else of the app (e.g. the sequencer's thread calls the app)
 		Session session;
 		// the state of the view: the window, the positions of the staffs, the piano roll, the beat visualization and the area below the panes
-		ViewState view;
 		// basic OF program structure
 		//---------------------------------
 		void setup();
 		void update();
 		void draw();
-		void drawScore();
 		// what the views (the score) draw with (see canvas.h)
 		OfCanvas canvas;
 		// the panes, their layout and the area below them (see workspace.h), declared after the session, which it holds
@@ -69,23 +68,57 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		int& shellVisibleLines = workspace.shellVisibleLines;
 		bool& executingBind = workspace.executingBind;
 		CellGrid& belowGrid = workspace.belowGrid;
+		// the views beside the panes: the score, the piano roll, the sequencer, the oscilloscope (see views.h)
+		Views views{session, workspace, brightnessCoeff, lineWidth, oneCharacterWidth, cursorHeight, exiting};
+		// the names the app had for the state of the views, which it still uses
+		ViewState& view = views.view;
+		std::vector<float>& scopeSamples = views.scopeSamples;
+		int& scopeChannels = views.scopeChannels;
+		std::mutex& scopeMutex = views.scopeMutex;
+		std::vector<std::vector<std::pair<float, float>>>& scopeWaveforms = views.scopeWaveforms;
+		float& scopeRms = views.scopeRms;
+		Color& backgroundColor = views.backgroundColor;
+		Color& foregroundColor = views.foregroundColor;
+		Color& beatColor = views.beatColor;
+		Color& scoreBackgroundColor = views.scoreBackgroundColor;
+		std::shared_ptr<Font>& instFont = views.instFont;
+		int& instFontSize = views.instFontSize;
+		bool& showScore = views.showScore;
+		int& scoreType = views.scoreType;
+		std::atomic<bool>& showScope = views.showScope;
+		float& scoreXOffset = views.scoreXOffset;
+		float& scoreYOffset = views.scoreYOffset;
+		float& scoreBackgroundWidth = views.scoreBackgroundWidth;
+		float& scoreBackgroundHeight = views.scoreBackgroundHeight;
+		bool& scoreMoveXCommand = views.scoreMoveXCommand;
+		bool& scoreMoveYCommand = views.scoreMoveYCommand;
+		int& scoreOrientation = views.scoreOrientation;
+		float& scoreXStartPnt = views.scoreXStartPnt;
+		int& numBarsToDisplay = views.numBarsToDisplay;
+		float& notesLength = views.notesLength;
+		bool& mustUpdateScore = views.mustUpdateScore;
+		bool& scoreUpdated = views.scoreUpdated;
+		bool& scoreChangeOnLastBar = views.scoreChangeOnLastBar;
+		std::map<int, int>& instNameWidths = views.instNameWidths;
+		bool& showBarCount = views.showBarCount;
+		bool& showTempo = views.showTempo;
 		// what the workspace asks of the app (see workspace.h)
 		Metrics workspaceMetrics() override { return {(float)view.screenWidth, (float)view.screenHeight, oneCharacterWidth, cursorHeight}; }
-		ScorePlacement scorePlacement() override;
+		ScorePlacement scorePlacement() override { return views.scorePlacement(); }
 		void applyFont(bool reload, bool layout) override
 		{
 			if (reload) fontLoaded = false;
 			setFontSize(layout);
 		}
 		void changeFontSize(int delta) override;
-		void changeScoreSize(int delta) override;
+		void changeScoreSize(int delta) override { views.changeScoreSize(delta); }
 		void changeBrightness(float delta) override { brightnessCoeff = std::min(1.f, std::max(0.f, brightnessCoeff + delta)); }
 		void toggleFullscreen() override
 		{
 			ofToggleFullscreen();
 			fullScreen = !fullScreen;
 		}
-		void hideScore() override { setShowScore(-1); }
+		void hideScore() override { views.setShowScore(-1); }
 		// the state of the keys, which the workspace keeps (see workspace_keys.cpp)
 		bool& shiftPressed = workspace.shiftPressed;
 		bool& ctrlPressed = workspace.ctrlPressed;
@@ -96,25 +129,11 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		int& editorBindingArg = workspace.editorBindingArg;
 		bool& editorBindingIsDollar = workspace.editorBindingIsDollar;
 		void quitNow() override { exit(); }
-		void belowAreaMoved(float prevTop) override { moveScoreWithTraceback(prevTop); }
-		void belowAreaReset() override { resetScoreYOffset(); }
-		Color belowAreaBackground() override { return toColor(backgroundColor); }
+		void belowAreaMoved(float prevTop) override { views.moveScoreWithTraceback(prevTop); }
+		void belowAreaReset() override { views.resetScoreYOffset(); }
+		Color belowAreaBackground() override { return backgroundColor; }
 		// draws text with many lines, with the line height of the editor
 		void drawLines(const std::string& str, float x, float y);
-		void moveScoreWithTraceback(float prevTracebackYCoord);
-		void drawPianoRoll();
-		// sets the range of the keys of the piano roll (MIDI notes), from a white key to a white key, and the size of the keys
-		void setPianoRollRange(int lowestKey, int highestKey);
-		// a note name with its octave (e.g. c1, fis4, a5) as a MIDI note, or -1
-		int noteNameToMidi(const std::string& name);
-		// the place of a note on the keyboard of the piano roll, in widths of white keys from the lowest white key
-		// for the lane it rolls in (and the black key, for a black key), as on a piano, where the three white keys from C to E
-		// have five equal lanes, and the four white keys from F to B have seven, so black keys lean towards the outer keys of their group
-		std::pair<float, float> pianoRollLane(int note);
-		void drawScope();
-		void drawSequencer();
-
-		void sendBeatVizInfo(int bar);
 		void moveCursorOnShiftReturn();
 		//---------------------------------
 		// overloaded keyPressed and keyReleased functions
@@ -129,7 +148,7 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		void handleKeyModifier(pyStdoutStrKeyModifier modifierStruct);
 		//---------------------------------
 		// moves the score away from the active pane, if it covers it (with Alt+number and Ctrl+w)
-		void revealActivePane() override;
+		void revealActivePane() override { views.revealActivePane(); }
 		// what the engine asks of the user interface (see frontend.h)
 		void notePlaying(int instNdx, int bar, int noteNdx, bool playing) override { workspace.storeActiveEditorElement(instNdx, bar, noteNdx, playing); }
 		void restPlaying(int instNdx, int bar, int noteNdx) override { workspace.storeActiveEditorRest(instNdx, bar, noteNdx); }
@@ -163,24 +182,24 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		void sendLinesTo(int pane, const std::string& host, int targetPane) override { workspace.sendLinesTo(pane, host, targetPane); }
 		int tabSize(int pane) override { return workspace.tabSize(pane); }
 		void connectLineToBar(int pane, int line, int instNdx, int bar) override { workspace.connectLineToBar(pane, line, instNdx, bar); }
-		std::string scoreViewCommand(const std::vector<std::string>& methodAndArgs) override;
+		std::string scoreViewCommand(const std::vector<std::string>& methodAndArgs) override { return views.scoreViewCommand(methodAndArgs); }
 		void scoreMustUpdate() override { mustUpdateScore = true; }
-		void instrumentCreated(int instNdx) override;
-		void instrumentRemoved(int instNdx) override;
+		void instrumentCreated(int instNdx) override { views.instrumentCreated(instNdx); }
+		void instrumentRemoved(int instNdx) override { views.instrumentRemoved(instNdx); }
 		void instrumentsCleared() override;
-		void layoutInstrumentBar(int instNdx, int bar) override;
-		bool scoreShown() override;
-		void sequencerStarted(float beatStepsPerMs, uint64_t beatRampStart) override;
-		void beat(uint64_t timeStamp, float stepsPerMs, uint64_t rampStart) override;
-		void barStarted(uint64_t timeStamp) override;
-		void loopChanged() override;
+		void layoutInstrumentBar(int instNdx, int bar) override { views.layoutInstrumentBar(instNdx, bar); }
+		bool scoreShown() override { return views.scoreShown(); }
+		void sequencerStarted(float beatStepsPerMs, uint64_t beatRampStart) override { views.sequencerStarted(beatStepsPerMs, beatRampStart); }
+		void beat(uint64_t timeStamp, float stepsPerMs, uint64_t rampStart) override { views.beat(timeStamp, stepsPerMs, rampStart); }
+		void barStarted(uint64_t timeStamp) override { views.barStarted(timeStamp); }
+		void loopChanged() override { views.loopChanged(); }
 		void setPythonTyping(bool charByChar) override;
 		// what the editor asks of the app (see editor_host.h); the other methods of EditorHost are the app's own methods of the same names
 		Session& editorSession() override { return session; }
-		Color editorForeground() override { return toColor(foregroundColor); }
-		Color editorBackground() override { return toColor(backgroundColor); }
+		Color editorForeground() override { return foregroundColor; }
+		Color editorBackground() override { return backgroundColor; }
 		float editorBrightness() override { return brightnessCoeff; }
-		int scoreBesidePanesWidth() override;
+		int scoreBesidePanesWidth() override { return views.scoreBesidePanesWidth(); }
 		void typeFromPython(const std::string& text) override { view.pyStdoutStr += text; }
 		void startTypingFromPython(int pane) override { view.whichPyPane = pane; view.typePyStr = true; }
 		int pythonTypingPane() override { return view.whichPyPane; }
@@ -206,16 +225,11 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// coordinates/positions/sizes functions
 		// set the global font size to calculate dimensions
 		void setFontSize(bool calculateCoords);
-		void setScoreCoords();
-		void resetScoreYOffset();
-		void setScoreNotes(int barIndex) override;
-		void setNotePositions(int bar) override;
-		void setNotePositions(int bar, int numBars) override;
-		void swapScorePosition(int orientation) override;
-		void setScoreSizes();
-		void calculateStaffPositions(int bar, bool windowChanged) override;
-		void setShowScore(int ndx);
-		bool isScoreVisible();
+		void setScoreNotes(int barIndex) override { views.setScoreNotes(barIndex); }
+		void setNotePositions(int bar) override { views.setNotePositions(bar); }
+		void setNotePositions(int bar, int numBars) override { views.setNotePositions(bar, numBars); }
+		void swapScorePosition(int orientation) override { views.swapScorePosition(orientation); }
+		void calculateStaffPositions(int bar, bool windowChanged) override { views.calculateStaffPositions(bar, windowChanged); }
 		// test mode, set from the command line (see main.cpp and testmode.cpp)
 		std::string testFile;
 		std::string testOut;
@@ -265,13 +279,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		int halfCharacterWidth;
 
 
-		// oscilloscope drawing stuff
-		// the last output buffer, copied by the audio thread for the oscilloscope, and its number of channels
-		std::vector<float> scopeSamples;
-		int scopeChannels = 0;
-		std::mutex scopeMutex;
-		std::vector<ofPolyline> scopeWaveforms;
-		float scopeRms;
 
 		// paints the area below the panes (Workspace::belowGrid), whose rows start at its top, with the text at the bottom of every row
 		void paintBelowGrid();
@@ -283,8 +290,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// if we start from the first line of a chunk that is not indented
 		std::map<int, std::vector<std::string>> noIndentCheck;
 
-		// moves note heads of the voices of a staff that sound together so they don't collide, as LilyPond does by default
-		void applyMergeLayout(int bar);
 
 
 
@@ -297,14 +302,9 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		bool isWindowResized;
 		uint64_t windowResizeTimeStamp;
 
-		ofColor backgroundColor;
-		ofColor foregroundColor;
-		ofColor beatColor;
-		ofColor scoreBackgroundColor;
 		float brightnessCoeff;
 
 		ofTrueTypeFont font;
-		ofTrueTypeFont instFont;
 		bool fontLoaded;
 
 
@@ -315,7 +315,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 
 
 		int fontSize; // the size of the font of the editor
-		int instFontSize; // the size of the font of the instrument display
 		float cursorHeight;
 		// from the baseline of the text to the bottom of its row in the editor (see setFontSize())
 		float characterOffset = 0;
@@ -328,33 +327,11 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// STDERR
 
 		// variables for the score
-		bool showScore;
-		int scoreType;
-		// whether the oscilloscope is the view shown (see setShowScore()), which the audio thread reads to copy the output for it
-		std::atomic<bool> showScope{false};
-		// showNotes is in ViewState (view_state.h), and the sequencer asks for it with scoreShown()
-		float scoreXOffset;
-		float scoreYOffset;
-		float scoreBackgroundWidth;
-		float scoreBackgroundHeight;
-		// variables to determine whether we call a command for moving the score
-		bool scoreMoveXCommand;
-		bool scoreMoveYCommand;
-		int scoreOrientation;
-		float scoreXStartPnt;
-		int numBarsToDisplay;
-		float notesLength; // used to derive the ratio when we display more than two bars horizontally
-		bool mustUpdateScore;
-		bool scoreUpdated;
-		bool scoreChangeOnLastBar;
 		// map that stores which editors can receive data from OSC
 		std::map<int, bool> fromOsc;
 		// and a map with the OSC address for each editor
 		std::map<int, std::string> fromOscAddr;
 
-		std::map<int, int> instNameWidths;
-		bool showBarCount;
-		bool showTempo;
 
 		bool exiting;
 

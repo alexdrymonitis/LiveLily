@@ -11,6 +11,7 @@ class NoFont : public Font
 		float width(const std::string&) override { return 0; }
 		float height(const std::string&) override { return 0; }
 		Rect bounds(const std::string&, float x, float y) override { return {x, y, 0, 0}; }
+		float lineHeight() override { return 0; }
 };
 }
 

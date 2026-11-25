@@ -15,6 +15,7 @@ class OfFont : public Font
 			ofRectangle r = font.getStringBoundingBox(text, x, y);
 			return {r.x, r.y, r.width, r.height};
 		}
+		float lineHeight() override { return font.getLineHeight(); }
 	private:
 		ofTrueTypeFont font;
 };
@@ -48,6 +49,13 @@ void OfCanvas::beginShape() { ofBeginShape(); }
 void OfCanvas::vertex(float x, float y) { ofVertex(x, y); }
 void OfCanvas::bezierVertex(float cx1, float cy1, float cx2, float cy2, float x, float y) { ofBezierVertex(cx1, cy1, cx2, cy2, x, y); }
 void OfCanvas::endShape(bool close) { ofEndShape(close); }
+void OfCanvas::polyline(const std::vector<std::pair<float, float>>& points)
+{
+	ofPolyline line;
+	for (const auto& point : points) line.addVertex(point.first, point.second);
+	line.draw();
+}
+
 void OfCanvas::push() { ofPushMatrix(); }
 void OfCanvas::pop() { ofPopMatrix(); }
 void OfCanvas::translate(float x, float y) { ofTranslate(x, y); }

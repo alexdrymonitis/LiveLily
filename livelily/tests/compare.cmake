@@ -1,8 +1,7 @@
 # one test of CTest (see CMakeLists.txt): runs a test file with the headless runner and compares its dump with the snapshot of the app's test mode
 # in a CMake script so that it runs on every system; the headless runner has the app's panes, at the size of the app's test mode
-# so the whole dump is compared (the screen too), except for keys that change what only the app has (see headless/main.cpp):
-# the size of the font (Ctrl+= and Ctrl+-, which changes the size of the cells), up to the screen
-# and the position of the score (Ctrl+P), which can change the active pane, up to the sections of the editor
+# and the views laid out as in the app, so the whole dump is compared (the screen too), except for keys that change the size of the font
+# (Ctrl+= and Ctrl+-), which changes the size of the cells, which only the app measures (see headless/main.cpp), up to the screen
 #   cmake -DRUNNER=... -DLYV=... -DSNAPSHOT=... -DOUT=... -DPYO=ON|OFF -P compare.cmake
 # a test file that needs what this machine doesn't have is skipped (exit code 77): pyo in a build without it
 # or a SoundFont at an absolute path (or one in the home directory) that isn't there
@@ -51,9 +50,6 @@ string(REGEX MATCHALL "% test keys:[^\n]*" keyLines "${lyv}")
 set(until "")
 if(keyLines MATCHES "<C-[=-]>|<CtrlDown>[^<]*[=-]")
 	set(until "=== screen\n")
-endif()
-if(keyLines MATCHES "<C-(A-)?(S-)?[pP]>")
-	set(until "=== editor highlights\n")
 endif()
 foreach(var expected actual)
 	if(until STREQUAL "")
