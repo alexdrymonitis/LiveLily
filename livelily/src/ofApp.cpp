@@ -50,7 +50,7 @@ void ofApp::setup()
 	foregroundColor = ofColor::white;
 	beatColor = ofColor::paleGreen;
 	scoreBackgroundColor = ofColor::white;
-	shellStrColor = ofColor::white;
+	shellStrColor = Colors::white;
 	ofBackground(backgroundColor*brightnessCoeff);
 
 	// give a random seed to srand(), and a fixed one in test mode, so that \rand gives the same values every time (see testmode.cpp)
@@ -151,7 +151,7 @@ void ofApp::setup()
 	scoreYOffset = 0;
 	scoreXStartPnt = 0;
 	scoreBackgroundWidth = view.screenWidth/2;
-	scoreBackgroundHeight = view.tracebackBase; // - cursorHeight;
+	scoreBackgroundHeight = workspace.belowBase; // - cursorHeight;
 	scoreMoveXCommand = false;
 	scoreMoveYCommand = false;
 	mustUpdateScore = false;
@@ -627,7 +627,7 @@ void ofApp::draw()
 	float paneWidth = 0, paneHeight = 0;
 	// depending on the orientation, we must first create either the height or the width of the editors
 	if (paneSplitOrientation == 0) {
-		paneHeight = view.tracebackBase / (float)numPanes.size();
+		paneHeight = workspace.belowBase / (float)numPanes.size();
 	}
 	else {
 		paneWidth = (float)view.screenWidth / (float)numPanes.size();
@@ -644,9 +644,9 @@ void ofApp::draw()
 		else {
 			// if the orientation is switched, we treat rows as columns and vice versa
 			if (it->first > 0) {
-				ofDrawLine(paneWidth*(float)it->first, 0, paneWidth*(float)it->first, view.tracebackYCoord);
+				ofDrawLine(paneWidth*(float)it->first, 0, paneWidth*(float)it->first, workspace.belowTop);
 			}
-			paneHeight = view.tracebackBase / (float)it->second;
+			paneHeight = workspace.belowBase / (float)it->second;
 		}
 	}
 	//if (sharedData.showNotes) {
@@ -684,27 +684,10 @@ void ofApp::draw()
 	}
 	// draw a horizontal line to separate the panes and score from the traceback area
 	ofSetColor(foregroundColor*brightnessCoeff);
-	ofDrawLine(0, view.tracebackYCoord, view.screenWidth, view.tracebackYCoord);
-	// when the shell stops being shown (e.g. a new error message replaces the output of a command)
-	// the area below the panes goes back to its size for error messages, as it does when pressing Esc
-	bool shellShown = editors[session.whichPane].showingShell();
-	if (shellWasShown && !shellShown) {
-		shellStr = "";
-		numShellLines = numShellLsOutputLines = 0;
-		shellScroll = 0;
-		view.tracebackYCoord = view.tracebackBase;
-		restorePaneLayout();
-		editors[session.whichPane].resetMaxNumLines();
-		// the sizes of the areas below the panes are calculated again in drawTraceback() and drawShell()
-		tracebackNumLinesShown = shellNumLinesShown = -1;
-	}
-	shellWasShown = shellShown;
-	if (shellShown) {
-		drawShell();
-	}
-	else{
-		drawTraceback();
-	}
+	ofDrawLine(0, workspace.belowTop, view.screenWidth, workspace.belowTop);
+	// the shell, or the messages of the lines, below the panes (see Workspace::fillBelowArea())
+	workspace.fillBelowArea();
+	paintBelowGrid();
 	// the pop-up of autocompletion is drawn last, so that it is on top of everything
 	editors[session.whichPane].drawCompletions();
 	paintGrids(editors[session.whichPane].takePaints(), font, brightnessCoeff);
@@ -719,146 +702,12 @@ void ofApp::draw()
 }
 
 //--------------------------------------------------------------
-void ofApp::drawTraceback()
-{
-	int tracebackCounter = 0;
-	uint64_t stamps[editors[session.whichPane].allLines.size()];
-	int ndxs[editors[session.whichPane].allLines.size()];
-	int i = 0;
-	int paneNdx = 0;
-	//for (auto it = numPanes.begin(); it != numPanes.end(); ++it) {
-	//	for (i = 0; i < it->second; i++) {
-	//		editors[paneNdx++].resetMaxNumLines();
-	//	}
-	//}
-	// we must first determine which traceback string was initiated first, so we can print this on top
-	for (auto it = editors[session.whichPane].getAllLinesBegin(); it != editors[session.whichPane].getAllLinesEnd(); ++it) {
-		if ((Clock::millis() - editors[session.whichPane].getTracebackTimeStamp(it->first)) < editors[session.whichPane].getTracebackDur() && editors[session.whichPane].getTracebackStr(it->first).size() > 0) {
-			// exclude the line of the cursor as this is check below
-			if (it->first != editors[session.whichPane].getCursorLineIndex()) {
-				ndxs[i] = it->first;
-				stamps[i] = editors[session.whichPane].getTracebackTimeStamp(it->first);
-				i++;
-			}
-		}
-		else {
-			editors[session.whichPane].setTracebackTimeStamp(it->first, 0);
-		}
-	}
-	// sort indexes based on time stamps (the smaller the time stamp, the higher it should be in the traceback)
-	// and lines whose messages came in the same millisecond by their order in the pane, so that the order is the same every time
-	{
-		std::vector<std::pair<uint64_t, int>> byStamp;
-		for (int j = 0; j < i; j++) byStamp.push_back(std::make_pair(stamps[j], ndxs[j]));
-		std::sort(byStamp.begin(), byStamp.end());
-		for (int j = 0; j < i; j++) {
-			stamps[j] = byStamp[j].first;
-			ndxs[j] = byStamp[j].second;
-		}
-	}
-	// once we check the traceback messages of lines other than that where the cursor is
-	// we check the line of the cursor too, which is shown last
-	if (editors[session.whichPane].getTracebackStr(editors[session.whichPane].getCursorLineIndex()).size() > 0) {
-		ndxs[i] = editors[session.whichPane].getCursorLineIndex();
-		i++;
-	}
-	// the messages, folded at the width of the window like the output of the shell (see drawShell()), and the number of their rows
-	maxShellChars = std::max((size_t)1, (size_t)(view.screenWidth / oneCharacterWidth));
-	std::vector<std::string> tracebackStrs(i);
-	std::vector<int> tracebackRows(i, 0);
-	int numTracebackLines = 0;
-	for (int j = 0; j < i; j++) {
-		std::string tracebackStr = "";
-		// if the stderr message is a warning or error in LiveLily (not Python), prepend the line number
-		if (editors[session.whichPane].getTracebackColor(ndxs[j]) > 0 && editors[session.whichPane].getLanguage() != 1) {
-			tracebackStr += "line " + ofToString(ndxs[j]+1) + ": ";
-		}
-		tracebackStr += editors[session.whichPane].getTracebackStr(ndxs[j]);
-		tracebackStrs[j] = wrapShellLines(tracebackStr, tracebackRows[j]);
-		numTracebackLines += tracebackRows[j];
-	}
-	// minimum number of lines is 2
-	// so the line that separates the panes from the traceback can fit one line of text
-	numTracebackLines = std::max(numTracebackLines, MINTRACEBACKLINES);
-	// if the number of lines in the traceback has changed, change the maximum number of lines in the editor
-	if (numTracebackLines != tracebackNumLinesShown) {
-		tracebackNumLinesShown = numTracebackLines;
-		// if the number of lines of the traceback changes, reset the maximum number of lines of the editor
-		// need to check which editors go till the bottom of the window
-		paneNdx = 0;
-		for (auto it = numPanes.begin(); it != numPanes.end(); ++it) {
-			for (int i = 0; i < it->second; i++) {
-				// with split orientation set to 0, we need to offset the number of lines
-				// for the editors on the last row, so the last key of the numPanes std::map
-				// with split orientation set to 1, we need to offset the number of lines
-				// for the editors that are in the last column of every row
-				int leftOperand = (paneSplitOrientation == 0 ? it->first : i);
-				int rightOperand = (paneSplitOrientation == 0 ? (int)numPanes.size() : it->second);
-				if (leftOperand == rightOperand - 1) {
-					if (numTracebackLines > MINTRACEBACKLINES) {
-						editors[paneNdx].offsetMaxNumLines(-(numTracebackLines-MINTRACEBACKLINES));
-					}
-					else {
-						editors[paneNdx].resetMaxNumLines();
-					}
-				}
-				paneNdx++;
-			}
-		}
-		if (numTracebackLines > MINTRACEBACKLINES) {
-			float prevTracebackYCoord = view.tracebackYCoord;
-			view.tracebackYCoord = view.tracebackBase - (cursorHeight * (numTracebackLines - MINTRACEBACKLINES));
-			view.tracebackYCoord = std::min(view.tracebackYCoord, view.tracebackBase);
-			moveScoreWithTraceback(prevTracebackYCoord);
-		}
-		else {
-			view.tracebackYCoord = view.tracebackBase;
-			resetScoreYOffset();
-		}
-	}
-	// the messages, one under the other, in the color of their kind (a note, a warning, or an error)
-	belowGrid.resize(numTracebackLines, (int)maxShellChars);
-	for (int j = 0; j < i; j++) {
-		Color color;
-		switch (editors[session.whichPane].getTracebackColor(ndxs[j])) {
-			case 1:
-				color = Colors::orange;
-				break;
-			case 2:
-				color = Colors::red;
-				break;
-			default:
-				color = Colors::white;
-				break;
-		}
-		writeBelowRows(tracebackStrs[j], tracebackCounter, color);
-		tracebackCounter += tracebackRows[j];
-	}
-	paintBelowGrid();
-}
-
-//--------------------------------------------------------------
-void ofApp::writeBelowRows(const std::string& lines, int firstRow, Color color)
-{
-	// the lines of a string (folded to the width of the window), from a row of the area below the panes on
-	size_t start = 0;
-	int row = firstRow;
-	while (start <= lines.size()) {
-		size_t end = lines.find('\n', start);
-		if (end == std::string::npos) end = lines.size();
-		belowGrid.write(row, 0, lines.substr(start, end - start), color);
-		row++;
-		start = end + 1;
-	}
-}
-
-//--------------------------------------------------------------
 void ofApp::paintBelowGrid()
 {
 	// the text sits at the bottom of every row (see drawLines()), and the cursor of the shell is lower than its row
 	GridGeometry geometry;
 	geometry.x = halfCharacterWidth;
-	geometry.y = view.tracebackYCoord;
+	geometry.y = workspace.belowTop;
 	geometry.cellWidth = (int)oneCharacterWidth;
 	geometry.cellHeight = cursorHeight;
 	geometry.descent = 0;
@@ -884,177 +733,6 @@ void ofApp::drawLines(const std::string& str, float x, float y)
 }
 
 //--------------------------------------------------------------
-void ofApp::drawShell()
-{
-	// the strings of the shell are broken into lines to fit the width of the window as it is now, so that they fit it also after it is resized
-	// a command that is typed has no newlines, so its cursor is on the row of its position, and it can be on a row of its own
-	// right after the last character of a row
-	maxShellChars = std::max((size_t)1, (size_t)(view.screenWidth / oneCharacterWidth));
-	std::string shellLines, shellLsOutputLines;
-	if (!shellStr.empty()) {
-		shellLines = wrapShellLines(shellStr, numShellLines);
-		if (editors[session.whichPane].isTypingShell()) numShellLines = std::max(numShellLines, (int)(shellStrCursorPos / maxShellChars) + 1);
-	}
-	if (!shellLsOutputStr.empty()) shellLsOutputLines = wrapShellLines(shellLsOutputStr, numShellLsOutputLines);
-	// at least two lines, so that the line that separates the panes from the area below them has one line of text under it
-	int numShellLinesWanted = std::max(numShellLines + numShellLsOutputLines, MINTRACEBACKLINES);
-	// the panes are made shorter when the number of lines changes, or when another pane becomes active, which then keeps its height the longest
-	if (numShellLinesWanted != shellNumLinesShown || session.whichPane != shellLayoutPane) {
-		shellNumLinesShown = numShellLinesWanted;
-		shellLayoutPane = session.whichPane;
-		shellVisibleLines = layoutPanesForShell(numShellLinesWanted);
-		if (shellVisibleLines > MINTRACEBACKLINES) {
-			float prevTracebackYCoord = view.tracebackYCoord;
-			view.tracebackYCoord = view.tracebackBase - (cursorHeight * (shellVisibleLines - MINTRACEBACKLINES));
-			view.tracebackYCoord = std::min(view.tracebackYCoord, view.tracebackBase);
-			moveScoreWithTraceback(prevTracebackYCoord);
-		}
-		else {
-			view.tracebackYCoord = view.tracebackBase;
-			resetScoreYOffset();
-		}
-	}
-	// the lines of the command and of its output, of which the lines from shellScroll on are shown, as many as fit
-	// (a command that is typed is short, so it is always shown from its start)
-	shellTotalLines = numShellLines + numShellLsOutputLines;
-	if (editors[session.whichPane].isTypingShell()) shellScroll = 0;
-	shellScroll = std::max(0, std::min(shellScroll, shellTotalLines - shellVisibleLines));
-	std::vector<std::string> rows;
-	auto addRows = [&rows](const std::string& lines, int numLines) {
-		size_t first = rows.size();
-		size_t start = 0;
-		while (start <= lines.size() && !lines.empty()) {
-			size_t end = lines.find('\n', start);
-			if (end == std::string::npos) end = lines.size();
-			rows.push_back(lines.substr(start, end - start));
-			start = end + 1;
-		}
-		// the row of the cursor after the last character of a full row has no characters
-		while (rows.size() < first + (size_t)numLines) rows.push_back("");
-	};
-	addRows(shellLines, numShellLines);
-	addRows(shellLsOutputLines, numShellLsOutputLines);
-	std::string shownRows;
-	for (int i = shellScroll; i < std::min((int)rows.size(), shellScroll + shellVisibleLines); i++) {
-		if (i > shellScroll) shownRows += "\n";
-		shownRows += rows[i];
-	}
-	// the area below the panes has already moved up to fit all the lines, so the first line is right below its top
-	int numRows = std::max(shellVisibleLines, 1);
-	int cursorRow = (int)(shellStrCursorPos / maxShellChars);
-	if (editors[session.whichPane].isTypingShell()) numRows = std::max(numRows, cursorRow + 1);
-	belowGrid.resize(numRows, (int)maxShellChars);
-	writeBelowRows(shownRows, 0, toColor(shellStrColor));
-	if (editors[session.whichPane].isTypingShell()) {
-		// a block in the color of the text, with the character under it in the color of the background
-		belowGrid.cursor.shape = GridCursor::Shape::block;
-		belowGrid.cursor.row = cursorRow;
-		belowGrid.cursor.col = (int)(shellStrCursorPos % maxShellChars);
-		belowGrid.cursor.color = toColor(shellStrColor);
-		if (shellStrCursorPos < (int)shellStr.size()) {
-			belowGrid.cursor.charOnTop = shellStr.substr(shellStrCursorPos, 1);
-			belowGrid.cursor.charColor = toColor(backgroundColor);
-		}
-	}
-	paintBelowGrid();
-}
-
-//--------------------------------------------------------------
-int ofApp::layoutPanesForShell(int wanted)
-{
-	int extra = wanted - MINTRACEBACKLINES;
-	if (extra <= 0) {
-		restorePaneLayout();
-		return MINTRACEBACKLINES;
-	}
-	// the layout of the panes before they are made shorter, which is stored once, so that it can be given back (see restorePaneLayout())
-	if (paneBase.empty()) {
-		for (auto& editor : editors) {
-			paneBase[editor.first] = {editor.second.getMaxNumLinesReset(), editor.second.getFrameYOffset(), editor.second.getFrameHeight()};
-		}
-	}
-	// the panes are in columns of rows, which all reach the area below the panes
-	// with split orientation 0 there is one column, with the rows of numPanes, and the panes of each row side by side
-	// with split orientation 1, every item of numPanes is a column, with one pane in each of its rows
-	// (the pane indexes follow the same order as in setPaneCoords())
-	std::vector<std::vector<std::vector<int>>> columns;
-	int paneNdx = 0;
-	if (paneSplitOrientation == 0) {
-		columns.resize(1);
-		for (const auto& row : numPanes) {
-			std::vector<int> panes;
-			for (int i = 0; i < row.second; i++) panes.push_back(paneNdx++);
-			columns[0].push_back(panes);
-		}
-	}
-	else {
-		for (const auto& column : numPanes) {
-			std::vector<std::vector<int>> rows;
-			for (int i = 0; i < column.second; i++) rows.push_back({paneNdx++});
-			columns.push_back(rows);
-		}
-	}
-	const int minRowLines = 2; // one line of text and the line with the file name
-	auto rowLines = [this](const std::vector<int>& row) {
-		auto it = paneBase.find(row.front());
-		return (it != paneBase.end() ? it->second.lines : minRowLines);
-	};
-	// the most lines the shell can get is what the column that can give the fewest lines can give
-	for (const auto& column : columns) {
-		int canGive = 0;
-		for (const auto& row : column) canGive += std::max(0, rowLines(row) - minRowLines);
-		extra = std::min(extra, canGive);
-	}
-	for (const auto& column : columns) {
-		int numRows = (int)column.size();
-		// the row of the active pane, if it is in this column
-		int activeRow = -1;
-		for (int r = 0; r < numRows; r++) {
-			if (std::find(column[r].begin(), column[r].end(), session.whichPane) != column[r].end()) activeRow = r;
-		}
-		// the rows give lines from the bottom up, and the row of the active pane last
-		std::vector<int> order;
-		for (int r = numRows - 1; r >= 0; r--) {
-			if (r != activeRow) order.push_back(r);
-		}
-		if (activeRow >= 0) order.push_back(activeRow);
-		std::vector<int> taken(numRows, 0);
-		int left = extra;
-		for (int r : order) {
-			taken[r] = std::min(left, std::max(0, rowLines(column[r]) - minRowLines));
-			left -= taken[r];
-		}
-		// every row moves up by the lines the rows above it gave
-		int above = 0;
-		for (int r = 0; r < numRows; r++) {
-			for (int pane : column[r]) {
-				auto baseIt = paneBase.find(pane);
-				if (baseIt == paneBase.end()) continue;
-				if (taken[r] > 0) editors[pane].offsetMaxNumLines(-taken[r]);
-				else editors[pane].resetMaxNumLines();
-				editors[pane].setFrameYOffset(baseIt->second.y - (above * cursorHeight));
-				editors[pane].setFrameHeight(baseIt->second.height - (taken[r] * cursorHeight));
-			}
-			above += taken[r];
-		}
-	}
-	return MINTRACEBACKLINES + extra;
-}
-
-//--------------------------------------------------------------
-void ofApp::restorePaneLayout()
-{
-	for (const auto& base : paneBase) {
-		auto it = editors.find(base.first);
-		if (it == editors.end()) continue;
-		it->second.resetMaxNumLines();
-		it->second.setFrameYOffset(base.second.y);
-		it->second.setFrameHeight(base.second.height);
-	}
-	paneBase.clear();
-}
-
-//--------------------------------------------------------------
 void ofApp::moveScoreWithTraceback(float prevTracebackYCoord)
 {
 	// move the score by as much as the traceback has grown or shrunk since its previous size
@@ -1063,7 +741,7 @@ void ofApp::moveScoreWithTraceback(float prevTracebackYCoord)
 	// a score shown at the top of the window in horizontal view is not reached by the traceback
 	// so it is not moved, as moving it would push its upper part out of the window
 	if (scoreOrientation == 1 && scoreYOffset <= 0) return;
-	scoreYOffset += (view.tracebackYCoord - prevTracebackYCoord);
+	scoreYOffset += (workspace.belowTop - prevTracebackYCoord);
 }
 
 //--------------------------------------------------------------
@@ -2186,17 +1864,17 @@ void ofApp::executeKeyPressed(int key)
 			editors[session.whichPane].setInserting(false);
 			editors[session.whichPane].setTypingShell(false);
 			editors[session.whichPane].setShowingShell(false);
-			// the output of a command is cleared, and the panes get back the lines they gave to it (see layoutPanesForShell())
+			// the output of a command is cleared, and the panes get back the lines they gave to it (see workspace.layoutPanesForShell())
 			shellStr = "";
 			shellLsOutputStr = "";
 			shellScroll = 0;
-			restorePaneLayout();
+			workspace.restorePaneLayout();
 			editors[session.whichPane].resetMaxNumLines();
 			if (editors[session.whichPane].getVisualMode()) editors[session.whichPane].setVisualMode(false);
 			if (editors[session.whichPane].highlightManyChars) editors[session.whichPane].highlightManyChars = false;
 			// if we have typed commands and their output is greater than two lines
 			// then sharedData.tracebackYCoord will have changed so we need to reset it
-			view.tracebackYCoord = view.tracebackBase;
+			workspace.belowTop = workspace.belowBase;
 			// the same applies to the number of lines for commands and their output
 			numShellLines = numShellLsOutputLines = 0;
 			// and the sizes of the areas are calculated again the next time they are shown
@@ -2216,14 +1894,14 @@ void ofApp::executeKeyPressed(int key)
 			ctrlWPressed = false;
 			if (ctrlWWasPressed && !editors[session.whichPane].getInserting() && !editors[session.whichPane].isTypingShell()) {
 				switch (key) {
-					case 'h': moveToPane(0); break;
-					case 'j': moveToPane(1); break;
-					case 'k': moveToPane(2); break;
-					case 'l': moveToPane(3); break;
+					case 'h': workspace.moveToPane(0); break;
+					case 'j': workspace.moveToPane(1); break;
+					case 'k': workspace.moveToPane(2); break;
+					case 'l': workspace.moveToPane(3); break;
 					case 'q':
 					case 'c':
 						if (editors[session.whichPane].isHelpFileOpen()) editors[session.whichPane].closeHelpFile();
-						else removePane();
+						else workspace.removePane();
 						break;
 					default:
 						break;
@@ -2288,7 +1966,7 @@ void ofApp::executeKeyPressed(int key)
 			else if (char(key) == 'n' && editors[session.whichPane].isCtrlPressed()) {
 				// remove all panes but one
 				for (size_t i = 0; i < editors.size()-1; i++) {
-					removePane();
+					workspace.removePane();
 				}
 				{
 					// the sequencer might be playing, so the instruments are not cleared while it goes through them
@@ -2308,7 +1986,7 @@ void ofApp::executeKeyPressed(int key)
 			}
 			// add panes. V for vertical, H for horizontal (with shift pressed)
 			else if (((key == 86) || (key == 72)) && editors[session.whichPane].isCtrlPressed()) {
-				addPane(key);
+				workspace.addPane(key == 86);
 			}
 			// remove panes. Ctrl+w, where if only one pane, we quit
 			// in normal mode Ctrl+w waits for a key to move to another pane, or to close this one, as in Vim (see above)
@@ -2320,13 +1998,13 @@ void ofApp::executeKeyPressed(int key)
 					editors[session.whichPane].closeHelpFile();
 				}
 				else {
-					removePane();
+					workspace.removePane();
 				}
 			}
 			// set which editor is active with keys 0-9 and alt pressed
 			else if ((key >= 49) && (key <= 57) && altPressed) {
 				if ((key - 49) < (int)editors.size()) {
-					setActivePane(key - 49);
+					workspace.setActivePane(key - 49);
 					revealActivePane();
 				}
 			}
@@ -2348,7 +2026,7 @@ void ofApp::executeKeyPressed(int key)
 				editors[session.whichPane].resetMaxNumLines();
 			}
 			else if (!editors[session.whichPane].getInserting() && ((key == 58 && !editors[session.whichPane].getVisualMode()) || editors[session.whichPane].isTypingShell())) { // :
-				typeShellCommand(key);
+				workspace.typeShellCommand(key);
 			}
 			else if (!editors[session.whichPane].getInserting() && !editors[session.whichPane].isTypingShell()) {
 				// bindings are not checked for Ctrl+key and Enter
@@ -2684,88 +2362,6 @@ void ofApp::handleKeyModifier(pyStdoutStrKeyModifier modifierStruct)
 
 /********************* panes functions ************************/
 //--------------------------------------------------------------
-// sets the row and column of every pane from the layout
-// panes are laid out by the order of their keys in editors, row by row (or column by column with paneSplitOrientation 1)
-// with numPanes holding how many panes every row has (see setPaneCoords())
-void ofApp::setPanesRowsAndCols()
-{
-	int key = 0;
-	for (const auto& row : numPanes) {
-		for (int col = 0; col < row.second; col++) {
-			auto editIt = editors.find(key++);
-			if (editIt == editors.end()) continue;
-			editIt->second.setPaneRow(row.first);
-			editIt->second.setPaneCol(col);
-		}
-	}
-}
-
-//--------------------------------------------------------------
-void ofApp::moveToPane(int direction)
-{
-	Editor& current = editors[session.whichPane];
-	float left = current.getFrameXOffset();
-	float right = left + current.getFrameWidth();
-	float top = current.getFrameYOffset();
-	float bottom = top + current.getFrameHeight();
-	// the position of the cursor, so that of more panes in a direction, the one next to the cursor is chosen, as in Vim
-	float cursorX = current.getCursorScreenX();
-	float cursorY = current.getCursorScreenY();
-	const float tolerance = 2;
-	int best = -1;
-	float bestDistance = FLT_MAX;
-	bool bestByCursor = false;
-	for (auto& editor : editors) {
-		if (editor.first == session.whichPane) continue;
-		Editor& other = editor.second;
-		float oLeft = other.getFrameXOffset();
-		float oRight = oLeft + other.getFrameWidth();
-		float oTop = other.getFrameYOffset();
-		float oBottom = oTop + other.getFrameHeight();
-		// the pane must be on that side of the active one, and overlap with it on the other axis
-		float distance;
-		bool overlaps, byCursor;
-		switch (direction) {
-			case 0:
-				if (oRight > left + tolerance) continue;
-				distance = left - oRight;
-				overlaps = (oTop < bottom && oBottom > top);
-				byCursor = (cursorY >= oTop && cursorY < oBottom);
-				break;
-			case 1:
-				if (oTop < bottom - tolerance) continue;
-				distance = oTop - bottom;
-				overlaps = (oLeft < right && oRight > left);
-				byCursor = (cursorX >= oLeft && cursorX < oRight);
-				break;
-			case 2:
-				if (oBottom > top + tolerance) continue;
-				distance = top - oBottom;
-				overlaps = (oLeft < right && oRight > left);
-				byCursor = (cursorX >= oLeft && cursorX < oRight);
-				break;
-			default:
-				if (oLeft < right - tolerance) continue;
-				distance = oLeft - right;
-				overlaps = (oTop < bottom && oBottom > top);
-				byCursor = (cursorY >= oTop && cursorY < oBottom);
-				break;
-		}
-		if (!overlaps) continue;
-		// the closest pane, and of panes equally close, the one by the cursor
-		if (distance < bestDistance - tolerance || (std::abs(distance - bestDistance) <= tolerance && byCursor && !bestByCursor)) {
-			best = editor.first;
-			bestDistance = distance;
-			bestByCursor = byCursor;
-		}
-	}
-	if (best >= 0) {
-		setActivePane(best);
-		revealActivePane();
-	}
-}
-
-//--------------------------------------------------------------
 // with two columns of panes and the score shown vertically (or two rows and the score shown horizontally)
 // the score covers the panes of one column (or row), so when one of them becomes active, the score moves to the other side
 void ofApp::revealActivePane()
@@ -2781,131 +2377,6 @@ void ofApp::revealActivePane()
 			swapScorePosition(1);
 		}
 	}
-}
-
-//--------------------------------------------------------------
-// adds a pane next to the active one, with Ctrl+Shift+V (key 86) side by side, and with Ctrl+Shift+H (key 72) one above the other, as in Vim
-// the first split sets whether rows of panes are stacked (paneSplitOrientation 0, after Ctrl+Shift+H) or columns are put side by side (1)
-// a split in the other direction adds a new row (or column) after the one of the active pane
-void ofApp::addPane(int key)
-{
-	bool firstAddition = (editors.size() == 1);
-	if (firstAddition) {
-		if (key == 86) paneSplitOrientation = 1;
-		else paneSplitOrientation = 0;
-	}
-	int paneRowWithCursor = editors[session.whichPane].getPaneRow();
-	bool sameRow = ((paneSplitOrientation == 0 && key == 86) || (paneSplitOrientation == 1 && key == 72));
-	// the key of the new pane, right after the active pane in its row, or after the last pane of its row, at the start of a new row
-	int newKey;
-	if (sameRow) {
-		newKey = session.whichPane + 1;
-		numPanes[paneRowWithCursor]++;
-	}
-	else {
-		newKey = 0;
-		std::map<int, int> rows;
-		int rowNdx = 0;
-		for (const auto& row : numPanes) {
-			rows[rowNdx++] = row.second;
-			if (row.first <= paneRowWithCursor) newKey += row.second;
-			if (row.first == paneRowWithCursor) rows[rowNdx++] = 1;
-		}
-		numPanes = rows;
-	}
-	// the panes from the key of the new one on move one key up, starting from the last one
-	for (int k = editors.rbegin()->first; k >= newKey; k--) {
-		auto nodeHolder = editors.extract(k);
-		if (nodeHolder.empty()) continue;
-		nodeHolder.key() = k + 1;
-		editors.insert(std::move(nodeHolder));
-		editors[k+1].setID(k+1);
-	}
-	editors[newKey] = Editor();
-	editors[newKey].setID(newKey);
-	setFontSize(false); // set the size for the font of the new editor but don't calculate the coordinates yet
-	setPanesRowsAndCols();
-	editors[session.whichPane].setActivity(false);
-	// release the Ctrl key from the previous pane before moving to the new one
-	editors[session.whichPane].setCtrlPressed(false);
-	// for safety, set also the shift and alt keys to released
-	editors[session.whichPane].setShiftPressed(false);
-	editors[session.whichPane].setAltPressed(false);
-	session.whichPane = newKey;
-	editors[session.whichPane].setActivity(true);
-	// the new pane has the modifier keys that are held now (e.g. Ctrl, after Ctrl+Shift+V)
-	editors[session.whichPane].setShiftPressed(shiftPressed);
-	editors[session.whichPane].setCtrlPressed(ctrlPressed);
-	editors[session.whichPane].setAltPressed(altPressed);
-	// if we add a second pane with the score visible
-	// if the panes are split vertically and the score is also vertical (opposite values)
-	// or both are horizontal
-	// we need to swap the position of the score so the new pane becomes visible
-	if (firstAddition && (showScore && paneSplitOrientation != scoreOrientation)) {
-		// swap the score position without changing its orientation
-		swapScorePosition(scoreOrientation);
-		// with two panes split horizontally and the score shown horizontally
-		// setPaneCoords() is called from swapScorePosition()
-		// so we test for vertical spit to call it explicitly
-		if (paneSplitOrientation == 1) {
-			setPaneCoords();
-		}
-	}
-	else {
-		setPaneCoords();
-	}
-}
-
-//--------------------------------------------------------------
-// closes the active pane, or quits if it is the only one
-// panes are laid out by the order of their keys in editors, row by row (or column by column with paneSplitOrientation 1)
-// with numPanes holding how many panes every row has (see setPaneCoords()), so after removing a pane the keys of the panes after it
-// go down by one, a row that is left empty is removed, and the row and column of every pane are set again from this layout
-void ofApp::removePane()
-{
-	if (editors.size() <= 1) {
-		requestQuit();
-		return;
-	}
-	int paneRowWithCursor = editors[session.whichPane].getPaneRow();
-	int lastKey = editors.rbegin()->first;
-	bool isLastPane = (lastKey == session.whichPane);
-	editors.erase(session.whichPane);
-	// the panes after the removed one move one key down
-	for (int key = session.whichPane + 1; key <= lastKey; key++) {
-		auto nodeHolder = editors.extract(key);
-		if (nodeHolder.empty()) continue;
-		nodeHolder.key() = key - 1;
-		editors.insert(std::move(nodeHolder));
-		editors[key-1].setID(key-1);
-	}
-	// the row of the removed pane has one pane less, and if it is left empty it is removed, and the rows after it move one row up
-	numPanes[paneRowWithCursor]--;
-	if (numPanes[paneRowWithCursor] <= 0) {
-		std::map<int, int> rows;
-		int rowNdx = 0;
-		for (const auto& row : numPanes) {
-			if (row.second > 0) rows[rowNdx++] = row.second;
-		}
-		numPanes = rows;
-	}
-	setPanesRowsAndCols();
-	// if we deleted the last pane we must decrement the pane index
-	// otherwise it stays as it is, and the next pane becomes active
-	if (isLastPane) session.whichPane--;
-	if (session.whichPane < 0) session.whichPane = 0;
-	if (session.whichPane > editors.rbegin()->first) session.whichPane = editors.rbegin()->first;
-	editors[session.whichPane].setActivity(true);
-	// if we're left with one pane only, reset paneSplitOrientation
-	// (with more panes in one row or column the orientation stays, as it sets whether they are side by side or one above the other)
-	if (editors.size() == 1) {
-		paneSplitOrientation = 0;
-		if ((scoreOrientation == 0 && scoreXOffset == 0) || (scoreOrientation == 1 && scoreYOffset == 0)) {
-			swapScorePosition(scoreOrientation);
-		}
-	}
-	fontLoaded = false;
-	setFontSize(true);
 }
 
 //--------------------------------------------------------------
@@ -3002,799 +2473,6 @@ std::vector<EditorNoteSpan> ofApp::getActiveEditorNoteSpans(int paneNdx)
 /********************* clearing functions *********************/
 
 /************ command typing/executing functions **************/
-//--------------------------------------------------------------
-// completes the word that is typed last in the shell with the Tab key, as in a terminal
-// the first word is a command, an editor command (see shellCommands in ofApp.h) or a program in one of the directories of PATH
-// the other words are paths, absolute, starting with ~ (the home directory), or relative to the working directory
-// with one match the word is completed (with a white space after it, unless it is a directory, which gets a slash)
-// with more matches the first Tab completes the part they all start with, and the second one lists them
-void ofApp::completeShellCommand()
-{
-	namespace fs = std::filesystem;
-	shellLsOutputStr.clear();
-	numShellLsOutputLines = 0;
-	// any newlines are removed first (long commands are broken into lines only when they are drawn, see drawShell())
-	std::string line = shellStr;
-	line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
-	if (line.empty() || line[0] != ':') return;
-	size_t wordStart = line.find_last_of(' ');
-	bool completingCommand = (wordStart == std::string::npos);
-	wordStart = (completingCommand ? 1 : wordStart + 1);
-	std::string word = line.substr(wordStart);
-	// the part of the word that is completed, and the matches, which replace it
-	std::string prefix;
-	std::vector<std::string> matches;
-	std::vector<bool> matchIsDir;
-	std::error_code ec;
-	// a command that is a path (e.g. :~/scripts/run.sh or :./run.sh) is completed as a path, as in a terminal
-	if (completingCommand && (word.find('/') != std::string::npos || startsWith(word, "~") || startsWith(word, "."))) {
-		completingCommand = false;
-	}
-	if (completingCommand) {
-		prefix = word;
-		std::set<std::string> names;
-		for (const std::string& cmd : shellCommands) {
-			if (cmd.size() > 1 && startsWith(cmd.substr(1), prefix)) names.insert(cmd.substr(1));
-		}
-		const char* pathEnv = getenv("PATH");
-		std::vector<std::string> pathDirs = session.tokenizeString(pathEnv ? std::string(pathEnv) : std::string(), ":");
-		for (const std::string& dir : pathDirs) {
-			if (dir.empty()) continue;
-			for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
-				std::string name = it->path().filename().string();
-				if (!startsWith(name, prefix)) continue;
-				fs::file_status status = it->status(ec);
-				if (ec || fs::is_directory(status)) continue;
-				// only programs, that are executable
-				if ((status.permissions() & (fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec)) == fs::perms::none) continue;
-				names.insert(name);
-			}
-			ec.clear();
-		}
-		// the directories and the programs of the working directory, so that a path can be typed without ./ (e.g. :Documents/run.sh)
-		std::set<std::string> dirs;
-		for (fs::directory_iterator it(fs::current_path(ec), fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
-			std::string name = it->path().filename().string();
-			if (prefix.empty() || !startsWith(name, prefix) || (name[0] == '.' && !startsWith(prefix, "."))) continue;
-			fs::file_status status = it->status(ec);
-			if (ec) {
-				ec.clear();
-				continue;
-			}
-			if (fs::is_directory(status)) dirs.insert(name);
-			else if ((status.permissions() & (fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec)) != fs::perms::none) names.insert(name);
-		}
-		ec.clear();
-		for (const std::string& name : names) {
-			if (dirs.find(name) != dirs.end()) continue;
-			matches.push_back(name);
-			matchIsDir.push_back(false);
-		}
-		for (const std::string& dir : dirs) {
-			matches.push_back(dir);
-			matchIsDir.push_back(true);
-		}
-	}
-	else {
-		// the directory of the path is the part up to its last slash, and the rest is the start of a name in it
-		size_t slash = word.find_last_of('/');
-		std::string dirPart = (slash == std::string::npos ? "" : word.substr(0, slash + 1));
-		prefix = (slash == std::string::npos ? word : word.substr(slash + 1));
-		std::string dir = dirPart;
-		if (startsWith(dir, "~")) {
-			const char* home = getenv("HOME");
-			dir = (home ? std::string(home) : std::string()) + dir.substr(1);
-		}
-		else if (!startsWith(dir, "/")) {
-			dir = fs::current_path(ec).string() + "/" + dir;
-		}
-		// only ~ without a slash completes to the home directory
-		if (word == "~") {
-			prefix = "";
-			dirPart = "~";
-			matches.push_back("/");
-			matchIsDir.push_back(true);
-		}
-		else {
-			std::vector<std::pair<std::string, bool>> entries;
-			// :cd takes a directory, so only directories are completed
-			bool onlyDirs = startsWith(line, ":cd ");
-			for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
-				std::string name = it->path().filename().string();
-				// hidden files are listed only when their dot is typed
-				if (!startsWith(name, prefix) || (name[0] == '.' && !startsWith(prefix, "."))) continue;
-				bool isDir = it->is_directory(ec);
-				if (onlyDirs && !isDir) continue;
-				entries.push_back(std::make_pair(name, isDir));
-			}
-			std::sort(entries.begin(), entries.end());
-			for (const auto& entry : entries) {
-				matches.push_back(entry.first);
-				matchIsDir.push_back(entry.second);
-			}
-		}
-		wordStart += dirPart.size();
-	}
-	if (matches.empty()) return;
-	std::string completion;
-	if (matches.size() == 1) {
-		completion = matches[0] + (matchIsDir[0] ? (endsWith(matches[0], "/") ? "" : "/") : " ");
-	}
-	else {
-		if (shellTabCounter > 0) {
-			// the second Tab lists the matches, with a slash after directories
-			std::vector<std::string> listed;
-			for (size_t i = 0; i < matches.size(); i++) listed.push_back(matches[i] + (matchIsDir[i] ? "/" : ""));
-			formatShellLsOutput(listed);
-			shellTabCounter++;
-			return;
-		}
-		// the first Tab completes the part all matches start with
-		completion = matches[0];
-		for (size_t i = 1; i < matches.size(); i++) {
-			size_t j = 0;
-			while (j < completion.size() && j < matches[i].size() && completion[j] == matches[i][j]) j++;
-			completion = completion.substr(0, j);
-		}
-	}
-	shellStr = line.substr(0, wordStart) + completion;
-	shellStrCursorPos = (int)shellStr.size();
-	shellTabCounter++;
-}
-
-//--------------------------------------------------------------
-void ofApp::typeShellCommand(int key)
-{
-	if (key == 13) {
-		executeShellCommand();
-		editors[session.whichPane].setTypingShell(false);
-		shellTabCounter = 0;
-		// a command without output (e.g. :w or :set wrap) leaves nothing to show
-		// so the area below the panes shows the error messages again, which it doesn't while it shows the shell
-		if (shellStr.empty() && numShellLsOutputLines == 0) {
-			editors[session.whichPane].setShowingShell(false);
-		}
-	}
-	else if (key == 8) {
-		if (shellStrCursorPos > 0) {
-			shellStr.erase(shellStrCursorPos-1, 1);
-		}
-		shellTabCounter = 0;
-		shellStrCursorPos--;
-		if (shellStrCursorPos < 0) {
-			shellStrCursorPos = 0;
-		}
-		if (shellStr.empty()) {
-			editors[session.whichPane].setTypingShell(false);
-			editors[session.whichPane].setShowingShell(false);
-		}
-	}
-	else if (key == 127) {
-		if (shellStrCursorPos < (int)shellStr.size()) {
-			shellStr.erase(shellStrCursorPos, 1);
-		}
-		if (shellStr.empty()) {
-			editors[session.whichPane].setTypingShell(false);
-			editors[session.whichPane].setShowingShell(false);
-		}
-	}
-	else if (key == 105 && shellStr.size() == 0) {
-		editors[session.whichPane].setTypingShell(false);
-		editors[session.whichPane].setShowingShell(false);
-		shellTabCounter = 0;
-		editors[session.whichPane].resetMaxNumLines();
-	}
-	else if (key == 9) {
-		completeShellCommand();
-	}
-	else {
-		if (key == 58) {
-			shellStr = "";
-			shellLsOutputStr = "";
-			shellStrCursorPos = 0;
-			numShellLines = 1;
-			shellStrColor = ofColor::white;
-			numShellLsOutputLines = 0;
-			editors[session.whichPane].setTypingShell(true);
-			editors[session.whichPane].setShowingShell(true);
-		}
-		if (shellStrCursorPos < (int)shellStr.size()) shellStr.insert(shellStr.begin()+shellStrCursorPos, char(key));
-		else shellStr += char(key);
-		shellTabCounter = 0;
-		shellStrCursorPos++;
-	}
-}
-
-//--------------------------------------------------------------
-std::string ofApp::wrapShellLines(const std::string& str, int& numLines)
-{
-	std::string wrapped;
-	numLines = 0;
-	size_t start = 0;
-	while (start <= str.size()) {
-		size_t end = str.find('\n', start);
-		if (end == std::string::npos) end = str.size();
-		// every line of the string, broken into rows of maxShellChars characters, with an empty line as one row
-		size_t lineStart = start;
-		do {
-			size_t rowLength = std::min(maxShellChars, end - lineStart);
-			if (numLines > 0) wrapped += '\n';
-			wrapped += str.substr(lineStart, rowLength);
-			numLines++;
-			lineStart += rowLength;
-		} while (lineStart < end);
-		start = end + 1;
-	}
-	return wrapped;
-}
-
-//--------------------------------------------------------------
-int ofApp::run_command(const std::string& cmd, std::string& output) {
-	// Runs a shell command, stores combined STDOUT+STDERR in `output`.
-	// Returns the command's exit code, or -1 if it could not be run.
-	namespace fs = std::filesystem;
-
-	std::random_device rd;
-	std::stringstream name;
-	name << "cmdout_" << std::hex << rd() << rd();
-	fs::path tmp = fs::temp_directory_path() / name.str();
-
-	std::string full = "(" + cmd + ") > \"" + tmp.string() + "\" 2>&1";
-#ifdef _WIN32
-	full = "\"" + full + "\"";   // cmd.exe /c quoting quirk
-#endif
-
-	int status = std::system(full.c_str());
-
-	int code;
-#ifdef _WIN32
-	code = status;
-#else
-	code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-#endif
-
-	std::ifstream file(tmp, std::ios::binary);
-	std::stringstream buffer;
-	buffer << file.rdbuf();
-	output = buffer.str();
-
-	file.close();
-	std::error_code ec;
-	fs::remove(tmp, ec);         // ignore cleanup errors
-	return code;
-}
-
-//--------------------------------------------------------------
-void ofApp::executeShellCommand()
-{
-	if (executingBind) {
-		std::vector<std::string> v = session.tokenizeString(shellStr, " ");
-		shellStr.clear();
-		executingBind = false;
-		session.parseCommand(CmdInput(v, std::vector<std::string>{}, false, true), 1, 1); // dummy second and third arguments
-		return;
-	}
-	shellStrColor = ofColor::white;
-	// first extract the argument and expand it according to the symbols it uses
-	// like the tilde character or a dot
-	size_t whiteSpace = shellStr.find(" ");
-	std::string arg;
-	if (whiteSpace != std::string::npos || whiteSpace < shellStr.size()-1) {
-		std::string shellStrLocal = shellStr.substr(whiteSpace+1);
-		// remove newline characters from command
-		shellStrLocal.erase(std::remove(shellStrLocal.begin(), shellStrLocal.end(), '\n'), shellStrLocal.end());
-		// and the white spaces around the argument, as Tab completion adds a white space after a completed file name
-		shellStrLocal.erase(0, shellStrLocal.find_first_not_of(" \t"));
-		if (shellStrLocal.find_last_not_of(" \t") != std::string::npos) shellStrLocal.erase(shellStrLocal.find_last_not_of(" \t") + 1);
-		else shellStrLocal.clear();
-		if (startsWith(shellStrLocal, "~")) {
-			arg = getenv("HOME") + shellStrLocal.substr(1);
-		}
-		else if (startsWith(shellStrLocal, "/")) {
-			arg = shellStrLocal;
-		}
-		else {
-			if (startsWith(shellStr, ":bind") || startsWith(shellStr, ":unbind")) {
-				arg = shellStrLocal;
-			}
-			else {
-				std::string pwdStr = systemCommandOutput("pwd");
-				// there's a newline character at the end of systemCommandOutput("pwd"), so we remove it below
-				arg = pwdStr.substr(0, pwdStr.size()-1) + "/";
-				if (startsWith(shellStrLocal, "./")) {
-					arg += shellStrLocal.substr(2);
-				}
-				else {
-					arg += shellStrLocal;
-				}
-			}
-		}
-		// paths like ../bin/data/file.lyv are tidied to /full/path/bin/data/file.lyv, which is also shown as the path of a loaded file
-		if (!arg.empty() && startsWith(arg, "/") && !(startsWith(shellStr, ":bind") || startsWith(shellStr, ":unbind"))) {
-			std::string normalized = std::filesystem::path(arg).lexically_normal().string();
-			// a directory keeps no trailing slash, except the root directory
-			if (normalized.size() > 1 && endsWith(normalized, "/")) normalized.pop_back();
-			arg = normalized;
-		}
-	}
-	// then check which command we're calling
-	if (shellStr == ":save" || startsWith(shellStr, ":save ")) {
-		if (shellStr.compare(":save") == 0) {
-			shellStr = "save command called without an argument";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		if (!startsWith(shellStr, ":save ")) {
-			shellStr = shellStr + ": not an editor command";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		if (arg.empty()) {
-			shellStr = "save command called without an argument";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		editors[session.whichPane].saveFile(arg);
-		shellStr.clear();
-		numShellLines = 0;
-	}
-	else if (shellStr.compare(":w") == 0) {
-		editors[session.whichPane].saveExistingFile();
-		shellStr.clear();
-		numShellLines = 0;
-	}
-	// :wq saves the file of the active pane and closes the pane, or quits if it is the only one, as :q does
-	// a file that has no name yet is saved to the path typed after it (e.g. :wq ~/music/piece.lyv)
-	// :x does the same, as in Vim, but writes the file only if it has changes that are not saved
-	else if (shellStr == ":wq" || startsWith(shellStr, ":wq ") || shellStr == ":x" || startsWith(shellStr, ":x ")) {
-		bool onlyIfEdited = startsWith(shellStr, ":x");
-		Editor& editor = editors[session.whichPane];
-		if (editor.isHelpFileOpen()) {
-			// a help file is not saved, it is closed
-			editor.closeHelpFile();
-			shellStr.clear();
-			numShellLines = 0;
-			return;
-		}
-		bool hasPath = (whiteSpace != std::string::npos && shellStr.find_first_not_of(" \t\n", whiteSpace) != std::string::npos && !arg.empty());
-		if (onlyIfEdited && !hasPath && !editor.isFileEdited()) {
-			// nothing to save
-		}
-		else if (hasPath) editor.saveFile(arg);
-		else if (editor.fileLoaded) editor.saveExistingFile();
-		else {
-			shellStr = "no file name, type the path after " + std::string(onlyIfEdited ? ":x" : ":wq");
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		// the pane is closed only if its file has been saved
-		if (editor.isFileEdited()) {
-			shellStr = "could not save " + editor.getFileName();
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		shellStr.clear();
-		numShellLines = 0;
-		editors[session.whichPane].setTypingShell(false);
-		editors[session.whichPane].setShowingShell(false);
-		removePane();
-	}
-	// :wa saves the files of all panes that have changes that are not saved, and :wqa saves them and quits
-	// files without a name can't be saved this way, so they are listed, and :wqa asks for their paths (see requestQuit())
-	// :xa is the same as :wqa, as in Vim
-	else if (shellStr.compare(":wa") == 0 || shellStr.compare(":wqa") == 0 || shellStr.compare(":xa") == 0) {
-		bool quitting = (shellStr.compare(":wqa") == 0 || shellStr.compare(":xa") == 0);
-		std::vector<std::string> notSaved;
-		for (auto& editor : editors) {
-			if (!editor.second.isFileEdited() || editor.second.isHelpFileOpen()) continue;
-			if (editor.second.fileLoaded) editor.second.saveExistingFile();
-			if (editor.second.isFileEdited()) notSaved.push_back(editor.second.getFileName() + " (pane " + std::to_string(editor.first + 1) + ")");
-		}
-		shellStr.clear();
-		numShellLines = 0;
-		if (quitting) {
-			// the files that are left unsaved are asked for, with their paths if they have no name
-			requestQuit();
-			return;
-		}
-		if (!notSaved.empty()) {
-			std::string list;
-			for (size_t i = 0; i < notSaved.size(); i++) list += (i > 0 ? ", " : "") + notSaved[i];
-			shellStr = "not saved: " + list + ", save them with :save";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			}
-	}
-
-	else if (shellStr == ":load" || startsWith(shellStr, ":load ")) {
-		if (shellStr.compare(":load") == 0) {
-			shellStr = "load command called without an argument";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		if (!startsWith(shellStr, ":load ")) {
-			shellStr = shellStr + ": not an editor command";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		if (arg.empty()) {
-			shellStr = "load command called without an argument";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		editors[session.whichPane].loadFile(arg);
-		shellStr.clear();
-		numShellLines = 0;
-	}
-	else if (startsWith(shellStr, ":bindings")) {
-		if (shellStr.size() > 9) {
-			shellStr = shellStr + ": not an editor command";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		if (!arg.empty()) {
-			shellStr = "bindings command takes no arguments";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		shellStr.clear();
-		int counter = 0;
-		for (auto it = editors[session.whichPane].bindings.begin(); it != editors[session.whichPane].bindings.end(); ++it) {
-			if (counter > 0) shellStr += "\n";
-			counter++;
-			shellStr += {static_cast<char>(it->first)};
-			if (!it->second.bindingVec.empty()) shellStr += session.genStrFromVec(it->second.bindingVec);
-			shellStr += " -> ";
-			shellStr += session.genStrFromVec(it->second.actionVec);
-		}
-		numShellLines = editors[session.whichPane].bindings.size();
-	}
-	else if (shellStr == ":bind" || startsWith(shellStr, ":bind ")) {
-		if (whiteSpace == std::string::npos && shellStr.size() > 5) {
-			shellStr = shellStr + ": not an editor command";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		if (arg.empty()) {
-			shellStr = "bind command called without an argument";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		std::vector<std::string> v = session.tokenizeString(arg, " ");
-		if (std::find(v.begin(), v.end(), "->") == v.end()) {
-			shellStr = "wrong formatting for bind";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		bool foundArrow = false;
-		std::vector<std::string> v1;
-		std::vector<std::string> v2;
-		for (std::string s : v) {
-			if (s.compare("->") == 0) {
-				if (v1.empty()) {
-					shellStr = "wrong formatting for bind";
-					shellStrColor = ofColor::red;
-					numShellLines = 1;
-					return;
-				}
-				foundArrow = true;
-			}
-			else {
-				if (!foundArrow) {
-					v1.push_back(s);
-				}
-				else {
-					v2.push_back(s);
-				}
-			}
-		}
-		if (v1[0].size() > 1) {
-			shellStr = "binding key can be one character only";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		int key = static_cast<int>(v1[0][0]);
-		// the keys of normal mode are reserved and can't be bound
-		static const std::map<int, std::string> normalModeKeys = {
-			{':', "types commands"}, {'i', "inserts text"},
-			{'h', "moves the cursor left"}, {'H', "moves the cursor left"},
-			{'j', "moves the cursor down"}, {'J', "moves the cursor down"},
-			{'k', "moves the cursor up"}, {'K', "moves the cursor up"},
-			{'l', "moves the cursor right"}, {'L', "moves the cursor right"},
-			{'u', "undoes"}, {'y', "yanks"}, {'p', "pastes"}, {'v', "starts visual mode"},
-			{'A', "inserts at the end of the line"}, {'d', "deletes"},
-			{'0', "moves the cursor to the start of the line"}, {'$', "moves the cursor to the end of the line"},
-			{'D', "deletes to the end of the line"}, {'V', "selects whole lines"}, {'I', "inserts at the start of the line"},
-			{'x', "deletes the character under the cursor"},
-			{'g', "moves the cursor to the first line when pressed twice"}, {'G', "moves the cursor to the last line"}
-		};
-		auto normalIt = normalModeKeys.find(key);
-		if (normalIt != normalModeKeys.end()) {
-			shellStr = v1[0] + " is reserved, it " + normalIt->second + " in normal mode";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		if (editors[session.whichPane].bindings.find(key) != editors[session.whichPane].bindings.end()) {
-			shellStr = v1[0] + " is already bound";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		editors[session.whichPane].bindings[key] = {v1.size() > 1 ? std::vector<std::string>(v1.begin()+1, v1.end()) : std::vector<std::string>{""}, std::move(v2), false};
-		shellStr.clear();
-		shellStrColor = ofColor::white;
-		return;
-	}
-	else if (shellStr == ":unbind" || startsWith(shellStr, ":unbind ")) {
-		if (whiteSpace == std::string::npos && shellStr.size() > 7) {
-			shellStr = shellStr + ": not an editor command";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		if (arg.empty()) {
-			shellStr = "unbind command called without an argument";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		std::vector<std::string> v = session.tokenizeString(arg, " ");
-		int key = static_cast<int>(v[0][0]);
-		auto it = editors[session.whichPane].bindings.find(key);
-		if (it == editors[session.whichPane].bindings.end()) {
-			shellStr = v[0] + " is not bound";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		editors[session.whichPane].bindings.erase(it);
-		shellStr.clear();
-		shellStrColor = ofColor::white;
-		return;
-	}
-	else if (shellStr == ":ls" || startsWith(shellStr, ":ls ")) {
-		if (whiteSpace == std::string::npos && shellStr.size() > 3) {
-			shellStr = shellStr + ": not an editor command";
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		// with options (e.g. :ls -a), the arguments are passed to ls as they are typed
-		std::string rawArgs = (whiteSpace == std::string::npos ? std::string() : shellStr.substr(whiteSpace+1));
-		rawArgs.erase(std::remove(rawArgs.begin(), rawArgs.end(), '\n'), rawArgs.end());
-		std::string lsOutput = systemCommandOutput("ls -p " + (startsWith(rawArgs, "-") ? rawArgs : arg));
-		shellStr.clear();
-		numShellLines = 0;
-		formatShellLsOutput(session.tokenizeString(lsOutput, "\n"));
-	}
-	else if (shellStr.compare(":pwd") == 0) {
-		shellStr = systemCommandOutput("pwd");
-		numShellLines = 1;
-	}
-	// :cd changes the working directory of LiveLily, as in Vim, which :pwd, :ls, :load, :save, other shell commands, and Tab completion use
-	// :cd without an argument goes to the home directory, and :cd - to the previous working directory
-	else if (shellStr == ":cd" || startsWith(shellStr, ":cd ")) {
-		namespace fs = std::filesystem;
-		std::string rawArg = (whiteSpace == std::string::npos ? std::string() : shellStr.substr(whiteSpace+1));
-		rawArg.erase(std::remove(rawArg.begin(), rawArg.end(), '\n'), rawArg.end());
-		rawArg.erase(0, rawArg.find_first_not_of(" \t"));
-		if (rawArg.find_last_not_of(" \t") != std::string::npos) rawArg.erase(rawArg.find_last_not_of(" \t") + 1);
-		std::error_code ec;
-		std::string target;
-		if (rawArg.empty()) {
-			const char* home = getenv("HOME");
-			target = (home ? std::string(home) : std::string());
-		}
-		else if (rawArg == "-") {
-			if (prevWorkingDir.empty()) {
-				shellStr = "no previous directory";
-				shellStrColor = ofColor::red;
-				numShellLines = 1;
-				return;
-			}
-			target = prevWorkingDir;
-		}
-		else {
-			// the argument with ~ expanded, or relative to the working directory (see above)
-			target = arg;
-			target.erase(target.find_last_not_of(" \t") + 1);
-		}
-		std::string currentDir = fs::current_path(ec).string();
-		if (target.empty() || !fs::is_directory(target, ec)) {
-			shellStr = (rawArg.empty() ? std::string("no home directory") : rawArg + ": no such directory");
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		fs::current_path(target, ec);
-		if (ec) {
-			shellStr = rawArg + ": " + ec.message();
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		prevWorkingDir = currentDir;
-		shellStr.clear();
-		numShellLines = 0;
-	}
-	else if (shellStr.compare(":q") == 0) {
-		if (editors[session.whichPane].isHelpFileOpen()) {
-			editors[session.whichPane].closeHelpFile();
-			// the command leaves nothing to show, so the area below the panes shows the error messages again (see typeShellCommand())
-			shellStr.clear();
-			numShellLines = 0;
-		}
-		else {
-			removePane();
-		}
-	}
-	// :vs (or :vsplit) adds a pane side by side with the active one, and :sp (or :split) one below it, as in Vim
-	// with a file as an argument, the file is opened in the new pane
-	else if (shellStr == ":vs" || shellStr == ":vsplit" || shellStr == ":sp" || shellStr == ":split" ||
-			startsWith(shellStr, ":vs ") || startsWith(shellStr, ":vsplit ") || startsWith(shellStr, ":sp ") || startsWith(shellStr, ":split ")) {
-		bool vertical = startsWith(shellStr, ":vs");
-		bool hasFile = (whiteSpace != std::string::npos && !arg.empty() && shellStr.find_first_not_of(" \t\n", whiteSpace) != std::string::npos);
-		// the shell of this pane closes, as the new pane becomes the active one
-		shellStr.clear();
-		numShellLines = 0;
-		editors[session.whichPane].setTypingShell(false);
-		editors[session.whichPane].setShowingShell(false);
-		addPane(vertical ? 86 : 72);
-		// the new pane starts in normal mode, as a pane does in Vim
-		editors[session.whichPane].setInserting(false);
-		if (hasFile) editors[session.whichPane].loadFile(arg);
-	}
-	else if (shellStr.compare(":qa") == 0) {
-		requestQuit();
-	}
-	// :q! and :qa! quit without asking to save the files that have changes that are not saved, as in Vim
-	// :q! closes the pane when there are more panes (or the help file, if one is open), as :q does
-	else if (shellStr.compare(":q!") == 0) {
-		if (editors[session.whichPane].isHelpFileOpen()) {
-			editors[session.whichPane].closeHelpFile();
-			// the command leaves nothing to show, so the area below the panes shows the error messages again (see typeShellCommand())
-			shellStr.clear();
-			numShellLines = 0;
-		}
-		// the same test removePane() uses to quit instead of closing a pane
-		else if (editors.size() <= 1) {
-			exit();
-		}
-		else {
-			removePane();
-		}
-	}
-	else if (shellStr.compare(":qa!") == 0) {
-		exit();
-	}
-	// editor options, as in Vim, for the active pane
-	// :set wrap wraps long lines around the edge of the pane, and :set wrap! (or :set nowrap) scrolls them, which is the default
-	else if (startsWith(shellStr, ":set ") || shellStr.compare(":set") == 0) {
-		std::string option = (shellStr.size() > 5 ? shellStr.substr(5) : "");
-		option.erase(0, option.find_first_not_of(" \t\n"));
-		if (option.find_last_not_of(" \t\n") != std::string::npos) option.erase(option.find_last_not_of(" \t\n") + 1);
-		if (option == "wrap") {
-			editors[session.whichPane].setWrapLines(true);
-		}
-		else if (option == "wrap!" || option == "nowrap") {
-			editors[session.whichPane].setWrapLines(false);
-		}
-		else {
-			shellStr = (option.empty() ? std::string(":set needs an option") : option + ": unknown option");
-			shellStrColor = ofColor::red;
-			numShellLines = 1;
-			return;
-		}
-		shellStr.clear();
-		numShellLines = 0;
-	}
-	else {
-		// any other command is a shell command, typed after the colon (e.g. :ls -l or :git status)
-		// its output and its error messages are shown below the panes
-		std::string cmd = shellStr.substr(1);
-		cmd.erase(std::remove(cmd.begin(), cmd.end(), '\n'), cmd.end());
-		std::string output;
-		int err = run_command(cmd, output);
-		if (err && output.empty()) output = cmd + ": failed with exit code " + std::to_string(err);
-		setShellOutput(output, err != 0);
-	}
-}
-
-//--------------------------------------------------------------
-// shows the output of a shell command below the panes, with its lines broken to fit the width of the window
-// the panes are made shorter for long output, and what doesn't fit scrolls with the arrow keys (see drawShell())
-void ofApp::setShellOutput(const std::string& output, bool error)
-{
-	shellStrColor = (error ? ofColor::red : ofColor::white);
-	std::vector<std::string> lines;
-	std::string line;
-	for (char c : output) {
-		if (c == '\n') {
-			lines.push_back(line);
-			line.clear();
-		}
-		else if (c == '\t') {
-			// tabs go to the next multiple of eight characters, as in a terminal
-			line += std::string(8 - (line.size() % 8), ' ');
-		}
-		else if (c != '\r') {
-			line += c;
-		}
-	}
-	if (!line.empty()) lines.push_back(line);
-	// break long lines to fit the width of the window
-	std::vector<std::string> rows;
-	size_t width = std::max((size_t)1, maxShellChars);
-	for (const std::string& l : lines) {
-		if (l.empty()) rows.push_back("");
-		for (size_t i = 0; i < l.size(); i += width) rows.push_back(l.substr(i, width));
-	}
-	// a command without output (e.g. :touch file) leaves nothing to show, so the shell is hidden (see typeShellCommand())
-	if (rows.empty()) {
-		shellStr.clear();
-		numShellLines = 0;
-		return;
-	}
-	// all of the output is kept, and what doesn't fit the area below the panes scrolls with the arrow keys (see drawShell())
-	shellScroll = 0;
-	shellStr.clear();
-	for (size_t i = 0; i < rows.size(); i++) {
-		if (i > 0) shellStr += "\n";
-		shellStr += rows[i];
-	}
-	numShellLines = (int)rows.size();
-}
-
-//--------------------------------------------------------------
-void ofApp::formatShellLsOutput(std::vector<std::string> lsOutputTokens)
-{
-	if (lsOutputTokens.size() == 0) return;
-	// first find the longest string
-	size_t maxStrLength = 1;
-	for (const std::string& s : lsOutputTokens) {
-		if (s.size() > maxStrLength) maxStrLength = s.size();
-	}
-	// then determine how many columns fit in the width of the window, with two white spaces between them
-	// the last column doesn't need the two white spaces, so they are added to the width of the window
-	int numColumns = std::max(1, (int)((maxShellChars + 2) / (maxStrLength + 2)));
-	// the strings are listed in columns, from top to bottom and then from left to right, as ls does in a terminal
-	int numTokens = (int)lsOutputTokens.size();
-	int numRows = (numTokens + numColumns - 1) / numColumns;
-	// with the number of rows set, fewer columns might be enough (e.g. 5 strings in 4 columns need 2 rows, which need 3 columns only)
-	numColumns = (numTokens + numRows - 1) / numRows;
-	shellLsOutputStr.clear();
-	shellScroll = 0;
-	for (int row = 0; row < numRows; row++) {
-		if (row > 0) shellLsOutputStr += "\n";
-		for (int col = 0; col < numColumns; col++) {
-			int ndx = (col * numRows) + row;
-			if (ndx >= numTokens) break;
-			const std::string& s = lsOutputTokens[ndx];
-			shellLsOutputStr += s;
-			// pad all but the last string of the row, to the start of the next column
-			if (col < numColumns - 1 && ((col + 1) * numRows) + row < numTokens) {
-				shellLsOutputStr += std::string((maxStrLength + 2) - s.size(), ' ');
-			}
-		}
-	}
-	numShellLsOutputLines = numRows;
-}
-
 /****************** miscellaneous functions ********************/
 
 /****************** OSC to parts functions ********************/
@@ -4165,7 +2843,7 @@ void ofApp::setShowScore(int ndx)
 	//		showScore = false;
 	//		break;
 	//}
-	setPaneCoords();
+	workspace.layout();
 	editors[session.whichPane].setMaxCharactersPerString();
 }
 
@@ -4173,6 +2851,14 @@ void ofApp::setShowScore(int ndx)
 bool ofApp::isScoreVisible()
 {
 	return showScore;
+}
+
+//--------------------------------------------------------------
+WorkspaceHost::ScorePlacement ofApp::scorePlacement()
+{
+	// at the start of the window: on the left when beside the panes (orientation 0), at the top when above or below them (1)
+	bool atStart = (scoreOrientation == 0 ? scoreXOffset == 0 : scoreYOffset == 0);
+	return {isScoreVisible(), scoreOrientation, atStart};
 }
 
 /********************* instrument functions *******************/
@@ -4197,133 +2883,7 @@ void ofApp::setFontSize(bool calculateCoords)
 	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 		it->second.setFontSize(fontSize, oneCharacterWidth, cursorHeight, characterOffset);
 	}
-	if (calculateCoords) setPaneCoords();
-}
-
-//--------------------------------------------------------------
-void ofApp::setPaneCoords()
-{
-	// this is the minimum height of the traceback space, used to calculate the size of the panes
-	// MINTRACEBACKLINES lines of the current font, with their baselines one and two lines below the panes (see drawTraceback() and drawShell())
-	// and the part of the last line below its baseline, as low as the cursor reaches (0.15 of a line, see drawShell())
-	// the panes get a whole number of lines in the rest of the window, so the area below them is at least this high
-	view.tracebackBase = (float)view.screenHeight - (cursorHeight * ((float)MINTRACEBACKLINES + 0.15f));
-	// we need the anchor so we can change the traceback height in case the traceback
-	// has more than two lines
-	// get the width and height for each pane
-	// initializing 0 to avoid warning messages during compilation
-	float paneWidth = 0, paneHeight = 0;
-	// we compute the maximum number of lines for a pane with the height of the window
-	int maxNumLines = view.tracebackBase / cursorHeight;
-	// we need an even number of lines so that more than one panes in a column can halve this number
-	if (maxNumLines % 2) {
-		if (maxNumLines > 1) maxNumLines--;
-		else maxNumLines++;
-	}
-	// depending on the orientation, we must first create either the height or the width of the editors
-	if (paneSplitOrientation == 0) {
-		paneHeight = ((float)maxNumLines * cursorHeight) / (float)numPanes.size();
-	}
-	else {
-		paneWidth = (float)view.screenWidth / (float)numPanes.size();
-	}
-	int paneNdx = 0;
-	for (std::map<int, int>::iterator it = numPanes.begin(); it != numPanes.end(); ++it) {
-		// each row sets the number of lines for its panes according to the number of rows (it->first) for paneSplitOrientation == 0
-		// or number of columns (it->second) for paneSplitOrientation == 1
-		bool calcAdditionalLines = true;
-		int numLinesDivisor = 1;
-		int widthDivisor = 1;
-		// if we are showing the score and we have only one pane or two panes
-		if (isScoreVisible() && ((numPanes.size() == 1 && numPanes[0] == 1) || (numPanes.size() == 2 && (numPanes[0] == 1 && numPanes[1] == 1)))) {
-			if (numPanes.size() == 1) {
-				if (scoreOrientation == 0) {
-					widthDivisor = 2;
-				}
-				else {
-					numLinesDivisor = 2;
-				}
-			}
-			else {
-				if (paneSplitOrientation == 1) {
-					if (scoreOrientation == 1) {
-						numLinesDivisor = 2;
-						widthDivisor = it->second;
-					}
-					else {
-						numLinesDivisor = it->second;
-						widthDivisor = 2;
-					}
-				}
-				else {
-					if (scoreOrientation == 0) {
-						numLinesDivisor = widthDivisor = 2;
-					}
-					else {
-						numLinesDivisor = 2;
-						widthDivisor = it->second;
-					}
-				}
-			}
-			calcAdditionalLines = false;
-		}
-		else {
-			numLinesDivisor = paneSplitOrientation == 0 ? (int)numPanes.size() : it->second;
-			widthDivisor = it->second;
-		}
-		int numLines = maxNumLines / (numLinesDivisor > 0 ? numLinesDivisor : 1);
-		int additionalLines = 0;
-		int numLinesMultiplier = paneSplitOrientation == 0 ? (int)numPanes.size() : it->second;
-		if (calcAdditionalLines && numLines * numLinesMultiplier != maxNumLines) {
-			additionalLines = maxNumLines - (numLines * numLinesMultiplier);
-		}
-		if (paneSplitOrientation == 0) {
-			paneWidth = view.screenWidth / widthDivisor;
-			for (int col = 0; col < it->second; col++) {
-				editors[paneNdx].setFrameWidth(paneWidth); // - (float)(lineWidth / 2));
-				editors[paneNdx].setFrameXOffset(paneWidth * (float)col);
-				editors[paneNdx].setFrameHeight(paneHeight);
-				editors[paneNdx].setFrameYOffset(paneHeight * (float)(it->first));
-				//if (!col) editors[paneNdx].setMaxNumLines(numLines+additionalLines);
-				//else editors[paneNdx].setMaxNumLines(numLines);
-				editors[paneNdx].setMaxNumLines(numLines);
-				editors[paneNdx].setMaxCharactersPerString();
-				paneNdx++;
-			}
-		}
-		else {
-			float paneYOffset = 0;
-			float prevHeight = 0;
-			for (int col = 0; col < it->second; col++) {
-				if (col < additionalLines) paneHeight = (numLines + 1) * cursorHeight;
-				else paneHeight = numLines * cursorHeight;
-				paneYOffset += prevHeight;
-				prevHeight = paneHeight;
-				editors[paneNdx].setFrameHeight(paneHeight);
-				editors[paneNdx].setFrameYOffset(paneYOffset);
-				editors[paneNdx].setFrameWidth(paneWidth);
-				editors[paneNdx].setFrameXOffset(paneWidth * (float)it->first);
-				if (!col) editors[paneNdx].setMaxNumLines(numLines+additionalLines);
-				else editors[paneNdx].setMaxNumLines(numLines);
-				editors[paneNdx].setMaxCharactersPerString();
-				paneNdx++;
-			}
-		}
-	}
-	// once all the editors have their dimensions and coordinates set
-	// we correct the traceback position so that there is no gap
-	// between the last line of an editor and the traceback rectangle
-	//maxNumLines = 0;
-	//for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
-	//	maxNumLines = max(maxNumLines, it->second.getMaxNumLines());
-	//}
-	view.tracebackBase = (float)maxNumLines * cursorHeight;
-	view.tracebackYCoord = view.tracebackBase;
-	// the panes have a new layout, which the shell makes shorter again if it needs to (see layoutPanesForShell())
-	paneBase.clear();
-	// the area below the panes is reset, so its size is calculated again in drawTraceback() and drawShell()
-	// for the lines that are shown in it, which are broken again to fit the width of the window (e.g. after it is resized)
-	tracebackNumLinesShown = shellNumLinesShown = -1;
+	if (calculateCoords) workspace.layout();
 }
 
 //--------------------------------------------------------------
@@ -4357,7 +2917,7 @@ void ofApp::resetScoreYOffset()
 	int activePane = session.whichPane;
 	swapScorePosition(scoreOrientation);
 	swapScorePosition(scoreOrientation);
-	if (session.whichPane != activePane && editors.find(activePane) != editors.end()) setActivePane(activePane);
+	if (session.whichPane != activePane && editors.find(activePane) != editors.end()) workspace.setActivePane(activePane);
 }
 
 //--------------------------------------------------------------
@@ -4502,7 +3062,7 @@ void ofApp::calculateStaffPositions(int bar, bool windowChanged)
 	float minDiff = view.staffLinesDist * 6;
 	requiredDiff = std::max(requiredDiff, minDiff);
 	// the score is displayed in the whole height (vertical view), or in the upper half (horizontal view)
-	float fullHeight = view.tracebackBase - cursorHeight;
+	float fullHeight = workspace.belowBase - cursorHeight;
 	// in horizontal view, the height of the score background depends on the pane configuration
 	// (see swapScorePosition()), so we use that, if the score is currently displayed horizontally
 	float horizontalHeight = fullHeight / 2;
@@ -4553,10 +3113,10 @@ void ofApp::swapScorePosition(int orientation)
 				// we set the space between the top of the window the beginning of the traceback as the height of the score
 				// in this pane configuration we don't mind which pane index we'll use, so the first is the safest
 				// we add one to the number of editor lines to include the pane separating line
-				scoreBackgroundHeight = view.tracebackBase;
+				scoreBackgroundHeight = workspace.belowBase;
 			}
 			else {
-				scoreBackgroundHeight = view.tracebackBase - cursorHeight;
+				scoreBackgroundHeight = workspace.belowBase - cursorHeight;
 			}
 			view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
 			view.pianoRollKeysHeight = scoreBackgroundHeight / view.pianoRollLength;
@@ -4565,10 +3125,10 @@ void ofApp::swapScorePosition(int orientation)
 			// check if the editor is split in panes and change the active pane accordingly
 			if (paneSplitOrientation == 1 && numPanes.size() == 2) {
 				if (scoreXOffset == 0 && session.whichPane < numPanes[0]) {
-					setActivePane(numPanes[0]);
+					workspace.setActivePane(numPanes[0]);
 				}
 				else if (scoreXOffset > 0 && session.whichPane >= numPanes[0]) {
-					setActivePane(0);
+					workspace.setActivePane(0);
 				}
 			}
 			// if we have one pane only or two panes spit horizontally, swap its position with the score
@@ -4584,7 +3144,7 @@ void ofApp::swapScorePosition(int orientation)
 				}
 			}
 			// if we change from horizontal to vertical view, set the coordinates of the panes
-			if (setCoords) setPaneCoords();
+			if (setCoords) workspace.layout();
 			break;
 		case 1:
 			scoreXOffset = 0;
@@ -4594,13 +3154,13 @@ void ofApp::swapScorePosition(int orientation)
 				// we first calculate the panes coordinates because in case we have one pane only
 				// or two panes split vertically, we want to reduce their number of lines
 				// so the horizontal score can nicely fit in the window without obscuring the panes
-				setPaneCoords();
+				workspace.layout();
 				// then we set the space between the end of the pane(s) and the beginning of the traceback as the height of the score
 				// in this pane configuration we don't mind which pane index we'll use, so the first is the safest
 				// getMaxNumLines() returns the number of lines minus 1 for the pane separator
 				// but in this case we need this additional line for the score height so we add it
 				int numLines = editors[0].getMaxNumLines() + 1;
-				scoreBackgroundHeight = view.tracebackBase - (numLines * cursorHeight);
+				scoreBackgroundHeight = workspace.belowBase - (numLines * cursorHeight);
 				if (scoreYOffset == 0) {
 					scoreYOffset = numLines * cursorHeight;
 				}
@@ -4625,10 +3185,17 @@ void ofApp::swapScorePosition(int orientation)
 				if (scoreYOffset == 0) scoreYOffset = editors[paneNdx].getFrameYOffset();
 				else scoreYOffset = 0;
 				// if we change from horizontal to vertical view, set the coordinates of the panes
-				if (setCoords) setPaneCoords();
+				if (setCoords) workspace.layout();
+				// the score covers one row of panes, so the active pane is one of the other row
+				if (scoreYOffset == 0 && session.whichPane < numPanes[0]) {
+					workspace.setActivePane(numPanes[0]);
+				}
+				else if (scoreYOffset > 0 && session.whichPane >= numPanes[0]) {
+					workspace.setActivePane(0);
+				}
 			}
 			else {
-				scoreBackgroundHeight = (view.tracebackBase / 2) - cursorHeight;
+				scoreBackgroundHeight = (workspace.belowBase / 2) - cursorHeight;
 				// in horizontal view of the score, the height of the score background is rounded half the editor lines
 				// this is because the number of lines of an editor is always odd, so that the line with the file name
 				// and pane index is also included, which makes the total number of lines even
@@ -4638,17 +3205,8 @@ void ofApp::swapScorePosition(int orientation)
 				// but when viewed on the lower side, it should touch the white line of the editor
 				// hence the scoreYOffset is not the same as the scoreBackgroundHeith
 				// as is the case with scoreXOffset and scoreBarckgroundWidth, in the case above
-				if (scoreYOffset == 0) scoreYOffset = (view.tracebackBase / 2);
+				if (scoreYOffset == 0) scoreYOffset = (workspace.belowBase / 2);
 				else scoreYOffset = 0;
-				// check if the editor is split in panes and change the active pane accordingly
-				if (paneSplitOrientation == 0 && numPanes.size() == 2) {
-					if (scoreYOffset == 0 && session.whichPane < numPanes[0]) {
-						setActivePane(numPanes[0]);
-					}
-					else if (scoreYOffset > 0 && session.whichPane >= numPanes[0]) {
-						setActivePane(0);
-					}
-				}
 			}
 			view.pianoRollKeysWidth = scoreBackgroundWidth / view.pianoRollLength;
 			view.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
@@ -4657,7 +3215,7 @@ void ofApp::swapScorePosition(int orientation)
 			scoreXOffset = 0;
 			scoreYOffset = 0;
 			scoreBackgroundWidth = view.screenWidth;
-			scoreBackgroundHeight = view.tracebackBase - cursorHeight;
+			scoreBackgroundHeight = workspace.belowBase - cursorHeight;
 			view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
 			view.pianoRollKeysHeight = scoreBackgroundHeight / view.pianoRollLength;
 		default:
@@ -4710,24 +3268,6 @@ void ofApp::setScoreNotes(int barIndex)
 }
 
 //--------------------------------------------------------------
-void ofApp::setActivePane(int activePane)
-{
-	editors[session.whichPane].setActivity(false);
-	// set all hot keys to false
-	editors[session.whichPane].setShiftPressed(false);
-	editors[session.whichPane].setCtrlPressed(false);
-	editors[session.whichPane].setAltPressed(false);
-	if (editors[session.whichPane].highlightManyChars) editors[session.whichPane].highlightManyChars = false;
-	session.whichPane = activePane;
-	editors[session.whichPane].setActivity(true);
-	// the pane that becomes active has the modifier keys that are held now, as the app keeps them, also when the app makes another pane
-	// active by itself (e.g. swapScorePosition() while the font size changes with Ctrl held)
-	editors[session.whichPane].setShiftPressed(shiftPressed);
-	editors[session.whichPane].setCtrlPressed(ctrlPressed);
-	editors[session.whichPane].setAltPressed(altPressed);
-}
-
-//--------------------------------------------------------------
 void ofApp::requestQuit()
 {
 	quitPromptPanes.clear();
@@ -4753,10 +3293,10 @@ void ofApp::quitPromptNext()
 		editor.second.setShowingShell(false);
 	}
 	// the pane that is asked for becomes the active one, so it can be seen which file it is
-	if (pane != session.whichPane && editors.find(pane) != editors.end()) setActivePane(pane);
+	if (pane != session.whichPane && editors.find(pane) != editors.end()) workspace.setActivePane(pane);
 	quitPromptState = 1;
 	shellStr = "save " + editors[session.whichPane].getFileName() + "? y/n";
-	shellStrColor = ofColor::yellow;
+	shellStrColor = Colors::yellow;
 	shellStrCursorPos = (int)shellStr.size();
 	shellLsOutputStr.clear();
 	numShellLsOutputLines = 0;
@@ -4792,10 +3332,10 @@ void ofApp::quitPromptKey(int key)
 				quitPromptNext();
 				return;
 			}
-			// the path is typed after :save, as when saving with :save, so Tab completion works (see completeShellCommand())
+			// the path is typed after :save, as when saving with :save, so Tab completion works (see workspace.completeShellCommand())
 			quitPromptState = 2;
 			shellStr = ":save ";
-			shellStrColor = ofColor::white;
+			shellStrColor = Colors::white;
 			shellStrCursorPos = (int)shellStr.size();
 			shellTabCounter = 0;
 			numShellLines = 1;
@@ -4810,7 +3350,7 @@ void ofApp::quitPromptKey(int key)
 		path.erase(std::remove(path.begin(), path.end(), '\n'), path.end());
 		if (path.find_first_not_of(" \t") == std::string::npos) return;
 		// :save expands ~ and relative paths, and saves the file
-		executeShellCommand();
+		workspace.executeShellCommand();
 		if (!editors[session.whichPane].isFileEdited()) {
 			quitPromptPanes.erase(quitPromptPanes.begin());
 			quitPromptNext();
@@ -4818,7 +3358,7 @@ void ofApp::quitPromptKey(int key)
 		else {
 			// the file couldn't be saved there (e.g. a directory that doesn't exist), so the path is asked for again
 			shellStr = ":save ";
-			shellStrColor = ofColor::white;
+			shellStrColor = Colors::white;
 			shellStrCursorPos = (int)shellStr.size();
 			shellLsOutputStr = "could not save " + editors[session.whichPane].getFileName() + " there, type another path, or Esc to cancel quitting";
 			numShellLsOutputLines = 1;
@@ -4830,7 +3370,7 @@ void ofApp::quitPromptKey(int key)
 	}
 	// the :save at the start of the line can't be deleted, and : would start a new command
 	if ((key == 8 && shellStrCursorPos <= 6) || (key == 127 && shellStrCursorPos < 6) || key == ':') return;
-	typeShellCommand(key);
+	workspace.typeShellCommand(key);
 	// the text typed so far keeps the cursor after :save
 	if (shellStrCursorPos < 6) shellStrCursorPos = 6;
 }
@@ -4900,17 +3440,17 @@ void ofApp::mouseExited(int x, int y)
 //--------------------------------------------------------------
 void ofApp::resizeWindow()
 {
-	setPaneCoords();
+	workspace.layout();
 	if (scoreOrientation == 0) {
 		scoreBackgroundWidth = view.screenWidth / 2;
-		scoreBackgroundHeight = view.tracebackBase - cursorHeight;
+		scoreBackgroundHeight = workspace.belowBase - cursorHeight;
 		view.pianoRollKeysWidth = scoreBackgroundWidth / KEYSWIDTHCOEFF;
 		view.pianoRollKeysHeight = scoreBackgroundHeight / view.pianoRollLength;
 		if (scoreXOffset > 0) scoreXOffset = view.screenWidth / 2;
 	}
 	else {
 		scoreBackgroundWidth = view.screenWidth;
-		scoreBackgroundHeight = (view.tracebackBase / 2) - cursorHeight;
+		scoreBackgroundHeight = (workspace.belowBase / 2) - cursorHeight;
 		view.pianoRollKeysWidth = scoreBackgroundWidth / view.pianoRollLength;
 		view.pianoRollKeysHeight = scoreBackgroundHeight / KEYSWIDTHCOEFF;
 	}
@@ -5171,11 +3711,11 @@ void ofApp::setEditorOption(int pane, const std::string& option, const std::stri
 bool ofApp::openHelp(int pane, const std::string& filePath, int newPane)
 {
 	// a new pane beside or below the active one (as Ctrl+v and Ctrl+h do), which becomes the active one
-	if (pane != session.whichPane) setActivePane(pane);
-	if (newPane == 1) addPane(86);
-	else if (newPane == 2) addPane(72);
+	if (pane != session.whichPane) workspace.setActivePane(pane);
+	if (newPane == 1) workspace.addPane(true);
+	else if (newPane == 2) workspace.addPane(false);
 	bool fileOpened = editors[session.whichPane].loadHelpFile(filePath, newPane);
-	if (!fileOpened && newPane > 0) removePane();
+	if (!fileOpened && newPane > 0) workspace.removePane();
 	return fileOpened;
 }
 

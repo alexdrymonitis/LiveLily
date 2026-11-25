@@ -82,9 +82,6 @@ struct ViewState
 	// variable to leave some space between edge of score and
 	// instrument name, instrument name and staff, etc.
 	int blankSpace;
-	// the area below the panes
-	float tracebackYCoord;
-	float tracebackBase;
 
 	int scoreFontSize;
 
