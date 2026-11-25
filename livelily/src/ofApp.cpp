@@ -40,6 +40,8 @@ void ofApp::setup()
 	session.audioCallback = this;
 	// the editors reach the app through EditorHost (see editor_host.h)
 	Editor::host = this;
+	// the views draw with the canvas of the app (see canvas.h), which is set before any instrument is created
+	Canvas::current = &canvas;
 	// relative paths (e.g. of a SoundFont) start from the user's folder of LiveLily, and \help looks in the search paths (see paths.h)
 	// in test mode only in the resources of LiveLily, so that files of the user don't change the results of the tests
 	std::filesystem::path resourcesPath = ofToDataPath("", true);
@@ -72,6 +74,7 @@ void ofApp::setup()
 	ofSetFrameRate(framerate);
 	lineWidth = 2;
 	ofSetLineWidth(lineWidth);
+	canvas.lineWidth = lineWidth;
 
 	ofSetWindowTitle("LiveLily");
 
@@ -603,6 +606,8 @@ void ofApp::update()
 //--------------------------------------------------------------
 void ofApp::draw()
 {
+	// the brightness the views draw at, which the keys change (see WorkspaceHost::changeBrightness())
+	canvas.brightness = brightnessCoeff;
 	ofSetLineWidth(lineWidth);
 	for (std::map<int, Editor>::iterator it = editors.begin(); it != editors.end(); ++it) {
 		it->second.drawText();
@@ -748,13 +753,15 @@ void ofApp::drawScore()
 	//------------- variables for horizontal score view ------------------
 	//int numBars = 1;
 	bool drawLoopStartEnd = true;
+	bool horizontalLoopSigns = false;
 	int bar; //, prevBar = 0;
 	int ndx = session.sharedData.thisBarIndex;
 	if (scoreOrientation > 0) {
 		// numBars is part of the ofApp class and it's used to be compared to the previous number of bars displayed
 		// which is necessary to properly position single bars in horizontal view
 		view.numBars = std::min(numBarsToDisplay, (int)session.sharedData.loopData[session.sharedData.loopIndex].size());
-		drawLoopStartEnd = false;
+		// the repeat signs are drawn by the place of every bar in the loop, as more bars are shown (see Staff::drawStaff())
+		horizontalLoopSigns = true;
 		// the equation below yields the first bar to display
 		// the rest will be calculated by adding the loop variable i
 		// e.g. for an 8-bar loop with two bars being displayed
@@ -1083,7 +1090,13 @@ void ofApp::drawScore()
 				// drawn above every other staff, it would fall on the staff above it
 				bool drawTempoLocal = (showTempo && drawTempo && j == 0);
 				if (showBar) {
-					it->second.displayAs<ScoreView>().drawStaff(bar, staffOffsetX, yStartPnt, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempoLocal);
+					if (horizontalLoopSigns) {
+						it->second.displayAs<ScoreView>().drawStaff(bar, staffOffsetX, yStartPnt, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempoLocal,
+								barNdx, (int)session.sharedData.loopData[session.sharedData.loopIndex].size());
+					}
+					else {
+						it->second.displayAs<ScoreView>().drawStaff(bar, staffOffsetX, yStartPnt, scoreYOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempoLocal);
+					}
 					it->second.displayAs<ScoreView>().drawNotes(bar, i, &session.sharedData.loopData[insertNaturalsNdx], notesOffsetX, yStartPnt, scoreYOffset, animate, notesXCoef, nextBarOfScore);
 				}
 				yStartPnt += (view.allStaffDiffs + (view.staffLinesDist * 2));

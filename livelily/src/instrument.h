@@ -13,7 +13,7 @@
 
 #define MINDUR 256
 
-// what the front end draws of an instrument (its staff and its notes, see of_instrument_display.h), as the engine sees it
+// what the front end draws of an instrument (its staff and its notes, see score_view.h), as the engine sees it
 // the engine tells it what changes, as these calls, and the front end does the rest (layout, colors, drawing)
 class InstrumentDisplay
 {

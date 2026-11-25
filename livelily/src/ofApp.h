@@ -7,14 +7,13 @@
 #include "audio.h"
 #include "frontend.h"
 #include "session.h"
-#include "of_instrument_display.h"
+#include "score_view.h"
 #include "of_grid_painter.h"
 #include "keys.h"
 #include "view_state.h"
 #include "workspace.h"
+#include "of_canvas.h"
 
-// what is drawn of an instrument (its staff and its notes), which the front end attaches to every instrument
-using ScoreView = OfInstrumentDisplay;
 #include <map>
 #include <vector>
 #include <utility> // to add pair
@@ -47,6 +46,8 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		void update();
 		void draw();
 		void drawScore();
+		// what the views (the score) draw with (see canvas.h)
+		OfCanvas canvas;
 		// the panes, their layout and the area below them (see workspace.h), declared after the session, which it holds
 		Workspace workspace{session, *this};
 		// the names the app had for the state of the workspace, which it still uses

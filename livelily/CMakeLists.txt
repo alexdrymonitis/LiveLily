@@ -90,8 +90,8 @@ endif()
 
 # the core: the engine (session, parser, sequencer, instruments), the editor, its grids, and the keys
 set(LIVELILY_CORE_SOURCES
-	src/cellgrid.cpp src/clock.cpp src/codetext.cpp src/editor.cpp src/function.cpp src/instrument.cpp src/keys.cpp src/midifile.cpp src/musicxml.cpp src/osc.cpp src/osc_packet.cpp src/osc_udp.cpp
-	src/parser.cpp src/paths.cpp src/sequencer.cpp src/session.cpp src/session_dump.cpp src/session_setup.cpp src/soundfont.cpp
+	src/canvas.cpp src/cellgrid.cpp src/clock.cpp src/codetext.cpp src/editor.cpp src/function.cpp src/instrument.cpp src/keys.cpp src/midifile.cpp src/musicxml.cpp src/osc.cpp src/osc_packet.cpp src/osc_udp.cpp
+	src/parser.cpp src/paths.cpp src/score.cpp src/score_view.cpp src/sequencer.cpp src/session.cpp src/session_dump.cpp src/session_setup.cpp src/soundfont.cpp
 	src/serial_port.cpp src/system_command.cpp src/test_midi.cpp src/test_run.cpp src/udp.cpp src/workspace.cpp src/workspace_alignment.cpp src/workspace_editors.cpp src/workspace_keys.cpp src/workspace_shell.cpp)
 if(LIVELILY_PYO)
 	list(APPEND LIVELILY_CORE_SOURCES src/PyoClass.cpp src/pyo_classes.cpp)

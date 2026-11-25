@@ -1,40 +1,40 @@
-// what is drawn of an instrument with openFrameworks (see of_instrument_display.h), moved from the Instrument class
-#include "of_instrument_display.h"
+// what is drawn of an instrument with openFrameworks (see score_view.h), moved from the Instrument class
+#include "score_view.h"
 
 //--------------------------------------------------------------
-OfInstrumentDisplay::OfInstrumentDisplay()
+ScoreView::ScoreView()
 {
-	staff.staffColor = ofColor::black;
-	notesObj.notesColor = ofColor::black;
-	notesObj.activeNotesColor = ofColor::red;
+	staff.staffColor = Colors::black;
+	notesObj.notesColor = Colors::black;
+	notesObj.activeNotesColor = Colors::red;
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setNumBarsToDisplay(int numBars)
+void ScoreView::setNumBarsToDisplay(int numBars)
 {
 	staff.setNumBarsToDisplay(numBars);
 }
 
 //--------------------------------------------------------------
-float OfInstrumentDisplay::getXCoef()
+float ScoreView::getXCoef()
 {
 	return staff.getXCoef();
 }
 
 //--------------------------------------------------------------
-std::pair<int, int> OfInstrumentDisplay::isLinked(int bar)
+std::pair<int, int> ScoreView::isLinked(int bar)
 {
 	return notesObj.isBarLinked(bar);
 }
 
 //--------------------------------------------------------------
-std::pair<int, int> OfInstrumentDisplay::getMeter(int bar)
+std::pair<int, int> ScoreView::getMeter(int bar)
 {
 	return staff.getMeter(bar);
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setScoreNotes(Instrument& inst, int bar, int numerator, int denominator, int numBeats,
+void ScoreView::setScoreNotes(Instrument& inst, int bar, int numerator, int denominator, int numBeats,
 		int BPMTempo, int beatAtValue, bool hasDot, int BPMMultiplier)
 {
 	//setMeter(bar, numerator, denominator, numBeats);
@@ -68,7 +68,7 @@ void OfInstrumentDisplay::setScoreNotes(Instrument& inst, int bar, int numerator
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setNotePositions(int bar)
+void ScoreView::setNotePositions(int bar)
 {
 	notesObj.setNotePositions(bar);
 	notesObj.storeArticulationsCoords(bar);
@@ -81,7 +81,7 @@ void OfInstrumentDisplay::setNotePositions(int bar)
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setNotePositions(int bar, int numBars)
+void ScoreView::setNotePositions(int bar, int numBars)
 {
 	for (int i = 0; i < numBars; i++) {
 		notesObj.setNotePositions(bar+i);
@@ -114,13 +114,13 @@ void OfInstrumentDisplay::setNotePositions(int bar, int numBars)
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setNoteCoords(float xLen, float staffLineDist, int fontSize)
+void ScoreView::setNoteCoords(float xLen, float staffLineDist, int fontSize)
 {
 	notesObj.setCoords(xLen, staffLineDist, fontSize);
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setScoreOrientation(int orientation)
+void ScoreView::setScoreOrientation(int orientation)
 {
 	staff.setOrientation(orientation);
 	notesObj.setOrientation(orientation);
@@ -128,13 +128,13 @@ void OfInstrumentDisplay::setScoreOrientation(int orientation)
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setStaffColor(Color color)
+void ScoreView::setStaffColor(Color color)
 {
-	staff.staffColor = toOf(color);
+	staff.staffColor = color;
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setStaffColor(int color, int val)
+void ScoreView::setStaffColor(int color, int val)
 {
 	switch (color) {
 		case 0:
@@ -152,7 +152,7 @@ void OfInstrumentDisplay::setStaffColor(int color, int val)
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setStaffColor(int r, int g, int b)
+void ScoreView::setStaffColor(int r, int g, int b)
 {
 	staff.staffColor.r = r;
 	staff.staffColor.g = g;
@@ -160,19 +160,19 @@ void OfInstrumentDisplay::setStaffColor(int r, int g, int b)
 }
 
 //--------------------------------------------------------------
-Color OfInstrumentDisplay::getStaffColor()
+Color ScoreView::getStaffColor()
 {
-	return toColor(staff.staffColor);
+	return staff.staffColor;
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setNotesColor(Color color)
+void ScoreView::setNotesColor(Color color)
 {
-	notesObj.notesColor = toOf(color);
+	notesObj.notesColor = color;
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setNotesColor(int r, int g, int b)
+void ScoreView::setNotesColor(int r, int g, int b)
 {
 	notesObj.notesColor.r = r;
 	notesObj.notesColor.g = g;
@@ -180,7 +180,7 @@ void OfInstrumentDisplay::setNotesColor(int r, int g, int b)
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setNotesColor(int color, int val)
+void ScoreView::setNotesColor(int color, int val)
 {
 	switch (color) {
 		case 0:
@@ -198,19 +198,19 @@ void OfInstrumentDisplay::setNotesColor(int color, int val)
 }
 
 //--------------------------------------------------------------
-Color OfInstrumentDisplay::getNotesColor()
+Color ScoreView::getNotesColor()
 {
-	return toColor(notesObj.notesColor);
+	return notesObj.notesColor;
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setActiveNotesColor(Color color)
+void ScoreView::setActiveNotesColor(Color color)
 {
-	notesObj.activeNotesColor = toOf(color);
+	notesObj.activeNotesColor = color;
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setActiveNotesColor(int color, int val)
+void ScoreView::setActiveNotesColor(int color, int val)
 {
 	switch (color) {
 		case 0:
@@ -228,7 +228,7 @@ void OfInstrumentDisplay::setActiveNotesColor(int color, int val)
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setActiveNotesColor(int r, int g, int b)
+void ScoreView::setActiveNotesColor(int r, int g, int b)
 {
 	notesObj.activeNotesColor.r = r;
 	notesObj.activeNotesColor.g = g;
@@ -236,13 +236,13 @@ void OfInstrumentDisplay::setActiveNotesColor(int r, int g, int b)
 }
 
 //--------------------------------------------------------------
-Color OfInstrumentDisplay::getActiveNotesColor()
+Color ScoreView::getActiveNotesColor()
 {
-	return toColor(notesObj.activeNotesColor);
+	return notesObj.activeNotesColor;
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::invertColor()
+void ScoreView::invertColor()
 {
 	staff.staffColor.r = 255 - staff.staffColor.r;
 	staff.staffColor.g = 255 - staff.staffColor.g;
@@ -256,102 +256,102 @@ void OfInstrumentDisplay::invertColor()
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::moveScoreX(int numPixels)
+void ScoreView::moveScoreX(int numPixels)
 {
 	staff.moveScoreX(numPixels);
 	notesObj.moveScoreX(numPixels);
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::moveScoreY(int numPixels)
+void ScoreView::moveScoreY(int numPixels)
 {
 	staff.moveScoreY(numPixels);
 	notesObj.moveScoreY(numPixels);
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::recenterScore()
+void ScoreView::recenterScore()
 {
 	staff.recenterScore();
 	notesObj.recenterScore();
 }
 
 //--------------------------------------------------------------
-float OfInstrumentDisplay::getStaffXStartOffset()
+float ScoreView::getStaffXStartOffset()
 {
 	return staff.getXStartOffset();
 }
 
 //--------------------------------------------------------------
-float OfInstrumentDisplay::getStaffXLength()
+float ScoreView::getStaffXLength()
 {
 	return staff.getXLength();
 }
 
 //--------------------------------------------------------------
-float OfInstrumentDisplay::getNoteWidth()
+float ScoreView::getNoteWidth()
 {
 	return notesObj.getNoteWidth();
 }
 
 //--------------------------------------------------------------
-float OfInstrumentDisplay::getNoteHeight()
+float ScoreView::getNoteHeight()
 {
 	return notesObj.getNoteHeight();
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setStaffCoords(float xStartPnt, float staffLineDist)
+void ScoreView::setStaffCoords(float xStartPnt, float staffLineDist)
 {
 	staff.setCoords(xStartPnt, staffLineDist);
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::setNotesFontSize(int fontSize, float staffLinesDist)
+void ScoreView::setNotesFontSize(int fontSize, float staffLinesDist)
 {
 	staff.setSize(fontSize, staffLinesDist);
 	notesObj.setFontSize(fontSize, staffLinesDist);
 }
 
 //--------------------------------------------------------------
-float OfInstrumentDisplay::getMinVsAnchor(int bar)
+float ScoreView::getMinVsAnchor(int bar)
 {
 	return notesObj.getMinVsAnchor(bar);
 }
 
 //--------------------------------------------------------------
-float OfInstrumentDisplay::getMaxYPos(int bar)
+float ScoreView::getMaxYPos(int bar)
 {
 	return notesObj.getMaxYPos(bar);
 }
 
 //--------------------------------------------------------------
-float OfInstrumentDisplay::getMinYPos(int bar)
+float ScoreView::getMinYPos(int bar)
 {
 	return notesObj.getMinYPos(bar);
 }
 
 //--------------------------------------------------------------
-float OfInstrumentDisplay::getClefXOffset()
+float ScoreView::getClefXOffset()
 {
 	return staff.getClefXOffset();
 }
 
 //--------------------------------------------------------------
-float OfInstrumentDisplay::getMeterXOffset()
+float ScoreView::getMeterXOffset()
 {
 	return staff.getMeterXOffset();
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::drawStaff(int bar, float xOffset, float yStartPnt, float yOffset, bool drawClef,
-		bool drawMeter, bool drawLoopStartEnd, bool drawTempo)
+void ScoreView::drawStaff(int bar, float xOffset, float yStartPnt, float yOffset, bool drawClef,
+		bool drawMeter, bool drawLoopStartEnd, bool drawTempo, int barOfLoop, int loopLength)
 {
-	staff.drawStaff(bar, xOffset, yStartPnt, yOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempo);
+	staff.drawStaff(bar, xOffset, yStartPnt, yOffset, drawClef, drawMeter, drawLoopStartEnd, drawTempo, barOfLoop, loopLength);
 }
 
 //--------------------------------------------------------------
-void OfInstrumentDisplay::drawNotes(int bar, int loopNdx,  std::vector<int> *v, float xOffset, float yStartPnt, float yOffset, bool animate, float xCoef, int nextBar)
+void ScoreView::drawNotes(int bar, int loopNdx,  std::vector<int> *v, float xOffset, float yStartPnt, float yOffset, bool animate, float xCoef, int nextBar)
 {
 	notesObj.drawNotes(bar, loopNdx, v, xOffset, yStartPnt, yOffset, animate, xCoef, nextBar);
 }

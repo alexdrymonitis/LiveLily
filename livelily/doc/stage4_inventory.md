@@ -15,6 +15,8 @@ Each step is one commit, checked with the snapshot tests of the app and the head
   - [x] 6a: the workspace answers what the editors and the engine ask (`workspace_editors.cpp`, `workspace_alignment.cpp`): running lines, the messages of lines, the note highlights, autocompletion, alignment; Ctrl+n asks to save, stops the sequencer before clearing the session (it crashed while playing), and leaves an untitled file (`Editor::newFile()`); checked live
   - [x] 6b: test mode in the core (`test_run.cpp`), and the headless runner with the panes, as large as the app's in test mode (1350 by 900 pixels, cells of 11 by 22), typing the keys of test files; CTest compares the whole dump with the app's snapshot (60 of 63 match it whole), up to the screen for keys that change the font size, and up to the editor's sections for keys that move the score (Ctrl+P), which the app's view code does until step 7
 - [ ] Step 7: the views (score, piano roll, sequencer, scope) draw through an interface, painted by openFrameworks with no visible change
+  - [x] 7a: the canvas (`canvas.h`, `of_canvas.cpp`), and the score drawing through it (`score.cpp`, `score_view.cpp`, which was `of_instrument_display.cpp`), in the core; the screenshots are the same (`tests/screenshots.sh`); the repeat signs are drawn in horizontal view too, by the place of every bar in its loop; checked live
+  - [ ] 7b: the views of `ofApp` (the layout and drawing of the score, the piano roll, the sequencer, the oscilloscope, the beat) in the core, drawing through the canvas
 - [ ] Step 8: the JUCE desktop app (window, grid painter, keys, clipboard, file dialogs, mouse, OpenGL, Bravura)
 - [ ] Step 9: test mode in the JUCE app, its screenshots compared with those of the openFrameworks app
 - [ ] Step 10: openFrameworks is removed, and CI builds the desktop app
@@ -24,7 +26,7 @@ Each step is one commit, checked with the snapshot tests of the app and the head
 | Files | What | Goes to |
 | --- | --- | --- |
 | `ofApp.cpp`, `ofApp.h`, `alignment.cpp`, `testmode.cpp` | the window, the drawing, and the front end's logic (panes, shell area, key dispatch, alignment, note highlights, quit prompt, test mode) | the logic to the core (steps 4 to 6), the rest to the JUCE app (step 8) |
-| `score.cpp`, `score.h`, `of_instrument_display.*` | the engraved score, with Adobe's Sonata font | a drawing interface (step 7), then JUCE and Bravura (step 8) |
+| `score.cpp`, `score.h`, `of_instrument_display.*` (now `score_view.*`) | the engraved score, with Adobe's Sonata font | a drawing interface (step 7), then JUCE and Bravura (step 8) |
 | `of_grid_painter.*`, `of_color.h` | painting the editor's grids | a JUCE painter (step 8) |
 | `of_midi.*` (ofxMidi) | MIDI output | JUCE (step 2) |
 | `of_osc.cpp` (ofxOsc) | OSC | in-house (step 1) |

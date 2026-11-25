@@ -1,7 +1,12 @@
 #ifndef SCORE_H
 #define SCORE_H
 
-#include "ofMain.h"
+#include "canvas.h"
+#include "color.h"
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
 #define EXTRALINECOEFF 0.7
@@ -32,8 +37,11 @@ class Staff
 		void moveScoreX(int numPixels);
 		void moveScoreY(int numPixels);
 		void recenterScore();
+		// the signs of the loop (its repeat signs, or the end of the score) are those of the bar that plays (isLoopStart, isLoopEnd, isScoreEnd)
+		// unless the place of the bar in the loop is given (barOfLoop, of loopLength bars), as in horizontal view, which shows more bars:
+		// then the first bar of the loop has the repeat sign of its start, and its last bar that of its end, or the end of the score
 		void drawStaff(int loopIndex, float xStartPnt, float yStartPnt, float yOffset, bool drawClef,
-				bool drawMeter, bool drawLoopStartEnd, bool drawTempo);
+				bool drawMeter, bool drawLoopStartEnd, bool drawTempo, int barOfLoop = -1, int loopLength = 0);
 		void drawLoopStart(int loopIndex, float xStart, float yStartPnt, float yOffset);
 		void drawLoopEnd(int loopIndex, float xEnd, float yStartPnt, float yOffset);
 		void drawScoreEnd(int loopIndex, float xEnd, float yStartPnt, float yOffset);
@@ -41,7 +49,7 @@ class Staff
 		bool isLoopStart;
 		bool isLoopEnd;
 		bool isScoreEnd;
-		ofColor staffColor;
+		Color staffColor;
 	private:
 		int objID;
 		int groupID;
@@ -73,8 +81,8 @@ class Staff
 		std::map<int, int> clefIndex;
 		int fontSize;
 		bool rhythm; // for rhythmic instruments
-		ofTrueTypeFont notationFont;
-		ofTrueTypeFont BPMDisplayFont;
+		std::shared_ptr<Font> notationFont = noFont();
+		std::shared_ptr<Font> BPMDisplayFont = noFont();
 };
 
 
@@ -172,7 +180,7 @@ class Notes
 		// whether a crescendo or diminuendo is left open at the end of a bar, so it is drawn to the end of the bar
 		void setDynamicsRampOpenAtEnd(int bar, bool open);
 		void drawThickLine(float x1, float y1, float x2, float y2);
-		int drawRest(int bar, int restDur, float x, float yStartPnt, ofColor color, float yOffset);
+		int drawRest(int bar, int restDur, float x, float yStartPnt, Color color, float yOffset);
 		void drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
 		// whether an accidental index (see accSyms) is drawn (not -1 for no accidental, or 9 for an accidental that is not repeated)
 		bool isDrawnAccidental(int ndx);
@@ -197,8 +205,8 @@ class Notes
 		bool mute;
 		int voiceNum = 1;
 		int forcedStemDir = 0; // 1 up, -1 down, 0 set by the position of the notes
-		ofColor notesColor;
-		ofColor activeNotesColor;
+		Color notesColor;
+		Color activeNotesColor;
 	private:
 		int objID;
 		bool rhythm;
@@ -314,8 +322,8 @@ class Notes
 		int scoreOrientationForDots;
 		std::map<int, float> distBetweenBeats;
 		std::map<int, bool> tacet;
-		ofTrueTypeFont notationFont;
-		ofTrueTypeFont textFont;
+		std::shared_ptr<Font> notationFont = noFont();
+		std::shared_ptr<Font> textFont = noFont();
 		// whole note, half note (without stem), filled note, tail for upward stem, tail for downward stem
 		std::string notesSyms[5] = {"w", "ú", "ö", "j", "J"};
 		// double flat, 1.5 flat, flat, half flat, natural, half sharp, sharp, 1.5 sharp, double sharp
@@ -338,14 +346,13 @@ class Notes
 		float dynSymsHeights[8];
 		float restsSymsWidths[6];
 		float restsSymsHeights[6];
-		//ofImage quarterSharp;
 		float noteWidth;
 		float noteHeight;
 		float middleOfStaff;
 		float stemHeight;
 		int beamIndexCounter;
 		int beamIndexCounter2;
-		int lineWidth; // from ofApp.h to give the correct offset to stems and connecting lines
+		int lineWidth; // the width of the lines of the app (see Canvas::lineWidth), to give the correct offset to stems and connecting lines
 		int beamsLineWidth;
 		float staffDist;
 		int fontSize;

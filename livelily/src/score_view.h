@@ -1,16 +1,16 @@
-#ifndef OF_INSTRUMENT_DISPLAY_H
-#define OF_INSTRUMENT_DISPLAY_H
+#ifndef SCORE_VIEW_H
+#define SCORE_VIEW_H
 
 #include "instrument.h"
 #include "score.h"
-#include "of_color.h"
 
-// what is drawn of an instrument with openFrameworks: its staff and its notes (see score.h), which the front end attaches to the instrument
-// (see InstrumentDisplay in instrument.h, and ofApp::instrumentCreated()), and reaches with instrument.displayAs<OfInstrumentDisplay>()
-class OfInstrumentDisplay : public InstrumentDisplay
+// what is drawn of an instrument in the score: its staff and its notes (see score.h), which the front end attaches to the instrument
+// and which draws with the canvas of the front end (see canvas.h)
+// (see InstrumentDisplay in instrument.h, and ofApp::instrumentCreated()), and reaches with instrument.displayAs<ScoreView>()
+class ScoreView : public InstrumentDisplay
 {
 	public:
-		OfInstrumentDisplay();
+		ScoreView();
 		// what the engine tells it (see InstrumentDisplay)
 		void setID(int id) override { staff.setID(id); notesObj.setID(id); }
 		void setGroup(int groupID) override { staff.setGroup(groupID); }
@@ -65,7 +65,9 @@ class OfInstrumentDisplay : public InstrumentDisplay
 		float getMinYPos(int bar);
 		float getClefXOffset();
 		float getMeterXOffset();
-		void drawStaff(int bar, float xOffset, float yStartPnt, float yOffset, bool drawClef, bool drawMeter, bool drawLoopStartEnd, bool drawTempo);
+		// barOfLoop and loopLength place the bar in its loop, for its repeat signs in horizontal view (see Staff::drawStaff())
+		void drawStaff(int bar, float xOffset, float yStartPnt, float yOffset, bool drawClef, bool drawMeter, bool drawLoopStartEnd, bool drawTempo,
+				int barOfLoop = -1, int loopLength = 0);
 		void drawNotes(int bar, int loopNdx, std::vector<int> *v, float xOffset, float yStartPnt, float yOffset, bool animate, float xCoef, int nextBar = -1);
 		int getForcedStemDir() { return notesObj.getForcedStemDir(); }
 		std::vector<Notes::NoteColumn> getNoteColumns(int bar) { return notesObj.getColumns(bar); }
