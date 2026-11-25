@@ -593,7 +593,7 @@ void Workspace::executeShellCommand()
 		removePane();
 	}
 	// :wa saves the files of all panes that have changes that are not saved, and :wqa saves them and quits
-	// files without a name can't be saved this way, so they are listed, and :wqa asks for their paths (see host.requestQuit())
+	// files without a name can't be saved this way, so they are listed, and :wqa asks for their paths (see requestQuit())
 	// :xa is the same as :wqa, as in Vim
 	else if (shellStr.compare(":wa") == 0 || shellStr.compare(":wqa") == 0 || shellStr.compare(":xa") == 0) {
 		bool quitting = (shellStr.compare(":wqa") == 0 || shellStr.compare(":xa") == 0);
@@ -607,7 +607,7 @@ void Workspace::executeShellCommand()
 		numShellLines = 0;
 		if (quitting) {
 			// the files that are left unsaved are asked for, with their paths if they have no name
-			host.requestQuit();
+			requestQuit();
 			return;
 		}
 		if (!notSaved.empty()) {
@@ -848,7 +848,8 @@ void Workspace::executeShellCommand()
 			numShellLines = 0;
 		}
 		else {
-			removePane();
+			// a pane with changes that are not saved asks whether to save them first, as quitting does
+			requestClosePane();
 		}
 	}
 	// :vs (or :vsplit) adds a pane side by side with the active one, and :sp (or :split) one below it, as in Vim
@@ -868,7 +869,7 @@ void Workspace::executeShellCommand()
 		if (hasFile) editors[session.whichPane].loadFile(arg);
 	}
 	else if (shellStr.compare(":qa") == 0) {
-		host.requestQuit();
+		requestQuit();
 	}
 	// :q! and :qa! quit without asking to save the files that have changes that are not saved, as in Vim
 	// :q! closes the pane when there are more panes (or the help file, if one is open), as :q does

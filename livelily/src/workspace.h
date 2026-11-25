@@ -40,18 +40,16 @@ class WorkspaceHost
 		virtual void revealActivePane() = 0;
 		// gives the panes the font of the editor, loaded again if reload is true, and lays out the panes if layout is true
 		virtual void applyFont(bool reload, bool layout) = 0;
-		// closing the last pane quits
-		virtual void requestQuit() = 0;
-		// the modifier keys that are held, which the pane that becomes active gets
-		struct Modifiers
-		{
-			bool shift;
-			bool ctrl;
-			bool alt;
-		};
-		virtual Modifiers heldModifiers() = 0;
-		// quits at once, without asking to save (:q! and :qa!)
+		// quits at once (:q! and :qa!, or after asking to save the files, see Workspace::requestQuit())
 		virtual void quitNow() = 0;
+		// what keys change in the front end: the size of the font of the editor (Ctrl+= and Ctrl+-), the size of the score
+		// (Ctrl+Shift+= and Ctrl+Shift+-), the brightness (Ctrl+Alt+= and Ctrl+Alt+-), full screen (Ctrl+f in insert mode)
+		// and hiding the score (Ctrl+n, which starts a new session)
+		virtual void changeFontSize(int delta) = 0;
+		virtual void changeScoreSize(int delta) = 0;
+		virtual void changeBrightness(float delta) = 0;
+		virtual void toggleFullscreen() = 0;
+		virtual void hideScore() = 0;
 		// the area below the panes has moved from a previous top (it has more or fewer lines), or is back at its base
 		// so the score can move with it
 		virtual void belowAreaMoved(float prevTop) = 0;
@@ -155,7 +153,51 @@ class Workspace
 		// runs a command of the system's shell, with its output and its errors in output, and returns its exit code
 		int runCommand(const std::string& cmd, std::string& output);
 
+		// the keys (with the codes of keys.h), pressed and released in the active pane, which also go to another LiveLily if its keys are sent
+		// (see \sendkeys), or in a pane that may not be the active one (from OSC, or typed from Python)
+		void keyPressed(int key);
+		void keyReleased(int key);
+		void keyPressedInPane(int key, int pane);
+		void keyReleasedInPane(int key, int pane);
+		// the modifier keys that are held, which the pane that becomes active gets
+		bool shiftPressed = false;
+		bool ctrlPressed = false;
+		bool altPressed = false;
+		// true after g is pressed in normal mode, so that a second g moves the cursor to the first line, as in Vim
+		bool gPressed = false;
+		// true after d is pressed in normal mode without a selection, so that a second d deletes the line, as in Vim
+		bool dPressed = false;
+		// true after Ctrl+w in normal mode, so that h, j, k, or l moves to the pane on the left, below, above, or on the right, as in Vim
+		bool ctrlWPressed = false;
+		// the first key of a binding of two keys that is held (see :bind), and the second key it waits for, or any digit with $
+		int editorBindingKey = -1;
+		int editorBindingArg = -1;
+		bool editorBindingIsDollar = false;
+
+		// quitting asks to save every pane with changes that are not saved, before quitting (see WorkspaceHost::quitNow())
+		// with "save file? y/n" in the shell, where y saves the file (asking for a path if it has none, see quitPromptKey()) and n doesn't
+		// Esc cancels quitting
+		void requestQuit();
+		// closing the active pane asks the same about it, if it has changes that are not saved (:q, Ctrl+w q, as in Vim)
+		// and closing the last pane quits; y saves the file and closes the pane, n closes it without saving, and Esc keeps it
+		void requestClosePane();
+		// 0 when not quitting, 1 when asking whether to save a pane, 2 when asking for the path to save it to
+		int quitPromptState = 0;
+		// true when the question is for closing the active pane, not for quitting
+		bool quitPromptClosesPane = false;
+		// the panes that are left to ask for
+		std::vector<int> quitPromptPanes;
+
 	private:
+		// what a key does, and what releasing it does
+		void executeKeyPressed(int key);
+		void executeKeyReleased(int key);
+		// in normal mode, Shift makes cursor moves select text only in visual mode
+		void setNormalModeShift();
+		// the keys typed while asking to save before quitting
+		void quitPromptKey(int key);
+		// asks to save the next pane with changes that are not saved, or quits if there are none left
+		void quitPromptNext();
 		// the messages of the lines of the active pane, or the shell, in belowGrid (see fillBelowArea())
 		void fillMessages();
 		void fillShell();

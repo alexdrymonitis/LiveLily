@@ -217,10 +217,9 @@ void Workspace::setActivePane(int activePane)
 	editors[session.whichPane].setActivity(true);
 	// the pane that becomes active has the modifier keys that are held now, as the front end keeps them, also when it makes another pane
 	// active by itself (e.g. swapScorePosition() while the font size changes with Ctrl held)
-	WorkspaceHost::Modifiers held = host.heldModifiers();
-	editors[session.whichPane].setShiftPressed(held.shift);
-	editors[session.whichPane].setCtrlPressed(held.ctrl);
-	editors[session.whichPane].setAltPressed(held.alt);
+	editors[session.whichPane].setShiftPressed(shiftPressed);
+	editors[session.whichPane].setCtrlPressed(ctrlPressed);
+	editors[session.whichPane].setAltPressed(altPressed);
 }
 
 //--------------------------------------------------------------
@@ -274,10 +273,9 @@ void Workspace::addPane(bool sideBySide)
 	session.whichPane = newKey;
 	editors[session.whichPane].setActivity(true);
 	// the new pane has the modifier keys that are held now (e.g. Ctrl, after Ctrl+Shift+V)
-	WorkspaceHost::Modifiers held = host.heldModifiers();
-	editors[session.whichPane].setShiftPressed(held.shift);
-	editors[session.whichPane].setCtrlPressed(held.ctrl);
-	editors[session.whichPane].setAltPressed(held.alt);
+	editors[session.whichPane].setShiftPressed(shiftPressed);
+	editors[session.whichPane].setCtrlPressed(ctrlPressed);
+	editors[session.whichPane].setAltPressed(altPressed);
 	// if we add a second pane with the score visible
 	// if the panes are split vertically and the score is also vertical (opposite values)
 	// or both are horizontal
@@ -306,7 +304,7 @@ void Workspace::addPane(bool sideBySide)
 void Workspace::removePane()
 {
 	if (editors.size() <= 1) {
-		host.requestQuit();
+		requestQuit();
 		return;
 	}
 	int paneRowWithCursor = editors[session.whichPane].getPaneRow();

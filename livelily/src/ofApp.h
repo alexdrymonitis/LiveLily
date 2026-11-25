@@ -90,7 +90,24 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 			if (reload) fontLoaded = false;
 			setFontSize(layout);
 		}
-		Modifiers heldModifiers() override { return {shiftPressed, ctrlPressed, altPressed}; }
+		void changeFontSize(int delta) override;
+		void changeScoreSize(int delta) override;
+		void changeBrightness(float delta) override { brightnessCoeff = std::min(1.f, std::max(0.f, brightnessCoeff + delta)); }
+		void toggleFullscreen() override
+		{
+			ofToggleFullscreen();
+			fullScreen = !fullScreen;
+		}
+		void hideScore() override { setShowScore(-1); }
+		// the state of the keys, which the workspace keeps (see workspace_keys.cpp)
+		bool& shiftPressed = workspace.shiftPressed;
+		bool& ctrlPressed = workspace.ctrlPressed;
+		bool& altPressed = workspace.altPressed;
+		bool& gPressed = workspace.gPressed;
+		bool& dPressed = workspace.dPressed;
+		int& editorBindingKey = workspace.editorBindingKey;
+		int& editorBindingArg = workspace.editorBindingArg;
+		bool& editorBindingIsDollar = workspace.editorBindingIsDollar;
 		void quitNow() override { exit(); }
 		void belowAreaMoved(float prevTop) override { moveScoreWithTraceback(prevTop); }
 		void belowAreaReset() override { resetScoreYOffset(); }
@@ -113,13 +130,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		void sendBeatVizInfo(int bar);
 		void moveCursorOnShiftReturn();
 		//---------------------------------
-		// the following two functions execute key commands
-		// so each can be called from any of the overloaded keyPressed() and keyRelease() below
-		// functions and lock the mutex without creating a dead lock
-		void executeKeyPressed(int key);
-		void executeKeyReleased(int key);
-		// in normal mode, Shift makes cursor moves select text only in visual mode
-		void setNormalModeShift();
 		// suggestions for the autocompletion of LiveLily panes (see Editor::updateCompletions())
 		// all commands, with their backslash, and the methods of a command or of an object (an instrument, a function, etc.), by its name with a backslash
 		std::vector<std::string> getCommandCompletions() override;
@@ -226,19 +236,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// parsing functions
 		void parseStrings(int index, int numLines) override;
 		//---------------------------------
-		// quitting
-		// quitting asks to save every pane with changes that are not saved, before calling exit()
-		// with "save file? y/n" in the shell, where y saves the file (asking for a path if it has none, see quitPromptKey()) and n doesn't
-		// Esc cancels quitting
-		void requestQuit() override;
-		// the keys typed while asking to save before quitting
-		void quitPromptKey(int key);
-		// asks to save the next pane with changes that are not saved, or quits if there are none left
-		void quitPromptNext();
-		// 0 when not quitting, 1 when asking whether to save a pane, 2 when asking for the path to save it to
-		int quitPromptState = 0;
-		// the panes that are left to ask for
-		std::vector<int> quitPromptPanes;
 		void sendCountdownToParts(int countdown);
 		void sendStopCountdownToParts();
 		void sendNewBarToParts(std::string barName, int barIndex);
@@ -329,15 +326,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 
 		// paints the area below the panes (Workspace::belowGrid), whose rows start at its top, with the text at the bottom of every row
 		void paintBelowGrid();
-		int editorBindingKey;
-		int editorBindingArg;
-		bool editorBindingIsDollar;
-		// true after g is pressed in normal mode, so that a second g moves the cursor to the first line, as in Vim
-		bool gPressed;
-		// true after d is pressed in normal mode without a selection, so that a second d deletes the line, as in Vim
-		bool dPressed = false;
-		// true after Ctrl+w in normal mode, so that h, j, k, or l moves to the pane on the left, below, above, or on the right, as in Vim
-		bool ctrlWPressed = false;
 
 
 
@@ -396,9 +384,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// from the baseline of the text to the bottom of its row in the editor (see setFontSize())
 		float characterOffset = 0;
 
-		bool shiftPressed;
-		bool ctrlPressed;
-		bool altPressed;
 
 		// global line width
 		int lineWidth;

@@ -2,7 +2,7 @@
 # up to the sections of the editor, which need the app (as tests/headless.sh does), in a CMake script so that it runs on every system
 #   cmake -DRUNNER=... -DLYV=... -DSNAPSHOT=... -DOUT=... -DPYO=ON|OFF -P compare.cmake
 # a test file that needs what this machine doesn't have is skipped (exit code 77): pyo in a build without it
-# or a SoundFont at an absolute path (or one in the home directory) that isn't there
+# or a SoundFont at an absolute path (or one in the home directory) that isn't there, and a test whose keys change the session (Ctrl+n)
 
 file(READ "${LYV}" lyv)
 
@@ -33,6 +33,14 @@ foreach(soundfont ${soundfonts})
 		return()
 	endif()
 endforeach()
+
+# the headless runner doesn't type the keys of a test file (the app does, see testmode.cpp), which is fine as long as they change
+# only the editor, but Ctrl+n starts a new session, which changes the parts of the dump that are compared
+# (until the headless runner has the editors, see doc/stage4_inventory.md, step 6)
+if(lyv MATCHES "% test keys:[^\n]*<C-n>")
+	skip("the test types Ctrl+n, which changes the session, and the headless runner doesn't type keys yet")
+	return()
+endif()
 
 execute_process(COMMAND "${RUNNER}" --test "${LYV}" --out "${OUT}" RESULT_VARIABLE result OUTPUT_QUIET ERROR_QUIET)
 if(NOT result EQUAL 0)
