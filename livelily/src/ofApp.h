@@ -33,20 +33,6 @@ using ScoreView = OfInstrumentDisplay;
 #include "PyoClass.h"
 #endif
 
-// a traceback change made outside the main thread (e.g. by a function called from the sequencer)
-// which is stored and applied to the editor in ofApp::update(), on the main thread
-struct PendingTraceback
-{
-	int pane;
-	int lineNum;
-	bool release; // true to release the traceback, false to set it with the two fields below
-	int errorCode;
-	std::string errorStr;
-	// name of the bound function that was running when this traceback was set, empty if none
-	// if not empty, the traceback goes to the line where this function is defined, if that line still defines it
-	std::string boundFunction;
-};
-
 class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, public EditorHost, public WorkspaceHost
 {
 	public:
@@ -130,32 +116,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		void sendBeatVizInfo(int bar);
 		void moveCursorOnShiftReturn();
 		//---------------------------------
-		// suggestions for the autocompletion of LiveLily panes (see Editor::updateCompletions())
-		// all commands, with their backslash, and the methods of a command or of an object (an instrument, a function, etc.), by its name with a backslash
-		std::vector<std::string> getCommandCompletions() override;
-		// the arguments of commands and methods, and the methods (the names of commandsMap without a backslash, e.g. pianoroll)
-		std::vector<std::string> getArgumentCompletions() override;
-		// whether a line that starts with this word is a melodic line (it is an instrument or a group of instruments)
-		bool startsMelodicLine(const std::string& word) override;
-		std::vector<std::string> getMethodCompletions(const std::string& name) override;
-		// suggestions for the autocompletion of Python panes, from the Python interpreter, so they are what executed code imported or defined
-		// the names of __main__ and the builtins for an empty dotted name, or the attributes of the object of a dotted name (e.g. a or np.random)
-		// empty if the interpreter is not running, or the first name is not known to it (its code hasn't been executed)
-		std::vector<std::string> pythonNames(const std::string& dotted) override;
-		// the parameters of a callable (e.g. Sine), as name=default or name, for the hint of its arguments (see Editor::argHintText())
-		std::vector<std::string> pythonSignature(const std::string& dotted) override;
-		// what autocompletion knows of the interpreter: all its names, and the attributes and parameters that have been asked for
-		// it is made again, when it is used, after any execution of Python code (from a pane, the sequencer, or LiveLily, see Pyo::getExecutions())
-		// so that it follows the objects that are created, changed, or deleted, and the interpreter is asked only about names it has
-		struct PythonTable {
-			bool made = false;
-			unsigned executions = 0;
-			std::set<std::string> names;
-			std::map<std::string, std::vector<std::string>> attributes;
-			std::map<std::string, std::vector<std::string>> signatures;
-		} pythonTable;
-		// makes the table again if Python code has been executed since it was made, returns false if the interpreter is not running
-		bool refreshPythonTable();
 		// overloaded keyPressed and keyReleased functions
 		// so out-of-focus editors can receive input from OSC
 		void keyPressedOsc(int key, int thisEditor) override;
@@ -170,11 +130,27 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// moves the score away from the active pane, if it covers it (with Alt+number and Ctrl+w)
 		void revealActivePane() override;
 		// what the engine asks of the user interface (see frontend.h)
-		void notePlaying(int instNdx, int bar, int noteNdx, bool playing) override { storeActiveEditorElement(instNdx, bar, noteNdx, playing); }
-		void restPlaying(int instNdx, int bar, int noteNdx) override { storeActiveEditorRest(instNdx, bar, noteNdx); }
-		void nothingPlaying(int instNdx) override { clearActiveEditorElement(instNdx); }
-		void setLineMessage(int pane, int line, int errorCode, const std::string& text, const std::string& boundFunction) override;
-		void clearLineMessage(int pane, int line, const std::string& boundFunction) override;
+		void notePlaying(int instNdx, int bar, int noteNdx, bool playing) override { workspace.storeActiveEditorElement(instNdx, bar, noteNdx, playing); }
+		void restPlaying(int instNdx, int bar, int noteNdx) override { workspace.storeActiveEditorRest(instNdx, bar, noteNdx); }
+		void nothingPlaying(int instNdx) override { workspace.clearActiveEditorElement(instNdx); }
+		void setLineMessage(int pane, int line, int errorCode, const std::string& text, const std::string& boundFunction) override
+		{
+			workspace.setLineMessage(pane, line, errorCode, text, boundFunction);
+		}
+		void clearLineMessage(int pane, int line, const std::string& boundFunction) override { workspace.clearLineMessage(pane, line, boundFunction); }
+		void storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNotes) override { workspace.storeEditorNoteSpans(lineNum, instNdx, barNdx, numNotes); }
+		// what the editors ask of the app, which the workspace answers (see workspace_editors.cpp and workspace_alignment.cpp)
+		std::vector<EditorNoteSpan> getActiveEditorNoteSpans(int pane) override { return workspace.getActiveEditorNoteSpans(pane); }
+		void parseStrings(int index, int numLines) override { workspace.parseStrings(index, numLines); }
+		void alignAfterEdit(int pane, bool space) override { workspace.alignAfterEdit(pane, space); }
+		void alignAfterPaste(int pane) override { workspace.alignAfterPaste(pane); }
+		bool startsMelodicLine(const std::string& word) override { return workspace.startsMelodicLine(word); }
+		std::vector<std::string> getCommandCompletions() override { return workspace.getCommandCompletions(); }
+		std::vector<std::string> getMethodCompletions(const std::string& name) override { return workspace.getMethodCompletions(name); }
+		std::vector<std::string> getArgumentCompletions() override { return workspace.getArgumentCompletions(); }
+		std::vector<std::string> pythonNames(const std::string& dotted) override { return workspace.pythonNames(dotted); }
+		std::vector<std::string> pythonSignature(const std::string& dotted) override { return workspace.pythonSignature(dotted); }
+		std::map<std::pair<int, int>, std::vector<std::vector<EditorNoteSpan>>>& editorNoteSpans = workspace.editorNoteSpans;
 		void showMouseCursor(bool show) override { if (show) ofShowCursor(); else ofHideCursor(); }
 		float frameRate() override { return ofGetFrameRate(); }
 		void setFrameRate(int framesPerSecond) override { ofSetFrameRate(framesPerSecond); }
@@ -215,26 +191,7 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		int windowHeight() override { return ofGetHeight(); }
 		std::pair<int, int> mousePosition() override { return {mouseX, mouseY}; }
 		void setPaneFromOsc(int pane, const std::string& address) override { fromOscAddr[pane] = address; fromOsc[pane] = true; }
-		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);
-		// the same for a rest, which stays highlighted until the next note or rest replaces it
-		void storeActiveEditorRest(int instNdx, int barNdx, int dataCounter);
-		// stops highlighting the element of an instrument (e.g. a rest followed by a muted note)
-		void clearActiveEditorElement(int instNdx);
-		// highlighting the tokens of the notes that play in the editor, as in Strudel (see \editor.animate)
-		// when a bar is parsed, the place of the token of every note of every instrument is stored (more than one token for a note
-		// of a bar that copies another bar, e.g. both \1 and the note in bar 1), and the sequencer sets which note plays
-		void storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNotes) override;
-		std::vector<EditorNoteSpan> getActiveEditorNoteSpans(int paneNdx) override;
-		// the tokens of every note, by instrument and bar
-		std::map<std::pair<int, int>, std::vector<std::vector<EditorNoteSpan>>> editorNoteSpans;
-		// the note that plays for every instrument, as its bar and its index, set by the sequencer thread, so guarded by a mutex
-		std::map<int, std::pair<int, int>> activeEditorNotes;
-		// the instruments whose active element is a rest, which is highlighted only if it is written as a rest in the line (see getActiveEditorNoteSpans())
-		std::set<int> activeEditorRests;
-		std::mutex activeEditorNotesMutex;
 		//---------------------------------
-		// parsing functions
-		void parseStrings(int index, int numLines) override;
 		//---------------------------------
 		void sendCountdownToParts(int countdown);
 		void sendStopCountdownToParts();
@@ -303,14 +260,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// a mutex to avoid accessing the same data by different threads at the same time
 		ofMutex mutex;
 
-		void applyPendingTracebacks();
-		// returns the pane and line where a function is defined, searching its pane if the definition has moved
-		// returns {-1, -1} if the definition is no longer in the pane
-		std::pair<int, int> findFunctionDefinitionLine(const std::string& funcName);
-		bool lineDefinesFunction(const std::string& str, const std::string& funcName);
-		std::thread::id mainThreadId;
-		std::mutex pendingTracebacksMutex;
-		std::vector<PendingTraceback> pendingTracebacks;
 		float screenSplitHorizontal;
 		float oneCharacterWidth;
 		int halfCharacterWidth;
@@ -333,19 +282,6 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// the map of vectors below is used to determine the number of lines to execute
 		// if we start from the first line of a chunk that is not indented
 		std::map<int, std::vector<std::string>> noIndentCheck;
-		// aligning the melodic lines of bar definitions in a pane to a grid of durations (see \editor.alignment and alignment.cpp)
-		// all of them, the one with the cursor after its text is edited (space is true for a space), and back to single spaces
-		void alignBars(int pane);
-		void alignAfterEdit(int pane, bool space) override;
-		// after pasting, which can add lines to more than one bar definition (e.g. a whole bar), all of them, with the cursor staying where it is
-		void alignAfterPaste(int pane) override;
-		void unalignBars(int pane);
-		// aligns the lines of a bar definition (from firstLine to lastLine), and gives the new column of the cursor if it is in one of them
-		// the cursor goes to the token after it (after a space), or with keepInToken, stays in the token it is in (after any other edit)
-		// with keepInToken, nothing is aligned if the line of the cursor can't be read (e.g. a token that is half typed)
-		bool alignBarLines(int pane, int firstLine, int lastLine, int cursorLine, int cursorCol, int& newCursorCol, bool keepInToken = false);
-		// moves the tokens the notes highlight (see storeEditorNoteSpans()) in a line whose tokens have moved, from their old starts to their new ones
-		void moveHighlights(int pane, int lineNdx, const std::map<int, int>& newStarts);
 
 		// moves note heads of the voices of a staff that sound together so they don't collide, as LilyPond does by default
 		void applyMergeLayout(int bar);

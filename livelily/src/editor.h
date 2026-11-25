@@ -302,6 +302,8 @@ class Editor
 		void saveExistingFile();
 		// whether the text has changes that are not saved, and the name of the file (untitled.lyv etc. if it has none)
 		bool isFileEdited() { return fileEdited; }
+		// an empty pane with a new file without a name, as when LiveLily starts (Ctrl+n, see Workspace::newSession())
+		void newFile();
 		std::string getFileName() { return (fileLoaded ? loadedFileStr : defaultFileNames[thisLang]); }
 		// writes the LiveLily code converted from a MusicXML or a MIDI file to the editor (see loadFile())
 		void loadConvertedLines(const std::vector<std::string>& convertedLines);

@@ -11,7 +11,8 @@
 // a repetition, or a comment) is left as it is, without affecting the others
 // in \bars, every bar (between the | separators) is aligned separately, with its own unit, so the separators are aligned too
 
-#include "ofApp.h"
+#include "workspace.h"
+#include "session.h"
 #include "tokens.h"
 #include <numeric>
 #include <algorithm>
@@ -258,7 +259,7 @@ std::string singleSpaces(const std::string& str)
 }
 
 //--------------------------------------------------------------
-bool ofApp::alignBarLines(int pane, int firstLine, int lastLine, int cursorLine, int cursorCol, int& newCursorCol, bool keepInToken)
+bool Workspace::alignBarLines(int pane, int firstLine, int lastLine, int cursorLine, int cursorCol, int& newCursorCol, bool keepInToken)
 {
 	Editor& editor = editors[pane];
 	// the melodic lines that can be aligned: a line that starts with a name (with a backslash) that is not a command or another kind of name
@@ -436,7 +437,7 @@ bool ofApp::alignBarLines(int pane, int firstLine, int lastLine, int cursorLine,
 }
 
 //--------------------------------------------------------------
-void ofApp::moveHighlights(int pane, int lineNdx, const std::map<int, int>& newStarts)
+void Workspace::moveHighlights(int pane, int lineNdx, const std::map<int, int>& newStarts)
 {
 	int lineId = editors[pane].getLineId(lineNdx);
 	for (auto& bar : editorNoteSpans) {
@@ -465,7 +466,7 @@ static bool barDefinitionLines(Editor& editor, const BracketChunk& chunk, int& f
 }
 
 //--------------------------------------------------------------
-void ofApp::alignBars(int pane)
+void Workspace::alignBars(int pane)
 {
 	Editor& editor = editors[pane];
 	if (editor.allLines.empty()) return;
@@ -478,7 +479,7 @@ void ofApp::alignBars(int pane)
 }
 
 //--------------------------------------------------------------
-void ofApp::alignAfterEdit(int pane, bool space)
+void Workspace::alignAfterEdit(int pane, bool space)
 {
 	Editor& editor = editors[pane];
 	if (editor.allLines.empty()) return;
@@ -496,7 +497,7 @@ void ofApp::alignAfterEdit(int pane, bool space)
 }
 
 //--------------------------------------------------------------
-void ofApp::alignAfterPaste(int pane)
+void Workspace::alignAfterPaste(int pane)
 {
 	Editor& editor = editors[pane];
 	if (editor.allLines.empty()) return;
@@ -518,7 +519,7 @@ void ofApp::alignAfterPaste(int pane)
 }
 
 //--------------------------------------------------------------
-void ofApp::unalignBars(int pane)
+void Workspace::unalignBars(int pane)
 {
 	// the melodic lines of the bar definitions get single spaces between their tokens again
 	Editor& editor = editors[pane];

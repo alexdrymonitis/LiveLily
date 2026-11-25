@@ -248,25 +248,7 @@ void Workspace::executeKeyPressed(int key)
 				requestQuit();
 			}
 			else if (char(key) == 'n' && editors[session.whichPane].isCtrlPressed()) {
-				// remove all panes but one
-				while (editors.size() > 1) {
-					removePane();
-				}
-				{
-					// the sequencer might be playing, so the instruments are not cleared while it goes through them
-					std::lock_guard<std::recursive_mutex> instrumentsLock(session.sharedData.instrumentsMutex);
-					session.clearBars();
-					session.clearLoops();
-					session.clearLists();
-					session.clearFunctions();
-					session.clearInstruments();
-				}
-				// hide score
-				host.hideScore();
-				editors[session.whichPane].clearText();
-				editors[session.whichPane].createNewLine("", 1);
-				// a new session starts a new history
-				editors[session.whichPane].clearUndoHistory();
+				requestNewSession();
 			}
 			// add panes. V for vertical, H for horizontal (with shift pressed)
 			else if (((key == 86) || (key == 72)) && editors[session.whichPane].isCtrlPressed()) {
@@ -529,6 +511,7 @@ void Workspace::setNormalModeShift()
 //--------------------------------------------------------------
 void Workspace::requestQuit()
 {
+	quitPromptFor = QuitPromptFor::quit;
 	quitPromptPanes.clear();
 	for (auto& editor : editors) {
 		// a help file is not saved, it replaces the text of its pane only while it is open
@@ -550,9 +533,46 @@ void Workspace::requestClosePane()
 		removePane();
 		return;
 	}
-	quitPromptClosesPane = true;
+	quitPromptFor = QuitPromptFor::closePane;
 	quitPromptPanes = {session.whichPane};
 	quitPromptNext();
+}
+
+//--------------------------------------------------------------
+void Workspace::requestNewSession()
+{
+	quitPromptPanes.clear();
+	for (auto& editor : editors) {
+		if (editor.second.isFileEdited() && !editor.second.isHelpFileOpen()) quitPromptPanes.push_back(editor.first);
+	}
+	quitPromptFor = QuitPromptFor::newSession;
+	quitPromptNext();
+}
+
+//--------------------------------------------------------------
+void Workspace::newSession()
+{
+	// the sequencer stops first, and its thread ends, as it would go on playing the bars and loops that are cleared below
+	// (as quitting does, see ofApp::exit())
+	session.sequencer.stopNow();
+	session.sequencer.waitForThread();
+	// remove all panes but one
+	while (editors.size() > 1) {
+		removePane();
+	}
+	{
+		// the sequencer might be playing, so the instruments are not cleared while it goes through them
+		std::lock_guard<std::recursive_mutex> instrumentsLock(session.sharedData.instrumentsMutex);
+		session.clearBars();
+		session.clearLoops();
+		session.clearLists();
+		session.clearFunctions();
+		session.clearInstruments();
+	}
+	// hide score
+	host.hideScore();
+	// an empty pane, with a new file without a name and a new history
+	editors[session.whichPane].newFile();
 }
 
 //--------------------------------------------------------------
@@ -560,18 +580,20 @@ void Workspace::quitPromptNext()
 {
 	if (quitPromptPanes.empty()) {
 		quitPromptState = 0;
-		if (quitPromptClosesPane) {
-			// the pane is closed, and the shell that asked is cleared
-			quitPromptClosesPane = false;
-			shellStr.clear();
-			shellLsOutputStr.clear();
-			numShellLines = numShellLsOutputLines = 0;
-			editors[session.whichPane].setTypingShell(false);
-			editors[session.whichPane].setShowingShell(false);
-			removePane();
+		QuitPromptFor what = quitPromptFor;
+		quitPromptFor = QuitPromptFor::quit;
+		if (what == QuitPromptFor::quit) {
+			host.quitNow();
 			return;
 		}
-		host.quitNow();
+		// the shell that asked is cleared, and the pane is closed, or a new session starts
+		shellStr.clear();
+		shellLsOutputStr.clear();
+		numShellLines = numShellLsOutputLines = 0;
+		editors[session.whichPane].setTypingShell(false);
+		editors[session.whichPane].setShowingShell(false);
+		if (what == QuitPromptFor::closePane) removePane();
+		else newSession();
 		return;
 	}
 	int pane = quitPromptPanes.front();
@@ -599,7 +621,7 @@ void Workspace::quitPromptKey(int key)
 	// Esc cancels quitting, or closing the pane
 	if (key == 27) {
 		quitPromptState = 0;
-		quitPromptClosesPane = false;
+		quitPromptFor = QuitPromptFor::quit;
 		quitPromptPanes.clear();
 		shellStr.clear();
 		shellLsOutputStr.clear();

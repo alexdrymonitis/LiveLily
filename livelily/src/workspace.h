@@ -5,10 +5,28 @@
 #include "cellgrid.h"
 #include "color.h"
 #include <map>
+#include <mutex>
+#include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 class Session;
+
+// a message of a line set or cleared outside the main thread (e.g. by a function called from the sequencer)
+// which is stored and applied to its editor on the main thread (see Workspace::applyPendingTracebacks())
+struct PendingTraceback
+{
+	int pane;
+	int lineNum;
+	bool release; // true to release the traceback, false to set it with the two fields below
+	int errorCode;
+	std::string errorStr;
+	// name of the bound function that was running when this traceback was set, empty if none
+	// if not empty, the traceback goes to the line where this function is defined, if that line still defines it
+	std::string boundFunction;
+};
+
 
 // what the panes ask of the front end that shows them: the size of the window and of a character cell, where the score is,
 // and what the front end does when the panes change (see Workspace)
@@ -183,10 +201,87 @@ class Workspace
 		void requestClosePane();
 		// 0 when not quitting, 1 when asking whether to save a pane, 2 when asking for the path to save it to
 		int quitPromptState = 0;
-		// true when the question is for closing the active pane, not for quitting
-		bool quitPromptClosesPane = false;
+		// Ctrl+n asks the same about every pane, before it closes all panes but one and clears the session
+		void requestNewSession();
+		// what the question is asked for: quitting, closing the active pane, or a new session
+		enum class QuitPromptFor { quit, closePane, newSession };
+		QuitPromptFor quitPromptFor = QuitPromptFor::quit;
 		// the panes that are left to ask for
 		std::vector<int> quitPromptPanes;
+
+
+		// what the editors and the engine ask of the workspace, which the front end passes on (see workspace_editors.cpp)
+		// running lines of the active pane (Ctrl+Return), and sending them to another LiveLily if its lines are sent (see \\sendlines)
+		void parseStrings(int index, int numLines);
+		// the message of a line, set or cleared from any thread, and applied on the main thread (by applyPendingTracebacks() from other threads)
+		void setLineMessage(int pane, int line, int errorCode, const std::string& text, const std::string& boundFunction);
+		void clearLineMessage(int pane, int line, const std::string& boundFunction);
+		void applyPendingTracebacks();
+		// returns the pane and line where a function is defined, searching its pane if the definition has moved
+		// returns {-1, -1} if the definition is no longer in the pane
+		std::pair<int, int> findFunctionDefinitionLine(const std::string& funcName);
+		bool lineDefinesFunction(const std::string& str, const std::string& funcName);
+		// the thread that made the workspace, the main thread of the front end
+		std::thread::id mainThreadId = std::this_thread::get_id();
+		std::mutex pendingTracebacksMutex;
+		std::vector<PendingTraceback> pendingTracebacks;
+		// the note of an instrument that plays, which the editor highlights, by its bar and its index in the bar
+		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);
+		// the same for a rest, which stays highlighted until the next note or rest replaces it
+		void storeActiveEditorRest(int instNdx, int barNdx, int dataCounter);
+		// stops highlighting the element of an instrument (e.g. a rest followed by a muted note)
+		void clearActiveEditorElement(int instNdx);
+		// highlighting the tokens of the notes that play in the editor, as in Strudel (see \editor.animate)
+		// when a bar is parsed, the place of the token of every note of every instrument is stored (more than one token for a note
+		// of a bar that copies another bar, e.g. both \1 and the note in bar 1), and the sequencer sets which note plays
+		void storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNotes);
+		std::vector<EditorNoteSpan> getActiveEditorNoteSpans(int paneNdx);
+		// the tokens of every note, by instrument and bar
+		std::map<std::pair<int, int>, std::vector<std::vector<EditorNoteSpan>>> editorNoteSpans;
+		// the note that plays for every instrument, as its bar and its index, set by the sequencer thread, so guarded by a mutex
+		std::map<int, std::pair<int, int>> activeEditorNotes;
+		// the instruments whose active element is a rest, which is highlighted only if it is written as a rest in the line (see getActiveEditorNoteSpans())
+		std::set<int> activeEditorRests;
+		std::mutex activeEditorNotesMutex;
+		// suggestions for the autocompletion of LiveLily panes (see Editor::updateCompletions())
+		// all commands, with their backslash, and the methods of a command or of an object (an instrument, a function, etc.), by its name with a backslash
+		std::vector<std::string> getCommandCompletions();
+		// the arguments of commands and methods, and the methods (the names of commandsMap without a backslash, e.g. pianoroll)
+		std::vector<std::string> getArgumentCompletions();
+		// whether a line that starts with this word is a melodic line (it is an instrument or a group of instruments)
+		bool startsMelodicLine(const std::string& word);
+		std::vector<std::string> getMethodCompletions(const std::string& name);
+		// suggestions for the autocompletion of Python panes, from the Python interpreter, so they are what executed code imported or defined
+		// the names of __main__ and the builtins for an empty dotted name, or the attributes of the object of a dotted name (e.g. a or np.random)
+		// empty if the interpreter is not running, or the first name is not known to it (its code hasn't been executed)
+		std::vector<std::string> pythonNames(const std::string& dotted);
+		// the parameters of a callable (e.g. Sine), as name=default or name, for the hint of its arguments (see Editor::argHintText())
+		std::vector<std::string> pythonSignature(const std::string& dotted);
+		// what autocompletion knows of the interpreter: all its names, and the attributes and parameters that have been asked for
+		// it is made again, when it is used, after any execution of Python code (from a pane, the sequencer, or LiveLily, see Pyo::getExecutions())
+		// so that it follows the objects that are created, changed, or deleted, and the interpreter is asked only about names it has
+		struct PythonTable {
+			bool made = false;
+			unsigned executions = 0;
+			std::set<std::string> names;
+			std::map<std::string, std::vector<std::string>> attributes;
+			std::map<std::string, std::vector<std::string>> signatures;
+		} pythonTable;
+		// makes the table again if Python code has been executed since it was made, returns false if the interpreter is not running
+		bool refreshPythonTable();
+		// aligning the melodic lines of bar definitions in a pane to a grid of durations (see \editor.alignment and alignment.cpp)
+		// all of them, the one with the cursor after its text is edited (space is true for a space), and back to single spaces
+		void alignBars(int pane);
+		void alignAfterEdit(int pane, bool space);
+		// after pasting, which can add lines to more than one bar definition (e.g. a whole bar), all of them, with the cursor staying where it is
+		void alignAfterPaste(int pane);
+		void unalignBars(int pane);
+		// aligns the lines of a bar definition (from firstLine to lastLine), and gives the new column of the cursor if it is in one of them
+		// the cursor goes to the token after it (after a space), or with keepInToken, stays in the token it is in (after any other edit)
+		// with keepInToken, nothing is aligned if the line of the cursor can't be read (e.g. a token that is half typed)
+		bool alignBarLines(int pane, int firstLine, int lastLine, int cursorLine, int cursorCol, int& newCursorCol, bool keepInToken = false);
+		// moves the tokens the notes highlight (see storeEditorNoteSpans()) in a line whose tokens have moved, from their old starts to their new ones
+		void moveHighlights(int pane, int lineNdx, const std::map<int, int>& newStarts);
 
 	private:
 		// what a key does, and what releasing it does
@@ -194,6 +289,8 @@ class Workspace
 		void executeKeyReleased(int key);
 		// in normal mode, Shift makes cursor moves select text only in visual mode
 		void setNormalModeShift();
+		// closes all panes but one, clears the session, and empties the pane (Ctrl+n, see requestNewSession())
+		void newSession();
 		// the keys typed while asking to save before quitting
 		void quitPromptKey(int key);
 		// asks to save the next pane with changes that are not saved, or quits if there are none left

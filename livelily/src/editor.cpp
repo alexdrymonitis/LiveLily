@@ -3827,6 +3827,20 @@ void Editor::clearText()
 }
 
 //--------------------------------------------------------------
+void Editor::newFile()
+{
+	if (helpFileOpen) closeHelpFile();
+	clearText();
+	createNewLine("", 1);
+	clearUndoHistory();
+	// a file without a name (untitled), with nothing to save, so that the file the pane had isn't overwritten with the empty text
+	fileLoaded = false;
+	loadedFileStr.clear();
+	loadedFileFullPath.clear();
+	fileEdited = false;
+}
+
+//--------------------------------------------------------------
 void Editor::deleteString()
 {
 	// deleting a selection (or a character in normal mode) is an undo step of its own

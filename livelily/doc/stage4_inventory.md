@@ -12,6 +12,8 @@ Each step is one commit, checked with the snapshot tests of the app and the head
 - [x] Step 4: the panes, their layout and the shell area leave `ofApp` for the core (`Workspace`, in `workspace.h`, `workspace.cpp` and `workspace_shell.cpp`, with `WorkspaceHost` for what it asks of the front end; `ofApp` keeps aliases of its state until the later steps); two older bugs with the score below or above the panes fixed on the way (`:sp` with one pane, and the focus when the score moves to the bottom row); checked live
 - [x] Step 5: the key dispatch and the quit prompt leave `ofApp` (`workspace_keys.cpp`; `WorkspaceHost` changes the font, the score, the brightness and full screen for the keys); closing a pane with changes that are not saved asks first, as quitting does; Ctrl+n closes all panes but one (it closed only half of them); checked live
 - [ ] Step 6: alignment, the note highlights and test mode leave `ofApp`; the headless tests check the editor's sections
+  - [x] 6a: the workspace answers what the editors and the engine ask (`workspace_editors.cpp`, `workspace_alignment.cpp`): running lines, the messages of lines, the note highlights, autocompletion, alignment; Ctrl+n asks to save, stops the sequencer before clearing the session (it crashed while playing), and leaves an untitled file (`Editor::newFile()`); checked live
+  - [ ] 6b: test mode in the core, and the headless runner with the editors, typing the keys of test files
 - [ ] Step 7: the views (score, piano roll, sequencer, scope) draw through an interface, painted by openFrameworks with no visible change
 - [ ] Step 8: the JUCE desktop app (window, grid painter, keys, clipboard, file dialogs, mouse, OpenGL, Bravura)
 - [ ] Step 9: test mode in the JUCE app, its screenshots compared with those of the openFrameworks app
@@ -66,6 +68,11 @@ and bundles are unpacked into their messages.
   enumeration missed; a write waits at most a second.
 - No flow control: ofSerial turned on RTS/CTS on Linux, which blocks writes to a device without those lines.
 - 460800 and 921600 baud are added; any other speed LiveLily doesn't know is 9600, as with ofSerial.
+
+## Follow-ups
+
+- `\insts.clear` stops the sequencer (`stopNow()`) but doesn't wait for its thread to end before clearing the instruments,
+  as Ctrl+n now does (see `Workspace::newSession()`); no crash has been seen, but it is the same kind of race.
 
 ## Steps, in order
 
