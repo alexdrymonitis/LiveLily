@@ -48,6 +48,8 @@ class AudioStream
 		// starts the stream, which calls the callback from the audio thread, and returns false if it can't start
 		virtual bool setup(const AudioSettings& settings, AudioCallback* callback) = 0;
 		virtual void close() = 0;
+		// the device the stream plays to, with its sample rate and its buffer size, as the platform names it, or empty if it isn't open
+		virtual std::string currentDevice() { return ""; }
 };
 
 // the platform makes it (of_audio.cpp for now)

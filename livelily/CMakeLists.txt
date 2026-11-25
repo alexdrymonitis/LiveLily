@@ -14,7 +14,6 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(LIVELILY_PYO "Build with Python and pyo (needs Python's development files, and pyo installed in that Python)" ON)
-set(LIVELILY_RTMIDI_DIR "" CACHE PATH "A directory with RtMidi.cpp and RtMidi.h to build with, instead of fetching RtMidi")
 
 # FluidSynth, for SoundFonts (\instname.sndfont): with pkg-config (Linux, macOS), as a CMake package (e.g. vcpkg on Windows)
 # or as a library file of its own
@@ -58,28 +57,35 @@ if(LIVELILY_PYO)
 	find_package(Python3 COMPONENTS Interpreter Development.Embed REQUIRED)
 endif()
 
-# RtMidi, for the MIDI ports of the headless runner: from a directory given, or fetched at a fixed version
-if(LIVELILY_RTMIDI_DIR)
-	add_library(rtmidi STATIC "${LIVELILY_RTMIDI_DIR}/RtMidi.cpp")
-	target_include_directories(rtmidi PUBLIC "${LIVELILY_RTMIDI_DIR}" "${PROJECT_SOURCE_DIR}/headless/compat")
-	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-		find_package(ALSA REQUIRED)
-		target_compile_definitions(rtmidi PUBLIC __LINUX_ALSA__)
-		target_link_libraries(rtmidi PUBLIC ALSA::ALSA)
-	elseif(APPLE)
-		target_compile_definitions(rtmidi PUBLIC __MACOSX_CORE__)
-		target_link_libraries(rtmidi PUBLIC "-framework CoreMIDI" "-framework CoreAudio" "-framework CoreFoundation")
-	elseif(WIN32)
-		target_compile_definitions(rtmidi PUBLIC __WINDOWS_MM__)
-		target_link_libraries(rtmidi PUBLIC winmm)
-	endif()
+# JUCE, for the platform (MIDI and audio devices, see platform/), from a directory given (e.g. a JUCE checkout), or fetched at a fixed version
+# (AGPLv3, see the migration plan); its helper juceaide is built when CMake configures
+set(LIVELILY_JUCE_DIR "" CACHE PATH "A directory with JUCE to build with, instead of fetching JUCE")
+if(LIVELILY_JUCE_DIR)
+	add_subdirectory("${LIVELILY_JUCE_DIR}" "${CMAKE_BINARY_DIR}/juce" EXCLUDE_FROM_ALL)
 else()
 	include(FetchContent)
-	set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-	set(RTMIDI_BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
-	set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
-	FetchContent_Declare(rtmidi GIT_REPOSITORY https://github.com/thestk/rtmidi.git GIT_TAG 6.0.0 GIT_SHALLOW TRUE)
-	FetchContent_MakeAvailable(rtmidi)
+	FetchContent_Declare(juce GIT_REPOSITORY https://github.com/juce-framework/JUCE.git GIT_TAG 8.0.12 GIT_SHALLOW TRUE)
+	FetchContent_MakeAvailable(juce)
+endif()
+
+# the platform of LiveLily with JUCE: MIDI output (in-house on Linux) and audio devices, compiled into every program that links it, with the JUCE modules it needs
+add_library(livelily_platform_juce INTERFACE)
+target_sources(livelily_platform_juce INTERFACE "${PROJECT_SOURCE_DIR}/platform/juce_audio.cpp" "${PROJECT_SOURCE_DIR}/platform/juce_platform.cpp")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	# MIDI with the ALSA sequencer, as JUCE's MIDI sends nothing with kernels whose sequencer has no MIDI 2.0 (see alsa_midi.cpp)
+	find_package(ALSA REQUIRED)
+	target_sources(livelily_platform_juce INTERFACE "${PROJECT_SOURCE_DIR}/platform/alsa_midi.cpp")
+	target_link_libraries(livelily_platform_juce INTERFACE ALSA::ALSA)
+else()
+	target_sources(livelily_platform_juce INTERFACE "${PROJECT_SOURCE_DIR}/platform/juce_midi.cpp")
+endif()
+target_include_directories(livelily_platform_juce INTERFACE "${PROJECT_SOURCE_DIR}/platform")
+target_link_libraries(livelily_platform_juce INTERFACE juce::juce_audio_devices juce::juce_recommended_config_flags)
+target_compile_definitions(livelily_platform_juce INTERFACE
+	JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 JUCE_STANDALONE_APPLICATION=1 JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	# JACK, besides ALSA: JUCE loads the JACK library when the program runs, and needs only its headers to build
+	target_compile_definitions(livelily_platform_juce INTERFACE JUCE_JACK=1)
 endif()
 
 # the core: the engine (session, parser, sequencer, instruments), the editor, its grids, and the keys
@@ -111,7 +117,9 @@ endif()
 
 # the headless runner
 add_executable(livelily_headless headless/main.cpp headless/platform.cpp)
-target_link_libraries(livelily_headless PRIVATE livelily_core rtmidi)
+target_link_libraries(livelily_headless PRIVATE livelily_core livelily_platform_juce)
+# the headless runner runs JUCE's message loop for a moment to find the MIDI ports (see platform.h)
+target_compile_definitions(livelily_headless PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
 set_target_properties(livelily_headless PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 foreach(config ${CMAKE_CONFIGURATION_TYPES})
 	string(TOUPPER ${config} CONFIG)

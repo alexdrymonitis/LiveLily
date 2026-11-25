@@ -1,5 +1,6 @@
 # builds LiveLily's core and its headless runner with CMake on Linux, macOS and Windows, and runs the tests with CTest
-# (see livelily/CMakeLists.txt and livelily/doc/stage3_inventory.md); the app itself still needs openFrameworks and is built locally (make wpyo)
+# (see livelily/CMakeLists.txt and livelily/doc/stage3_inventory.md); JUCE is fetched by CMake (see doc/stage4_inventory.md)
+# the app itself still needs openFrameworks and is built locally (make wpyo)
 # the test files are kept out of this repository, so here CTest finds no tests, and the workflow checks that LiveLily builds
 # LiveLily-part (livelily_part/) is not built here
 name: CI
@@ -34,7 +35,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libfluidsynth-dev libasound2-dev
+          # ALSA and JACK for JUCE's MIDI and audio, and what JUCE's graphics need (its helper juceaide, built when CMake configures, uses them)
+          sudo apt-get install -y pkg-config libfluidsynth-dev libasound2-dev libjack-jackd2-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libglu1-mesa-dev mesa-common-dev
 
       - name: Set up Python
         if: matrix.pyo == 'ON'

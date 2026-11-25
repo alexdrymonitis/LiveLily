@@ -1,78 +1,10 @@
-// the platform of the headless build of LiveLily (see main.cpp), with no openFrameworks:
-// MIDI with RtMidi (the library ofxMidi wraps, so the ports are listed and opened as in the app)
-// and serial and audio that do nothing, as the tests don't play sound; OSC is the core's own (see osc_udp.cpp), as in the app
+// the platform of the headless runner of LiveLily (see main.cpp) that isn't JUCE's (see platform/): serial ports that do nothing
+// (until LiveLily has serial ports of its own), and the audio stream of test mode, which never plays, as the tests don't play sound
 
-#include "midi.h"
 #include "serial.h"
 #include "audio.h"
-#include "RtMidi.h"
-#include <algorithm>
-#include <map>
 
 namespace {
-
-class RtMidiOutput : public MidiOutput
-{
-	public:
-		std::vector<std::string> portNames() override
-		{
-			std::vector<std::string> names;
-			try {
-				RtMidiOut lister;
-				for (unsigned i = 0; i < lister.getPortCount(); i++) names.push_back(lister.getPortName(i));
-			}
-			catch (const RtMidiError&) {}
-			return names;
-		}
-		bool open(int port) override
-		{
-			if (port < 0) return false;
-			if (isOpen(port)) return true;
-			// the port is kept even if it couldn't be opened, which then ignores what is sent to it, as in the app (see of_midi.cpp)
-			bool opened = false;
-			std::unique_ptr<RtMidiOut> out;
-			try {
-				out = std::make_unique<RtMidiOut>();
-				if ((unsigned)port < out->getPortCount()) {
-					out->openPort((unsigned)port, "LiveLily");
-					opened = true;
-				}
-			}
-			catch (const RtMidiError&) {}
-			outs[port] = std::move(out);
-			return opened;
-		}
-		bool isOpen(int port) override { return outs.find(port) != outs.end(); }
-		void closeAll() override
-		{
-			for (auto& out : outs) if (out.second) out.second->closePort();
-			outs.clear();
-		}
-		// channels are 1 to 16, as in ofxMidi
-		void noteOn(int port, int channel, int note, int velocity) override { send(port, {status(0x90, channel), byte(note), byte(velocity)}); }
-		void noteOff(int port, int channel, int note, int velocity) override { send(port, {status(0x80, channel), byte(note), byte(velocity)}); }
-		void pitchBend(int port, int channel, int value) override
-		{
-			// LiveLily gives -8192 to 8191 (0 for no bend, see midi.h), and MIDI has 0 to 16383 (8192 for no bend)
-			int bend = std::clamp(value + 8192, 0, 16383);
-			send(port, {status(0xE0, channel), (unsigned char)(bend & 0x7F), (unsigned char)((bend >> 7) & 0x7F)});
-		}
-		void programChange(int port, int channel, int program) override { send(port, {status(0xC0, channel), byte(program)}); }
-		void controlChange(int port, int channel, int control, int value) override { send(port, {status(0xB0, channel), byte(control), byte(value)}); }
-		void sendByte(int port, unsigned char b) override { send(port, {b}); }
-
-	private:
-		static unsigned char status(int kind, int channel) { return (unsigned char)(kind | ((channel - 1) & 0x0F)); }
-		static unsigned char byte(int value) { return (unsigned char)(value & 0x7F); }
-		void send(int port, std::vector<unsigned char> message)
-		{
-			auto it = outs.find(port);
-			if (it == outs.end() || !it->second || !it->second->isPortOpen()) return;
-			try { it->second->sendMessage(&message); }
-			catch (const RtMidiError&) {}
-		}
-		std::map<int, std::unique_ptr<RtMidiOut>> outs;
-};
 
 class NullSerialPort : public SerialPort
 {
@@ -96,6 +28,5 @@ class NullAudioStream : public AudioStream
 
 }
 
-std::unique_ptr<MidiOutput> makeMidiOutput() { return std::make_unique<RtMidiOutput>(); }
 std::unique_ptr<SerialPort> makeSerialPort() { return std::make_unique<NullSerialPort>(); }
-std::unique_ptr<AudioStream> makeAudioStream() { return std::make_unique<NullAudioStream>(); }
+std::unique_ptr<AudioStream> makeTestAudioStream() { return std::make_unique<NullAudioStream>(); }

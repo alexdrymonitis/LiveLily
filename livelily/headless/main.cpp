@@ -3,14 +3,17 @@
 //     runs the file chunk by chunk, as the test mode of the app does (see src/testmode.cpp), and writes the same dump
 //     except the sections of the editor (its highlights and its text), which need the editor of the app
 // livelily_headless --play seconds file.lyv
-//     runs the file, and if it starts the sequencer, plays it for real (on its thread) for some seconds
-//     and writes the beats, bars, and notes the front end is told about, with their times, to check the thread and its timing
+//     runs the file, and if it starts the sequencer, plays it for real (on its thread) for some seconds, with the MIDI ports
+//     and the audio devices of the system (with JUCE, see platform/), and writes the beats, bars, and notes the front end is told about,
+//     with their times, to check the thread and its timing
 
 #include "session.h"
 #include "session_dump.h"
 #include "codetext.h"
 #include "clock.h"
 #include "paths.h"
+#include "platform.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -18,6 +21,9 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+
+// the audio stream of test mode, which never plays (see platform.cpp)
+std::unique_ptr<AudioStream> makeTestAudioStream();
 
 namespace {
 
@@ -95,10 +101,25 @@ class HeadlessFrontend : public FrontendHost, public AudioCallback
 		void barStarted(uint64_t) override { record("bar"); }
 		void loopChanged() override { record("loop changed"); }
 		void setPythonTyping(bool) override {}
-		void onAudioIn(const float*, int, int) override {}
-		void onAudioOut(float* out, int numFrames, int numChannels, int) override
+		// the audio of --play, as the app plays it: pyo's output, if pyo runs, and the click track (see ofApp::onAudioOut())
+		Session* session = nullptr;
+		void onAudioIn(const float* in, int, int) override
 		{
-			for (int i = 0; i < numFrames * numChannels; i++) out[i] = 0;
+#ifdef USEPYO
+			if (session->pyoSet) session->sharedData.pyo.fillin(const_cast<float*>(in));
+#endif
+		}
+		void onAudioOut(float* out, int numFrames, int numChannels, int sampleRate) override
+		{
+			bool pyoProcessed = false;
+#ifdef USEPYO
+			if (session->pyoSet) {
+				session->sharedData.pyo.process(out);
+				pyoProcessed = true;
+			}
+#endif
+			if (!pyoProcessed) std::fill(out, out + (size_t)numFrames * numChannels, 0.0f);
+			session->sharedData.clickTrack.process(out, numFrames, numChannels, sampleRate);
 		}
 };
 
@@ -160,10 +181,12 @@ int main(int argc, char* argv[])
 	testFile = std::filesystem::absolute(testFile).string();
 	if (outFile.empty()) outFile = testFile + ".dump";
 
+	PlatformScope platform;
 	Session session;
 	HeadlessFrontend frontend;
 	session.frontend = &frontend;
 	session.audioCallback = &frontend;
+	frontend.session = &session;
 	// relative paths (e.g. of a SoundFont) start from the user's folder of LiveLily, unless --data gives another one, and \help looks
 	// in the search paths, which in test mode are only the resources of LiveLily, as in the app (see paths.h)
 	if (dataDirectory.empty()) dataDirectory = Paths::userFolder().string();
@@ -172,8 +195,13 @@ int main(int argc, char* argv[])
 	session.searchPaths = (playSeconds > 0 ? Paths::searchPaths(resourcesPath) : std::vector<std::filesystem::path>{resourcesPath});
 	// a fixed seed, so that \rand gives the same values every time, as in the test mode of the app
 	srand(1);
-	// the made-up MIDI ports of test mode, as in the app (see test_midi.cpp), and the real ones to play with --play
-	if (playSeconds <= 0) session.midi = makeTestMidiOutput();
+	// the made-up MIDI ports of test mode, as in the app (see test_midi.cpp), and an audio stream that never plays
+	// and the real ones to play with --play
+	if (playSeconds <= 0) {
+		session.midi = makeTestMidiOutput();
+		session.audioStream = makeTestAudioStream();
+	}
+	else platform.findDevices();
 	session.setup(Color{255, 255, 255});
 
 	std::vector<std::string> lines;
@@ -182,6 +210,11 @@ int main(int argc, char* argv[])
 	if (playSeconds > 0) {
 		if (!loaded) { std::cerr << "could not load " << testFile << std::endl; return 1; }
 		for (const BracketChunk& chunk : CodeText::findBracketChunksInLines(lines)) parseStrings(session, frontend, lines, chunk.top, chunk.bottom - chunk.top + 1);
+		// the messages of the lines (e.g. of \listmidiports, or errors), to the error stream, so that the output has only the playback
+		for (const auto& message : frontend.messages) {
+			if (!message.second.text.empty()) std::cerr << "line " << (message.first + 1) << ": " << message.second.text << std::endl;
+		}
+		if (session.soundStreamSet) std::cerr << "audio: " << session.audioStream->currentDevice() << std::endl;
 		if (!session.startSequencer) { std::cerr << "the file doesn't start the sequencer" << std::endl; return 1; }
 		frontend.recording = true;
 		uint64_t start = Clock::millis();
@@ -190,6 +223,8 @@ int main(int argc, char* argv[])
 		std::this_thread::sleep_for(std::chrono::duration<double>(playSeconds));
 		session.sequencer.stopNow();
 		session.sequencer.waitForThread();
+		// the audio thread calls the session, so it stops before the session goes, as in ofApp::exit()
+		if (session.soundStreamSet) session.audioStream->close();
 		frontend.recording = false;
 		for (const std::string& event : frontend.events) {
 			size_t space = event.find(' ');
