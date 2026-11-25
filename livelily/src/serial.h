@@ -14,7 +14,7 @@ struct SerialDevice
 };
 
 // the serial port of LiveLily (see \openserialport), which the platform implements
-// (with openFrameworks' ofSerial for now, see of_serial.cpp)
+// (in-house, see serial_port.cpp)
 class SerialPort
 {
 	public:
@@ -27,7 +27,7 @@ class SerialPort
 		virtual void close() = 0;
 };
 
-// the platform makes it (of_serial.cpp for now)
+// serial_port.cpp makes it
 std::unique_ptr<SerialPort> makeSerialPort();
 
 #endif

@@ -8,7 +8,7 @@ Each step is one commit, checked with the snapshot tests of the app and the head
 
 - [x] Step 1: OSC in-house (`osc_packet.cpp`, `udp.cpp`, `osc_udp.cpp`), in the app and in the headless runner, with the CTest test `osc`; checked live with `\oscclient`, `\oscserver` and `\sendkeys`/`\sendlines` (the booleans sent to LiveLily-part are still to be checked, when LiveLily-part is migrated)
 - [x] Step 2: JUCE in CMake (`LIVELILY_JUCE_DIR`, or fetched at 8.0.12), audio with JUCE and MIDI with the ALSA sequencer on Linux (JUCE's on macOS and Windows) in `platform/`, used by `livelily_headless --play`; RtMidi is gone; checked live with MIDI to Pd and the click track, with and without JACK
-- [ ] Step 3: serial ports in-house (termios on Linux and macOS, Win32 on Windows)
+- [x] Step 3: serial ports in-house (`serial_port.cpp`: termios on Linux and macOS, Win32 on Windows), in the app and in the headless runner; **still to be checked live with a board** (`\listserialports`, `\openserialport`, `\serialwrite`, `\serialprint`, `\closeserialport`)
 - [ ] Step 4: the panes, their layout and the shell area leave `ofApp` for the core
 - [ ] Step 5: the key dispatch and the quit prompt leave `ofApp`
 - [ ] Step 6: alignment, the note highlights and test mode leave `ofApp`; the headless tests check the editor's sections
@@ -57,6 +57,15 @@ and bundles are unpacked into their messages.
   JACK if a JACK server runs (which usually holds the sound card, so that ALSA's default device, PipeWire or PulseAudio, can't play),
   and otherwise the default device of the first type. The JACK library would print that it can't connect whenever JUCE looks
   for a server and none runs, so LiveLily gives it functions for its errors and notes that print nothing (see `juce_audio.cpp`).
+
+## Serial ports, compared with ofSerial
+
+- On Linux the devices are listed `ttyACM*`, `ttyUSB*`, `rfcomm*`, then `ttyS*` (the motherboard's, often 32), with the numbers
+  of their names in numerical order, so that a board on USB is usually port 0. macOS lists `cu.*` and `tty.*`, Arduinos first, as ofSerial did.
+- Windows lists the COM ports of the registry (`HARDWARE\DEVICEMAP\SERIALCOMM`), which has the boards on USB that ofSerial's
+  enumeration missed; a write waits at most a second.
+- No flow control: ofSerial turned on RTS/CTS on Linux, which blocks writes to a device without those lines.
+- 460800 and 921600 baud are added; any other speed LiveLily doesn't know is 9600, as with ofSerial.
 
 ## Steps, in order
 
