@@ -1,0 +1,65 @@
+# Stage 4 inventory: JUCE for the platform and the desktop app
+
+Stage 4 of the migration plan replaces openFrameworks with JUCE: the platform interfaces get implementations of their own or JUCE's,
+the logic of the front end leaves `ofApp` for the core, the views draw through an interface, and a JUCE desktop app takes the place of the openFrameworks app.
+Each step is one commit, checked with the snapshot tests of the app and the headless tests, and the openFrameworks app keeps working until the last step.
+
+## Progress
+
+- [x] Step 1: OSC in-house (`osc_packet.cpp`, `udp.cpp`, `osc_udp.cpp`), in the app and in the headless runner, with the CTest test `osc`; checked live with `\oscclient`, `\oscserver` and `\sendkeys`/`\sendlines` (the booleans sent to LiveLily-part are still to be checked, when LiveLily-part is migrated)
+- [ ] Step 2: JUCE in CMake, and MIDI and audio with JUCE in the headless runner (RtMidi goes)
+- [ ] Step 3: serial ports in-house (termios on Linux and macOS, Win32 on Windows)
+- [ ] Step 4: the panes, their layout and the shell area leave `ofApp` for the core
+- [ ] Step 5: the key dispatch and the quit prompt leave `ofApp`
+- [ ] Step 6: alignment, the note highlights and test mode leave `ofApp`; the headless tests check the editor's sections
+- [ ] Step 7: the views (score, piano roll, sequencer, scope) draw through an interface, painted by openFrameworks with no visible change
+- [ ] Step 8: the JUCE desktop app (window, grid painter, keys, clipboard, file dialogs, mouse, OpenGL, Bravura)
+- [ ] Step 9: test mode in the JUCE app, its screenshots compared with those of the openFrameworks app
+- [ ] Step 10: openFrameworks is removed, and CI builds the desktop app
+
+## What depends on openFrameworks today
+
+| Files | What | Goes to |
+| --- | --- | --- |
+| `ofApp.cpp`, `ofApp.h`, `alignment.cpp`, `testmode.cpp` | the window, the drawing, and the front end's logic (panes, shell area, key dispatch, alignment, note highlights, quit prompt, test mode) | the logic to the core (steps 4 to 6), the rest to the JUCE app (step 8) |
+| `score.cpp`, `score.h`, `of_instrument_display.*` | the engraved score, with Adobe's Sonata font | a drawing interface (step 7), then JUCE and Bravura (step 8) |
+| `of_grid_painter.*`, `of_color.h` | painting the editor's grids | a JUCE painter (step 8) |
+| `of_midi.*` (ofxMidi) | MIDI output | JUCE (step 2) |
+| `of_osc.cpp` (ofxOsc) | OSC | in-house (step 1) |
+| `of_audio.cpp` (ofSoundStream) | audio for pyo and the click track | JUCE (step 2) |
+| `of_serial.cpp` (ofSerial) | serial ports | in-house (step 3) |
+| `main.cpp` | the window and the command line | the JUCE app (step 8) |
+
+## Why OSC is in-house
+
+JUCE's OSC module (`juce_osc`) knows only int32, float32, string, blob and colour arguments, and it drops a whole message with any other type.
+LiveLily sends booleans to LiveLily-part (`T` and `F`), and reads int64, double, symbol and boolean arguments from other programs.
+The packets of OSC are simple to write and read, and UDP sockets are a few system calls on each system, so both are written in-house,
+which also lets the openFrameworks app use them before JUCE is in.
+Like ofxOsc, the senders may broadcast, the receivers share their port with other programs (`SO_REUSEADDR`, `SO_REUSEPORT`),
+and bundles are unpacked into their messages.
+
+## Steps, in order
+
+1. **OSC in-house.** `osc_packet.cpp` writes and reads OSC packets (every type LiveLily reads, bundles included), `udp.cpp` has UDP sockets
+   (POSIX and Winsock), and `osc_udp.cpp` makes the senders and receivers of `osc.h` with them. The receivers don't need a thread:
+   the app reads them in every frame, and a non-blocking socket gives what has arrived. `of_osc.cpp` and the ofxOsc addon go,
+   the headless runner uses the same OSC, and a CTest test checks packets and a round trip through a socket on the three systems.
+2. **JUCE in CMake, MIDI and audio with JUCE.** JUCE from `LIVELILY_JUCE_DIR`, or fetched at a fixed version (8.0.12). A platform library
+   with JUCE's MIDI output and audio devices, which the headless runner uses for `--play` (test mode keeps its made-up MIDI ports).
+   RtMidi goes. The app keeps ofxMidi and ofSoundStream until step 10, as JUCE and openFrameworks don't go in one program.
+3. **Serial ports in-house.** Listing the devices and writing to them with termios on Linux and macOS and the Win32 API on Windows,
+   in the app (in place of ofSerial) and in the headless runner.
+4. **The panes and the shell area leave `ofApp`.** A class of the core with the editors, the layout of the panes and the shell area,
+   which `ofApp` draws. The snapshots don't change.
+5. **The key dispatch and the quit prompt leave `ofApp`.** `ofApp::executeKeyPressed()` and the keys of the quit prompt go to the same class,
+   so that a front end only sends key events to it.
+6. **Alignment, the note highlights and test mode leave `ofApp`.** Then the headless runner has the editors too, and the headless tests
+   compare the editor's sections of the dumps as well (and stage 5 needs nothing more from `ofApp`).
+7. **The views draw through an interface.** Lines, rectangles, paths, text and glyphs, painted by openFrameworks; the screenshots don't change.
+8. **The JUCE desktop app.** A window with the grid painter, the keys of `keys.h` (key releases rebuilt from JUCE's modifier callbacks and key states),
+   the clipboard, the file dialogs, the mouse and the frame rate, an OpenGL context (and how fast the views draw, measured early),
+   and the score with Bravura in place of Sonata.
+9. **Test mode in the JUCE app.** The snapshots of the JUCE app are the same as those of the openFrameworks app,
+   and their screenshots are compared side by side.
+10. **openFrameworks goes.** The makefiles, the `of_*` files, `config.make` and the addons; CMake builds the app, and CI builds it on the three systems.

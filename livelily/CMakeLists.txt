@@ -84,9 +84,9 @@ endif()
 
 # the core: the engine (session, parser, sequencer, instruments), the editor, its grids, and the keys
 set(LIVELILY_CORE_SOURCES
-	src/cellgrid.cpp src/clock.cpp src/codetext.cpp src/editor.cpp src/function.cpp src/instrument.cpp src/keys.cpp src/osc.cpp
+	src/cellgrid.cpp src/clock.cpp src/codetext.cpp src/editor.cpp src/function.cpp src/instrument.cpp src/keys.cpp src/osc.cpp src/osc_packet.cpp src/osc_udp.cpp
 	src/parser.cpp src/paths.cpp src/sequencer.cpp src/session.cpp src/session_dump.cpp src/session_setup.cpp src/soundfont.cpp
-	src/system_command.cpp src/test_midi.cpp)
+	src/system_command.cpp src/test_midi.cpp src/udp.cpp)
 if(LIVELILY_PYO)
 	list(APPEND LIVELILY_CORE_SOURCES src/PyoClass.cpp src/pyo_classes.cpp)
 endif()
@@ -99,8 +99,8 @@ if(LIVELILY_PYO)
 	target_link_libraries(livelily_core PUBLIC Python3::Python)
 endif()
 if(WIN32)
-	# the Documents folder (SHGetKnownFolderPath(), see paths.cpp)
-	target_link_libraries(livelily_core PUBLIC shell32 ole32)
+	# the Documents folder (SHGetKnownFolderPath(), see paths.cpp), and Winsock for OSC (see udp.cpp)
+	target_link_libraries(livelily_core PUBLIC shell32 ole32 ws2_32)
 endif()
 if(MSVC)
 	target_compile_options(livelily_core PRIVATE /W3 /utf-8)
@@ -123,6 +123,10 @@ endforeach()
 # and its dump is compared with the snapshot up to the sections of the editor (see tests/compare.cmake)
 # the snapshots are made by the app's test mode (tests/snapshots.sh save), which also checks the editor's sections and the screen
 enable_testing()
+# OSC: packets, and messages through a socket (with no test files, so it runs everywhere)
+add_executable(livelily_osc_test tests/osc_test.cpp)
+target_link_libraries(livelily_osc_test PRIVATE livelily_core)
+add_test(NAME osc COMMAND livelily_osc_test)
 file(GLOB LIVELILY_TEST_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tests/private/lyv/*.lyv")
 foreach(test_file ${LIVELILY_TEST_FILES})
 	get_filename_component(test_name "${test_file}" NAME_WE)

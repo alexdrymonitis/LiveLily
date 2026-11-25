@@ -1,9 +1,8 @@
 // the platform of the headless build of LiveLily (see main.cpp), with no openFrameworks:
 // MIDI with RtMidi (the library ofxMidi wraps, so the ports are listed and opened as in the app)
-// and OSC, serial, and audio that do nothing, as the tests don't send to the network or play sound
+// and serial and audio that do nothing, as the tests don't play sound; OSC is the core's own (see osc_udp.cpp), as in the app
 
 #include "midi.h"
-#include "osc.h"
 #include "serial.h"
 #include "audio.h"
 #include "RtMidi.h"
@@ -75,21 +74,6 @@ class RtMidiOutput : public MidiOutput
 		std::map<int, std::unique_ptr<RtMidiOut>> outs;
 };
 
-class NullOscSender : public OscSender
-{
-	public:
-		bool setup(const std::string&, int) override { return true; }
-		void send(const OscMessage&) override {}
-};
-
-class NullOscReceiver : public OscReceiver
-{
-	public:
-		bool setup(int) override { return true; }
-		bool hasWaitingMessages() override { return false; }
-		bool getNextMessage(OscMessage&) override { return false; }
-};
-
 class NullSerialPort : public SerialPort
 {
 	public:
@@ -113,7 +97,5 @@ class NullAudioStream : public AudioStream
 }
 
 std::unique_ptr<MidiOutput> makeMidiOutput() { return std::make_unique<RtMidiOutput>(); }
-std::shared_ptr<OscSender> makeOscSender() { return std::make_shared<NullOscSender>(); }
-std::shared_ptr<OscReceiver> makeOscReceiver() { return std::make_shared<NullOscReceiver>(); }
 std::unique_ptr<SerialPort> makeSerialPort() { return std::make_unique<NullSerialPort>(); }
 std::unique_ptr<AudioStream> makeAudioStream() { return std::make_unique<NullAudioStream>(); }

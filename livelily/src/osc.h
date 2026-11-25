@@ -7,7 +7,7 @@
 #include <vector>
 
 // OSC in LiveLily: messages, and the senders and receivers that the platform implements
-// (with openFrameworks' ofxOsc for now, see of_osc.cpp)
+// (in-house, over UDP, see osc_udp.cpp)
 
 enum class OscArgType { Int32, Int64, Float, Double, String, Symbol, True, False, Other, IndexOutOfBounds };
 
@@ -66,7 +66,7 @@ class OscReceiver
 		virtual bool getNextMessage(OscMessage& m) = 0;
 };
 
-// the platform makes these (of_osc.cpp for now)
+// osc_udp.cpp makes these
 // they are shared, so that the objects that hold them (e.g. instruments) can be copied
 std::shared_ptr<OscSender> makeOscSender();
 std::shared_ptr<OscReceiver> makeOscReceiver();
