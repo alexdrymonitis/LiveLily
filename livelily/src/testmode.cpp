@@ -9,12 +9,9 @@
 // the dumps of the example files are compared before and after a change to the parser (see tests/snapshots.sh)
 
 #include "ofApp.h"
-#include "session_dump.h"
-#include "keys.h"
+#include "test_run.h"
 #include <fstream>
-#include <sstream>
-#include <iomanip>
-
+#include <iostream>
 
 //--------------------------------------------------------------
 void ofApp::runTest()
@@ -24,78 +21,8 @@ void ofApp::runTest()
 		std::cerr << "livelily test: could not write to " << testOut << std::endl;
 		return;
 	}
-	Editor& editor = editors[session.whichPane];
-	if (!editor.loadFile(testFile)) {
-		out << "could not load " << testFile << "\n";
-		return;
-	}
-	out << "=== lines\n";
-	if (!editor.allLines.empty()) {
-		std::vector<BracketChunk> chunks = editor.findBracketChunks(editor.allLines.begin()->first, editor.allLines.rbegin()->first);
-		for (const BracketChunk& chunk : chunks) {
-			parseStrings(chunk.top, chunk.bottom - chunk.top + 1);
-			// the errors, warnings, and notes (or outputs) of the lines of the chunk, as the editor shows them (see Editor::setTraceback())
-			for (int lineNdx = chunk.top; lineNdx <= chunk.bottom; lineNdx++) {
-				auto it = editor.allLines.find(lineNdx);
-				if (it == editor.allLines.end() || it->second.tracebackStr.empty()) continue;
-				writeLineMessage(out, lineNdx, it->second.str, it->second.tracebackColor, it->second.tracebackStr);
-			}
-		}
-	}
-	// playback: what the sequencer sends, if the file started it, from the state at the end of the file
-	if (session.startSequencer) {
-		session.startSequencer = false;
-		std::vector<std::string> playback = session.sequencer.dryRun();
-		out << "=== playback\n";
-		for (const std::string& line : playback) out << line << "\n";
-	}
-	// keys to type after the file has run, from lines like "% test keys: v$d" (see keys.h), which update() presses one by one
-	// and the state and the screen are written once they have been typed (see appendTestEnd())
-	testKeys.clear();
 	testKeyNdx = 0;
-	static const std::string keysPrefix = "% test keys: ";
-	for (const auto& line : editor.allLines) {
-		if (line.second.str.compare(0, keysPrefix.size(), keysPrefix) != 0) continue;
-		std::string error;
-		std::vector<KeyEvent> events = parseKeys(line.second.str.substr(keysPrefix.size()), error);
-		if (!error.empty()) out << "line " << line.first + 1 << " keys error: " << error << "\n";
-		testKeys.insert(testKeys.end(), events.begin(), events.end());
-	}
-}
-
-//--------------------------------------------------------------
-void ofApp::dumpState(std::ostream& out)
-{
-	dumpSession(out, session, ofGetTargetFrameRate(), editors[session.whichPane].getSessionActivity());
-	// the tokens of the editor every note highlights, by instrument and bar (see storeEditorNoteSpans()), e.g. c'4 or \1+c'4 for a copied bar
-	out << "=== editor highlights\n";
-	for (const auto& bar : editorNoteSpans) {
-		out << "inst " << bar.first.first << " bar " << bar.first.second << ":";
-		for (const auto& note : bar.second) {
-			out << " ";
-			for (size_t k = 0; k < note.size(); k++) out << (k > 0 ? "+" : "") << escapedForDump(note[k].text) << "@" << note[k].start;
-		}
-		out << "\n";
-	}
-	// every highlighted token must be in the editor where the note highlights it, also after its line changed (e.g. by \editor.alignment)
-	std::map<int, std::string> linesById;
-	for (auto& line : editors[session.whichPane].allLines) linesById[editors[session.whichPane].getLineId(line.first)] = line.second.str;
-	for (const auto& bar : editorNoteSpans) {
-		for (size_t n = 0; n < bar.second.size(); n++) {
-			for (const EditorNoteSpan& span : bar.second[n]) {
-				if (span.pane != session.whichPane) continue;
-				auto line = linesById.find(span.lineId);
-				std::string shown = (line == linesById.end() || span.start < 0 || span.start >= (int)line->second.size() ? std::string("(no line)") : line->second.substr(span.start, span.length));
-				if (shown != span.text) {
-					out << "highlight mismatch: inst " << bar.first.first << " bar " << bar.first.second << " note " << n + 1 << ": "
-						<< escapedForDump(span.text) << "@" << span.start << ", the editor has " << escapedForDump(shown) << "\n";
-				}
-			}
-		}
-	}
-	// the text of the editor at the end, which commands like \editor.alignment change
-	out << "=== editor\n";
-	for (const auto& line : editors[session.whichPane].allLines) out << line.second.str << "\n";
+	TestRun::runFile(workspace, session, testFile, out, testKeys);
 }
 
 //--------------------------------------------------------------
@@ -103,14 +30,6 @@ void ofApp::appendTestEnd()
 {
 	std::ofstream out(testOut, std::ios::app);
 	if (!out.is_open()) return;
-	dumpState(out);
-	// what the editor shows, which the snapshots compare too: every pane (its text, line numbers, and status line) and the area below the panes
-	out << "=== screen\n";
-	for (auto& editor : editors) {
-		std::string pane = "pane " + std::to_string(editor.first + 1);
-		dumpGrid(out, pane + " text", editor.second.getTextGrid());
-		dumpGrid(out, pane + " line numbers", editor.second.getGutterGrid());
-		dumpGrid(out, pane + " status line", editor.second.getStatusGrid());
-	}
-	dumpGrid(out, "below the panes", belowGrid);
+	TestRun::writeState(workspace, session, out, ofGetTargetFrameRate());
+	TestRun::writeScreen(workspace, out);
 }

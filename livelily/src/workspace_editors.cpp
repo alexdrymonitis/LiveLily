@@ -581,3 +581,126 @@ void Workspace::clearLineMessage(int pane, int line, const std::string& boundFun
 	std::lock_guard<std::mutex> lock(pendingTracebacksMutex);
 	pendingTracebacks.push_back({pane, line, true, 0, "", boundFunction});
 }
+
+//--------------------------------------------------------------
+void Workspace::setPaneLanguage(int pane, int language)
+{
+	editors[pane].setLanguage(language);
+}
+
+//--------------------------------------------------------------
+bool Workspace::openHelp(int pane, const std::string& filePath, int newPane)
+{
+	// a new pane beside or below the active one (as Ctrl+v and Ctrl+h do), which becomes the active one
+	if (pane != session.whichPane) setActivePane(pane);
+	if (newPane == 1) addPane(true);
+	else if (newPane == 2) addPane(false);
+	bool fileOpened = editors[session.whichPane].loadHelpFile(filePath, newPane);
+	if (!fileOpened && newPane > 0) removePane();
+	return fileOpened;
+}
+
+//--------------------------------------------------------------
+void Workspace::setEditorOption(int pane, const std::string& option, const std::string& value)
+{
+	Editor& editor = editors[pane];
+	if (option == "alignment") {
+		// the width of a unit of the grid applies at once if alignment is on, and the next time it is turned on otherwise
+		if (value == "short" || value == "long") {
+			editor.alignShort = (value == "short");
+			if (editor.alignment) alignBars(pane);
+		}
+		else {
+			editor.alignment = (value == "on");
+			if (editor.alignment) alignBars(pane);
+			else unalignBars(pane);
+		}
+	}
+	else if (option == "animation") editor.setAnimation(value == "on");
+	else if (option == "autobrackets") editor.setAutocomplete(value == "on");
+	else if (option == "autocomplete") editor.setAutocompletion(value == "on");
+}
+
+//--------------------------------------------------------------
+void Workspace::setPaneActive(int pane, bool active)
+{
+	editors[pane].setSessionActivity(active);
+}
+
+//--------------------------------------------------------------
+void Workspace::sendKeysTo(int pane, const std::string& host, int targetPane)
+{
+	editors[pane].oscKeys->setup(host, OSCPORT);
+	editors[pane].setSendKeys(targetPane);
+}
+
+//--------------------------------------------------------------
+void Workspace::sendLinesTo(int pane, const std::string& host, int targetPane)
+{
+	editors[pane].oscKeys->setup(host, OSCPORT);
+	editors[pane].setSendLines(targetPane);
+}
+
+//--------------------------------------------------------------
+int Workspace::tabSize(int pane)
+{
+	return editors[pane].getTabSize();
+}
+
+//--------------------------------------------------------------
+void Workspace::connectLineToBar(int pane, int line, int instNdx, int bar)
+{
+	editors[pane].connectLineToBar(line, instNdx, bar);
+}
+
+//--------------------------------------------------------------
+void Workspace::fillGrids()
+{
+	// as ofApp::draw() fills them, which paints them in between, with the views of the score
+	for (auto& editor : editors) {
+		editor.second.drawText();
+		editor.second.drawPaneSeparator();
+		editor.second.takePaints();
+	}
+	fillBelowArea();
+	editors[session.whichPane].drawCompletions();
+	editors[session.whichPane].takePaints();
+}
+
+//--------------------------------------------------------------
+void Workspace::instrumentRemoved(int instNdx)
+{
+	// the instruments after the removed one get the indexes before (see Session::removeInstrument())
+	auto newIndex = [instNdx](int ndx) { return (ndx > instNdx ? ndx - 1 : ndx); };
+	// the tokens of the editor that play the notes of the instruments (\editor.animate)
+	std::map<std::pair<int, int>, std::vector<std::vector<EditorNoteSpan>>> spans;
+	for (auto& entry : editorNoteSpans) {
+		if (entry.first.first == instNdx) continue;
+		spans[std::make_pair(newIndex(entry.first.first), entry.first.second)] = entry.second;
+	}
+	editorNoteSpans = spans;
+	{
+		std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
+		activeEditorNotes.clear();
+		activeEditorRests.clear();
+	}
+	// the lines of the editors that the bars of the instruments are written in
+	for (auto& editor : editors) {
+		std::map<int, std::map<int, int>> connected;
+		for (auto& entry : editor.second.instsConnectedToLine) {
+			if (entry.first == instNdx) continue;
+			connected[newIndex(entry.first)] = entry.second;
+		}
+		editor.second.instsConnectedToLine = connected;
+	}
+}
+
+//--------------------------------------------------------------
+void Workspace::instrumentsCleared()
+{
+	// the tokens of the editor that play the notes of the instruments (\editor.animation)
+	editorNoteSpans.clear();
+	std::lock_guard<std::mutex> lock(activeEditorNotesMutex);
+	activeEditorNotes.clear();
+	activeEditorRests.clear();
+}

@@ -1,8 +1,11 @@
 # one test of CTest (see CMakeLists.txt): runs a test file with the headless runner and compares its dump with the snapshot of the app's test mode
-# up to the sections of the editor, which need the app (as tests/headless.sh does), in a CMake script so that it runs on every system
+# in a CMake script so that it runs on every system; the headless runner has the app's panes, at the size of the app's test mode
+# so the whole dump is compared (the screen too), except for keys that change what only the app has (see headless/main.cpp):
+# the size of the font (Ctrl+= and Ctrl+-, which changes the size of the cells), up to the screen
+# and the position of the score (Ctrl+P), which can change the active pane, up to the sections of the editor
 #   cmake -DRUNNER=... -DLYV=... -DSNAPSHOT=... -DOUT=... -DPYO=ON|OFF -P compare.cmake
 # a test file that needs what this machine doesn't have is skipped (exit code 77): pyo in a build without it
-# or a SoundFont at an absolute path (or one in the home directory) that isn't there, and a test whose keys change the session (Ctrl+n)
+# or a SoundFont at an absolute path (or one in the home directory) that isn't there
 
 file(READ "${LYV}" lyv)
 
@@ -34,34 +37,33 @@ foreach(soundfont ${soundfonts})
 	endif()
 endforeach()
 
-# the headless runner doesn't type the keys of a test file (the app does, see testmode.cpp), which is fine as long as they change
-# only the editor, but Ctrl+n starts a new session, which changes the parts of the dump that are compared
-# (until the headless runner has the editors, see doc/stage4_inventory.md, step 6)
-if(lyv MATCHES "% test keys:[^\n]*<C-n>")
-	skip("the test types Ctrl+n, which changes the session, and the headless runner doesn't type keys yet")
-	return()
-endif()
-
 execute_process(COMMAND "${RUNNER}" --test "${LYV}" --out "${OUT}" RESULT_VARIABLE result OUTPUT_QUIET ERROR_QUIET)
 if(NOT result EQUAL 0)
 	message(FATAL_ERROR "the headless runner failed (${result}) on ${LYV}")
 endif()
 
-# the snapshot up to the sections of the editor, and the dump, with the same line endings
+# the snapshot and the dump, with the same line endings, and up to where the keys of the file let them be compared
 file(READ "${SNAPSHOT}" expected)
 file(READ "${OUT}" actual)
 string(REPLACE "\r\n" "\n" expected "${expected}")
 string(REPLACE "\r\n" "\n" actual "${actual}")
-string(FIND "${expected}" "=== editor highlights\n" cut)
-if(cut GREATER -1)
-	string(SUBSTRING "${expected}" 0 ${cut} expected)
+string(REGEX MATCHALL "% test keys:[^\n]*" keyLines "${lyv}")
+set(until "")
+if(keyLines MATCHES "<C-[=-]>|<CtrlDown>[^<]*[=-]")
+	set(until "=== screen\n")
 endif()
-# \editor.alignment rewrites the lines in the editor of the app, and the bars keep their text as it was rewritten
-# so for the files that turn it on, the text of the bars is left out, and everything else is compared
-if(lyv MATCHES "\\\\editor\\.alignment (on|short|long)")
-	string(REGEX REPLACE "\n  text [^\n]*" "" expected "${expected}")
-	string(REGEX REPLACE "\n  text [^\n]*" "" actual "${actual}")
+if(keyLines MATCHES "<C-(A-)?(S-)?[pP]>")
+	set(until "=== editor highlights\n")
 endif()
+foreach(var expected actual)
+	if(until STREQUAL "")
+		break()
+	endif()
+	string(FIND "${${var}}" "${until}" cut)
+	if(cut GREATER -1)
+		string(SUBSTRING "${${var}}" 0 ${cut} ${var})
+	endif()
+endforeach()
 
 if(NOT expected STREQUAL actual)
 	message(FATAL_ERROR "the dump differs from the snapshot: compare ${OUT} with ${SNAPSHOT}")

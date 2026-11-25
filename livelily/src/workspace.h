@@ -100,6 +100,8 @@ class Workspace
 		int tracebackNumLinesShown = 0;
 		int shellNumLinesShown = 0;
 
+		// the one pane LiveLily starts with, made active, which the front end lays out once it has set the font (see layout())
+		void setupFirstPane();
 		// sets the position and size of every pane, from the layout of the panes and the size of the window, leaving room to the score
 		void layout();
 		// sets the row and column of every pane from the layout of the panes
@@ -225,6 +227,22 @@ class Workspace
 		std::thread::id mainThreadId = std::this_thread::get_id();
 		std::mutex pendingTracebacksMutex;
 		std::vector<PendingTraceback> pendingTracebacks;
+		// what the engine asks of the panes (see FrontendHost in frontend.h), which every front end passes on
+		void setPaneLanguage(int pane, int language);
+		bool openHelp(int pane, const std::string& filePath, int newPane);
+		void setEditorOption(int pane, const std::string& option, const std::string& value);
+		void setPaneActive(int pane, bool active);
+		void sendKeysTo(int pane, const std::string& host, int targetPane);
+		void sendLinesTo(int pane, const std::string& host, int targetPane);
+		int tabSize(int pane);
+		void connectLineToBar(int pane, int line, int instNdx, int bar);
+		// an instrument is removed (the ones after it get the indexes before), or all are, for the note highlights
+		// and the lines of the editors that are connected to the bars of the instruments
+		void instrumentRemoved(int instNdx);
+		void instrumentsCleared();
+		// fills the grids of all the panes and of the area below them, as a front end that draws does in every frame, in the same order
+		// for a front end that doesn't paint them (the headless runner), as filling them also scrolls the panes to their cursors
+		void fillGrids();
 		// the note of an instrument that plays, which the editor highlights, by its bar and its index in the bar
 		void storeActiveEditorElement(int instNdx, int barNdx, int dataCounter, bool state);
 		// the same for a rest, which stays highlighted until the next note or rest replaces it

@@ -6,6 +6,20 @@
 #include <vector>
 
 //--------------------------------------------------------------
+void Workspace::setupFirstPane()
+{
+	editors.clear();
+	editors[0] = Editor();
+	editors[0].setActivity(true);
+	editors[0].setID(0);
+	editors[0].setPaneRow(0);
+	editors[0].setPaneCol(0);
+	numPanes.clear();
+	numPanes[0] = 1;
+	paneSplitOrientation = 0;
+}
+
+//--------------------------------------------------------------
 void Workspace::layout()
 {
 	WorkspaceHost::Metrics m = host.workspaceMetrics();

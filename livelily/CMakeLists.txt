@@ -90,16 +90,18 @@ endif()
 
 # the core: the engine (session, parser, sequencer, instruments), the editor, its grids, and the keys
 set(LIVELILY_CORE_SOURCES
-	src/cellgrid.cpp src/clock.cpp src/codetext.cpp src/editor.cpp src/function.cpp src/instrument.cpp src/keys.cpp src/osc.cpp src/osc_packet.cpp src/osc_udp.cpp
+	src/cellgrid.cpp src/clock.cpp src/codetext.cpp src/editor.cpp src/function.cpp src/instrument.cpp src/keys.cpp src/midifile.cpp src/musicxml.cpp src/osc.cpp src/osc_packet.cpp src/osc_udp.cpp
 	src/parser.cpp src/paths.cpp src/sequencer.cpp src/session.cpp src/session_dump.cpp src/session_setup.cpp src/soundfont.cpp
-	src/serial_port.cpp src/system_command.cpp src/test_midi.cpp src/udp.cpp src/workspace.cpp src/workspace_alignment.cpp src/workspace_editors.cpp src/workspace_keys.cpp src/workspace_shell.cpp)
+	src/serial_port.cpp src/system_command.cpp src/test_midi.cpp src/test_run.cpp src/udp.cpp src/workspace.cpp src/workspace_alignment.cpp src/workspace_editors.cpp src/workspace_keys.cpp src/workspace_shell.cpp)
 if(LIVELILY_PYO)
 	list(APPEND LIVELILY_CORE_SOURCES src/PyoClass.cpp src/pyo_classes.cpp)
 endif()
 add_library(livelily_core STATIC ${LIVELILY_CORE_SOURCES})
 target_include_directories(livelily_core PUBLIC src)
 find_package(Threads REQUIRED)
-target_link_libraries(livelily_core PUBLIC ${LIVELILY_FLUIDSYNTH} Threads::Threads)
+# zlib, for compressed MusicXML files (.mxl, see musicxml.cpp), which the editor loads
+find_package(ZLIB REQUIRED)
+target_link_libraries(livelily_core PUBLIC ${LIVELILY_FLUIDSYNTH} Threads::Threads ZLIB::ZLIB)
 if(LIVELILY_PYO)
 	target_compile_definitions(livelily_core PUBLIC USEPYO)
 	target_link_libraries(livelily_core PUBLIC Python3::Python)

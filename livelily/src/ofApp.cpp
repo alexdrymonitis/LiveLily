@@ -98,14 +98,7 @@ void ofApp::setup()
 
 	ofTrueTypeFont::setGlobalDpi(72);
 	fontSize = 18;
-	Editor editor;
-	editors[0] = editor;
-	editors[0].setActivity(true);
-	editors[0].setID(0);
-	editors[0].setPaneRow(0);
-	editors[0].setPaneCol(0);
-	numPanes[0] = 1;
-	paneSplitOrientation = 0;
+	workspace.setupFirstPane();
 	fontLoaded = false;
 	// the function below calls setFontSize() which in turn sets various values
 	// including the tracebackBase variable that is used to determine the coordinates and offsets of the panes
@@ -2703,39 +2696,6 @@ void ofApp::onAudioOut(float* out, int numFrames, int numChannels, int sampleRat
 
 /*********** front-end functions moved from the parser (see Session in session.h) ***********/
 //--------------------------------------------------------------
-void ofApp::setEditorOption(int pane, const std::string& option, const std::string& value)
-{
-	Editor& editor = editors[pane];
-	if (option == "alignment") {
-		// the width of a unit of the grid applies at once if alignment is on, and the next time it is turned on otherwise
-		if (value == "short" || value == "long") {
-			editor.alignShort = (value == "short");
-			if (editor.alignment) workspace.alignBars(pane);
-		}
-		else {
-			editor.alignment = (value == "on");
-			if (editor.alignment) workspace.alignBars(pane);
-			else workspace.unalignBars(pane);
-		}
-	}
-	else if (option == "animation") editor.setAnimation(value == "on");
-	else if (option == "autobrackets") editor.setAutocomplete(value == "on");
-	else if (option == "autocomplete") editor.setAutocompletion(value == "on");
-}
-
-//--------------------------------------------------------------
-bool ofApp::openHelp(int pane, const std::string& filePath, int newPane)
-{
-	// a new pane beside or below the active one (as Ctrl+v and Ctrl+h do), which becomes the active one
-	if (pane != session.whichPane) workspace.setActivePane(pane);
-	if (newPane == 1) workspace.addPane(true);
-	else if (newPane == 2) workspace.addPane(false);
-	bool fileOpened = editors[session.whichPane].loadHelpFile(filePath, newPane);
-	if (!fileOpened && newPane > 0) workspace.removePane();
-	return fileOpened;
-}
-
-//--------------------------------------------------------------
 void ofApp::instrumentCreated(int instNdx)
 {
 	Instrument& inst = session.sharedData.instruments[instNdx];
@@ -2767,38 +2727,15 @@ void ofApp::instrumentRemoved(int instNdx)
 		instNameWidths[inst.first] = width;
 		view.longestInstNameWidth = std::max(view.longestInstNameWidth, width);
 	}
-	// the tokens of the editor that play the notes of the instruments (\editor.animate)
-	std::map<std::pair<int, int>, std::vector<std::vector<EditorNoteSpan>>> spans;
-	for (auto& entry : editorNoteSpans) {
-		if (entry.first.first == instNdx) continue;
-		spans[std::make_pair(newIndex(entry.first.first), entry.first.second)] = entry.second;
-	}
-	editorNoteSpans = spans;
-	{
-		std::lock_guard<std::mutex> lock(workspace.activeEditorNotesMutex);
-		workspace.activeEditorNotes.clear();
-		workspace.activeEditorRests.clear();
-	}
-	// the lines of the editors that the bars of the instruments are written in
-	for (auto& editor : editors) {
-		std::map<int, std::map<int, int>> connected;
-		for (auto& entry : editor.second.instsConnectedToLine) {
-			if (entry.first == instNdx) continue;
-			connected[newIndex(entry.first)] = entry.second;
-		}
-		editor.second.instsConnectedToLine = connected;
-	}
+	// the note highlights and the lines connected to the bars of the instruments
+	workspace.instrumentRemoved(instNdx);
 	setScoreCoords();
 }
 
 //--------------------------------------------------------------
 void ofApp::instrumentsCleared()
 {
-	// the tokens of the editor that play the notes of the instruments (\editor.animation)
-	editorNoteSpans.clear();
-	std::lock_guard<std::mutex> lock(workspace.activeEditorNotesMutex);
-	workspace.activeEditorNotes.clear();
-	workspace.activeEditorRests.clear();
+	workspace.instrumentsCleared();
 }
 
 //--------------------------------------------------------------
