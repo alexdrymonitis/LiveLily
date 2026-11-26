@@ -93,7 +93,7 @@ class Views
 		std::mutex scopeMutex;
 		// the waveforms of the channels, as points, which the front end makes from scopeSamples
 		std::vector<std::vector<std::pair<float, float>>> scopeWaveforms;
-		float scopeRms;
+		float scopeRms = 0;
 
 		Color backgroundColor = Colors::black;
 		Color foregroundColor = Colors::white;
@@ -103,31 +103,31 @@ class Views
 		// which the front end loads again when its size changes
 		std::shared_ptr<Font> instFont = noFont();
 		std::shared_ptr<Font> labelFont = noFont();
-		int instFontSize; // the size of the font of the instrument display
+		int instFontSize = 10; // the size of the font of the instrument display
 
-		// variables for the score
-		bool showScore;
-		int scoreType;
+		// variables for the score (with values before setup(), as the panes are laid out before it, and ask whether the score is shown)
+		bool showScore = false;
+		int scoreType = 0;
 		// whether the oscilloscope is the view shown (see setShowScore()), which the audio thread reads to copy the output for it
 		std::atomic<bool> showScope{false};
 		// showNotes is in ViewState (view_state.h), and the sequencer asks for it with scoreShown()
-		float scoreXOffset;
-		float scoreYOffset;
-		float scoreBackgroundWidth;
-		float scoreBackgroundHeight;
+		float scoreXOffset = 0;
+		float scoreYOffset = 0;
+		float scoreBackgroundWidth = 0;
+		float scoreBackgroundHeight = 0;
 		// variables to determine whether we call a command for moving the score
-		bool scoreMoveXCommand;
-		bool scoreMoveYCommand;
-		int scoreOrientation;
-		float scoreXStartPnt;
-		int numBarsToDisplay;
-		float notesLength; // used to derive the ratio when we display more than two bars horizontally
-		bool mustUpdateScore;
-		bool scoreUpdated;
-		bool scoreChangeOnLastBar;
+		bool scoreMoveXCommand = false;
+		bool scoreMoveYCommand = false;
+		int scoreOrientation = 0;
+		float scoreXStartPnt = 0;
+		int numBarsToDisplay = 2;
+		float notesLength = 0; // used to derive the ratio when we display more than two bars horizontally
+		bool mustUpdateScore = false;
+		bool scoreUpdated = false;
+		bool scoreChangeOnLastBar = false;
 		std::map<int, int> instNameWidths;
-		bool showBarCount;
-		bool showTempo;
+		bool showBarCount = false;
+		bool showTempo = false;
 
 	private:
 		Session& session;

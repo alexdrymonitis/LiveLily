@@ -18,6 +18,9 @@ Each step is one commit, checked with the snapshot tests of the app and the head
   - [x] 7a: the canvas (`canvas.h`, `of_canvas.cpp`), and the score drawing through it (`score.cpp`, `score_view.cpp`, which was `of_instrument_display.cpp`), in the core; the screenshots are the same (`tests/screenshots.sh`); the repeat signs are drawn in horizontal view too, by the place of every bar in its loop; checked live
   - [x] 7b: the views of `ofApp` (the layout and drawing of the score, the piano roll, the sequencer, the oscilloscope, the beat) in the core (`Views`, in `views.cpp`), drawing through the canvas; the screenshots are the same; the headless runner lays out the views as the app does (with a canvas that draws nothing), so CTest compares whole dumps except for keys that change the size of the font (62 of 63 match whole); the line that separates the score from the panes, with inverted colors, stops at the area below the panes; checked live
 - [ ] Step 8: the JUCE desktop app (window, grid painter, keys, clipboard, file dialogs, mouse, OpenGL, Bravura)
+  - [x] 8a: LiveLily in the core (`App`, in `app.cpp`): the session, the panes and the views, what they ask of each other, every frame (OSC, typing from Python, the oscilloscope), and drawing them; a front end gives it a window (`AppWindow`, in `app_window.h`: the editor's font, painting grids, clipboard, file dialogs, mouse, frame rate, full screen, quitting); `ofApp` is only the window of openFrameworks, and the headless runner uses `App` with a window that paints nothing; members of `App` and `Views` have values before `setup()` (the panes were laid out with whatever `showScore` held)
+  - [ ] 8b: Bravura in place of Sonata, in the openFrameworks app, checked live
+  - [ ] 8c: the JUCE desktop app
 - [ ] Step 9: test mode in the JUCE app, its screenshots compared with those of the openFrameworks app
 - [ ] Step 10: openFrameworks is removed, and CI builds the desktop app
 

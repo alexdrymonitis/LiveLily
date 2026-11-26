@@ -2,234 +2,49 @@
 #define OF_APP_H
 
 #include "ofMain.h"
-#include "osc.h"
-#include "serial.h"
-#include "audio.h"
-#include "frontend.h"
-#include "session.h"
-#include "score_view.h"
-#include "of_grid_painter.h"
-#include "keys.h"
-#include "view_state.h"
-#include "workspace.h"
-#include "views.h"
+#include "app.h"
+#include "app_window.h"
 #include "of_canvas.h"
-
-#include <map>
+#include "keys.h"
+#include <string>
 #include <vector>
-#include <utility> // to add pair
-#include <mutex>
-#include <atomic>
-#include <thread>
-#include "editor.h"
-#include "function.h"
-#include "sequencer.h"
-#include "utils.h"
-#include "instrument.h"
-#include "color.h"
-#include "of_color.h"
-#include "ofTimer.h"
-#ifdef USEPYO
-#include "PyoClass.h"
-#endif
 
-class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, public EditorHost, public WorkspaceHost
+// the openFrameworks front end of LiveLily: its window, in which LiveLily (App, see app.h) draws, with openFrameworks' fonts
+// and the canvas of openFrameworks (see of_canvas.h), and which passes on the keys, the mouse, and the size of the window
+// in test mode, it runs a test file, types its keys one a frame, and writes the dump (see test_run.h and testmode.cpp)
+class ofApp : public ofBaseApp, public AppWindow
 {
 	public:
-		// the engine of LiveLily (see session.h): the state of the session, the parser, and the sequencer
-		// declared first, so that it is destroyed after everything else of the app (e.g. the sequencer's thread calls the app)
-		Session session;
-		// the state of the view: the window, the positions of the staffs, the piano roll, the beat visualization and the area below the panes
-		// basic OF program structure
-		//---------------------------------
-		void setup();
-		void update();
-		void draw();
-		// what the views (the score) draw with (see canvas.h)
+		// what the views draw with (see canvas.h), made before LiveLily, which loads fonts with it
 		OfCanvas canvas;
-		// the panes, their layout and the area below them (see workspace.h), declared after the session, which it holds
-		Workspace workspace{session, *this};
-		// the names the app had for the state of the workspace, which it still uses
-		std::map<int, Editor>& editors = workspace.editors; // keys are panes indexes
-		std::map<int, int>& numPanes = workspace.numPanes; // rows and columns of panes
-		int& paneSplitOrientation = workspace.paneSplitOrientation;
-		int& tracebackNumLinesShown = workspace.tracebackNumLinesShown;
-		int& shellNumLinesShown = workspace.shellNumLinesShown;
-		std::string& shellStr = workspace.shellStr;
-		std::string& shellLsOutputStr = workspace.shellLsOutputStr;
-		int& numShellLines = workspace.numShellLines;
-		int& numShellLsOutputLines = workspace.numShellLsOutputLines;
-		int& shellTabCounter = workspace.shellTabCounter;
-		int& shellStrCursorPos = workspace.shellStrCursorPos;
-		size_t& maxShellChars = workspace.maxShellChars;
-		Color& shellStrColor = workspace.shellStrColor;
-		int& shellScroll = workspace.shellScroll;
-		int& shellTotalLines = workspace.shellTotalLines;
-		int& shellVisibleLines = workspace.shellVisibleLines;
-		bool& executingBind = workspace.executingBind;
-		CellGrid& belowGrid = workspace.belowGrid;
-		// the views beside the panes: the score, the piano roll, the sequencer, the oscilloscope (see views.h)
-		Views views{session, workspace, brightnessCoeff, lineWidth, oneCharacterWidth, cursorHeight, exiting};
-		// the names the app had for the state of the views, which it still uses
-		ViewState& view = views.view;
-		std::vector<float>& scopeSamples = views.scopeSamples;
-		int& scopeChannels = views.scopeChannels;
-		std::mutex& scopeMutex = views.scopeMutex;
-		std::vector<std::vector<std::pair<float, float>>>& scopeWaveforms = views.scopeWaveforms;
-		float& scopeRms = views.scopeRms;
-		Color& backgroundColor = views.backgroundColor;
-		Color& foregroundColor = views.foregroundColor;
-		Color& beatColor = views.beatColor;
-		Color& scoreBackgroundColor = views.scoreBackgroundColor;
-		std::shared_ptr<Font>& instFont = views.instFont;
-		int& instFontSize = views.instFontSize;
-		bool& showScore = views.showScore;
-		int& scoreType = views.scoreType;
-		std::atomic<bool>& showScope = views.showScope;
-		float& scoreXOffset = views.scoreXOffset;
-		float& scoreYOffset = views.scoreYOffset;
-		float& scoreBackgroundWidth = views.scoreBackgroundWidth;
-		float& scoreBackgroundHeight = views.scoreBackgroundHeight;
-		bool& scoreMoveXCommand = views.scoreMoveXCommand;
-		bool& scoreMoveYCommand = views.scoreMoveYCommand;
-		int& scoreOrientation = views.scoreOrientation;
-		float& scoreXStartPnt = views.scoreXStartPnt;
-		int& numBarsToDisplay = views.numBarsToDisplay;
-		float& notesLength = views.notesLength;
-		bool& mustUpdateScore = views.mustUpdateScore;
-		bool& scoreUpdated = views.scoreUpdated;
-		bool& scoreChangeOnLastBar = views.scoreChangeOnLastBar;
-		std::map<int, int>& instNameWidths = views.instNameWidths;
-		bool& showBarCount = views.showBarCount;
-		bool& showTempo = views.showTempo;
-		// what the workspace asks of the app (see workspace.h)
-		Metrics workspaceMetrics() override { return {(float)view.screenWidth, (float)view.screenHeight, oneCharacterWidth, cursorHeight}; }
-		ScorePlacement scorePlacement() override { return views.scorePlacement(); }
-		void applyFont(bool reload, bool layout) override
-		{
-			if (reload) fontLoaded = false;
-			setFontSize(layout);
-		}
-		void changeFontSize(int delta) override;
-		void changeScoreSize(int delta) override { views.changeScoreSize(delta); }
-		void changeBrightness(float delta) override { brightnessCoeff = std::min(1.f, std::max(0.f, brightnessCoeff + delta)); }
-		void toggleFullscreen() override
-		{
-			ofToggleFullscreen();
-			fullScreen = !fullScreen;
-		}
-		void hideScore() override { views.setShowScore(-1); }
-		// the state of the keys, which the workspace keeps (see workspace_keys.cpp)
-		bool& shiftPressed = workspace.shiftPressed;
-		bool& ctrlPressed = workspace.ctrlPressed;
-		bool& altPressed = workspace.altPressed;
-		bool& gPressed = workspace.gPressed;
-		bool& dPressed = workspace.dPressed;
-		int& editorBindingKey = workspace.editorBindingKey;
-		int& editorBindingArg = workspace.editorBindingArg;
-		bool& editorBindingIsDollar = workspace.editorBindingIsDollar;
-		void quitNow() override { exit(); }
-		void belowAreaMoved(float prevTop) override { views.moveScoreWithTraceback(prevTop); }
-		void belowAreaReset() override { views.resetScoreYOffset(); }
-		Color belowAreaBackground() override { return backgroundColor; }
-		// draws text with many lines, with the line height of the editor
-		void drawLines(const std::string& str, float x, float y);
-		void moveCursorOnShiftReturn();
-		//---------------------------------
-		// overloaded keyPressed and keyReleased functions
-		// so out-of-focus editors can receive input from OSC
-		void keyPressedOsc(int key, int thisEditor) override;
-		void keyReleasedOsc(int key, int thisEditor) override;
-		// OF keyboard input functions
+		// LiveLily, which draws in this window
+		App app{*this};
+
+		// openFrameworks' functions
+		void setup() override;
+		void update() override;
+		void draw() override;
+		void exit() override;
 		void keyPressed(int key) override;
 		void keyReleased(int key) override;
-		// the following two functions are used to check for key modifiers received from a Python pane
-		pyStdoutStrKeyModifier checkPyStdoutKeyModifier(int ndx);
-		void handleKeyModifier(pyStdoutStrKeyModifier modifierStruct);
-		//---------------------------------
-		// moves the score away from the active pane, if it covers it (with Alt+number and Ctrl+w)
-		void revealActivePane() override { views.revealActivePane(); }
-		// what the engine asks of the user interface (see frontend.h)
-		void notePlaying(int instNdx, int bar, int noteNdx, bool playing) override { workspace.storeActiveEditorElement(instNdx, bar, noteNdx, playing); }
-		void restPlaying(int instNdx, int bar, int noteNdx) override { workspace.storeActiveEditorRest(instNdx, bar, noteNdx); }
-		void nothingPlaying(int instNdx) override { workspace.clearActiveEditorElement(instNdx); }
-		void setLineMessage(int pane, int line, int errorCode, const std::string& text, const std::string& boundFunction) override
-		{
-			workspace.setLineMessage(pane, line, errorCode, text, boundFunction);
-		}
-		void clearLineMessage(int pane, int line, const std::string& boundFunction) override { workspace.clearLineMessage(pane, line, boundFunction); }
-		void storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNotes) override { workspace.storeEditorNoteSpans(lineNum, instNdx, barNdx, numNotes); }
-		// what the editors ask of the app, which the workspace answers (see workspace_editors.cpp and workspace_alignment.cpp)
-		std::vector<EditorNoteSpan> getActiveEditorNoteSpans(int pane) override { return workspace.getActiveEditorNoteSpans(pane); }
-		void parseStrings(int index, int numLines) override { workspace.parseStrings(index, numLines); }
-		void alignAfterEdit(int pane, bool space) override { workspace.alignAfterEdit(pane, space); }
-		void alignAfterPaste(int pane) override { workspace.alignAfterPaste(pane); }
-		bool startsMelodicLine(const std::string& word) override { return workspace.startsMelodicLine(word); }
-		std::vector<std::string> getCommandCompletions() override { return workspace.getCommandCompletions(); }
-		std::vector<std::string> getMethodCompletions(const std::string& name) override { return workspace.getMethodCompletions(name); }
-		std::vector<std::string> getArgumentCompletions() override { return workspace.getArgumentCompletions(); }
-		std::vector<std::string> pythonNames(const std::string& dotted) override { return workspace.pythonNames(dotted); }
-		std::vector<std::string> pythonSignature(const std::string& dotted) override { return workspace.pythonSignature(dotted); }
-		std::map<std::pair<int, int>, std::vector<std::vector<EditorNoteSpan>>>& editorNoteSpans = workspace.editorNoteSpans;
-		void showMouseCursor(bool show) override { if (show) ofShowCursor(); else ofHideCursor(); }
-		float frameRate() override { return ofGetFrameRate(); }
-		void setFrameRate(int framesPerSecond) override { ofSetFrameRate(framesPerSecond); }
-		void setPaneLanguage(int pane, int language) override { workspace.setPaneLanguage(pane, language); }
-		bool openHelp(int pane, const std::string& filePath, int newPane) override { return workspace.openHelp(pane, filePath, newPane); }
-		void setEditorOption(int pane, const std::string& option, const std::string& value) override { workspace.setEditorOption(pane, option, value); }
-		void setPaneActive(int pane, bool active) override { workspace.setPaneActive(pane, active); }
-		void sendKeysTo(int pane, const std::string& host, int targetPane) override { workspace.sendKeysTo(pane, host, targetPane); }
-		void sendLinesTo(int pane, const std::string& host, int targetPane) override { workspace.sendLinesTo(pane, host, targetPane); }
-		int tabSize(int pane) override { return workspace.tabSize(pane); }
-		void connectLineToBar(int pane, int line, int instNdx, int bar) override { workspace.connectLineToBar(pane, line, instNdx, bar); }
-		std::string scoreViewCommand(const std::vector<std::string>& methodAndArgs) override { return views.scoreViewCommand(methodAndArgs); }
-		void scoreMustUpdate() override { mustUpdateScore = true; }
-		void instrumentCreated(int instNdx) override { views.instrumentCreated(instNdx); }
-		void instrumentRemoved(int instNdx) override { views.instrumentRemoved(instNdx); }
-		void instrumentsCleared() override;
-		void layoutInstrumentBar(int instNdx, int bar) override { views.layoutInstrumentBar(instNdx, bar); }
-		bool scoreShown() override { return views.scoreShown(); }
-		void sequencerStarted(float beatStepsPerMs, uint64_t beatRampStart) override { views.sequencerStarted(beatStepsPerMs, beatRampStart); }
-		void beat(uint64_t timeStamp, float stepsPerMs, uint64_t rampStart) override { views.beat(timeStamp, stepsPerMs, rampStart); }
-		void barStarted(uint64_t timeStamp) override { views.barStarted(timeStamp); }
-		void loopChanged() override { views.loopChanged(); }
-		void setPythonTyping(bool charByChar) override;
-		// what the editor asks of the app (see editor_host.h); the other methods of EditorHost are the app's own methods of the same names
-		Session& editorSession() override { return session; }
-		Color editorForeground() override { return foregroundColor; }
-		Color editorBackground() override { return backgroundColor; }
-		float editorBrightness() override { return brightnessCoeff; }
-		int scoreBesidePanesWidth() override { return views.scoreBesidePanesWidth(); }
-		void typeFromPython(const std::string& text) override { view.pyStdoutStr += text; }
-		void startTypingFromPython(int pane) override { view.whichPyPane = pane; view.typePyStr = true; }
-		int pythonTypingPane() override { return view.whichPyPane; }
+		void mouseMoved(int x, int y) override;
+		void windowResized(int w, int h) override;
+
+		// the window (see app_window.h)
+		FontMetrics loadEditorFont(int size) override;
+		void paintGrids(const std::vector<GridPaint>& paints, float brightness) override;
+		void paintGrid(const CellGrid& grid, const GridGeometry& geometry, float brightness) override;
 		std::string clipboard() override { return ofGetWindowPtr()->getClipboardString(); }
 		void setClipboard(const std::string& text) override { ofGetWindowPtr()->setClipboardString(text); }
 		std::string chooseFileToSave(const std::string& defaultName, const std::string& message) override;
 		std::string chooseFileToOpen(const std::string& message) override;
-		int windowWidth() override { return ofGetWidth(); }
-		int windowHeight() override { return ofGetHeight(); }
+		void showMouseCursor(bool show) override { if (show) ofShowCursor(); else ofHideCursor(); }
 		std::pair<int, int> mousePosition() override { return {mouseX, mouseY}; }
-		void setPaneFromOsc(int pane, const std::string& address) override { fromOscAddr[pane] = address; fromOsc[pane] = true; }
-		//---------------------------------
-		//---------------------------------
-		void sendCountdownToParts(int countdown);
-		void sendStopCountdownToParts();
-		void sendNewBarToParts(std::string barName, int barIndex);
-		void resetEditorStrings(int index, int numLines);
-		void createEmptyMelody(int index);
-		void resizePatternVectors();
-		void sendPushPopPattern();
-		bool areWeInsideChord(size_t size, unsigned i, unsigned *chordNotesIndexes);
-		//---------------------------------
-		// coordinates/positions/sizes functions
-		// set the global font size to calculate dimensions
-		void setFontSize(bool calculateCoords);
-		void setScoreNotes(int barIndex) override { views.setScoreNotes(barIndex); }
-		void setNotePositions(int bar) override { views.setNotePositions(bar); }
-		void setNotePositions(int bar, int numBars) override { views.setNotePositions(bar, numBars); }
-		void swapScorePosition(int orientation) override { views.swapScorePosition(orientation); }
-		void calculateStaffPositions(int bar, bool windowChanged) override { views.calculateStaffPositions(bar, windowChanged); }
+		float frameRate() override { return ofGetFrameRate(); }
+		void setFrameRate(int framesPerSecond) override { ofSetFrameRate(framesPerSecond); }
+		void toggleFullscreen() override { ofToggleFullscreen(); }
+		void quit() override { ofExit(); }
+
 		// test mode, set from the command line (see main.cpp and testmode.cpp)
 		std::string testFile;
 		std::string testOut;
@@ -244,100 +59,13 @@ class ofApp : public ofBaseApp, public AudioCallback, public FrontendHost, publi
 		// the keys a test file types after it has run (see runTest()), pressed one by one in update()
 		std::vector<KeyEvent> testKeys;
 		size_t testKeyNdx = 0;
-		//---------------------------------
-		// the sequencer functions of the system
-		int setPatternIndex(bool increment);
-		unsigned setLoopIter(int ptrnIdx);
-		int setInstIndex(int ptrnIdx, int i);
-		int setBar(int ptrnIdx, int idx, int i);
-		//---------------------------------
-		// release memory on exit
-		void exit();
-		//---------------------------------
-		// rest of OF functions
-		void mouseMoved(int x, int y );
-		void mouseDragged(int x, int y, int button);
-		void mousePressed(int x, int y, int button);
-		void mouseReleased(int x, int y, int button);
-		void mouseEntered(int x, int y);
-		void mouseExited(int x, int y);
-		void resizeWindow();
-		void windowResized(int w, int h);
-		void gotMessage(ofMessage msg);
-		void dragEvent(ofDragInfo dragInfo);
-		//---------------------------------
-		// audio functions
-		// called by the audio stream (see audio.h) from the audio thread
-		void onAudioIn(const float* in, int numFrames, int numChannels) override;
-		void onAudioOut(float* out, int numFrames, int numChannels, int sampleRate) override;
 
-		// a mutex to avoid accessing the same data by different threads at the same time
-		ofMutex mutex;
-
-		float screenSplitHorizontal;
-		float oneCharacterWidth;
-		int halfCharacterWidth;
-
-
-
-		// paints the area below the panes (Workspace::belowGrid), whose rows start at its top, with the text at the bottom of every row
-		void paintBelowGrid();
-
-
-
-
-		// the map of vectors below is used to determine the number of lines to execute
-		// if we start from the first line of a chunk that is not indented
-		std::map<int, std::vector<std::string>> noIndentCheck;
-
-
-
-
-
-		enum errorTypeNdx {note, warning, error};
-
-		int notesID; // used mainly for debugging note and staff objects
-
-		bool fullScreen;
-		bool isWindowResized;
-		uint64_t windowResizeTimeStamp;
-
-		float brightnessCoeff;
-
+	private:
+		// the font of the editor, which the grids are painted with (see of_grid_painter.h)
 		ofTrueTypeFont font;
-		bool fontLoaded;
-
-
-		std::map<int, std::string> allStrings;
-		std::map<int, int> allStringStartPos;
-		std::map<int, std::vector<int>> allStringTabs;
-		//std::vector<std::vector<int>> curlyIndexes;
-
-
-		int fontSize; // the size of the font of the editor
-		float cursorHeight;
-		// from the baseline of the text to the bottom of its row in the editor (see setFontSize())
-		float characterOffset = 0;
-
-
-		// global line width
-		int lineWidth;
-
-
-		// STDERR
-
-		// variables for the score
-		// map that stores which editors can receive data from OSC
-		std::map<int, bool> fromOsc;
-		// and a map with the OSC address for each editor
-		std::map<int, std::string> fromOscAddr;
-
-
-		bool exiting;
-
-		// mouse's X and Y coords
-		int mouseX;
-		int mouseY;
+		// the position of the mouse over the window (\mousex, \mousey, \mouse)
+		int mouseX = 0;
+		int mouseY = 0;
 };
 
 #endif

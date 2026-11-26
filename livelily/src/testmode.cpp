@@ -22,7 +22,7 @@ void ofApp::runTest()
 		return;
 	}
 	testKeyNdx = 0;
-	TestRun::runFile(workspace, session, testFile, out, testKeys);
+	TestRun::runFile(app.workspace, app.session, testFile, out, testKeys);
 }
 
 //--------------------------------------------------------------
@@ -30,6 +30,6 @@ void ofApp::appendTestEnd()
 {
 	std::ofstream out(testOut, std::ios::app);
 	if (!out.is_open()) return;
-	TestRun::writeState(workspace, session, out, ofGetTargetFrameRate());
-	TestRun::writeScreen(workspace, out);
+	TestRun::writeState(app.workspace, app.session, out, ofGetTargetFrameRate());
+	TestRun::writeScreen(app.workspace, out);
 }
