@@ -7,6 +7,7 @@ class OfFont : public Font
 {
 	public:
 		OfFont(const std::string& path, int size) { font.load(path, size); }
+		explicit OfFont(const ofTrueTypeFontSettings& settings) { font.load(settings); }
 		void draw(const std::string& text, float x, float y) override { font.drawString(text, x, y); }
 		float width(const std::string& text) override { return font.stringWidth(text); }
 		float height(const std::string& text) override { return font.stringHeight(text); }
@@ -25,6 +26,18 @@ class OfFont : public Font
 std::shared_ptr<Font> OfCanvas::loadFont(const std::string& path, int size)
 {
 	return std::make_shared<OfFont>(path, size);
+}
+
+std::shared_ptr<Font> OfCanvas::loadMusicFont(const std::string& path, int size)
+{
+	// openFrameworks makes a texture of the characters of the ranges it is given, so only the blocks of SMuFL the score uses
+	// (see smufl.h): clefs and time signatures, noteheads, flags, accidentals, articulations, rests, octaves and dynamics
+	// the trill, and the notes of the tempo
+	ofTrueTypeFontSettings settings(path, size);
+	settings.antialiased = true;
+	settings.addRanges({{0xE050, 0xE08F}, {0xE0A0, 0xE0AF}, {0xE240, 0xE25F}, {0xE260, 0xE28F}, {0xE4A0, 0xE4AF}, {0xE4E0, 0xE4EF},
+		{0xE510, 0xE53F}, {0xE560, 0xE56F}, {0xECA0, 0xECAF}});
+	return std::make_shared<OfFont>(settings);
 }
 
 void OfCanvas::setColor(Color color) { ofSetColor(color.r, color.g, color.b, color.a); }

@@ -68,13 +68,14 @@ void Staff::setRhythm(bool isRhythm)
 void Staff::setSize(int fontSize, float staffLinesDist)
 {
 	Staff::fontSize = fontSize;
-	notationFont = cv().loadFont("fonts/sonata.ttf", fontSize);
+	// a SMuFL font, at four staff spaces to the em (see smufl.h)
+	notationFont = cv().loadMusicFont("fonts/Bravura.otf", Smufl::fontSize(staffLinesDist));
 	BPMDisplayFont = cv().loadFont("fonts/LiberationSerif-Regular.ttf", fontSize*0.6);
 	staffDist = staffLinesDist;
 	noteWidth = notationFont->width(BPMDisplayNotes[2]);
 	clefLength = std::max(notationFont->width(clefSyms[0]), notationFont->width(clefSyms[1]));
 	clefLength = std::max(clefLength, notationFont->width(clefSyms[2]));
-	meterLength = notationFont->width("64");
+	meterLength = notationFont->width(Smufl::timeSigNumber(64));
 }
 
 //--------------------------------------------------------------
@@ -216,8 +217,11 @@ void Staff::drawStaff(int bar, float xStartPnt, float yStartPnt, float yOffset, 
 	}
 	if (drawClef) {
 		if (clefIndex[bar] < 3) {
+			// a SMuFL clef has its baseline on the line it names (see smufl.h): the G clef on the second line from the bottom
+			// the F clef on the second line from the top, and the C clef on the middle line
+			static const float clefLines[3] = {3, 1, 2};
 			notationFont->draw(clefSyms[clefIndex[bar]], xStartLocal+((yDist/2)*xCoefLocal),
-									yStartPnt+(yDist*3.8)+yOffset);
+									yStartPnt+(yDist*clefLines[clefIndex[bar]])+yOffset);
 		}
 		else {
 			float xPos = ((yDist * 1.5) * xCoefLocal) + xStartLocal;
@@ -236,8 +240,8 @@ void Staff::drawStaff(int bar, float xStartPnt, float yStartPnt, float yOffset, 
 			notationFont->draw(meterSyms[meterIndex[bar]], xPos, numeratorY+yDist);
 		}
 		else {
-			notationFont->draw(std::to_string(numerator[bar]), xPos, numeratorY);
-			notationFont->draw(std::to_string(denominator[bar]), xPos, denominatorY);
+			notationFont->draw(Smufl::timeSigNumber(numerator[bar]), xPos, numeratorY);
+			notationFont->draw(Smufl::timeSigNumber(denominator[bar]), xPos, denominatorY);
 		}
 	}
 	if (drawLoopStartEnd && barOfLoop < 0) {
@@ -277,8 +281,8 @@ void Staff::drawLoopStart(int bar, float xStart, float yStartPnt, float yOffset)
 		xPos += notationFont->width(meterSyms[meterIndex[bar]]);
 	}
 	else {
-		float maxWidth = std::max(notationFont->width(std::to_string(numerator[bar])),
-							 notationFont->width(std::to_string(denominator[bar])));
+		float maxWidth = std::max(notationFont->width(Smufl::timeSigNumber(numerator[bar])),
+							 notationFont->width(Smufl::timeSigNumber(denominator[bar])));
 		xPos += maxWidth;
 	}
 	// a little bit of offset so that symbols are not clamped together
@@ -369,7 +373,7 @@ void Notes::setFontSize(int fontSize, float staffLinesDist)
 {
 	if (Notes::fontSize != fontSize) {
 		Notes::fontSize = fontSize;
-		notationFont = cv().loadFont("fonts/sonata.ttf", fontSize);
+		notationFont = cv().loadMusicFont("fonts/Bravura.otf", Smufl::fontSize(staffLinesDist));
 		textFont = cv().loadFont("fonts/LiberationSerif-Regular.ttf", fontSize/2);
 		noteWidth = notationFont->width(notesSyms[2]);
 		noteHeight = notationFont->height(notesSyms[2]);
@@ -1470,7 +1474,7 @@ void Notes::storeArticulationsCoords(int bar)
 						}
 					}
 					// if case the articulation is a portando, we must get the height as in the line below
-					float halfArticulHeight = (notationFont->height(".") + notationFont->height("_")) / 2;
+					float halfArticulHeight = (notationFont->height(Smufl::articStaccatoAbove) + notationFont->height(Smufl::articTenutoAbove)) / 2;
 					if (yPosPortando + halfArticulHeight > allNotesMaxYPos[bar][i] && yPosPortando < FLT_MAX) {
 						allNotesMaxYPos[bar][i] = yPosPortando + halfArticulHeight;
 					}
@@ -1559,8 +1563,8 @@ void Notes::storeTupletCoords(int bar)
 		}
 		// move the ends to the stems, if the stems of the first and last notes point to the side of the bracket
 		if (above) {
-			if (stemDirections[bar][first] > 0) vX[0] += ((noteWidth / 2.0) - lineWidth);
-			if (stemDirections[bar][last] > 0) vX[3] += ((noteWidth / 2.0) - lineWidth);
+			if (stemDirections[bar][first] > 0) vX[0] += ((noteWidth / 2.0) - (lineWidth / 2.0));
+			if (stemDirections[bar][last] > 0) vX[3] += ((noteWidth / 2.0) - (lineWidth / 2.0));
 		}
 		else {
 			if (stemDirections[bar][first] < 0) vX[0] -= ((noteWidth / 2.0) - (lineWidth / 2.0));
@@ -2603,10 +2607,11 @@ void Notes::drawNotes(int bar, int loopNdx, std::vector<int> *v, float xStartPnt
 					}
 				}
 			}
-			// then draw the stems
+			// then draw the stems, which meet the edge of the notehead, as SMuFL attaches them: a stem up ends at the right edge of the notehead
+			// and a stem down starts at its left edge (the beams, the flags, and the brackets of tuplets are placed at the stems the same way)
 			if (hasStem.at(bar).at(i)) {
 				float x = xStartPnt + ((allNoteCoordsX.at(bar).at(i)[allChordsBaseIndexes.at(bar).at(i)] + (allNoteCoordsXOffset.at(bar).at(i) * allChordsChangeXCoef.at(bar).at(i))) * xCoefLocal);
-				if (stemDirections.at(bar).at(i) == 1) x += ((noteWidth / 2.0) - lineWidth);
+				if (stemDirections.at(bar).at(i) == 1) x += ((noteWidth / 2.0) - (lineWidth / 2.0));
 				else x -= ((noteWidth / 2.0) - (lineWidth / 2.0));
 				float y1 = yStartPnt + allNoteHeadCoordsY.at(bar).at(i)[allChordsBaseIndexes.at(bar).at(i)]+(noteHeight/8.0)-(staffDist/10.0) + yOffset;
 				float y2 = allNoteStemCoordsY.at(bar).at(i) + yStartPnt + yOffset;
@@ -2615,26 +2620,14 @@ void Notes::drawNotes(int bar, int loopNdx, std::vector<int> *v, float xStartPnt
 			// then draw the individual tails
 			int numTailsLocal = log(actualDurs.at(bar).at(i)) / log(2) - 2;
 			if (actualDurs.at(bar).at(i) > 4 && !isNoteGroupped.at(bar).at(i) && numTailsLocal != 0 && allNotes.at(bar).at(i).at(0) > -1) {
-				int symIdx = 3;
-				int tailDir = 1;
+				// the flag of the duration (one glyph for the 8th, the 16th, and so on, see smufl.h), at the end of the stem
+				// from the left edge of the stem, where a SMuFL flag starts
 				float xPos = xStartPnt + ((allNoteCoordsX.at(bar).at(i)[allChordsBaseIndexes.at(bar).at(i)] + (allNoteCoordsXOffset.at(bar).at(i) * allChordsChangeXCoef.at(bar).at(i))) * xCoefLocal);
-				if (stemDirections.at(bar).at(i) == 1) xPos += ((noteWidth / 2.0) - lineWidth);
+				if (stemDirections.at(bar).at(i) == 1) xPos += ((noteWidth / 2.0) - (lineWidth / 2.0));
 				else xPos -= ((noteWidth / 2.0) - (lineWidth / 2.0));
+				xPos -= (lineWidth / 2.0);
 				float yPos = allNoteStemCoordsY.at(bar).at(i) + yStartPnt + yOffset;
-				// minor corrections on the tails coordinates
-				if (stemDirections.at(bar).at(i) < 0) {
-					symIdx = 4;
-					tailDir = -1;
-					yPos -= (staffDist*3);
-				}
-				else {
-					xPos -= (noteWidth - lineWidth);
-					yPos += (staffDist*3);
-				}
-				int loopIter = abs(numTailsLocal);
-				for (int j = 0; j < loopIter; j++) {
-					notationFont->draw(notesSyms[symIdx], xPos, yPos+((j*(staffDist*BEAMDISTCOEFF))*tailDir));
-				}
+				notationFont->draw(Smufl::flag(abs(numTailsLocal), stemDirections.at(bar).at(i) == 1), xPos, yPos);
 			}
 			// reset the animation color
 			if (animation && animate && whichNote == (int)i) {
@@ -2668,8 +2661,8 @@ void Notes::drawNotes(int bar, int loopNdx, std::vector<int> *v, float xStartPnt
 						if (j < beamsIndexes.at(bar).at(i).at(1)) xCoords.at(2) += (lineWidth/2);
 						// stems up
 						if (grouppedStemDirs.at(bar).at(i) == 1) {
-							xCoords.at(0) += ((noteWidth / 2.0) - lineWidth);
-							xCoords.at(2) += ((noteWidth / 2.0) - lineWidth);
+							xCoords.at(0) += ((noteWidth / 2.0) - (lineWidth / 2.0));
+							xCoords.at(2) += ((noteWidth / 2.0) - (lineWidth / 2.0));
 							yCoords.at(0) += (beamsLineWidth / 2);
 							yCoords.at(2) += (beamsLineWidth / 2);
 						}
@@ -2780,36 +2773,19 @@ int Notes::drawRest(int bar, int restDur, float x, float yStartPnt, Color color,
 	// the rests of a voice of a staff with merged instruments move one staff space up (stems up) or down (stems down)
 	yStartPnt -= (forcedStemDir * staffDist);
 	int indexLocal;
+	// the rests of a SMuFL font are placed on the lines of the staff (see smufl.h): the whole rest hangs from the second line from the top
+	// the half rest sits on the middle line, and the other rests have their baselines on the middle line
+	float middleLine = yStartPnt + (staffDist * 2) + yOffset;
 	if (restDur < 4) {
 		indexLocal = 0;
-		float y = yStartPnt + staffDist + halfStaffDist+((staffDist/2.0)*(restDur-1)) + yOffset;
+		float y = (restDur == 1 ? middleLine - staffDist : middleLine);
+		// on the single line of a rhythm staff, the whole rest hangs from the line
 		if (rhythm && restDur == 1) y += staffDist;
-		notationFont->draw(restsSyms[indexLocal], x-(noteHeight/2), y);
+		notationFont->draw((restDur == 1 ? restsSyms[0] : Smufl::restHalf), x-(noteHeight/2), y);
 	}
 	else {
 		indexLocal = (log(restDur) / log(2)) - 1;
-		// for an offset of 3 for the eigth rest, every other rest must go
-		// 12 pixels lower, and for 4 pxs this offset is 13, so every
-		// time it's plus 9
-		float extraOffset;
-		if (indexLocal == 1) {
-			extraOffset = 12;
-			if (restYOffset > 3) {
-				// add 2 for every 1 increment of the restYOffset
-				extraOffset += ((restYOffset-3) * 2);
-			}
-		}
-		else {
-			extraOffset = restYOffset + 9;
-			extraOffset *= (indexLocal-2);
-			extraOffset += halfStaffDist;
-			extraOffset -= ((indexLocal-2)*(restYOffset-2)*3);
-			// 32nds and 64ths should start at the top most space (below the top most line)
-			// so we subtract one full space
-			if (indexLocal > 3) extraOffset -= staffDist;
-		}
-		notationFont->draw(restsSyms[indexLocal], x-((noteHeight*1.5)/2.0),
-				yStartPnt+staffDist+extraOffset+yOffset);
+		notationFont->draw(restsSyms[indexLocal], x-((noteHeight*1.5)/2.0), middleLine);
 	}
 	// we reset the color to notes color as the rest of the things we draw should have that color
 	cv().setColor(opaqueAtBrightness(notesColor, cv().brightness));
@@ -2835,76 +2811,27 @@ bool Notes::isDrawnAccidental(int ndx)
 //--------------------------------------------------------------
 const std::string& Notes::accidentalSizeSym(int ndx)
 {
-	if (ndx == 1 || ndx == 3) return accSyms[2];
-	if (ndx == 5 || ndx == 7) return accSyms[6];
 	return accSyms[ndx];
 }
 
 //--------------------------------------------------------------
 float Notes::accidentalWidth(int ndx)
 {
-	float width = notationFont->bounds(accidentalSizeSym(ndx), 0, 0).width;
-	// the 1.5 flat is two flats, and the 1.5 sharp has wider horizontal bars than the sharp (see drawAccidental())
-	if (ndx == 1) return width * 1.9;
-	if (ndx == 7) return width * 1.3;
-	return width;
+	return notationFont->bounds(accidentalSizeSym(ndx), 0, 0).width;
+}
+
+//--------------------------------------------------------------
+float Notes::accidentalOffset(int ndx)
+{
+	// a SMuFL accidental starts at its left edge, so it ends a quarter of a staff space before the notehead, whose center is at the note
+	return (noteWidth / 2.0f) + accidentalWidth(ndx) + (staffDist * 0.25f);
 }
 
 //--------------------------------------------------------------
 void Notes::drawAccidental(int ndx, float x, float y)
 {
 	if (!isDrawnAccidental(ndx)) return;
-	if (!accSyms[ndx].empty()) {
-		notationFont->draw(accSyms[ndx], x, y);
-		return;
-	}
-	Rect rect = notationFont->bounds(accidentalSizeSym(ndx), x, y);
-	if (ndx == 1 || ndx == 3) {
-		// a flat drawn at drawX, mirrored on the vertical axis at its center, so it stays within the same rectangle
-		auto drawMirroredFlat = [&](float drawX) {
-			float centerX = rect.centerX() + (drawX - x);
-			cv().push();
-			cv().translate(centerX, 0);
-			cv().scale(-1, 1);
-			cv().translate(-centerX, 0);
-			notationFont->draw(accSyms[2], drawX, y);
-			cv().pop();
-		};
-		if (ndx == 3) {
-			drawMirroredFlat(x);
-		}
-		else {
-			// the 1.5 flat is a mirrored flat and a flat, with their stems next to each other
-			// it ends where a flat would end, so the mirrored flat is to the left of the flat
-			notationFont->draw(accSyms[2], x, y);
-			drawMirroredFlat(x - (rect.width * 0.9));
-		}
-		return;
-	}
-	// the half sharp has one vertical stroke and the 1.5 sharp three, with the horizontal bars of a sharp
-	// both have the height of a sharp and end where a sharp would end
-	int numStrokes = (ndx == 5 ? 1 : 3);
-	float barsWidth = (ndx == 5 ? rect.width * 0.75 : rect.width * 1.3);
-	float right = rect.x + rect.width;
-	float left = right - barsWidth;
-	float strokeWidth = std::max(1.0f, staffDist * 0.12f);
-	float barThickness = std::max(1.5f, staffDist * 0.4f);
-	// the bars rise to the right, as in a sharp
-	float slant = barsWidth * 0.25;
-	for (int k = 0; k < numStrokes; k++) {
-		float strokeX = left + (barsWidth * (k + 1) / (numStrokes + 1)) - (strokeWidth / 2.0);
-		// the strokes are a little shorter than the sharp at their ends, so they don't stick out of it
-		cv().rect(strokeX, rect.y + (rect.height * 0.04), strokeWidth, rect.height * 0.92);
-	}
-	for (int k = 0; k < 2; k++) {
-		float barY = rect.y + (rect.height * (k == 0 ? 0.36 : 0.66));
-		cv().beginShape();
-		cv().vertex(left, barY + (slant / 2.0));
-		cv().vertex(right, barY - (slant / 2.0));
-		cv().vertex(right, barY - (slant / 2.0) + barThickness);
-		cv().vertex(left, barY + (slant / 2.0) + barThickness);
-		cv().endShape(true);
-	}
+	notationFont->draw(accSyms[ndx], x, y);
 }
 
 //--------------------------------------------------------------
@@ -2928,7 +2855,7 @@ void Notes::drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOf
 						x -= (staffDist * accidentalsOffsetCoef);
 					}
 				}
-				drawAccidental(allAccidentals[bar][i][j], (x*xCoefLocal)+xStartPnt-(noteWidth*1.2), y+yStartPnt+yOffset);
+				drawAccidental(allAccidentals[bar][i][j], (x*xCoefLocal)+xStartPnt-accidentalOffset(allAccidentals[bar][i][j]), y+yStartPnt+yOffset);
 				prevY = y;
 				prevX = x;
 			}
@@ -2939,7 +2866,7 @@ void Notes::drawAccidentals(int bar, float xStartPnt, float yStartPnt, float yOf
 					}
 				}
 				notationFont->draw(accSyms[4],
-						(x*xCoefLocal)+xStartPnt-(noteWidth*1.2),
+						(x*xCoefLocal)+xStartPnt-accidentalOffset(4),
 						y+yStartPnt+yOffset);
 				naturalSignsNotWritten[bar][i][j] = 0;
 				prevY = y;
@@ -3094,8 +3021,8 @@ void Notes::drawArticulations(int bar, float xStartPnt, float yStartPnt, float y
 					else {
 						offset = -halfStaffDist;
 					}
-					notationFont->draw(".", (articulXPos[bar][i]*xCoefLocal)+xStartPnt+(noteWidth/2), articulYPos[bar][i][j]+yStartPnt+yOffset);
-					notationFont->draw("_", (articulXPos[bar][i]*xCoefLocal)+xStartPnt, articulYPos[bar][i][j]+yStartPnt+offset+yOffset);
+					notationFont->draw(Smufl::articStaccatoAbove, (articulXPos[bar][i]*xCoefLocal)+xStartPnt+(noteWidth/2), articulYPos[bar][i][j]+yStartPnt+yOffset);
+					notationFont->draw(Smufl::articTenutoAbove, (articulXPos[bar][i]*xCoefLocal)+xStartPnt, articulYPos[bar][i][j]+yStartPnt+offset+yOffset);
 				}
 			}
 		}

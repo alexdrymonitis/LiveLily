@@ -2,6 +2,7 @@
 #define SCORE_H
 
 #include "canvas.h"
+#include "smufl.h"
 #include "color.h"
 #include <map>
 #include <memory>
@@ -67,7 +68,9 @@ class Staff
 		std::map<int, int> BPMTempi;
 		std::map<int, int> tempoBase;
 		// half note, quarter note, eighth note, sixteenth note, thirty-second note, sixty-fourth note
-		std::string BPMDisplayNotes[7] = {"w", "h", "q", "e", "x", "r", "Æ"};
+		// the notes of the tempo, from the whole note to the 64th
+		std::string BPMDisplayNotes[7] = {Smufl::metNoteWhole, Smufl::metNoteHalfUp, Smufl::metNoteQuarterUp, Smufl::metNote8thUp,
+			Smufl::metNote16thUp, Smufl::metNote32ndUp, Smufl::metNote64thUp};
 		std::map<int, bool> BPMDisplayDots;
 		std::map<int, int> meterIndex;
 		int lineWidth;
@@ -76,8 +79,10 @@ class Staff
 		float xStartOffset;
 		float yStartOffset;
 		// G, F, C clefs
-		std::string clefSyms[3] = {"&", "?", "B"};
-		std::string meterSyms[2] = {"c", "C"};
+		// treble, bass, and alto clefs
+		std::string clefSyms[3] = {Smufl::gClef, Smufl::fClef, Smufl::cClef};
+		// common time and cut time
+		std::string meterSyms[2] = {Smufl::timeSigCommon, Smufl::timeSigCutCommon};
 		std::map<int, int> clefIndex;
 		int fontSize;
 		bool rhythm; // for rhythmic instruments
@@ -188,6 +193,8 @@ class Notes
 		const std::string& accidentalSizeSym(int ndx);
 		// draws an accidental with its baseline at y, ending at the same point as its symbol from the font would end, drawn at x
 		void drawAccidental(int ndx, float x, float y);
+		// how far left of the center of its notehead an accidental starts
+		float accidentalOffset(int ndx);
 		float accidentalWidth(int ndx);
 		void drawGlissandi(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef, int nextBar);
 		void drawTuplets(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef);
@@ -325,20 +332,22 @@ class Notes
 		std::shared_ptr<Font> notationFont = noFont();
 		std::shared_ptr<Font> textFont = noFont();
 		// whole note, half note (without stem), filled note, tail for upward stem, tail for downward stem
-		std::string notesSyms[5] = {"w", "ú", "ö", "j", "J"};
+		std::string notesSyms[5] = {Smufl::noteheadWhole, Smufl::noteheadHalf, Smufl::noteheadBlack, Smufl::flag8thUp, Smufl::flag8thDown};
 		// double flat, 1.5 flat, flat, half flat, natural, half sharp, sharp, 1.5 sharp, double sharp
-		// the Sonata font has no symbols for quarter tones (the empty strings), so these are drawn by drawAccidental()
-		// with the Stein-Zimmermann symbols, a mirrored flat for the half flat, a mirrored flat and a flat for the 1.5 flat
-		// and a sharp with one or three vertical strokes for the half and 1.5 sharp
+		// with the quarter tones of Stein and Zimmermann
 		// index 9 is for a note whose accidental is not drawn, as an earlier note in the bar has the same accidental
-		std::string accSyms[9] = {"º", "", "b", "", "n", "", "#", "", "Ü"};
-		// whole and half (first symbol), and the rest of rests
-		std::string restsSyms[6] = {"î", "Î", "ä", "Å", "¨", "ô"};
+		std::string accSyms[9] = {Smufl::accidentalDoubleFlat, Smufl::accidentalThreeQuarterTonesFlatZimmermann, Smufl::accidentalFlat,
+			Smufl::accidentalQuarterToneFlatStein, Smufl::accidentalNatural, Smufl::accidentalQuarterToneSharpStein, Smufl::accidentalSharp,
+			Smufl::accidentalThreeQuarterTonesSharpStein, Smufl::accidentalDoubleSharp};
+		// whole, quarter, eighth, 16th, 32nd, and 64th (the half rest is restHalf, see drawRest())
+		std::string restsSyms[6] = {Smufl::restWhole, Smufl::restQuarter, Smufl::rest8th, Smufl::rest16th, Smufl::rest32nd, Smufl::rest64th};
 		// ppp, pp, p, mp, mf, f, ff, fff
-		std::string dynSyms[8] = {"¸", "¹", "p", "P", "F", "f", "Ä", "ì"};
+		std::string dynSyms[8] = {Smufl::dynamicPPP, Smufl::dynamicPP, Smufl::dynamicPiano, Smufl::dynamicMP, Smufl::dynamicMF,
+			Smufl::dynamicForte, Smufl::dynamicFF, Smufl::dynamicFFF};
 		// marcato, trill, tenuto, staccatissimo, accent, staccato
-		std::string articulSyms[6] = {"^", "Ù", "_", "à", ">", "."};
-		std::string octaveSyms[3] = {"", "8", "15"};
+		std::string articulSyms[6] = {Smufl::articMarcatoAbove, Smufl::ornamentTrill, Smufl::articTenutoAbove, Smufl::articStaccatissimoAbove,
+			Smufl::articAccentAbove, Smufl::articStaccatoAbove};
+		std::string octaveSyms[3] = {"", Smufl::ottava, Smufl::quindicesima};
 		int baseDurations[7] = {4, 8, 16, 32, 64, 128, 256};
 		// arrays to hold the widths and heights of std::strings
 		// since these can be called from a threaded class and calling stringWidth() won't work

@@ -8,6 +8,7 @@ class OfCanvas : public Canvas
 {
 	public:
 		std::shared_ptr<Font> loadFont(const std::string& path, int size) override;
+		std::shared_ptr<Font> loadMusicFont(const std::string& path, int size) override;
 		void setColor(Color color) override;
 		void setLineWidth(float width) override;
 		void setFill(bool fill) override;

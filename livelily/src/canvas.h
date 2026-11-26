@@ -49,8 +49,10 @@ class Canvas
 		// the canvas the views draw with, which the front end sets when it starts
 		static Canvas* current;
 
-		// a font of the resources of LiveLily (e.g. fonts/sonata.ttf); one that can't be loaded draws nothing and measures nothing
+		// a font of the resources of LiveLily (e.g. fonts/Bravura.otf); one that can't be loaded draws nothing and measures nothing
 		virtual std::shared_ptr<Font> loadFont(const std::string& path, int size) = 0;
+		// a music font with the code points of SMuFL (fonts/Bravura.otf, see smufl.h), whose glyphs are in the Private Use Area of Unicode
+		virtual std::shared_ptr<Font> loadMusicFont(const std::string& path, int size) = 0;
 
 		virtual void setColor(Color color) = 0;
 		virtual void setLineWidth(float width) = 0;
@@ -96,6 +98,7 @@ class NullCanvas : public Canvas
 {
 	public:
 		std::shared_ptr<Font> loadFont(const std::string&, int) override { return noFont(); }
+		std::shared_ptr<Font> loadMusicFont(const std::string&, int) override { return noFont(); }
 		void setColor(Color) override {}
 		void setLineWidth(float) override {}
 		void setFill(bool) override {}
