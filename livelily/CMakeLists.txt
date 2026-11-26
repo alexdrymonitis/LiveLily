@@ -90,7 +90,7 @@ endif()
 
 # the core: the engine (session, parser, sequencer, instruments), the editor, its grids, and the keys
 set(LIVELILY_CORE_SOURCES
-	src/canvas.cpp src/cellgrid.cpp src/clock.cpp src/codetext.cpp src/editor.cpp src/function.cpp src/instrument.cpp src/keys.cpp src/midifile.cpp src/musicxml.cpp src/osc.cpp src/osc_packet.cpp src/osc_udp.cpp
+	src/canvas.cpp src/cellgrid.cpp src/clock.cpp src/grid_painter.cpp src/codetext.cpp src/editor.cpp src/function.cpp src/instrument.cpp src/keys.cpp src/midifile.cpp src/musicxml.cpp src/osc.cpp src/osc_packet.cpp src/osc_udp.cpp
 	src/parser.cpp src/paths.cpp src/score.cpp src/score_view.cpp src/sequencer.cpp src/session.cpp src/session_dump.cpp src/session_setup.cpp src/soundfont.cpp
 	src/serial_port.cpp src/system_command.cpp src/test_midi.cpp src/test_run.cpp src/udp.cpp src/views.cpp src/app.cpp src/workspace.cpp src/workspace_alignment.cpp src/workspace_editors.cpp src/workspace_keys.cpp src/workspace_shell.cpp)
 if(LIVELILY_PYO)
@@ -116,6 +116,20 @@ if(MSVC)
 else()
 	target_compile_options(livelily_core PRIVATE -Wall -Werror=return-type)
 endif()
+
+# the JUCE desktop app (see desktop/ and doc/stage4_inventory.md, step 8): a window with LiveLily in it, drawn with JUCE
+juce_add_gui_app(livelily_desktop PRODUCT_NAME "LiveLily" COMPANY_NAME "LiveLily" VERSION 0.2)
+target_sources(livelily_desktop PRIVATE desktop/main.cpp desktop/main_component.cpp desktop/juce_canvas.cpp)
+target_include_directories(livelily_desktop PRIVATE desktop)
+# the file dialogs wait for the choice of the user (see MainComponent::chooseFileToSave())
+target_compile_definitions(livelily_desktop PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
+target_link_libraries(livelily_desktop PRIVATE livelily_core livelily_platform_juce juce::juce_gui_basics juce::juce_recommended_config_flags)
+# into bin/, from where it finds LiveLily's resources in ../resources (see src/paths.h), as the other programs
+set_target_properties(livelily_desktop PROPERTIES OUTPUT_NAME livelily_desktop RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
+foreach(config ${CMAKE_CONFIGURATION_TYPES})
+	string(TOUPPER ${config} CONFIG)
+	set_target_properties(livelily_desktop PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${CONFIG} "${PROJECT_SOURCE_DIR}/bin")
+endforeach()
 
 # the headless runner
 add_executable(livelily_headless headless/main.cpp headless/platform.cpp)

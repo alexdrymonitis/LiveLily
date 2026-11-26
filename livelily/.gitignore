@@ -22,6 +22,7 @@
 *.qbs.user
 .qtc_clangd/
 /bin/livelily_headless
+/bin/livelily_desktop
 /build/
 
 # kept out of the published repository: the test files, their snapshots and notes (a private repository of their own, in tests/private)

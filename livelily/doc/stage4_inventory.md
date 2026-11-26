@@ -17,10 +17,10 @@ Each step is one commit, checked with the snapshot tests of the app and the head
 - [x] Step 7: the views (score, piano roll, sequencer, scope) draw through an interface, painted by openFrameworks with no visible change
   - [x] 7a: the canvas (`canvas.h`, `of_canvas.cpp`), and the score drawing through it (`score.cpp`, `score_view.cpp`, which was `of_instrument_display.cpp`), in the core; the screenshots are the same (`tests/screenshots.sh`); the repeat signs are drawn in horizontal view too, by the place of every bar in its loop; checked live
   - [x] 7b: the views of `ofApp` (the layout and drawing of the score, the piano roll, the sequencer, the oscilloscope, the beat) in the core (`Views`, in `views.cpp`), drawing through the canvas; the screenshots are the same; the headless runner lays out the views as the app does (with a canvas that draws nothing), so CTest compares whole dumps except for keys that change the size of the font (62 of 63 match whole); the line that separates the score from the panes, with inverted colors, stops at the area below the panes; checked live
-- [ ] Step 8: the JUCE desktop app (window, grid painter, keys, clipboard, file dialogs, mouse, OpenGL, Bravura)
+- [x] Step 8: the JUCE desktop app (window, grid painter, keys, clipboard, file dialogs, mouse, OpenGL, Bravura)
   - [x] 8a: LiveLily in the core (`App`, in `app.cpp`): the session, the panes and the views, what they ask of each other, every frame (OSC, typing from Python, the oscilloscope), and drawing them; a front end gives it a window (`AppWindow`, in `app_window.h`: the editor's font, painting grids, clipboard, file dialogs, mouse, frame rate, full screen, quitting); `ofApp` is only the window of openFrameworks, and the headless runner uses `App` with a window that paints nothing; members of `App` and `Views` have values before `setup()` (the panes were laid out with whatever `showScore` held)
   - [x] 8b: Bravura in place of Sonata (`resources/fonts/Bravura.otf`, SIL OFL; the glyphs by their SMuFL code points in `smufl.h`), in the openFrameworks app: clefs on their lines, flags at the end of the stem (one glyph per duration), rests on the lines, accidentals by their width, the quarter tones of Stein and Zimmermann, and stems up at the edge of the notehead; the canvas loads music fonts with `loadMusicFont()` (openFrameworks loads only the ranges it is given); checked live
-  - [ ] 8c: the JUCE desktop app
+  - [x] 8c: the JUCE desktop app (`desktop/`, `bin/livelily_desktop`): LiveLily in a JUCE window, drawn with `JuceCanvas` every frame of a timer, the editor's grids painted by `CanvasGrid` (`grid_painter.*`, in the core, a port of `of_grid_painter` to the canvas), the keys with the codes of `keys.h`, the system's clipboard and file dialogs, and full screen without a title bar; checked live
 - [ ] Step 9: test mode in the JUCE app, its screenshots compared with those of the openFrameworks app
 - [ ] Step 10: openFrameworks is removed, and CI builds the desktop app
 
@@ -60,6 +60,16 @@ and bundles are unpacked into their messages.
   With no device set, the stream opens the default device of the first type (ALSA on Linux, CoreAudio on macOS, WASAPI on Windows),
   or JACK (below). `livelily_headless --play` writes the device it opened to the error stream (`audio: ...`).
   JUCE has no number of buffers, so `AudioSettings::numBuffers` is unused.
+- **No OpenGL in the desktop app.** An OpenGL context delayed the keys by seconds on Linux (under XWayland): its thread draws through
+  the X connection of the window, and reads the window's events, which then wait in Xlib's queue until something else wakes the app.
+  LiveLily draws a frame in well under a millisecond with JUCE's own renderers (software on Linux, CoreGraphics on macOS,
+  Direct2D on Windows), so the app has no OpenGL context and no `juce_opengl`.
+- **The keys of the desktop app, on Linux.** JUCE gives no release of a key, only a change of the keys that are down, and the automatic
+  repeat of a held key releases and presses it at once, so the keys that are no longer down are released once a frame. The modifiers are
+  checked on every key and whenever the window gets or loses the keys. While LiveLily handles a key, what JUCE tells about the keys
+  waits until the next frame (a file dialog or full screen takes the keys away in the middle of a key). Full screen changes the
+  title bar, which makes the window anew, and a file dialog is another program (zenity or kdialog), so afterwards the window is
+  brought to the front until it has the keys again.
 - **JACK** is enabled on Linux (`JUCE_JACK`): JUCE loads the JACK library when the program runs. With no device set, the stream opens
   JACK if a JACK server runs (which usually holds the sound card, so that ALSA's default device, PipeWire or PulseAudio, can't play),
   and otherwise the default device of the first type. The JACK library would print that it can't connect whenever JUCE looks
