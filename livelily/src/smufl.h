@@ -89,6 +89,15 @@ inline const std::string articTenutoAbove = glyph(0xE4A4);
 inline const std::string articStaccatissimoAbove = glyph(0xE4A6);
 inline const std::string articAccentAbove = glyph(0xE4A0);
 inline const std::string articStaccatoAbove = glyph(0xE4A2);
+// below the note (with the stem up), hanging from the baseline, as the ones above sit on it
+inline const std::string articMarcatoBelow = glyph(0xE4AD);
+inline const std::string articTenutoBelow = glyph(0xE4A5);
+inline const std::string articStaccatissimoBelow = glyph(0xE4A7);
+inline const std::string articAccentBelow = glyph(0xE4A1);
+inline const std::string articStaccatoBelow = glyph(0xE4A3);
+// the portando (louré): a tenuto over a staccato, in one glyph
+inline const std::string articTenutoStaccatoAbove = glyph(0xE4B2);
+inline const std::string articTenutoStaccatoBelow = glyph(0xE4B3);
 // octave lines
 inline const std::string ottava = glyph(0xE510);
 inline const std::string quindicesima = glyph(0xE514);

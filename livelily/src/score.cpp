@@ -588,30 +588,33 @@ void Notes::setNotes(int bar,
 //--------------------------------------------------------------
 void Notes::changeNotesBasedOnClef(int bar)
 {
-	// if we have a different clef we must offset the notes
-	if (clefIndex[bar] == 1) {
-		bool tacetLocal = false;
-		for (unsigned i = 0; i < allNotes[bar].size(); i++) {
-			if (!((allNotes[bar].size() == 1) && (allNotes[bar][i][0] == -1))) {
-				for (unsigned j = 0; j < allNotes[bar][i].size(); j++) {
-					if (allNotes[bar][i][j] > -1) {
-						allNotes[bar][i][j] -= 2;
-						if (allNotes[bar][i][j] < 0) {
-							allNotes[bar][i][j] = 7 + allNotes[bar][i][j];
-							allOctaves[bar][i][j]--;
-						}
+	// the notes are placed as in the treble clef, and another clef moves them up on the staff: the bass clef by 12 positions
+	// (two note names down and two octaves up, so that d is on its middle line) and the alto clef by 6 (one down and one up, c' on its middle line)
+	int shift = 0;
+	if (clefIndex[bar] == 1) shift = 2;
+	else if (clefIndex[bar] == 2) shift = 1;
+	if (shift == 0) return;
+	bool tacetLocal = false;
+	for (unsigned i = 0; i < allNotes[bar].size(); i++) {
+		if (!((allNotes[bar].size() == 1) && (allNotes[bar][i][0] == -1))) {
+			for (unsigned j = 0; j < allNotes[bar][i].size(); j++) {
+				if (allNotes[bar][i][j] > -1) {
+					allNotes[bar][i][j] -= shift;
+					if (allNotes[bar][i][j] < 0) {
+						allNotes[bar][i][j] = 7 + allNotes[bar][i][j];
+						allOctaves[bar][i][j]--;
 					}
 				}
 			}
-			else {
-				tacetLocal = true;
-			}
 		}
-		if (!tacetLocal) {
-			for (unsigned i = 0; i < allOctaves[bar].size(); i++) {
-				for (unsigned j = 0; j < allOctaves[bar][i].size(); j++) {
-					allOctaves[bar][i][j] += 2;
-				}
+		else {
+			tacetLocal = true;
+		}
+	}
+	if (!tacetLocal) {
+		for (unsigned i = 0; i < allOctaves[bar].size(); i++) {
+			for (unsigned j = 0; j < allOctaves[bar][i].size(); j++) {
+				allOctaves[bar][i][j] += shift;
 			}
 		}
 	}
@@ -1414,76 +1417,68 @@ float Notes::getXLength()
 }
 
 //--------------------------------------------------------------
+const std::string& Notes::articulationGlyph(int articulation, bool below)
+{
+	static const std::string above[7] = {Smufl::articMarcatoAbove, Smufl::ornamentTrill, Smufl::articTenutoAbove, Smufl::articStaccatissimoAbove,
+		Smufl::articAccentAbove, Smufl::articStaccatoAbove, Smufl::articTenutoStaccatoAbove};
+	static const std::string under[7] = {Smufl::articMarcatoBelow, Smufl::ornamentTrill, Smufl::articTenutoBelow, Smufl::articStaccatissimoBelow,
+		Smufl::articAccentBelow, Smufl::articStaccatoBelow, Smufl::articTenutoStaccatoBelow};
+	int ndx = std::clamp(articulation, 1, 7) - 1;
+	return (below && articulation != 2 ? under[ndx] : above[ndx]);
+}
+
+//--------------------------------------------------------------
+// the articulations of a note go on the side of its note head away from the stem (below with the stem up), centered on the head
+// 0.4 of a space from it and from each other, stacked outwards; staccato and tenuto go in a space when they fall inside the staff
+// the trill goes above the note, its stem and the staff
+// articulYPos holds the baseline of each glyph, and articulXPos the center of the note head (see drawArticulations())
 void Notes::storeArticulationsCoords(int bar)
 {
+	const float gap = staffDist * 0.4f;
+	const float staffBottom = staffDist * 4;
+	Rect headInk = notationFont->ink(notesSyms[2]);
 	for (unsigned i = 0; i < allArticulations[bar].size(); i++) {
+		if (allArticulations[bar][i].empty()) continue;
+		int base = allChordsBaseIndexes[bar][i];
+		articulXPos[bar][i] = allNoteCoordsX[bar][i][base];
+		// the note head as it is drawn (see drawNotes())
+		float headY = allNoteHeadCoordsY[bar][i][base] + (noteHeight / 8.0f) - (staffDist / 10.0f);
+		float headCenter = headY + headInk.y + (headInk.height / 2);
+		bool below = (stemDirections[bar][i] > 0);
+		int dir = (below ? 1 : -1);
+		float edge = headCenter + (dir * (headInk.height / 2));
+		auto extend = [&](float top, float bottom) {
+			if (bottom > allNotesMaxYPos[bar][i] && bottom < FLT_MAX) allNotesMaxYPos[bar][i] = bottom;
+			if (top < allNotesMinYPos[bar][i] && top > -FLT_MAX) allNotesMinYPos[bar][i] = top;
+		};
+		int trillNdx = -1;
 		for (unsigned j = 0; j < allArticulations[bar][i].size(); j++) {
-			if (allArticulations[bar][i][j] > 0) {
-				float xPos = allNoteCoordsX[bar][i][allChordsBaseIndexes[bar][i]];
-				if (stemDirections[bar][i] > 0) xPos -= (noteWidth/4);
-				else xPos -= (noteWidth/2);
-				float yPos = allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]];
-				// if we have more than one articulation symbol
-				if (stemDirections[bar][i] > 0) yPos += (staffDist * j);
-				else yPos -= (staffDist * j);
-				if (stemDirections[bar][i] > 0) {
-					yPos += staffDist;
-					if (yPos > allNotesMaxYPos[bar][i] && yPos < FLT_MAX) allNotesMaxYPos[bar][i] = yPos;
-				}
-				else {
-					yPos -= staffDist;
-					if (yPos < allNotesMinYPos[bar][i] && yPos > -FLT_MAX) allNotesMinYPos[bar][i] = yPos;
-				}
-				// check if the note head is on a line, but only inside the stave
-				if ((allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] > 0) && \
-						(allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] < (staffDist*5)) && \
-						!rhythm) {
-					if (((int)(abs(allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]]) / halfStaffDist) % 2) == 0) {
-						if (stemDirections[bar][i] > 0) yPos += halfStaffDist;
-						else  yPos -= halfStaffDist;
-						if (yPos + (notationFont->height(articulSyms[allArticulations[bar][i][j]-1])/2) > allNotesMaxYPos[bar][i] && yPos < FLT_MAX) {
-							// articulation symbols start with index 1, because 0 is reserved for no articulation
-							// so we subtract 1 from the index
-							allNotesMaxYPos[bar][i] = yPos + (notationFont->height(articulSyms[allArticulations[bar][i][j]-1])/2);
-						}
-						if (yPos - (notationFont->height(articulSyms[allArticulations[bar][i][j]-1])/2) < allNotesMinYPos[bar][i] && yPos > -FLT_MAX) {
-							allNotesMinYPos[bar][i] = yPos - (notationFont->height(articulSyms[allArticulations[bar][i][j]-1])/2);
-						}
-					}
-				}
-				articulXPos[bar][i] = xPos;
-				articulYPos[bar][i][j] = yPos;
-				if (allArticulations[bar][i][j] == 7) {
-					float yPosPortando;
-					if (stemDirections[bar][i] > 0) {
-						// check if the note head is inside the stave
-						if (allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] < (staffDist*5)) {
-							yPosPortando = staffDist * 5;
-						}
-						else {
-							yPosPortando = allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] + noteHeight;
-						}
-					}
-					else {
-						// check if the note head is inside the stave
-						if (allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] > 0) {
-							yPosPortando = -staffDist;
-						}
-						else {
-							yPosPortando = allNoteHeadCoordsY[bar][i][allChordsBaseIndexes[bar][i]] - noteHeight;
-						}
-					}
-					// if case the articulation is a portando, we must get the height as in the line below
-					float halfArticulHeight = (notationFont->height(Smufl::articStaccatoAbove) + notationFont->height(Smufl::articTenutoAbove)) / 2;
-					if (yPosPortando + halfArticulHeight > allNotesMaxYPos[bar][i] && yPosPortando < FLT_MAX) {
-						allNotesMaxYPos[bar][i] = yPosPortando + halfArticulHeight;
-					}
-					if (yPosPortando - halfArticulHeight < allNotesMinYPos[bar][i] && yPosPortando > -FLT_MAX) {
-						allNotesMinYPos[bar][i] = yPosPortando - halfArticulHeight;
-					}
-					articulYPos[bar][i][j] = yPosPortando;
-				}
+			int articulation = allArticulations[bar][i][j];
+			if (articulation <= 0) continue;
+			if (articulation == 2) {
+				trillNdx = (int)j;
+				continue;
 			}
+			Rect ink = notationFont->ink(articulationGlyph(articulation, below));
+			float center = edge + (dir * (gap + (ink.height / 2)));
+			// staccato and tenuto inside the staff go in the next space, if there is one before the end of the staff
+			if ((articulation == 3 || articulation == 6) && !rhythm && center > 0 && center < staffBottom && staffDist > 0) {
+				float spaces = (center / staffDist) - 0.5f;
+				float inSpace = ((below ? std::ceil(spaces) : std::floor(spaces)) + 0.5f) * staffDist;
+				if (inSpace > 0 && inSpace < staffBottom) center = inSpace;
+			}
+			articulYPos[bar][i][j] = center - (ink.y + (ink.height / 2));
+			edge = center + (dir * (ink.height / 2));
+			extend(center - (ink.height / 2), center + (ink.height / 2));
+		}
+		if (trillNdx >= 0) {
+			Rect ink = notationFont->ink(Smufl::ornamentTrill);
+			// above the head, the stem (with the stem up) and the articulations above the note, and above the staff
+			float top = std::min(headCenter - (headInk.height / 2), 0.0f);
+			if (allNotesMinYPos[bar][i] > -FLT_MAX && allNotesMinYPos[bar][i] < FLT_MAX) top = std::min(top, allNotesMinYPos[bar][i]);
+			float center = top - gap - (ink.height / 2);
+			articulYPos[bar][i][trillNdx] = center - (ink.y + (ink.height / 2));
+			extend(center - (ink.height / 2), center + (ink.height / 2));
 		}
 	}
 }
@@ -2993,38 +2988,16 @@ void Notes::drawTuplets(int bar, float xStartPnt, float yStartPnt, float yOffset
 //--------------------------------------------------------------
 void Notes::drawArticulations(int bar, float xStartPnt, float yStartPnt, float yOffset, float xCoef)
 {
-	float xCoefLocal = xCoef;
-	//if (scoreOrientation > 0) xCoefLocal = 1;
 	for (unsigned i = 0; i < allArticulations[bar].size(); i++) {
+		bool below = (stemDirections[bar][i] > 0);
 		for (unsigned j = 0; j < allArticulations[bar][i].size(); j++) {
-			if (allArticulations[bar][i][j] > 0) {
-				if (allArticulations[bar][i][j] < 7) {
-					// we don't have a symbol for no articulation so bar with allArticulations[i]-1
-					std::string articulStr = articulSyms[allArticulations[bar][i][j]-1];
-					if ((allArticulations[bar][i][j] == 1) && (stemDirections[bar][i] > 0)) {
-						// the marcato sign needs to be inverted in case of being projected under the note
-						cv().push();
-						cv().translate((articulXPos[bar][i]*xCoefLocal)+xStartPnt, articulYPos[bar][i][j]+yStartPnt+yOffset);
-						cv().scale(1, -1);
-						notationFont->draw(articulStr, 0, 0);
-						cv().pop();
-					}
-					else {
-						notationFont->draw(articulStr, (articulXPos[bar][i]*xCoefLocal)+xStartPnt, articulYPos[bar][i][j]+yStartPnt+yOffset);
-					}
-				}
-				else {
-					float offset;
-					if (stemDirections[bar][i] > 0) {
-						offset = halfStaffDist;
-					}
-					else {
-						offset = -halfStaffDist;
-					}
-					notationFont->draw(Smufl::articStaccatoAbove, (articulXPos[bar][i]*xCoefLocal)+xStartPnt+(noteWidth/2), articulYPos[bar][i][j]+yStartPnt+yOffset);
-					notationFont->draw(Smufl::articTenutoAbove, (articulXPos[bar][i]*xCoefLocal)+xStartPnt, articulYPos[bar][i][j]+yStartPnt+offset+yOffset);
-				}
-			}
+			int articulation = allArticulations[bar][i][j];
+			if (articulation <= 0) continue;
+			const std::string& glyph = articulationGlyph(articulation, below);
+			// centered on the note head (see storeArticulationsCoords())
+			Rect ink = notationFont->ink(glyph);
+			float x = (articulXPos[bar][i] * xCoef) + xStartPnt - (ink.x + (ink.width / 2));
+			notationFont->draw(glyph, x, articulYPos[bar][i][j] + yStartPnt + yOffset);
 		}
 	}
 }

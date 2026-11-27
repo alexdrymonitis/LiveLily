@@ -35,6 +35,9 @@ class Font
 		virtual float height(const std::string& text) = 0;
 		// the bounds of the text, drawn with its baseline at y
 		virtual Rect bounds(const std::string& text, float x, float y) = 0;
+		// the box of the ink of the text drawn at (0, 0), with y down from the baseline (bounds() measures as openFrameworks did, which counts
+		// the ink below the baseline twice, see juce_canvas.cpp), for placing a glyph by its ink (e.g. an articulation of the score)
+		virtual Rect ink(const std::string& text) { return bounds(text, 0, 0); }
 		// the distance between the baselines of two lines of text
 		virtual float lineHeight() = 0;
 };

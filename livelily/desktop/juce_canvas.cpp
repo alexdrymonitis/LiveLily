@@ -59,6 +59,21 @@ class JuceFont : public Font
 			}
 			return {x, minY, right - x, maxY - minY};
 		}
+		Rect ink(const std::string& text) override
+		{
+			juce::GlyphArrangement glyphs;
+			glyphs.addLineOfText(font, juce::String::fromUTF8(text.c_str()), 0, 0);
+			juce::Rectangle<float> box;
+			bool any = false;
+			for (int i = 0; i < glyphs.getNumGlyphs(); i++) {
+				juce::Path path;
+				glyphs.getGlyph(i).createPath(path);
+				if (path.isEmpty()) continue;
+				box = (any ? box.getUnion(path.getBounds()) : path.getBounds());
+				any = true;
+			}
+			return {box.getX(), box.getY(), box.getWidth(), box.getHeight()};
+		}
 		float lineHeight() override { return font.getHeight(); }
 
 	private:

@@ -344,9 +344,9 @@ class Notes
 		// ppp, pp, p, mp, mf, f, ff, fff
 		std::string dynSyms[8] = {Smufl::dynamicPPP, Smufl::dynamicPP, Smufl::dynamicPiano, Smufl::dynamicMP, Smufl::dynamicMF,
 			Smufl::dynamicForte, Smufl::dynamicFF, Smufl::dynamicFFF};
-		// marcato, trill, tenuto, staccatissimo, accent, staccato
-		std::string articulSyms[6] = {Smufl::articMarcatoAbove, Smufl::ornamentTrill, Smufl::articTenutoAbove, Smufl::articStaccatissimoAbove,
-			Smufl::articAccentAbove, Smufl::articStaccatoAbove};
+		// the glyph of an articulation (1 marcato, 2 trill, 3 tenuto, 4 staccatissimo, 5 accent, 6 staccato, 7 portando)
+		// above or below the note (the trill is always above, see storeArticulationsCoords())
+		static const std::string& articulationGlyph(int articulation, bool below);
 		std::string octaveSyms[3] = {"", Smufl::ottava, Smufl::quindicesima};
 		int baseDurations[7] = {4, 8, 16, 32, 64, 128, 256};
 		// arrays to hold the widths and heights of std::strings
