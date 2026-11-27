@@ -1,6 +1,7 @@
 #include "juce_canvas.h"
 #include <cmath>
 #include <filesystem>
+#include <map>
 
 namespace {
 
@@ -59,8 +60,11 @@ class JuceFont : public Font
 			}
 			return {x, minY, right - x, maxY - minY};
 		}
+		// measured once for each text, as the score asks for the ink of its articulations every frame (see Notes::drawArticulations())
 		Rect ink(const std::string& text) override
 		{
+			auto cached = inks.find(text);
+			if (cached != inks.end()) return cached->second;
 			juce::GlyphArrangement glyphs;
 			glyphs.addLineOfText(font, juce::String::fromUTF8(text.c_str()), 0, 0);
 			juce::Rectangle<float> box;
@@ -72,13 +76,16 @@ class JuceFont : public Font
 				box = (any ? box.getUnion(path.getBounds()) : path.getBounds());
 				any = true;
 			}
-			return {box.getX(), box.getY(), box.getWidth(), box.getHeight()};
+			Rect measured{box.getX(), box.getY(), box.getWidth(), box.getHeight()};
+			inks[text] = measured;
+			return measured;
 		}
 		float lineHeight() override { return font.getHeight(); }
 
 	private:
 		JuceCanvas& canvas;
 		juce::Font font;
+		std::map<std::string, Rect> inks;
 };
 
 }
