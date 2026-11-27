@@ -1429,13 +1429,17 @@ const std::string& Notes::articulationGlyph(int articulation, bool below)
 
 //--------------------------------------------------------------
 // the articulations of a note go on the side of its note head away from the stem (below with the stem up), centered on the head
-// 0.4 of a space from it and from each other, stacked outwards; staccato and tenuto go in a space when they fall inside the staff
+// 0.4 of a space from it and from each other, stacked outwards; staccato and tenuto go in a space, or outside the staff, when they would
+// touch one of its lines, and the other articulations go outside the staff when they would cross it
 // the trill goes above the note, its stem and the staff
 // articulYPos holds the baseline of each glyph, and articulXPos the center of the note head (see drawArticulations())
 void Notes::storeArticulationsCoords(int bar)
 {
 	const float gap = staffDist * 0.4f;
-	const float staffBottom = staffDist * 4;
+	// the lines of the staff (only the middle one in a staff of rhythm), and how far from a line a glyph must stay to be seen clear of it
+	const float staffTop = (rhythm ? staffDist * 2 : 0);
+	const float staffBottom = (rhythm ? staffDist * 2 : staffDist * 4);
+	const float lineClearance = (cv().lineWidth / 2) + (staffDist * 0.1f);
 	Rect headInk = notationFont->ink(notesSyms[2]);
 	for (unsigned i = 0; i < allArticulations[bar].size(); i++) {
 		if (allArticulations[bar][i].empty()) continue;
@@ -1460,12 +1464,32 @@ void Notes::storeArticulationsCoords(int bar)
 				continue;
 			}
 			Rect ink = notationFont->ink(articulationGlyph(articulation, below));
-			float center = edge + (dir * (gap + (ink.height / 2)));
-			// staccato and tenuto inside the staff go in the next space, if there is one before the end of the staff
-			if ((articulation == 3 || articulation == 6) && !rhythm && center > 0 && center < staffBottom && staffDist > 0) {
-				float spaces = (center / staffDist) - 0.5f;
-				float inSpace = ((below ? std::ceil(spaces) : std::floor(spaces)) + 0.5f) * staffDist;
-				if (inSpace > 0 && inSpace < staffBottom) center = inSpace;
+			float half = ink.height / 2;
+			float center = edge + (dir * (gap + half));
+			// the glyph would cross the staff, or touch one of its lines
+			bool inStaff = (center - half < staffBottom + lineClearance) && (center + half > staffTop - lineClearance);
+			if (inStaff && staffDist > 0) {
+				// past the outer line of the staff on this side, clear of it
+				float outside = (below ? staffBottom : staffTop) + (dir * (gap + half));
+				if (articulation == 3 || articulation == 6) {
+					// staccato and tenuto go in the first space past the note head on this side that they fit in clear of the head
+					// (the next space for a head in a space, or past the line of a head on a line), or outside the staff if there is none left
+					float inSpace = outside;
+					if (!rhythm) {
+						for (int k = 0; k < 4; k++) {
+							float space = ((below ? k : 3 - k) + 0.5f) * staffDist;
+							if (dir * (space - edge) >= half + (staffDist * 0.1f)) {
+								inSpace = space;
+								break;
+							}
+						}
+					}
+					center = inSpace;
+				}
+				// the other articulations don't fit in a space and are hard to read across the lines, so they go outside the staff
+				else if (dir * (outside - center) > 0) {
+					center = outside;
+				}
 			}
 			articulYPos[bar][i][j] = center - (ink.y + (ink.height / 2));
 			edge = center + (dir * (ink.height / 2));
