@@ -105,10 +105,8 @@ and bundles are unpacked into their messages.
 
 - `\insts.clear` stops the sequencer (`stopNow()`) but doesn't wait for its thread to end before clearing the instruments,
   as Ctrl+n now does (see `Workspace::newSession()`); no crash has been seen, but it is the same kind of race.
-- Tab sometimes inserts a tab instead of selecting a suggestion of autocompletion, while the pop-up is shown (seen now and then,
-  but not in a session traced for it); with keys typed one by one (test mode) it always selects. `Editor::completionKey()`
-  skips the suggestions while Ctrl or Alt is held, and with none; a trace of those, of the suggestions and of the cursor at every Tab
-  would show which, if it happens again.
+- Fixed (01479c6): Tab sometimes inserted a tab instead of going through the suggestions of autocompletion, and the digits didn't type:
+  after Alt+Tab, Alt stayed held, as JUCE on Linux follows Alt only by its own key events; the desktop app asks X for Alt on every key.
 
 ## Steps, in order
 
