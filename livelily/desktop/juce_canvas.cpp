@@ -115,10 +115,14 @@ void JuceCanvas::circle(float x, float y, float radius)
 void JuceCanvas::quad(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4)
 {
 	if (!g) return;
-	// the two triangles of a strip: the first three corners, and the last three
+	// the corners are those of a strip of two triangles (the first three, and the last three), filled as one shape, around its outline,
+	// as two triangles filled with antialiasing leave a seam where they meet (a light line across a beam)
 	juce::Path p;
-	p.addTriangle(x1, y1, x2, y2, x3, y3);
-	p.addTriangle(x2, y2, x3, y3, x4, y4);
+	p.startNewSubPath(x1, y1);
+	p.lineTo(x2, y2);
+	p.lineTo(x4, y4);
+	p.lineTo(x3, y3);
+	p.closeSubPath();
 	g->fillPath(p);
 }
 
