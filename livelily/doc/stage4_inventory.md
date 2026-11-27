@@ -21,7 +21,17 @@ Each step is one commit, checked with the snapshot tests of the app and the head
   - [x] 8a: LiveLily in the core (`App`, in `app.cpp`): the session, the panes and the views, what they ask of each other, every frame (OSC, typing from Python, the oscilloscope), and drawing them; a front end gives it a window (`AppWindow`, in `app_window.h`: the editor's font, painting grids, clipboard, file dialogs, mouse, frame rate, full screen, quitting); `ofApp` is only the window of openFrameworks, and the headless runner uses `App` with a window that paints nothing; members of `App` and `Views` have values before `setup()` (the panes were laid out with whatever `showScore` held)
   - [x] 8b: Bravura in place of Sonata (`resources/fonts/Bravura.otf`, SIL OFL; the glyphs by their SMuFL code points in `smufl.h`), in the openFrameworks app: clefs on their lines, flags at the end of the stem (one glyph per duration), rests on the lines, accidentals by their width, the quarter tones of Stein and Zimmermann, and stems up at the edge of the notehead; the canvas loads music fonts with `loadMusicFont()` (openFrameworks loads only the ranges it is given); checked live
   - [x] 8c: the JUCE desktop app (`desktop/`, `bin/livelily_desktop`): LiveLily in a JUCE window, drawn with `JuceCanvas` every frame of a timer, the editor's grids painted by `CanvasGrid` (`grid_painter.*`, in the core, a port of `of_grid_painter` to the canvas), the keys with the codes of `keys.h`, the system's clipboard and file dialogs, and full screen without a title bar; checked live
-- [ ] Step 9: test mode in the JUCE app, its screenshots compared with those of the openFrameworks app
+- [x] Step 9: test mode in the JUCE app, its screenshots compared with those of the openFrameworks app; checked live
+  - `livelily_desktop --test file.lyv [--out dump.txt] [--screenshot image.png]`, drawn offscreen with no window, frame by frame as the openFrameworks app
+    runs a test; `LIVELILY_APP=livelily_desktop tests/snapshots.sh check` and `LIVELILY_APP=livelily_desktop tests/screenshots.sh save name` run it,
+    and `tests/screenshots.sh side a b` puts two sets of screenshots side by side
+  - 62 of the 63 snapshots of the openFrameworks app are the same with the JUCE app; `font_size_panes_test` differs in the rows of the panes,
+    as the editor's font is measured by the outlines of its glyphs, where openFrameworks measured FreeType's hinted bitmaps:
+    the cells are the same at size 18 (11x22), and at other sizes a pixel or two taller or shorter
+    (its snapshot is saved anew with the JUCE app when openFrameworks goes, in step 10)
+  - the screenshots differ only in the antialiasing of text and shapes; the screenshots of the openFrameworks app have the alpha of the window,
+    so a translucent note of the piano roll looks lighter in an image viewer, though its color is the same
+  - the desktop app's window goes on the screen once it has its size and its place (it showed at 128x128 in a corner for a moment)
 - [ ] Step 10: openFrameworks is removed, and CI builds the desktop app
 
 ## What depends on openFrameworks today

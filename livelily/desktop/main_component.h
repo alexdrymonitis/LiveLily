@@ -14,7 +14,16 @@
 class MainComponent : public juce::Component, public AppWindow, private juce::Timer
 {
 	public:
-		explicit MainComponent(const std::string& resourcesDirectory);
+		// test mode (see test_run.h), from the command line: livelily_desktop --test file.lyv [--out dump.txt] [--screenshot image.png]
+		struct Test {
+			std::string file;
+			std::string out;
+			std::string screenshot;
+		};
+		// LiveLily, or with a test file, its test mode, in which the component is drawn offscreen, with no window, as in the openFrameworks app:
+		// the file runs after the first frames, its keys are typed one a frame, and a few frames after the last one
+		// the state and the screen are written to the dump, the frame is saved as a PNG file if asked, and the program quits
+		explicit MainComponent(const std::string& resourcesDirectory, const Test& test = {});
 		~MainComponent() override;
 		// what the close button of the window does: LiveLily asks to save the files that have changes, and then quits
 		void requestQuit() { app.workspace.requestQuit(); }
@@ -90,6 +99,16 @@ class MainComponent : public juce::Component, public AppWindow, private juce::Ti
 		int framesToReclaimKeys = 0;
 		// LiveLily takes the keys whenever its window is active (see reclaimKeys())
 		void takeKeys();
+
+		Test test;
+		int testFrame = 0;
+		int testDoneFrame = 0;
+		bool testDone = false;
+		bool testEnded = false;
+		std::vector<KeyEvent> testKeys;
+		size_t testKeyNdx = 0;
+		// a frame of test mode, instead of a frame of LiveLily (which test mode doesn't update)
+		void testFrameCallback();
 
 		void timerCallback() override;
 		// the code of keys.h of a key JUCE gives, as openFrameworks gave it, or -1 for a key LiveLily doesn't take

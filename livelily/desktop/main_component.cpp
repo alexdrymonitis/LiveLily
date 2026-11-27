@@ -1,16 +1,20 @@
 #include "main_component.h"
 #include "grid_painter.h"
 #include "keys.h"
+#include "test_run.h"
+#include <fstream>
+#include <iostream>
 #include <cctype>
 
 //--------------------------------------------------------------
-MainComponent::MainComponent(const std::string& resourcesDirectory) : resources(resourcesDirectory), canvas(resourcesDirectory)
+MainComponent::MainComponent(const std::string& resourcesDirectory, const Test& testToRun)
+	: resources(resourcesDirectory), canvas(resourcesDirectory), test(testToRun)
 {
 	setSize(1350, 900);
 	setWantsKeyboardFocus(true);
 	// the views draw with this canvas (see canvas.h), which LiveLily loads its fonts with too
 	Canvas::current = &canvas;
-	app.setup(getWidth(), getHeight(), false, resources);
+	app.setup(getWidth(), getHeight(), !test.file.empty(), resources);
 	// drawn with JUCE's own renderer of each system, which keeps up with the frame rate (an OpenGL context delayed the keys on Linux
 	// as its thread reads the events of the window's X connection, see doc/stage4_inventory.md)
 	setFrameRate(60);
@@ -28,12 +32,62 @@ MainComponent::~MainComponent()
 //--------------------------------------------------------------
 void MainComponent::timerCallback()
 {
+	if (!test.file.empty()) {
+		testFrameCallback();
+		return;
+	}
 	if (inDialog) return;
 	takeKeys();
 	if (resyncKeys) syncKeys(false);
 	releaseKeys();
 	app.update();
 	repaint();
+}
+
+//--------------------------------------------------------------
+void MainComponent::testFrameCallback()
+{
+	if (testEnded) return;
+	testFrame++;
+	// the file runs once a frame has been drawn, as in the openFrameworks app (see ofApp::update())
+	if (!testDone && testFrame > 1) {
+		testDone = true;
+		testDoneFrame = testFrame;
+		std::ofstream out(test.out);
+		if (!out.is_open()) std::cerr << "livelily test: could not write to " << test.out << std::endl;
+		else TestRun::runFile(app.workspace, app.session, test.file, out, testKeys);
+	}
+	else if (testDone && testKeyNdx < testKeys.size()) {
+		const KeyEvent& event = testKeys[testKeyNdx++];
+		if (event.press) app.keyPressed(event.key);
+		else app.keyReleased(event.key);
+		testDoneFrame = testFrame;
+	}
+	// the frame, drawn offscreen (LiveLily lays the views out as it draws them)
+	juce::Image frame = createComponentSnapshot(getLocalBounds(), true, 1.0f);
+	if (app.exiting) {
+		testEnded = true;
+		return;
+	}
+	if (testDone && testKeyNdx >= testKeys.size() && testFrame > testDoneFrame + 3) {
+		testEnded = true;
+		std::ofstream out(test.out, std::ios::app);
+		if (out.is_open()) {
+			TestRun::writeState(app.workspace, app.session, out, targetFrameRate);
+			TestRun::writeScreen(app.workspace, out);
+		}
+		if (!test.screenshot.empty()) {
+			juce::File file(juce::String::fromUTF8(test.screenshot.c_str()));
+			file.deleteFile();
+			juce::FileOutputStream stream(file);
+			juce::PNGImageFormat png;
+			if (!stream.openedOk() || !png.writeImageToStream(frame.convertedToFormat(juce::Image::RGB), stream)) {
+				std::cerr << "livelily test: could not write " << test.screenshot << std::endl;
+			}
+		}
+		stopTimer();
+		juce::JUCEApplication::quit();
+	}
 }
 
 //--------------------------------------------------------------

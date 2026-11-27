@@ -4,6 +4,7 @@
 #   tests/snapshots.sh check    dumps to tests/current and compares with tests/private/snapshots (run it after a change)
 # a file whose run crashes or doesn't finish is reported, and so is every file whose dump differs from its snapshot
 # build the program first (make wpyo -j2)
+# LIVELILY_APP=livelily_desktop tests/snapshots.sh check   runs the JUCE app (built with CMake) instead of the openFrameworks app
 
 mode="$1"
 if [ "$mode" != "save" ] && [ "$mode" != "check" ]; then
@@ -14,14 +15,15 @@ fi
 testsDir="$(cd "$(dirname "$0")" && pwd)"
 appDir="$(dirname "$testsDir")"
 binDir="$appDir/bin"
-if [ ! -x "$binDir/livelily" ]; then
-	echo "$binDir/livelily not found, build the program first"
+program="${LIVELILY_APP:-livelily}"
+if [ ! -x "$binDir/$program" ]; then
+	echo "$binDir/$program not found, build the program first"
 	exit 2
 fi
 # a binary older than the sources (e.g. after a build that failed) would check the old code, so it is refused
-newerSource="$(find "$appDir/src" -newer "$binDir/livelily" \( -name '*.cpp' -o -name '*.h' \) | head -1)"
+newerSource="$(find "$appDir/src" "$appDir/desktop" -newer "$binDir/$program" \( -name '*.cpp' -o -name '*.h' \) 2>/dev/null | head -1)"
 if [ -n "$newerSource" ]; then
-	echo "$binDir/livelily is older than $newerSource, build the program first"
+	echo "$binDir/$program is older than $newerSource, build the program first"
 	exit 2
 fi
 if [ "$mode" = "save" ]; then
@@ -37,7 +39,7 @@ failed=0
 for file in "$testsDir"/private/lyv/*.lyv; do
 	name="$(basename "$file" .lyv)"
 	# the program finds LiveLily's resources from its own path (see src/paths.h), and is run from bin as before
-	(cd "$binDir" && timeout 120 ./livelily --test "$file" --out "$outDir/$name.dump" > "$outDir/$name.log" 2>&1)
+	(cd "$binDir" && timeout 120 "./$program" --test "$file" --out "$outDir/$name.dump" > "$outDir/$name.log" 2>&1)
 	status=$?
 	if [ $status -ne 0 ]; then
 		if [ $status -eq 124 ]; then echo "TIMEOUT  $name"; else echo "CRASH    $name (exit $status, see $outDir/$name.log)"; fi

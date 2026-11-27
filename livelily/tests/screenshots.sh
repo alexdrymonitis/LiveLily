@@ -4,18 +4,22 @@
 # and the window is saved when the test has run, as a PNG file
 #   tests/screenshots.sh save name       saves the screenshots to tests/current/screens/name (e.g. before a change)
 #   tests/screenshots.sh compare a b     compares tests/current/screens/a with tests/current/screens/b, pixel by pixel (with ImageMagick)
+#   tests/screenshots.sh side a b        puts the screenshots of a and b side by side, in tests/current/screens/a_b (e.g. those of the two apps,
+#                                        whose text is rendered differently, so that they don't compare pixel by pixel)
 # build the program first (make wpyo -j2)
+# LIVELILY_APP=livelily_desktop tests/screenshots.sh save name   runs the JUCE app (built with CMake) instead of the openFrameworks app
 
 testsDir="$(cd "$(dirname "$0")" && pwd)"
 appDir="$(dirname "$testsDir")"
 binDir="$appDir/bin"
 screensDir="$testsDir/current/screens"
+program="${LIVELILY_APP:-livelily}"
 
 case "$1" in
 	save)
 		[ -n "$2" ] || { echo "usage: $0 save name"; exit 2; }
-		if [ ! -x "$binDir/livelily" ]; then
-			echo "$binDir/livelily not found, build the program first"
+		if [ ! -x "$binDir/$program" ]; then
+			echo "$binDir/$program not found, build the program first"
 			exit 2
 		fi
 		outDir="$screensDir/$2"
@@ -23,7 +27,7 @@ case "$1" in
 		mkdir -p "$outDir"
 		for file in "$testsDir"/private/lyv/*.lyv; do
 			name="$(basename "$file" .lyv)"
-			(cd "$binDir" && timeout 120 ./livelily --test "$file" --out "$outDir/$name.dump" --screenshot "$outDir/$name.png" > "$outDir/$name.log" 2>&1)
+			(cd "$binDir" && timeout 120 "./$program" --test "$file" --out "$outDir/$name.dump" --screenshot "$outDir/$name.png" > "$outDir/$name.log" 2>&1)
 			[ -f "$outDir/$name.png" ] || echo "no screenshot: $name"
 		done
 		echo "saved $(ls "$outDir"/*.png 2>/dev/null | wc -l) screenshots to $outDir"
@@ -50,8 +54,23 @@ case "$1" in
 		[ $differ -eq 0 ] && echo "all the screenshots are the same"
 		exit $differ
 		;;
+	side)
+		[ -n "$2" ] && [ -n "$3" ] || { echo "usage: $0 side a b"; exit 2; }
+		a="$screensDir/$2"
+		b="$screensDir/$3"
+		outDir="$screensDir/$2_$3"
+		rm -rf "$outDir"
+		mkdir -p "$outDir"
+		for png in "$a"/*.png; do
+			name="$(basename "$png" .png)"
+			[ -f "$b/$name.png" ] || { echo "MISSING  $name"; continue; }
+			# a with b to its right, with a gray line between them
+			convert "$png" -background gray50 -gravity east -splice 4x0 "$b/$name.png" +append "$outDir/$name.png"
+		done
+		echo "saved $(ls "$outDir"/*.png 2>/dev/null | wc -l) pictures to $outDir ($2 on the left, $3 on the right)"
+		;;
 	*)
-		echo "usage: $0 save name | compare a b"
+		echo "usage: $0 save name | compare a b | side a b"
 		exit 2
 		;;
 esac
