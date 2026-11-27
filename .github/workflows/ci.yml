@@ -1,7 +1,7 @@
 # builds LiveLily (the desktop app, its core and the headless runner) with CMake on Linux, macOS and Windows, and runs the tests with CTest
-# (see livelily/CMakeLists.txt); JUCE is fetched by CMake (see livelily/doc/stage4_inventory.md)
+# (see CMakeLists.txt); JUCE is fetched by CMake (see doc/stage4_inventory.md)
 # the test files are kept out of this repository, so here CTest finds no tests, and the workflow checks that LiveLily builds
-# LiveLily-part (livelily_part/) is not built here
+# LiveLily-part has a repository of its own (github.com/alexdrymonitis/LiveLily-part)
 name: CI
 
 on:
@@ -24,9 +24,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg-cache,readwrite
-    defaults:
-      run:
-        working-directory: livelily
     steps:
       - uses: actions/checkout@v7
 

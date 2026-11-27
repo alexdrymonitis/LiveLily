@@ -7,10 +7,9 @@ LiveLily is a live sequencing and live scoring system through live coding with a
 
 LiveLily does not produce any sound. It sends OSC or MIDI messages to control other software and hardware. It can be combined with the LiveLily-Score, to display parts of the full score separately, that can be sight-read by instrumentalists. The possible setups that LiveLily supports are pure electronic, electroacoustic, or acoustic only.
 
-LiveLily (the livelily/ directory) is written in C++ with [JUCE], and is built with CMake. It needs FluidSynth and zlib, and, for pyo, Python with its development files and pyo installed:
+LiveLily is written in C++ with [JUCE], and is built with CMake. It needs FluidSynth and zlib, and, for pyo, Python with its development files and pyo installed:
 
 ```
-cd livelily
 cmake -B build
 cmake --build build
 bin/livelily
@@ -18,7 +17,7 @@ bin/livelily
 
 CMake fetches JUCE by itself (or builds with a JUCE checkout given with `-DLIVELILY_JUCE_DIR=path`), and `-DLIVELILY_PYO=OFF` builds without Python. On Linux, JUCE needs the development files of ALSA, JACK, FreeType, fontconfig and X11 (see .github/workflows/ci.yml for the packages).
 
-LiveLily-part (the livelily_part/ directory) is still written in [openFrameworks], with the ofxOsc addon (OF 0.12.0 or higher), and must be placed in the OF_ROOT/apps/myApps/ directory to compile.
+LiveLily-part, which displays one part of the score for a performer to sight-read, has a repository of its own: [LiveLily-part].
    
 ![LiveLily screenshow](images/livelily_screenshot.png?raw=true)
   
@@ -49,7 +48,7 @@ LiveLily can also be used as a live scoring system to write music scores for aco
 TODO:
 - write the documentation of the program
 
-[openFrameworks]: https://openframeworks.cc/
 [JUCE]: https://juce.com/
+[LiveLily-part]: https://github.com/alexdrymonitis/LiveLily-part
 [Demo video]: https://vimeo.com/781559305
 [Lilypond]: https://lilypond.org/

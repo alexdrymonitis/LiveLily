@@ -39,7 +39,7 @@ Each step is one commit, checked with the snapshot tests of the app and the head
   - the snapshot of `font_size_panes_test` is saved with the JUCE app (the panes have 27 rows after the font grows, as the font is measured
     by its outlines); the screenshots of `bin/livelily` are the baseline `p10`
   - CI installs zlib on Windows (with vcpkg), which CMake has needed since the MusicXML files (`find_package(ZLIB)`), and configuring failed there without it
-  - LiveLily-part (`livelily_part/`) is still an openFrameworks app, until it is migrated
+  - LiveLily-part is still an openFrameworks app, until it is migrated; it has a repository of its own since (github.com/alexdrymonitis/LiveLily-part)
 
 ## What depended on openFrameworks (all of it gone in step 10)
 
