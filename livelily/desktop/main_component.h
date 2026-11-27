@@ -82,6 +82,8 @@ class MainComponent : public juce::Component, public AppWindow, private juce::Ti
 		bool resyncKeys = false;
 		// releases the keys that are held and sets the modifiers as they are now
 		void syncKeys(bool released);
+		// the modifiers as they are now, asked of the system (with Alt from X on Linux, see x11_keys.h)
+		static juce::ModifierKeys modifiersNow();
 		// while a file dialog waits for the user, its loop of events runs, and LiveLily is in the middle of the key that opened it
 		// so the frames stop and the keys wait (see chooseFileToSave())
 		bool inDialog = false;

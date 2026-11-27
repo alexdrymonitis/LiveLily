@@ -2,6 +2,7 @@
 #include "grid_painter.h"
 #include "keys.h"
 #include "test_run.h"
+#include "x11_keys.h"
 #include <fstream>
 #include <iostream>
 #include <cctype>
@@ -151,9 +152,11 @@ int MainComponent::keyCode(const juce::KeyPress& key)
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
 	if (inDialog) return true;
-	// the modifiers of the key, in case a change of them was missed (e.g. Alt released in another window)
-	modifierKeysChanged(key.getModifiers());
-	int code = keyCode(key);
+	// the modifiers as they are now, asked of the system, in case a change of them was missed: the release of Alt after Alt+Tab
+	// goes to the window manager, and JUCE would keep Alt held (and every key would be typed with Alt, e.g. Tab and the digits)
+	juce::ModifierKeys modifiers = modifiersNow();
+	modifierKeysChanged(modifiers);
+	int code = keyCode(juce::KeyPress(key.getKeyCode(), modifiers, key.getTextCharacter()));
 	if (code < 0) return false;
 	heldKeys[key.getKeyCode()] = code;
 	handlingKey = true;
@@ -211,8 +214,18 @@ void MainComponent::syncKeys(bool released)
 	else {
 		keysChanged = true;
 		releaseKeys();
-		modifierKeysChanged(juce::ModifierKeys::getCurrentModifiersRealtime());
+		modifierKeysChanged(modifiersNow());
 	}
+}
+
+//--------------------------------------------------------------
+juce::ModifierKeys MainComponent::modifiersNow()
+{
+	juce::ModifierKeys modifiers = juce::ModifierKeys::getCurrentModifiersRealtime().withoutMouseButtons();
+	int alt = altHeldNow();
+	if (alt == 1) modifiers = modifiers.withFlags(juce::ModifierKeys::altModifier);
+	else if (alt == 0) modifiers = modifiers.withoutFlags(juce::ModifierKeys::altModifier);
+	return modifiers;
 }
 
 //--------------------------------------------------------------
