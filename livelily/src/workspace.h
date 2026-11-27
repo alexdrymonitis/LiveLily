@@ -95,6 +95,9 @@ class Workspace
 		// which moves up when it has more lines (see layoutPanesForShell())
 		float belowBase = 0;
 		float belowTop = 0;
+		// the bottom of the status lines of the panes above the area below them, where the line that separates them is drawn
+		// (with rows of panes that don't divide the lines evenly, the panes leave a few pixels above that area), at most belowTop
+		float panesBottom();
 		// the number of lines of the area below the panes for the messages of the lines and for the shell, -1 to calculate them again
 		// (e.g. after the panes are laid out again, see layout())
 		int tracebackNumLinesShown = 0;

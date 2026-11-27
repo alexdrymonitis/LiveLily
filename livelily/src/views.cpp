@@ -455,7 +455,7 @@ void Views::drawScore()
 			cv().setColor(atBrightness(color, brightnessCoeff));
 			if (scoreOrientation == 0) {
 				// down to the area below the panes (the messages of the lines, or the shell), as the line that separates the panes
-				cv().line(view.middleOfScreenX, 0, view.middleOfScreenX, workspace.belowTop);
+				cv().line(view.middleOfScreenX, 0, view.middleOfScreenX, workspace.panesBottom());
 			}
 			else {
 				cv().line(0, scoreBackgroundHeight, view.screenWidth, scoreBackgroundHeight);

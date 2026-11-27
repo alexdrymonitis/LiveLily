@@ -557,13 +557,13 @@ void App::draw()
 			// we start the following loop from 1 because if we have one column only
 			// we don't need to draw any separating lines
 			for (int col = 1; col < it->second; col++) {
-				canvas.line(paneWidth*(float)col, paneHeight*(float)it->first, paneWidth*(float)col, paneHeight*(float)(it->first+1));
+				canvas.line(paneWidth*(float)col, paneHeight*(float)it->first, paneWidth*(float)col, std::min(paneHeight*(float)(it->first+1), workspace.panesBottom()));
 			}
 		}
 		else {
 			// if the orientation is switched, we treat rows as columns and vice versa
 			if (it->first > 0) {
-				canvas.line(paneWidth*(float)it->first, 0, paneWidth*(float)it->first, workspace.belowTop);
+				canvas.line(paneWidth*(float)it->first, 0, paneWidth*(float)it->first, workspace.panesBottom());
 			}
 			paneHeight = workspace.belowBase / (float)it->second;
 		}
@@ -603,7 +603,7 @@ void App::draw()
 	}
 	// draw a horizontal line to separate the panes and score from the traceback area
 	canvas.setColor(atBrightness(foregroundColor, brightnessCoeff));
-	canvas.line(0, workspace.belowTop, view.screenWidth, workspace.belowTop);
+	canvas.line(0, workspace.panesBottom(), view.screenWidth, workspace.panesBottom());
 	// the shell, or the messages of the lines, below the panes (see Workspace::fillBelowArea())
 	workspace.fillBelowArea();
 	paintBelowGrid();

@@ -140,6 +140,20 @@ void Workspace::layout()
 }
 
 //--------------------------------------------------------------
+float Workspace::panesBottom()
+{
+	float bottom = -1;
+	float cellHeight = host.workspaceMetrics().cellHeight;
+	for (auto& editor : editors) {
+		Editor& pane = editor.second;
+		// the panes at the bottom of their column, whose frames reach the area below the panes
+		if (pane.getFrameYOffset() + pane.getFrameHeight() < belowBase - 1) continue;
+		bottom = std::max(bottom, pane.getFrameYOffset() + ((float)(pane.getMaxNumLines() + 1) * cellHeight));
+	}
+	return (bottom < 0 ? belowTop : std::min(bottom, belowTop));
+}
+
+//--------------------------------------------------------------
 void Workspace::setPanesRowsAndCols()
 {
 	int key = 0;
