@@ -2246,7 +2246,13 @@ CmdOutput Session::cmdInsts(CmdInput& cmdInput, int lineNum, int numLines)
 		if (!hasDot) {
 			return genError("\"clear\" method must be concatenated to \"\\inst\" with a dot");
 		}
+		// clearing the instruments while the sequencer goes through them (from a bound function) is not safe, as with \insts.remove
+		if (sequencer.isCurrentThread()) {
+			return genError("instruments can't be cleared from a function that the sequencer calls");
+		}
+		// the sequencer stops, and its thread ends, before the bars, the loops and the instruments it plays go (as Ctrl+n does)
 		sequencer.stopNow();
+		sequencer.waitForThread();
 		std::lock_guard<std::recursive_mutex> instrumentsLock(sharedData.instrumentsMutex);
 		for (std::map<int, Instrument>::iterator it = sharedData.instruments.begin(); it != sharedData.instruments.end(); ++it) {
 			commandsMap[livelily][it->second.getName()[0]].erase("\\" + it->second.getName());

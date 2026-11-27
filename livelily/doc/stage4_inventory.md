@@ -103,8 +103,8 @@ and bundles are unpacked into their messages.
 
 ## Follow-ups
 
-- `\insts.clear` stops the sequencer (`stopNow()`) but doesn't wait for its thread to end before clearing the instruments,
-  as Ctrl+n now does (see `Workspace::newSession()`); no crash has been seen, but it is the same kind of race.
+- Fixed: `\insts.clear` stopped the sequencer (`stopNow()`) but didn't wait for its thread to end before clearing the instruments;
+  it now waits, as Ctrl+n does, and, as `\insts.remove`, refuses to run from a function that the sequencer calls.
 - Fixed (01479c6): Tab sometimes inserted a tab instead of going through the suggestions of autocompletion, and the digits didn't type:
   after Alt+Tab, Alt stayed held, as JUCE on Linux follows Alt only by its own key events; the desktop app asks X for Alt on every key.
 
