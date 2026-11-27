@@ -1,6 +1,5 @@
-# builds LiveLily's core and its headless runner with CMake on Linux, macOS and Windows, and runs the tests with CTest
-# (see livelily/CMakeLists.txt and livelily/doc/stage3_inventory.md); JUCE is fetched by CMake (see doc/stage4_inventory.md)
-# the app itself still needs openFrameworks and is built locally (make wpyo)
+# builds LiveLily (the desktop app, its core and the headless runner) with CMake on Linux, macOS and Windows, and runs the tests with CTest
+# (see livelily/CMakeLists.txt); JUCE is fetched by CMake (see livelily/doc/stage4_inventory.md)
 # the test files are kept out of this repository, so here CTest finds no tests, and the workflow checks that LiveLily builds
 # LiveLily-part (livelily_part/) is not built here
 name: CI
@@ -54,14 +53,15 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/vcpkg-cache
-          key: vcpkg-${{ runner.os }}-fluidsynth
+          key: vcpkg-${{ runner.os }}-fluidsynth-zlib
 
       - name: Install the dependencies (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/vcpkg-cache" | Out-Null
-          vcpkg install fluidsynth:x64-windows
+          # zlib for compressed MusicXML files (see musicxml.cpp), which Linux and macOS have already
+          vcpkg install fluidsynth:x64-windows zlib:x64-windows
 
       - name: Configure
         shell: bash

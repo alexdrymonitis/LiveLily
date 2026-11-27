@@ -64,7 +64,7 @@ class Sequencer
 		bool isGenericMidiPort(int port);
 		bool hasGenericMidiPorts();
 
-		// stops the sound of an instrument, before it is removed (see ofApp::removeInstrument())
+		// stops the sound of an instrument, before it is removed (see Session::removeInstrument())
 		void silenceInstrument(Instrument& inst);
 		// drops the highlights of instruments with a delay that haven't been shown yet (e.g. before an instrument is removed)
 		void clearDelayedVisuals();

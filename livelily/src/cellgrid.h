@@ -1,7 +1,7 @@
 #ifndef CELLGRID_H
 #define CELLGRID_H
 
-// what the editor shows, as a grid of character cells, which a front end paints (with openFrameworks for now, see of_grid_painter.h)
+// what the editor shows, as a grid of character cells, which a front end paints (see grid_painter.h)
 // the editor fills a grid for every frame, in the layers it draws in (see Editor::drawText()), so that painting them in order
 // gives the same picture as drawing directly, while a terminal can paint the same grid in its own cells
 
@@ -146,7 +146,7 @@ struct GridPaint
 	int toCol = 0;
 };
 
-// writes a grid as text, for the test dumps (see testmode.cpp): its text and the colors of its text as letters, row by row
+// writes a grid as text, for the test dumps (see test_run.h): its text and the colors of its text as letters, row by row
 // (with a legend of the colors), then its layers (backgrounds, selections, outlines, marks, and the cursor)
 void dumpGrid(std::ostream& out, const std::string& title, const CellGrid& grid);
 

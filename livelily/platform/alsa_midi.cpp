@@ -39,7 +39,7 @@ class AlsaMidiOutput : public MidiOutput
 			if (port < 0) return false;
 			std::lock_guard<std::mutex> lock(mutex);
 			if (outs.find(port) != outs.end()) return true;
-			// the port is kept even if it couldn't be opened, which then ignores what is sent to it, as with ofxMidi (see of_midi.cpp)
+			// the port is kept even if it couldn't be opened, which then ignores what is sent to it, as ofxMidi did in the openFrameworks app
 			Out& out = outs[port];
 			std::vector<Destination> list = destinations();
 			if (seq == nullptr || port >= (int)list.size()) return false;

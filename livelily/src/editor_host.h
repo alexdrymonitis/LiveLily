@@ -1,7 +1,7 @@
 #ifndef EDITOR_HOST_H
 #define EDITOR_HOST_H
 
-// what the editor asks of the app that holds it (ofApp for now), so that the editor doesn't depend on the app (see doc/stage2_inventory.md)
+// what the editor asks of the app that holds it (Workspace, see workspace.h), so that the editor doesn't depend on the app (see doc/stage2_inventory.md)
 
 #include "color.h"
 #include <string>

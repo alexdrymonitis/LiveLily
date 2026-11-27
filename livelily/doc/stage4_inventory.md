@@ -33,8 +33,15 @@ Each step is one commit, checked with the snapshot tests of the app and the head
     so a translucent note of the piano roll looks lighter in an image viewer, though its color is the same
   - the desktop app's window goes on the screen once it has its size and its place (it showed at 128x128 in a corner for a moment)
 - [ ] Step 10: openFrameworks is removed, and CI builds the desktop app
+  - the makefiles, `config.make`, `addons.make`, `livelily.qbs`, the `of_*` files, `ofApp.*`, `main.cpp` and `testmode.cpp` are removed;
+    CMake builds the desktop app as `bin/livelily` (on macOS `bin/LiveLily.app`, with the resources in the bundle),
+    and the test scripts run it; the comments that pointed to `ofApp` point to where its code went
+  - the snapshot of `font_size_panes_test` is saved with the JUCE app (the panes have 27 rows after the font grows, as the font is measured
+    by its outlines); the screenshots of `bin/livelily` are the baseline `p10`
+  - CI installs zlib on Windows (with vcpkg), which CMake has needed since the MusicXML files (`find_package(ZLIB)`), and configuring failed there without it
+  - LiveLily-part (`livelily_part/`) is still an openFrameworks app, until it is migrated
 
-## What depends on openFrameworks today
+## What depended on openFrameworks (all of it gone in step 10)
 
 | Files | What | Goes to |
 | --- | --- | --- |

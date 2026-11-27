@@ -25,7 +25,7 @@ class JuceMidiOutput : public MidiOutput
 			std::unique_ptr<juce::MidiOutput> out;
 			if (port < devices.size()) out = juce::MidiOutput::openDevice(devices[port].identifier);
 			bool opened = (out != nullptr);
-			// the port is kept even if it couldn't be opened, which then ignores what is sent to it, as with ofxMidi (see of_midi.cpp)
+			// the port is kept even if it couldn't be opened, which then ignores what is sent to it, as ofxMidi did in the openFrameworks app
 			outs[port] = std::move(out);
 			return opened;
 		}

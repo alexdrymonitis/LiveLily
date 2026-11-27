@@ -145,7 +145,7 @@ class Workspace
 		// the width of the area below the panes in characters, which the lines of the shell are broken to fit
 		size_t maxShellChars = 1;
 		Color shellStrColor = Colors::white;
-		// the output of a shell command that doesn't fit the area below the panes scrolls with the arrow keys (see ofApp::executeKeyPressed())
+		// the output of a shell command that doesn't fit the area below the panes scrolls with the arrow keys (see executeKeyPressed())
 		// shellScroll is its first line that is shown, of shellTotalLines, of which shellVisibleLines are shown
 		int shellScroll = 0;
 		int shellTotalLines = 0;

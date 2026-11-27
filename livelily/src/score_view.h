@@ -6,7 +6,7 @@
 
 // what is drawn of an instrument in the score: its staff and its notes (see score.h), which the front end attaches to the instrument
 // and which draws with the canvas of the front end (see canvas.h)
-// (see InstrumentDisplay in instrument.h, and ofApp::instrumentCreated()), and reaches with instrument.displayAs<ScoreView>()
+// (see InstrumentDisplay in instrument.h, and Views::instrumentCreated()), and reaches with instrument.displayAs<ScoreView>()
 class ScoreView : public InstrumentDisplay
 {
 	public:

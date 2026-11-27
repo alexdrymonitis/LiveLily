@@ -49,7 +49,7 @@ void MainComponent::testFrameCallback()
 {
 	if (testEnded) return;
 	testFrame++;
-	// the file runs once a frame has been drawn, as in the openFrameworks app (see ofApp::update())
+	// the file runs once a frame has been drawn, as in the openFrameworks app
 	if (!testDone && testFrame > 1) {
 		testDone = true;
 		testDoneFrame = testFrame;
@@ -245,7 +245,7 @@ AppWindow::FontMetrics MainComponent::loadEditorFont(int size)
 {
 	editorFont = canvas.loadFont("fonts/DroidSansMono.ttf", size);
 	FontMetrics metrics;
-	// as openFrameworks measured the font (see ofApp::loadEditorFont())
+	// as openFrameworks measured the font: the cells are 11x22 at size 18
 	metrics.cellWidth = editorFont->width("a");
 	metrics.cellHeight = editorFont->height("q") + (editorFont->height("l") - editorFont->height("o"));
 	metrics.characterOffset = (editorFont->height("j") - editorFont->height("l")) / 2;

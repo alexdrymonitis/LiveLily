@@ -111,7 +111,7 @@ void Staff::setOrientation(int orientation)
 //--------------------------------------------------------------
 void Staff::setNumBarsToDisplay(int numBars)
 {
-	// in horizontal view, the staff length is set for std::min(2, numBars) bars in ofApp::setScoreCoords()
+	// in horizontal view, the staff length is set for std::min(2, numBars) bars in Views::setScoreCoords()
 	// so this coefficient scales it to the actual number of bars
 	// (with one bar the length is already the full width, so the coefficient must be 1, not 2)
 	if (numBars < 1) numBars = 1;

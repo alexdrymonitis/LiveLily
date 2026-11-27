@@ -46,7 +46,7 @@ struct ViewState
 	// the piano roll (see \score.show pianoroll), whose time stamp is the start of the bar that plays (see FrontendHost::barStarted())
 	int pianoRollNumWhiteKeys;
 	// the length of the keyboard of the piano roll in widths of white keys, from the start of its lowest key to the end of its highest key
-	// (a black key at either end ends at its side, see ofApp::setPianoRollRange()), and where it starts, from C0, in widths of white keys
+	// (a black key at either end ends at its side, see Views::setPianoRollRange()), and where it starts, from C0, in widths of white keys
 	float pianoRollLength = 52;
 	float pianoRollOrigin = 0;
 	// the lowest and highest keys of the piano roll, as MIDI notes, A0 to C8 like a piano by default (see \score.show pianoroll)

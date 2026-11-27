@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-// the MIDI output of LiveLily, which the platform implements (with openFrameworks' ofxMidi for now, see of_midi.h)
+// the MIDI output of LiveLily, which the platform implements (see platform/alsa_midi.cpp on Linux, and platform/juce_midi.cpp)
 // ports are numbered as in the list of portNames(), and a message to a port that is not open is ignored
 // channels go from 1 to 16
 class MidiOutput
@@ -27,7 +27,7 @@ class MidiOutput
 		virtual void sendByte(int port, unsigned char byte) = 0;
 };
 
-// the platform makes it (of_midi.cpp for now)
+// the platform makes it (see platform/)
 std::unique_ptr<MidiOutput> makeMidiOutput();
 
 // the MIDI output of test mode (see test_midi.cpp): two made-up ports, which open but get nothing

@@ -2,7 +2,7 @@
 #define GRID_PAINTER_H
 
 // paints grids of cells (see cellgrid.h) with the canvas of the front end (see canvas.h) and the font of the editor
-// as the openFrameworks app paints them with openFrameworks (see of_grid_painter.h), for the other front ends that draw (the JUCE app)
+// for the front ends that draw (the desktop app)
 
 #include "canvas.h"
 #include "cellgrid.h"

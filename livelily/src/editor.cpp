@@ -27,7 +27,7 @@ Editor::Editor()
 	arrowCursorPos = 0;
 	maxCharactersPerString = oldMaxCharactersPerString = 0;
 	activeSession = true;
-	// a pane becomes active with setActivity() (see ofApp::addPane())
+	// a pane becomes active with setActivity() (see Workspace::addPane())
 	activity = false;
 
 	executionStepPerMs = (float)EXECUTIONBRIGHTNESS / (float)(EXECUTIONDUR - EXECUTIONRAMPSTART);
@@ -494,7 +494,7 @@ std::pair<int, int> Editor::findExecutingChunk()
 int Editor::commentStartOf(const std::string& str)
 {
 	// where a comment starts in a line, or the length of the line if it has none
-	// in LiveLily a comment starts at the first %, as the parser removes everything from there (see ofApp::parseString())
+	// in LiveLily a comment starts at the first %, as the parser removes everything from there (see Session::parseString())
 	// in Python it starts at a # that is not inside a string
 	if (thisLang == 0) {
 		size_t pos = str.find('%');
@@ -519,7 +519,7 @@ char Editor::bracketAt(const std::string& str, int pos, int commentStart)
 {
 	// the bracket at a position of a line, or 0 if there is no bracket there, or the position is in a comment
 	// round, square and curly brackets, and in LiveLily angle brackets (of chords), except those of hairpins (\< and \>)
-	// and of accents (->), as the parser does (see ofApp::tokenizeLine())
+	// and of accents (->), as the parser does (see Session::tokenizeLine())
 	if (pos < 0 || pos >= commentStart || pos >= (int)str.size()) return 0;
 	char c = str[pos];
 	if (c == '{' || c == '}' || c == '[' || c == ']' || c == '(' || c == ')') return c;
@@ -697,7 +697,7 @@ void Editor::drawText()
 
 	/*******************************************************************/
 	// the text area of the pane and its line numbers are filled into grids of cells (see cellgrid.h), in the layers they are painted in
-	// and painted at the end (see of_grid_painter.h), which gives the same picture as drawing them directly
+	// and painted at the end (see grid_painter.h), which gives the same picture as drawing them directly
 	// a line that isn't wrapped shows one more character than maxCharactersPerString
 	textGrid.resize(std::max(0, maxNumLines), std::max(0, wrapLines ? wrapWidth : maxCharactersPerString + 1));
 	gutterGrid.resize(std::max(0, maxNumLines), numDigits);
@@ -858,7 +858,7 @@ void Editor::drawText()
 			}
 			bool tokenizeDigits1 = false;
 			if (thisLang == 0) {
-				// the main ofApp stores the following LiveLily commands: \insts, \bar, \bars, \loop, \function, \list and \group
+				// the session stores the following LiveLily commands: \insts, \bar, \bars, \loop, \function, \list and \group
 				// we use this to determine if we should further tokenize each token of our string
 				// if a line starts with one of these commands, then we won't tokenize the token further
 				tokenizeDigits1 = find(host->editorSession().commandsToNotTokenize.begin(), host->editorSession().commandsToNotTokenize.end(), tokens[0]) == host->editorSession().commandsToNotTokenize.end();
@@ -869,7 +869,7 @@ void Editor::drawText()
 				std::vector<std::string> subtokens;
 				bool tokenizeDigits2 = false;
 				if (thisLang == 0) {
-					// the main ofApp also stores all the bar, loop, function and list names to the keywords vector
+					// the session also stores all the bar, loop, function and list names to the keywords vector
 					tokenizeDigits2 = find(host->editorSession().keywords.begin(), host->editorSession().keywords.end(), *it) == host->editorSession().keywords.end();
 				}
 				// if the token starts with a backslash, then we don't tokenize based on digits
@@ -1802,7 +1802,7 @@ int Editor::maxCursorPos()
 //--------------------------------------------------------------
 void Editor::setCursorPos(int pos)
 {
-	// this function is called only by ofApp.cpp
+	// this function is called only by the workspace
 	cursorPos = pos;
 	//if (cursorPos < 0) cursorPos = 0;
 	//else if (cursorPos > maxCursorPos()) cursorPos = maxCursorPos();
@@ -2324,7 +2324,7 @@ void Editor::setString(std::string s)
 		int tempPaneNdx = host->editorSession().whichPane;
 		// if we're executing code from another pane that runs Python
 		// we must change the current active pane of the editor to the one receiving the string from Python
-		// because parseStrings() in ofApp.cpp executes lines from the currently active pane
+		// because Workspace::parseStrings() executes lines from the currently active pane
 		if (ascii == 13 && (ctrlPressed || shiftPressed)) {
 			host->editorSession().whichPane = host->pythonTypingPane();
 		}
@@ -2922,7 +2922,7 @@ void Editor::updateModeSelection()
 		// columns are relative to how far the line of the cursor has scrolled (startPos), as the cursor position is
 		int cursorCol = cursorPos + allLines[cursorLineIndex].startPos;
 		if (selAnchorLine == cursorLineIndex && selAnchorCol == cursorCol) {
-			// right after v, before the cursor moves, d deletes the character under the cursor (see ofApp::keyPressed())
+			// right after v, before the cursor moves, d deletes the character under the cursor (see Workspace::keyPressed())
 			highlightManyChars = false;
 			return;
 		}
@@ -3195,12 +3195,12 @@ void Editor::allOtherKeys(int key)
 		}
 		else if(key == 61) { // + (actually =)
 			// if the alt key is pressed, the brightness of the editor increases
-			// but that is being taken care of in ofApp.cpp
+			// but that is being taken care of in the workspace (see workspace_keys.cpp)
 			callAssemble = false;
 		}
 		else if (key == 45) { // -
 			// if the alt key is pressed, the brightness of the editor decreases
-			// but that is being taken care of in ofApp.cpp
+			// but that is being taken care of in the workspace (see workspace_keys.cpp)
 			callAssemble = false;
 		}
 		else if (key == 99) { // c for copy
@@ -4027,7 +4027,7 @@ std::map<int, line>::iterator Editor::getAllLinesEnd()
 void Editor::fromOscPress(int ascii)
 {
 	if (!activity) {
-		// call overloaded keyPressed function to set a temporary whichEditor in ofApp.cpp
+		// call overloaded keyPressed function to set a temporary whichEditor in the workspace
 		host->keyPressedOsc(ascii, objID);
 	}
 	else {
@@ -4842,7 +4842,7 @@ void Editor::drawCompletions()
 //--------------------------------------------------------------
 std::vector<GridPaint> Editor::takePaints()
 {
-	// the grids drawText(), drawPaneSeparator() and drawCompletions() have filled, which the app paints (see of_grid_painter.h)
+	// the grids drawText(), drawPaneSeparator() and drawCompletions() have filled, which the app paints (see grid_painter.h)
 	std::vector<GridPaint> taken;
 	taken.swap(paints);
 	return taken;

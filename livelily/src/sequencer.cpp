@@ -1073,7 +1073,7 @@ void Sequencer::fireNote(std::map<int, Instrument>::iterator instMapIt, int bar,
 				// a glissando that is still running stops at a rest too
 				instMapIt->second.setGlissandoStart(false);
 				instMapIt->second.dynamicsRampActive = false;
-				// a rest is highlighted in the editor for its whole duration, if it is written as a rest (see ofApp::getActiveEditorNoteSpans())
+				// a rest is highlighted in the editor for its whole duration, if it is written as a rest (see Workspace::getActiveEditorNoteSpans())
 				// so it is set when it starts, and the next note or rest replaces it
 				// this branch is also called for the notes of a muted instrument, which are not highlighted, and stop the highlight of a rest
 				// a muted instrument highlights nothing, also not its rests
@@ -1335,7 +1335,7 @@ bool Sequencer::step()
 			// or defined again with fewer bars), in which case it starts from the first bar of the loop, or doesn't start without a loop
 			auto loopIt = sharedData->loopData.find(sharedData->loopIndex);
 			if (loopIt == sharedData->loopData.end() || loopIt->second.empty()) {
-				// the thread ends, so that the next \score.play starts it again (see ofApp::update())
+				// the thread ends, so that the next \score.play starts it again (see App::update())
 				runSequencer = false;
 				stopThread();
 				return false;

@@ -120,7 +120,7 @@ class Notes
 		void setVoice(int voice, int numVoices);
 		int getVoice() { return voiceNum; }
 		int getForcedStemDir() { return forcedStemDir; }
-		// the notes (and chords and rests) of a bar, for laying out the voices of a staff (see ofApp::applyMergeLayout())
+		// the notes (and chords and rests) of a bar, for laying out the voices of a staff (see Views::applyMergeLayout())
 		struct NoteColumn {
 			float x;                 // the X coordinate of the column, which is the same for the notes of all voices that start together
 			bool rest;

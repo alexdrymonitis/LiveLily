@@ -108,7 +108,7 @@ inline std::string replaceCharInStr(std::string str, const std::string& a, const
 }
 
 /************************* shared data **************************/
-// the data shared between the main app (ofApp) and the sequencer thread
+// the data shared between the main app (App) and the sequencer thread
 
 // size of cosine table to control the transparency of the beat visualization rectangle
 #define BEATVIZBRIGHTNESS 255
@@ -183,7 +183,7 @@ struct SharedData
 	std::map<int, bool> BPMDisplayHasDot;
 
 	std::map<int, Function> functions;
-	// guards the functions map above and ofApp::functionIndexes and ofApp::lastFunctionIndex
+	// guards the functions map above and Session::functionIndexes and Session::lastFunctionIndex
 	// as these are accessed both from the main thread and from the sequencer thread
 	// never call parseString() or parseCommand() while holding it, as these may lock it again
 	std::mutex functionsMutex;

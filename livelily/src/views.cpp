@@ -93,7 +93,7 @@ void Views::drawScore()
 	int bar; //, prevBar = 0;
 	int ndx = session.sharedData.thisBarIndex;
 	if (scoreOrientation > 0) {
-		// numBars is part of the ofApp class and it's used to be compared to the previous number of bars displayed
+		// numBars is part of Views and it's used to be compared to the previous number of bars displayed
 		// which is necessary to properly position single bars in horizontal view
 		view.numBars = std::min(numBarsToDisplay, (int)session.sharedData.loopData[session.sharedData.loopIndex].size());
 		// the repeat signs are drawn by the place of every bar in the loop, as more bars are shown (see Staff::drawStaff())

@@ -52,7 +52,7 @@ void App::setup(int width, int height, bool testModeOn, const std::string& resou
 	brightnessCoeff = 0.85;
 	shellStrColor = Colors::white;
 
-	// give a random seed to srand(), and a fixed one in test mode, so that \rand gives the same values every time (see testmode.cpp)
+	// give a random seed to srand(), and a fixed one in test mode, so that \rand gives the same values every time (see test_run.h)
 	srand(!testMode ? time(NULL) : 1);
 
 	unsigned int framerate = 60;
@@ -366,7 +366,7 @@ void App::update()
 	}
 	if (session.startSequencer) {
 		session.startSequencer = false;
-		// in test mode the sequencer plays a dry run instead, at the end of the test (see testmode.cpp)
+		// in test mode the sequencer plays a dry run instead, at the end of the test (see test_run.h)
 		if (!session.sequencer.isThreadRunning() && !testMode) {
 			session.sequencer.start();
 		}

@@ -4,16 +4,15 @@
 # and the window is saved when the test has run, as a PNG file
 #   tests/screenshots.sh save name       saves the screenshots to tests/current/screens/name (e.g. before a change)
 #   tests/screenshots.sh compare a b     compares tests/current/screens/a with tests/current/screens/b, pixel by pixel (with ImageMagick)
-#   tests/screenshots.sh side a b        puts the screenshots of a and b side by side, in tests/current/screens/a_b (e.g. those of the two apps,
-#                                        whose text is rendered differently, so that they don't compare pixel by pixel)
-# build the program first (make wpyo -j2)
-# LIVELILY_APP=livelily_desktop tests/screenshots.sh save name   runs the JUCE app (built with CMake) instead of the openFrameworks app
+#   tests/screenshots.sh side a b        puts the screenshots of a and b side by side, in tests/current/screens/a_b (e.g. to look at the changes
+#                                        that compare finds)
+# build the program first (cmake --build build)
 
 testsDir="$(cd "$(dirname "$0")" && pwd)"
 appDir="$(dirname "$testsDir")"
 binDir="$appDir/bin"
 screensDir="$testsDir/current/screens"
-program="${LIVELILY_APP:-livelily}"
+program=livelily
 
 case "$1" in
 	save)

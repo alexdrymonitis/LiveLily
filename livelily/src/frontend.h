@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-// what the engine (the parser and the sequencer) asks of the user interface, which the front end implements (ofApp for now)
+// what the engine (the parser and the sequencer) asks of the user interface, which the front end implements (App, see app.h)
 // so that the engine doesn't depend on the front end (see doc/stage1_inventory.md)
 class FrontendHost
 {
@@ -67,7 +67,7 @@ class FrontendHost
 		virtual std::pair<int, int> mousePosition() = 0;
 		// a pane gets what is typed in it from OSC messages to an address (\fromosc)
 		virtual void setPaneFromOsc(int pane, const std::string& address) = 0;
-		// the tokens of the line of a pane that play the notes of an instrument in a bar, for highlighting them (see ofApp)
+		// the tokens of the line of a pane that play the notes of an instrument in a bar, for highlighting them (see Workspace::getActiveEditorNoteSpans())
 		virtual void storeEditorNoteSpans(int lineNum, int instNdx, int barNdx, int numNotes) = 0;
 		// playback, as the score and the piano roll show it
 		// these are called from the sequencer's thread, except loopChanged(), which a loop called while the sequencer is idle calls from the parser

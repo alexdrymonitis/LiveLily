@@ -1,10 +1,9 @@
 #!/bin/bash
-# runs every .lyv file of tests/private/lyv in the test mode of LiveLily (see src/testmode.cpp) and saves or compares what the parser makes of it
+# runs every .lyv file of tests/private/lyv in the test mode of LiveLily (see src/test_run.h) and saves or compares what the parser makes of it
 #   tests/snapshots.sh save     saves the dumps to tests/private/snapshots, as the reference (run it before a change to the parser)
 #   tests/snapshots.sh check    dumps to tests/current and compares with tests/private/snapshots (run it after a change)
 # a file whose run crashes or doesn't finish is reported, and so is every file whose dump differs from its snapshot
-# build the program first (make wpyo -j2)
-# LIVELILY_APP=livelily_desktop tests/snapshots.sh check   runs the JUCE app (built with CMake) instead of the openFrameworks app
+# build the program first (cmake --build build)
 
 mode="$1"
 if [ "$mode" != "save" ] && [ "$mode" != "check" ]; then
@@ -15,7 +14,7 @@ fi
 testsDir="$(cd "$(dirname "$0")" && pwd)"
 appDir="$(dirname "$testsDir")"
 binDir="$appDir/bin"
-program="${LIVELILY_APP:-livelily}"
+program=livelily
 if [ ! -x "$binDir/$program" ]; then
 	echo "$binDir/$program not found, build the program first"
 	exit 2

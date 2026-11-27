@@ -84,7 +84,7 @@ struct CmdOutput
 // the engine of LiveLily: the state of a session, the parser (parser.cpp, session.cpp) and the sequencer, without the user interface
 // (see doc/stage1_inventory.md, step 5)
 // it reaches the user interface only through FrontendHost (frontend.h), and the system only through the interfaces of the platform
-// the front end (ofApp for now) holds a Session, sets its frontend (and audioCallback) when it starts, and then calls setup()
+// the front end (App, see app.h) holds a Session, sets its frontend (and audioCallback) when it starts, and then calls setup()
 class Session
 {
 	public:

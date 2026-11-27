@@ -119,7 +119,7 @@ class Editor
 		int getNumTabsInStr(std::string str);
 		// finding the code chunk to execute
 		// LiveLily code chunks are defined by curly brackets, Python (and Lua) code chunks by indentation
-		// these don't depend on the contents of the editor, so they are static, to be used by ofApp on function bodies
+		// these don't depend on the contents of the editor, so they are static, to be used by the workspace on function bodies
 		static std::string bracketsInLine(const std::string& str) { return CodeText::bracketsInLine(str); }
 		int scanBraces(const std::string& str, int depth);
 		static bool isLyvCodeLine(const std::string& str) { return CodeText::isLyvCodeLine(str); }
@@ -161,7 +161,7 @@ class Editor
 		void setFrameWidth(float frameWidth);
 		void setFrameHeight(float frameHeight);
 		float getFrameHeight();
-		// the position and size of the pane, and the position of the cursor on the screen, for moving between panes (see ofApp::moveToPane())
+		// the position and size of the pane, and the position of the cursor on the screen, for moving between panes (see Workspace::moveToPane())
 		float getFrameWidth() { return frameWidth; }
 		float getFrameXOffset() { return frameXOffset; }
 		int getCursorScreenX() { return cursorScreenX; }
@@ -174,7 +174,7 @@ class Editor
 		void resetCursorPos(int oldMaxCharactersPerString);
 		// the size of the font, and its measures: the width of a character, the height of a row, and from the baseline to the bottom of a row
 		void setFontSize(int fontSize, float oneCharacterWidth, float cursorHeight, float characterOffset);
-		// the grids the drawing functions have filled since the last call, in their order, for the app to paint (see of_grid_painter.h)
+		// the grids the drawing functions have filled since the last call, in their order, for the app to paint (see grid_painter.h)
 		std::vector<GridPaint> takePaints();
 		int getHalfCharacterWidth();
 		void setMaxNumLines(int numLines);
@@ -431,7 +431,7 @@ class Editor
 		void restoreSnapshot(const EditorSnapshot& snapshot);
 		bool textDiffers(const EditorSnapshot& snapshot);
 		// called before and after every change of the text, to store an undo step if the text changed
-		// melodic lines of bar definitions are aligned to a grid of durations (see \editor.alignment and alignment.cpp in ofApp)
+		// melodic lines of bar definitions are aligned to a grid of durations (see \editor.alignment and workspace_alignment.cpp)
 		bool alignment = false;
 		// a unit of the grid is as wide as the shortest note token of the bar, instead of the longest (see \editor.alignment short and long)
 		bool alignShort = false;

@@ -29,7 +29,7 @@ class Pyo {
 		bool isProcessing();
 		// whether the interpreter has been created (see setup())
 		bool isSetup() const { return interpreter != nullptr; }
-		// for the autocompletion of Python panes (see ofApp::refreshPythonTable())
+		// for the autocompletion of Python panes (see Workspace::refreshPythonTable())
 		// the number of executions of code (exec(), exec_main(), and loadfile(), from any thread), so that what is known of the interpreter
 		// is asked again only after code that might have changed it has been executed
 		unsigned getExecutions() const { return executions.load(); }

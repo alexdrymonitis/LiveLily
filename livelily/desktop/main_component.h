@@ -14,7 +14,7 @@
 class MainComponent : public juce::Component, public AppWindow, private juce::Timer
 {
 	public:
-		// test mode (see test_run.h), from the command line: livelily_desktop --test file.lyv [--out dump.txt] [--screenshot image.png]
+		// test mode (see test_run.h), from the command line: livelily --test file.lyv [--out dump.txt] [--screenshot image.png]
 		struct Test {
 			std::string file;
 			std::string out;

@@ -11,7 +11,7 @@
 
 // a click track that clicks on the beats of \beatat (the pulses of the beat visualization), see \clicktrack
 // each click is a short triangle wave, at the tuning frequency (440Hz by default), and an octave higher on the first beat of a bar
-// the sequencer thread triggers the clicks with the time of their beats, and the audio thread plays them (see ofApp::audioOut())
+// the sequencer thread triggers the clicks with the time of their beats, and the audio thread plays them (see App::onAudioOut())
 // the clicks are sample-accurate: the audio thread maps the time of every beat to a sample of its output
 // from the time its buffers are processed, and starts the click at that sample, a fixed latency later (see LATENCY_BUFFERS)
 class ClickTrack

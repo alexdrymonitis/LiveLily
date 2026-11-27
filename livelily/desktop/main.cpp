@@ -43,7 +43,7 @@ class LiveLilyApplication : public juce::JUCEApplication
 			// LiveLily's resources (fonts, help files), found from the program's path (see paths.h)
 			std::filesystem::path executable = juce::File::getSpecialLocation(juce::File::currentExecutableFile).getFullPathName().toStdString();
 			std::string resources = Paths::resources(executable).string();
-			// test mode: livelily_desktop --test file.lyv [--out dump.txt] [--screenshot image.png], with paths relative to the current directory
+			// test mode: livelily --test file.lyv [--out dump.txt] [--screenshot image.png], with paths relative to the current directory
 			// LiveLily is drawn offscreen, with no window (see MainComponent::Test)
 			MainComponent::Test test;
 			juce::StringArray args = getCommandLineParameterArray();

@@ -656,7 +656,7 @@ void Workspace::connectLineToBar(int pane, int line, int instNdx, int bar)
 //--------------------------------------------------------------
 void Workspace::fillGrids()
 {
-	// as ofApp::draw() fills them, which paints them in between, with the views of the score
+	// as App::draw() fills them, which paints them in between, with the views of the score
 	for (auto& editor : editors) {
 		editor.second.drawText();
 		editor.second.drawPaneSeparator();

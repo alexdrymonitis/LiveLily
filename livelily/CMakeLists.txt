@@ -1,7 +1,7 @@
-# LiveLily's core (the engine and the editor, with no openFrameworks) and its headless runner, which runs the tests with no window
-# (see doc/stage3_inventory.md); the app itself is still built with openFrameworks' makefiles (make wpyo) until stage 4
+# LiveLily: its core (the engine, the editor, the views), the desktop app (with JUCE), and the headless runner, which runs the tests with no window
 #   cmake -B build && cmake --build build && ctest --test-dir build
-# the headless runner is built into bin/, from where it finds LiveLily's resources in ../resources (see src/paths.h)
+# (with -DLIVELILY_JUCE_DIR=path to build with a JUCE checkout instead of fetching JUCE, and -DLIVELILY_PYO=OFF to build without Python)
+# the programs are built into bin/, from where they find LiveLily's resources in ../resources (see src/paths.h)
 
 cmake_minimum_required(VERSION 3.20)
 project(LiveLily LANGUAGES C CXX)
@@ -117,7 +117,8 @@ else()
 	target_compile_options(livelily_core PRIVATE -Wall -Werror=return-type)
 endif()
 
-# the JUCE desktop app (see desktop/ and doc/stage4_inventory.md, step 8): a window with LiveLily in it, drawn with JUCE
+# the desktop app, bin/livelily (see desktop/ and doc/stage4_inventory.md, step 8): a window with LiveLily in it, drawn with JUCE
+# on macOS an app bundle, bin/LiveLily.app, with the resources in it (in Contents/Resources, see src/paths.h)
 juce_add_gui_app(livelily_desktop PRODUCT_NAME "LiveLily" COMPANY_NAME "LiveLily" VERSION 0.2)
 target_sources(livelily_desktop PRIVATE desktop/main.cpp desktop/main_component.cpp desktop/juce_canvas.cpp)
 target_include_directories(livelily_desktop PRIVATE desktop)
@@ -125,11 +126,15 @@ target_include_directories(livelily_desktop PRIVATE desktop)
 target_compile_definitions(livelily_desktop PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
 target_link_libraries(livelily_desktop PRIVATE livelily_core livelily_platform_juce juce::juce_gui_basics juce::juce_recommended_config_flags)
 # into bin/, from where it finds LiveLily's resources in ../resources (see src/paths.h), as the other programs
-set_target_properties(livelily_desktop PROPERTIES OUTPUT_NAME livelily_desktop RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
+set_target_properties(livelily_desktop PROPERTIES OUTPUT_NAME livelily RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 foreach(config ${CMAKE_CONFIGURATION_TYPES})
 	string(TOUPPER ${config} CONFIG)
 	set_target_properties(livelily_desktop PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${CONFIG} "${PROJECT_SOURCE_DIR}/bin")
 endforeach()
+if(APPLE)
+	add_custom_command(TARGET livelily_desktop POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/resources" "$<TARGET_BUNDLE_CONTENT_DIR:livelily_desktop>/Resources")
+endif()
 
 # the headless runner
 add_executable(livelily_headless headless/main.cpp headless/platform.cpp)

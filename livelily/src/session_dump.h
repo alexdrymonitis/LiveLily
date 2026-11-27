@@ -1,7 +1,7 @@
 #ifndef SESSION_DUMP_H
 #define SESSION_DUMP_H
 
-// the text of the test dumps (see testmode.cpp and headless/main.cpp), written the same way by both, so their snapshots can be compared
+// the text of the test dumps (see test_run.h and headless/main.cpp), written the same way by both, so their snapshots can be compared
 
 #include <ostream>
 #include <string>

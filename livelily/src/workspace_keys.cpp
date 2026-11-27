@@ -553,7 +553,7 @@ void Workspace::requestNewSession()
 void Workspace::newSession()
 {
 	// the sequencer stops first, and its thread ends, as it would go on playing the bars and loops that are cleared below
-	// (as quitting does, see ofApp::exit())
+	// (as quitting does, see App::exit())
 	session.sequencer.stopNow();
 	session.sequencer.waitForThread();
 	// remove all panes but one

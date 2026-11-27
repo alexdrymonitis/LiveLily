@@ -6,7 +6,7 @@
 #include <vector>
 
 // the audio input and output of LiveLily (for pyo and the click track), which the platform implements
-// (with openFrameworks' ofSoundStream for now, see of_audio.cpp)
+// (with JUCE, see platform/juce_audio.cpp)
 
 // an audio device of the system, as AudioStream::devices() lists it
 struct AudioDevice
@@ -52,7 +52,7 @@ class AudioStream
 		virtual std::string currentDevice() { return ""; }
 };
 
-// the platform makes it (of_audio.cpp for now)
+// the platform makes it (see platform/juce_audio.cpp)
 std::unique_ptr<AudioStream> makeAudioStream();
 
 #endif

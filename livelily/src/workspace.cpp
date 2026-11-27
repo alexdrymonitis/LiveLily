@@ -25,8 +25,8 @@ void Workspace::layout()
 	WorkspaceHost::Metrics m = host.workspaceMetrics();
 	WorkspaceHost::ScorePlacement score = host.scorePlacement();
 	// this is the minimum height of the area below the panes, used to calculate the size of the panes
-	// MINTRACEBACKLINES lines of the current font, with their baselines one and two lines below the panes (see ofApp::drawTraceback() and drawShell())
-	// and the part of the last line below its baseline, as low as the cursor reaches (0.15 of a line, see ofApp::drawShell())
+	// MINTRACEBACKLINES lines of the current font, with their baselines one and two lines below the panes (see fillBelowArea())
+	// and the part of the last line below its baseline, as low as the cursor reaches (0.15 of a line, see fillBelowArea())
 	// the panes get a whole number of lines in the rest of the window, so the area below them is at least this high
 	belowBase = m.height - (m.cellHeight * ((float)MINTRACEBACKLINES + 0.15f));
 	// get the width and height for each pane
@@ -134,7 +134,7 @@ void Workspace::layout()
 	belowTop = belowBase;
 	// the panes have a new layout, which the shell makes shorter again if it needs to (see layoutPanesForShell())
 	paneBase.clear();
-	// the area below the panes is reset, so its size is calculated again in ofApp::drawTraceback() and drawShell()
+	// the area below the panes is reset, so its size is calculated again in fillBelowArea()
 	// for the lines that are shown in it, which are broken again to fit the width of the window (e.g. after it is resized)
 	tracebackNumLinesShown = shellNumLinesShown = -1;
 }

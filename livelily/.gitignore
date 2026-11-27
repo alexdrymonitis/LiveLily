@@ -1,12 +1,9 @@
 # build output
-/obj/
 /bin/livelily
 /bin/livelily_debug
-/bin/*.so
 /bin/stderr.txt
 /bin/gen
 /log
-/make_sources.txt
 
 # test output: the snapshots are kept, the current dumps are made again by tests/snapshots.sh
 /tests/current/
@@ -22,12 +19,17 @@
 *.qbs.user
 .qtc_clangd/
 /bin/livelily_headless
-/bin/livelily_desktop
+/bin/LiveLily.app/
 /build/
 
+# left over from the openFrameworks build, which can be deleted
+/obj/
+/bin/*.so
+/make_sources.txt
+/config.local.make
+
 # kept out of the published repository: the test files, their snapshots and notes (a private repository of their own, in tests/private)
-# the notation font that can not be redistributed, and where openFrameworks is on this machine (see config.make)
+# the notation font that can not be redistributed
 /tests/private/
 /resources/fonts/sonata.ttf
 /claude_fixes.txt
-/config.local.make

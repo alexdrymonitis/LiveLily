@@ -9,7 +9,7 @@
 #include <vector>
 
 // what the views of LiveLily (the score, the piano roll, the sequencer, the oscilloscope) draw with, so that they are the same
-// in every front end that draws them; the front end implements it (with openFrameworks for now, see of_canvas.cpp)
+// in every front end that draws them; the front end implements it (see desktop/juce_canvas.h)
 // coordinates are in the units of the window (pixels), with y going down, and text is drawn on its baseline
 // colors with alpha blend with what is drawn under them
 
